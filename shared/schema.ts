@@ -2844,6 +2844,10 @@ export const campaigns = pgTable("campaigns", {
   thematicBrief: text("thematic_brief"),
   thematicUrl: text("thematic_url"),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
+  // Parent/child hierarchy: a mainline campaign can own child social campaigns.
+  // NULL means standalone. On delete set null so archiving the parent does not
+  // cascade-delete children.
+  parentCampaignId: varchar("parent_campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2854,6 +2858,12 @@ export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
     fields: [campaigns.createdBy],
     references: [users.id],
   }),
+  parentCampaign: one(campaigns, {
+    fields: [campaigns.parentCampaignId],
+    references: [campaigns.id],
+    relationName: "campaignChildren",
+  }),
+  childCampaigns: many(campaigns, { relationName: "campaignChildren" }),
   campaignAssets: many(campaignAssets),
   campaignSocialAccounts: many(campaignSocialAccounts),
   campaignSolutionAreas: many(campaignSolutionAreas),

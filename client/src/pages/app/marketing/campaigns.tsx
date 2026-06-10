@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles, Network } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
@@ -48,6 +48,8 @@ interface Campaign {
   includeSunday?: boolean;
   productIds?: string[];
   createdAt: string;
+  childCount?: number;
+  parentCampaignId?: string | null;
 }
 
 interface Persona {
@@ -1016,9 +1018,17 @@ export default function CampaignsPage() {
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base leading-tight">{c.name}</CardTitle>
-                    <Badge variant={STATUS_COLORS[c.status] as any ?? "secondary"} className="shrink-0 capitalize">
-                      {c.status}
-                    </Badge>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {c.childCount != null && c.childCount > 0 && (
+                        <Badge variant="outline" className="gap-1 text-xs" data-testid={`badge-mainline-${c.id}`}>
+                          <Network className="w-3 h-3" />
+                          {c.childCount}
+                        </Badge>
+                      )}
+                      <Badge variant={STATUS_COLORS[c.status] as any ?? "secondary"} className="capitalize">
+                        {c.status}
+                      </Badge>
+                    </div>
                   </div>
                   {c.description && <CardDescription className="line-clamp-2">{c.description}</CardDescription>}
                 </CardHeader>

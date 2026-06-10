@@ -33,6 +33,10 @@ import {
   ExternalLink,
   Link2,
   Target,
+  Network,
+  Plus,
+  Unlink,
+  BarChart3,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -68,6 +72,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { format, addDays } from "date-fns";
 
+interface CampaignRollup {
+  emailCount: number;
+  postCount: number;
+  batchCount: number;
+  assetsByType: Record<string, number>;
+}
+
+interface ChildCampaignRef {
+  id: string;
+  name: string;
+  status: string;
+}
+
 interface Campaign {
   id: string;
   name: string;
@@ -84,8 +101,12 @@ interface Campaign {
   includeSunday?: boolean;
   productIds?: string[];
   alwaysHashtags?: string[];
+  parentCampaignId?: string | null;
   assets: CampaignAsset[];
   socialAccounts: CampaignSocialAccount[];
+  rollup?: CampaignRollup;
+  children?: ChildCampaignRef[];
+  parentCampaign?: ChildCampaignRef | null;
 }
 
 interface ContentBrief {
@@ -211,6 +232,9 @@ export default function CampaignDetailPage() {
   const [editCampaignSaturday, setEditCampaignSaturday] = useState(false);
   const [editCampaignSunday, setEditCampaignSunday] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [linkChildOpen, setLinkChildOpen] = useState(false);
+  const [linkChildSearch, setLinkChildSearch] = useState("");
+  const [archiveWithChildrenOpen, setArchiveWithChildrenOpen] = useState(false);
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
   const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
@@ -327,6 +351,53 @@ export default function CampaignDetailPage() {
       const r = await fetch(`/api/campaigns/${id}/events`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+  });
+
+  const { data: allCampaigns = [] } = useQuery<Array<{ id: string; name: string; status: string; parentCampaignId?: string | null }>>({
+    queryKey: ["/api/campaigns", "all-for-link"],
+    queryFn: async () => {
+      const r = await fetch("/api/campaigns", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: linkChildOpen,
+  });
+
+  const linkChildMutation = useMutation({
+    mutationFn: async (childId: string) => {
+      const r = await fetch(`/api/campaigns/${id}/children`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ childId }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to link campaign");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      setLinkChildOpen(false);
+      setLinkChildSearch("");
+      toast({ title: "Campaign linked as child" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const unlinkChildMutation = useMutation({
+    mutationFn: async (childId: string) => {
+      const r = await fetch(`/api/campaigns/${id}/children/${childId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to unlink campaign");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({ title: "Campaign unlinked" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const generateBriefsMutation = useMutation({
@@ -1032,6 +1103,22 @@ export default function CampaignDetailPage() {
               {campaign.campaignType && (
                 <Badge variant="secondary" className="capitalize" data-testid="badge-campaign-type">{campaign.campaignType}</Badge>
               )}
+              {campaign.children && campaign.children.length > 0 && (
+                <Badge variant="outline" className="gap-1 text-xs" data-testid="badge-mainline-campaign">
+                  <Network className="w-3 h-3" />
+                  Mainline · {campaign.children.length} {campaign.children.length === 1 ? "child" : "children"}
+                </Badge>
+              )}
+              {campaign.parentCampaign && (
+                <a
+                  href={`/app/marketing/campaigns/${campaign.parentCampaign.id}`}
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="link-parent-campaign"
+                >
+                  <Network className="w-3 h-3" />
+                  Part of: {campaign.parentCampaign.name}
+                </a>
+              )}
             </div>
             {campaign.objective && <p className="text-muted-foreground text-sm mt-1" data-testid="text-campaign-objective">{campaign.objective}</p>}
             {!campaign.objective && campaign.description && <p className="text-muted-foreground text-sm mt-1">{campaign.description}</p>}
@@ -1141,7 +1228,13 @@ export default function CampaignDetailPage() {
             </Button>
             <Select
               value={campaign.status}
-              onValueChange={v => updateCampaignStatusMutation.mutate(v)}
+              onValueChange={v => {
+                if (v === "archived" && campaign.children && campaign.children.some(c => c.status !== "archived" && c.status !== "deleted")) {
+                  setArchiveWithChildrenOpen(true);
+                  return;
+                }
+                updateCampaignStatusMutation.mutate(v);
+              }}
             >
               <SelectTrigger className="w-40" data-testid="select-campaign-status">
                 <SelectValue />
@@ -1156,6 +1249,33 @@ export default function CampaignDetailPage() {
           </div>
         </div>
 
+        {/* Rollup summary bar */}
+        {campaign.rollup && (campaign.rollup.emailCount > 0 || campaign.rollup.postCount > 0 || Object.keys(campaign.rollup.assetsByType).length > 0) && (
+          <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/40 rounded-lg border" data-testid="campaign-rollup-bar">
+            <BarChart3 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            {Object.entries(campaign.rollup.assetsByType).map(([type, n]) => (
+              <span key={type} className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{n}</span> {type.replace(/_/g, " ")}
+              </span>
+            ))}
+            {campaign.rollup.emailCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{campaign.rollup.emailCount}</span> {campaign.rollup.emailCount === 1 ? "email" : "emails"}
+              </span>
+            )}
+            {campaign.rollup.postCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{campaign.rollup.postCount}</span> social {campaign.rollup.postCount === 1 ? "post" : "posts"}
+              </span>
+            )}
+            {campaign.rollup.batchCount > 0 && (
+              <span className="text-xs text-muted-foreground border-l pl-2 ml-1">
+                across <span className="font-semibold text-foreground">{campaign.rollup.batchCount}</span> {campaign.rollup.batchCount === 1 ? "batch" : "batches"}
+              </span>
+            )}
+          </div>
+        )}
+
         <Tabs defaultValue="plan">
           <TabsList>
             <TabsTrigger value="plan" className="gap-1.5" data-testid="tab-plan"><Target className="w-3.5 h-3.5" />Content Plan{briefs.length ? ` (${briefs.length})` : ""}</TabsTrigger>
@@ -1163,6 +1283,10 @@ export default function CampaignDetailPage() {
             <TabsTrigger value="assets" className="gap-1.5" data-testid="tab-assets"><Library className="w-3.5 h-3.5" />Assets ({campaign.assets.length})</TabsTrigger>
             <TabsTrigger value="accounts" className="gap-1.5" data-testid="tab-accounts"><AtSign className="w-3.5 h-3.5" />Social Accounts ({campaign.socialAccounts.length})</TabsTrigger>
             <TabsTrigger value="links" className="gap-1.5" data-testid="tab-links"><Link2 className="w-3.5 h-3.5" />Links</TabsTrigger>
+            <TabsTrigger value="children" className="gap-1.5" data-testid="tab-children">
+              <Network className="w-3.5 h-3.5" />
+              Campaigns{campaign.children && campaign.children.length > 0 ? ` (${campaign.children.length})` : ""}
+            </TabsTrigger>
           </TabsList>
 
           {/* Content Plan — briefs that support this campaign */}
@@ -1260,6 +1384,72 @@ export default function CampaignDetailPage() {
 
           <TabsContent value="links" className="space-y-4">
             <LinkBuilderTab campaignId={id!} campaignName={campaign.name} />
+          </TabsContent>
+
+          {/* Child / Mainline Campaigns */}
+          <TabsContent value="children" className="space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold">Child campaigns</h3>
+                <p className="text-sm text-muted-foreground max-w-xl">
+                  Link existing campaigns as children of this mainline campaign to group related batches and roll up their activity here.
+                </p>
+              </div>
+              <Button size="sm" className="gap-1.5" onClick={() => setLinkChildOpen(true)} data-testid="button-link-child-campaign">
+                <Plus className="w-3.5 h-3.5" />
+                Link campaign
+              </Button>
+            </div>
+
+            {campaign.parentCampaign && (
+              <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30 text-sm">
+                <Network className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">This campaign is a child of</span>
+                <a
+                  href={`/app/marketing/campaigns/${campaign.parentCampaign.id}`}
+                  className="font-medium hover:underline"
+                  data-testid="link-parent-campaign-children-tab"
+                >
+                  {campaign.parentCampaign.name}
+                </a>
+                <Badge variant="secondary" className="capitalize text-xs">{campaign.parentCampaign.status}</Badge>
+              </div>
+            )}
+
+            {(!campaign.children || campaign.children.length === 0) ? (
+              <div className="py-10 text-center text-muted-foreground text-sm border rounded-lg" data-testid="text-no-child-campaigns">
+                No child campaigns linked yet.
+              </div>
+            ) : (
+              <div className="grid gap-2" data-testid="child-campaigns-list">
+                {campaign.children.map(child => (
+                  <div key={child.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border" data-testid={`card-child-campaign-${child.id}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Network className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <a
+                        href={`/app/marketing/campaigns/${child.id}`}
+                        className="text-sm font-medium hover:underline truncate"
+                        data-testid={`link-child-campaign-${child.id}`}
+                      >
+                        {child.name}
+                      </a>
+                      <Badge variant="secondary" className="capitalize text-xs shrink-0">{child.status}</Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5 text-muted-foreground hover:text-destructive shrink-0"
+                      onClick={() => unlinkChildMutation.mutate(child.id)}
+                      disabled={unlinkChildMutation.isPending}
+                      data-testid={`button-unlink-child-${child.id}`}
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                      Unlink
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* Social Posts */}
@@ -2104,6 +2294,84 @@ export default function CampaignDetailPage() {
             >
               {editCampaignMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive with active children warning */}
+      <Dialog open={archiveWithChildrenOpen} onOpenChange={setArchiveWithChildrenOpen}>
+        <DialogContent className="sm:max-w-[420px]" data-testid="dialog-archive-with-children">
+          <DialogHeader>
+            <DialogTitle>Archive mainline campaign?</DialogTitle>
+            <DialogDescription>
+              This campaign has {(campaign?.children ?? []).filter(c => c.status !== "archived" && c.status !== "deleted").length} active child {(campaign?.children ?? []).filter(c => c.status !== "archived" && c.status !== "deleted").length === 1 ? "campaign" : "campaigns"}. Archiving the mainline does not archive its children — they will remain active and independent.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setArchiveWithChildrenOpen(false)} data-testid="button-cancel-archive-mainline">Cancel</Button>
+            <Button
+              onClick={() => {
+                setArchiveWithChildrenOpen(false);
+                updateCampaignStatusMutation.mutate("archived");
+              }}
+              data-testid="button-confirm-archive-mainline"
+            >
+              Archive anyway
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Child Campaign Dialog */}
+      <Dialog open={linkChildOpen} onOpenChange={open => { setLinkChildOpen(open); if (!open) setLinkChildSearch(""); }}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-link-child-campaign">
+          <DialogHeader>
+            <DialogTitle>Link child campaign</DialogTitle>
+            <DialogDescription>
+              Select an existing campaign to attach as a child of this mainline campaign.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <input
+              type="text"
+              placeholder="Search campaigns…"
+              value={linkChildSearch}
+              onChange={e => setLinkChildSearch(e.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              data-testid="input-link-child-search"
+            />
+            <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
+              {allCampaigns
+                .filter(c =>
+                  c.id !== id &&
+                  c.status !== "deleted" &&
+                  !c.parentCampaignId &&
+                  (campaign.children ?? []).every(ch => ch.id !== c.id) &&
+                  c.name.toLowerCase().includes(linkChildSearch.toLowerCase())
+                )
+                .map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="w-full flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm hover:bg-muted/50 transition-colors text-left"
+                    onClick={() => linkChildMutation.mutate(c.id)}
+                    disabled={linkChildMutation.isPending}
+                    data-testid={`option-link-child-${c.id}`}
+                  >
+                    <span className="font-medium truncate">{c.name}</span>
+                    <Badge variant="secondary" className="capitalize text-xs shrink-0">{c.status}</Badge>
+                  </button>
+                ))}
+              {allCampaigns.filter(c =>
+                c.id !== id &&
+                c.status !== "deleted" &&
+                !c.parentCampaignId &&
+                (campaign.children ?? []).every(ch => ch.id !== c.id) &&
+                c.name.toLowerCase().includes(linkChildSearch.toLowerCase())
+              ).length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">No eligible campaigns found.</p>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -16,7 +16,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, inArray, notInArray, sql, ne, ilike, or, isNull, isNotNull, count } from "drizzle-orm";
+import { eq, and, desc, inArray, notInArray, sql, ne, ilike, or, isNull, isNotNull, count, countDistinct } from "drizzle-orm";
 import { parsePaginationParams, buildPaginatedEnvelope, toContainsPattern } from "../utils/pagination";
 import { randomUUID } from "crypto";
 import {
@@ -1722,7 +1722,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
         const rows = await db.select().from(campaigns)
           .where(where)
           .orderBy(desc(campaigns.createdAt));
-        return res.json(rows);
+        const ids = rows.map(r => r.id);
+        const childCountRows = ids.length > 0
+          ? await db.select({ parentCampaignId: campaigns.parentCampaignId, value: count() })
+              .from(campaigns)
+              .where(and(
+                inArray(campaigns.parentCampaignId, ids),
+                ne(campaigns.status, "deleted"),
+              ))
+              .groupBy(campaigns.parentCampaignId)
+          : [];
+        const childCountMap = new Map(childCountRows.map(r => [r.parentCampaignId!, Number(r.value)]));
+        return res.json(rows.map(r => ({ ...r, childCount: childCountMap.get(r.id) ?? 0 })));
       }
 
       const [{ value: total }] = await db.select({ value: count() }).from(campaigns).where(where);
@@ -1731,7 +1742,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .orderBy(desc(campaigns.createdAt))
         .limit(pagination.limit)
         .offset(pagination.offset);
-      res.json(buildPaginatedEnvelope(items, Number(total), pagination));
+      const ids = items.map(r => r.id);
+      const childCountRows = ids.length > 0
+        ? await db.select({ parentCampaignId: campaigns.parentCampaignId, value: count() })
+            .from(campaigns)
+            .where(and(
+              inArray(campaigns.parentCampaignId, ids),
+              ne(campaigns.status, "deleted"),
+            ))
+            .groupBy(campaigns.parentCampaignId)
+        : [];
+      const childCountMap = new Map(childCountRows.map(r => [r.parentCampaignId!, Number(r.value)]));
+      const itemsWithCount = items.map(r => ({ ...r, childCount: childCountMap.get(r.id) ?? 0 }));
+      res.json(buildPaginatedEnvelope(itemsWithCount, Number(total), pagination));
     } catch (err: any) {
       console.error("[Campaigns List Error]", err.message);
       res.status(500).json({ error: "Failed to load campaigns" });
@@ -1751,7 +1774,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         ));
       if (!campaign) return res.status(404).json({ error: "Not found" });
 
-      const [assets, socialAccts, areaLinks] = await Promise.all([
+      const [assets, socialAccts, areaLinks, childCampaigns, parentCampaign] = await Promise.all([
         db.select().from(campaignAssets)
           .where(eq(campaignAssets.campaignId, campaign.id))
           .orderBy(campaignAssets.sortOrder),
@@ -1759,13 +1782,76 @@ export function registerSaturnMarketingRoutes(app: Express) {
           .where(eq(campaignSocialAccounts.campaignId, campaign.id)),
         db.select().from(campaignSolutionAreas)
           .where(eq(campaignSolutionAreas.campaignId, campaign.id)),
+        // Children
+        db.select().from(campaigns)
+          .where(and(
+            eq(campaigns.parentCampaignId, campaign.id),
+            eq(campaigns.tenantDomain, ctx.tenantDomain),
+            ne(campaigns.status, "deleted"),
+          ))
+          .orderBy(desc(campaigns.createdAt)),
+        // Parent (if this campaign is a child)
+        campaign.parentCampaignId
+          ? db.select({ id: campaigns.id, name: campaigns.name, status: campaigns.status })
+              .from(campaigns)
+              .where(and(
+                eq(campaigns.id, campaign.parentCampaignId),
+                eq(campaigns.tenantDomain, ctx.tenantDomain),
+              ))
+          : Promise.resolve([] as Array<{ id: string; name: string; status: string }>),
       ]);
+
+      // Rollup scope: this campaign + all direct children
+      const scopeIds = [campaign.id, ...childCampaigns.map(c => c.id)];
+
+      const [emailRows, postRows, assetRows] = await Promise.all([
+        // Rollup: email count across scope
+        db.select({ value: count() }).from(generatedEmails)
+          .where(inArray(generatedEmails.campaignId, scopeIds)),
+        // Rollup: posts (for count + batch keys) across scope
+        db.select({
+          generationJobId: generatedPosts.generationJobId,
+          variantGroup: generatedPosts.variantGroup,
+          conferenceId: generatedPosts.conferenceId,
+        }).from(generatedPosts)
+          .where(and(
+            inArray(generatedPosts.campaignId, scopeIds),
+            notInArray(generatedPosts.status, ["deleted", "rejected"]),
+          )),
+        // Rollup: assets by type (from campaign_assets → content_assets) across scope
+        db.select({ assetType: contentAssets.assetType })
+          .from(campaignAssets)
+          .innerJoin(contentAssets, eq(campaignAssets.assetId, contentAssets.id))
+          .where(inArray(campaignAssets.campaignId, scopeIds)),
+      ]);
+
+      // Compute rollup summary
+      const emailCount = Number(emailRows[0]?.value ?? 0);
+      const postCount = postRows.length;
+
+      const batchKeys = new Set<string>();
+      for (const p of postRows) {
+        if (p.generationJobId) batchKeys.add(`job_${p.generationJobId}`);
+        else if (p.variantGroup) batchKeys.add(`variant_${p.variantGroup}`);
+        else if (p.conferenceId) batchKeys.add(`conf_${p.conferenceId}`);
+      }
+      const batchCount = batchKeys.size;
+
+      const assetsByType: Record<string, number> = {};
+      for (const a of assetRows) {
+        assetsByType[a.assetType] = (assetsByType[a.assetType] || 0) + 1;
+      }
 
       res.json({
         ...campaign,
         assets,
         socialAccounts: socialAccts,
         solutionAreaIds: areaLinks.map(a => a.solutionAreaId),
+        // Rollup
+        rollup: { emailCount, postCount, batchCount, assetsByType },
+        // Parent/child hierarchy
+        children: childCampaigns,
+        parentCampaign: parentCampaign.length > 0 ? parentCampaign[0] : null,
       });
     } catch (err: any) {
       console.error("[Campaign Detail Error]", err.message);
@@ -1878,7 +1964,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       if (!await guardFeature(req, res, "campaigns")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds } = req.body;
+      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, parentCampaignId } = req.body;
       const updateData: any = { updatedAt: new Date() };
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
@@ -1897,6 +1983,25 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
       if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
       if (alwaysHashtags !== undefined) updateData.alwaysHashtags = Array.isArray(alwaysHashtags) ? alwaysHashtags : [];
+      // Parent/child: allow setting or clearing parentCampaignId
+      if (parentCampaignId !== undefined) {
+        if (parentCampaignId === null || parentCampaignId === "") {
+          updateData.parentCampaignId = null;
+        } else {
+          // Validate the parent belongs to same tenant and is not the same campaign
+          if (parentCampaignId === req.params.id) {
+            return res.status(400).json({ error: "A campaign cannot be its own parent" });
+          }
+          const [parent] = await db.select({ id: campaigns.id }).from(campaigns)
+            .where(and(
+              eq(campaigns.id, parentCampaignId),
+              eq(campaigns.tenantDomain, ctx.tenantDomain),
+              ne(campaigns.status, "deleted"),
+            ));
+          if (!parent) return res.status(400).json({ error: "Parent campaign not found in this tenant" });
+          updateData.parentCampaignId = parentCampaignId;
+        }
+      }
       const [row] = await db.update(campaigns)
         .set(updateData)
         .where(and(
@@ -1919,6 +2024,89 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } catch (err: any) {
       console.error("[PATCH /api/campaigns/:id]", err);
       res.status(500).json({ error: "Failed to update campaign", detail: err?.message });
+    }
+  });
+
+  // Link a child campaign to this campaign (sets child's parentCampaignId)
+  app.post("/api/campaigns/:id/children", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const parentId = req.params.id;
+      const { childId } = req.body;
+      if (!childId) return res.status(400).json({ error: "childId is required" });
+      if (childId === parentId) return res.status(400).json({ error: "A campaign cannot be its own child" });
+
+      // Verify parent exists and belongs to tenant
+      const [parent] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(
+          eq(campaigns.id, parentId),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          ne(campaigns.status, "deleted"),
+        ));
+      if (!parent) return res.status(404).json({ error: "Parent campaign not found" });
+
+      // Verify child exists, belongs to tenant
+      const [child] = await db.select().from(campaigns)
+        .where(and(
+          eq(campaigns.id, childId),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          ne(campaigns.status, "deleted"),
+        ));
+      if (!child) return res.status(404).json({ error: "Child campaign not found" });
+      if (child.parentCampaignId && child.parentCampaignId !== parentId) {
+        return res.status(400).json({ error: "Campaign is already linked to a different parent" });
+      }
+
+      // Cycle prevention: walk the ancestor chain of parentId.
+      // If we encounter childId anywhere in the chain, linking would create a loop.
+      {
+        const allForTenant = await db
+          .select({ id: campaigns.id, parentCampaignId: campaigns.parentCampaignId })
+          .from(campaigns)
+          .where(and(
+            eq(campaigns.tenantDomain, ctx.tenantDomain),
+            ne(campaigns.status, "deleted"),
+          ));
+        const parentMap = new Map(allForTenant.map(c => [c.id, c.parentCampaignId]));
+        let cursor: string | null = parentId;
+        while (cursor !== null) {
+          if (cursor === childId) {
+            return res.status(400).json({ error: "Cannot link: this would create a circular hierarchy" });
+          }
+          cursor = parentMap.get(cursor) ?? null;
+        }
+      }
+
+      const [updated] = await db.update(campaigns)
+        .set({ parentCampaignId: parentId, updatedAt: new Date() })
+        .where(eq(campaigns.id, childId))
+        .returning();
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[POST /api/campaigns/:id/children]", err);
+      res.status(500).json({ error: "Failed to link child campaign" });
+    }
+  });
+
+  // Unlink a child campaign from this campaign (clears child's parentCampaignId)
+  app.delete("/api/campaigns/:id/children/:childId", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [updated] = await db.update(campaigns)
+        .set({ parentCampaignId: null, updatedAt: new Date() })
+        .where(and(
+          eq(campaigns.id, req.params.childId),
+          eq(campaigns.parentCampaignId, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Child campaign not found or not linked to this parent" });
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[DELETE /api/campaigns/:id/children/:childId]", err);
+      res.status(500).json({ error: "Failed to unlink child campaign" });
     }
   });
 
