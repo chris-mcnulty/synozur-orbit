@@ -503,6 +503,32 @@ export default function EditorialCalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const repurposeLongForm = useMutation({
+    mutationFn: async ({ assetId, format }: { assetId: string; format: string }) => {
+      const res = await fetch(`/api/content-assets/${assetId}/repurpose-longform`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ format }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to repurpose");
+      return res.json();
+    },
+    onSuccess: (data: { asset: { id: string; title: string } }) => {
+      toast.success(`Created "${data.asset.title}" in the Content Library`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const LONGFORM_FORMATS: { value: string; label: string }[] = [
+    { value: "blog_post", label: "Blog post" },
+    { value: "newsletter", label: "Email newsletter" },
+    { value: "video_script", label: "Video script" },
+    { value: "podcast_outline", label: "Podcast outline" },
+    { value: "whitepaper", label: "Whitepaper" },
+    { value: "carousel", label: "Social carousel" },
+  ];
+
   const optimizeAsset = useMutation({
     mutationFn: async (assetId: string) => {
       const res = await fetch(`/api/content/optimize`, {
@@ -884,6 +910,26 @@ export default function EditorialCalendarPage() {
                             )}
                             Repurpose
                           </Button>
+                        )}
+                        {b.contentAssetId && repurposeAllowed && (
+                          <Select
+                            disabled={repurposeLongForm.isPending}
+                            value=""
+                            onValueChange={(format) => repurposeLongForm.mutate({ assetId: b.contentAssetId!, format })}
+                          >
+                            <SelectTrigger className="h-9 w-[150px]" data-testid={`repurpose-longform-${b.id}`}>
+                              {repurposeLongForm.isPending && repurposeLongForm.variables?.assetId === b.contentAssetId ? (
+                                <span className="flex items-center"><Loader2 className="mr-1 h-4 w-4 animate-spin" />Creating…</span>
+                              ) : (
+                                <span className="flex items-center"><FileText className="mr-1 h-4 w-4" />Repurpose to…</span>
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {LONGFORM_FORMATS.map((f) => (
+                                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
                         {b.contentAssetId && optimizeAllowed && (
                           <Button

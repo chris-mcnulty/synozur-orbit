@@ -2380,6 +2380,16 @@ export const contentAssets = pgTable("content_assets", {
   categoryId: varchar("category_id").references(() => contentAssetCategories.id, { onDelete: "set null" }),
   assetType: text("asset_type").notNull().default("other"),
   productIds: text("product_ids").array(),
+  // WS3: headline SEO/AEO fields persisted back from the optimizer so they are
+  // usable inline on the asset (deeper AEO data — answer blocks, FAQ, gaps —
+  // continues to live in content_optimizations, keyed by contentAssetId).
+  seoTitle: text("seo_title"),
+  metaDescription: text("meta_description"),
+  seoSlug: text("seo_slug"),
+  seoKeywords: text("seo_keywords").array(),
+  seoOptimizedAt: timestamp("seo_optimized_at"),
+  // WS3: when this asset was produced by repurposing another asset, the source.
+  repurposedFromAssetId: varchar("repurposed_from_asset_id").references((): AnyPgColumn => contentAssets.id, { onDelete: "set null" }),
   tags: jsonb("tags").$type<{ seasons?: string[]; locations?: string[]; topics?: string[] }>(),
   status: text("status").notNull().default("active"),
   capturedViaExtension: boolean("captured_via_extension").notNull().default(false),
