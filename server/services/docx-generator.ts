@@ -325,6 +325,13 @@ function isSafeInternalImageUrl(url: string): boolean {
   return url.startsWith("/objects/") || url.startsWith("/public-objects/");
 }
 
+// Test seam: set a custom image loader in unit tests to avoid real object-storage
+// calls. null means use the real loadImageBytes from conference-promotion-service.
+let _imageLoaderOverride: ((url: string) => Promise<Buffer>) | null = null;
+export function _testSetImageLoader(fn: ((url: string) => Promise<Buffer>) | null): void {
+  _imageLoaderOverride = fn;
+}
+
 // Fetch an object-storage image and turn it into a centered ImageRun paragraph
 // scaled to fit the page width, followed by an italic caption when alt text is
 // present. Falls back to an italic caption (or empty array when there's nothing
@@ -335,9 +342,9 @@ async function imageParagraph(token: ImageToken): Promise<Paragraph[]> {
     return token.alt ? [imageCaptionParagraph(token.alt)] : [];
   }
   try {
-    const { loadImageBytes } = await import("./conference-promotion-service.js");
+    const loader = _imageLoaderOverride ?? (await import("./conference-promotion-service.js")).loadImageBytes;
     const sharp = (await import("sharp")).default;
-    const raw = await loadImageBytes(token.url);
+    const raw = await loader(token.url);
     const meta = await sharp(raw).metadata();
     if (!meta.width || !meta.height) throw new Error("missing image dimensions");
     // Normalize to PNG so formats like WebP embed reliably in Word.
