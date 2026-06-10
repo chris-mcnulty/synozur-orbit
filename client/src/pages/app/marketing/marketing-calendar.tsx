@@ -371,6 +371,9 @@ export default function MarketingCalendarPage() {
   const [detail, setDetail] = useState<CalendarItem | null>(null);
   // WS4: when drilling into a collapsed social batch (shows its members).
   const [batchDrill, setBatchDrill] = useState<{ key: string; day: string; label: string } | null>(null);
+  // The "see everything on this day" panel — opened from a day cell when the
+  // grid caps the visible pills at 4 (or to expand a busy day in full).
+  const [dayDetail, setDayDetail] = useState<string | null>(null);
   // When a draft is dropped onto a crowded day, we hold the drop here and ask
   // the user to confirm (or pick the suggested open day) before scheduling.
   const [pendingDrop, setPendingDrop] = useState<{ descriptors: { type: string; id: string }[]; dateKey: string } | null>(null);
@@ -418,6 +421,13 @@ export default function MarketingCalendarPage() {
   const handleSelect = (i: CalendarItem) => {
     if (i.isBatch && i.batchKey) setBatchDrill({ key: i.batchKey, day: i.day ?? "unscheduled", label: i.title });
     else setDetail(i);
+  };
+
+  // Selecting from the day-detail panel: close the panel first, then open the
+  // item (or drill into its batch) so the user sees the result underneath.
+  const handleSelectFromDay = (i: CalendarItem) => {
+    setDayDetail(null);
+    handleSelect(i);
   };
 
   const scheduled = useMemo(() => items.filter((i) => i.date), [items]);
@@ -806,6 +816,7 @@ export default function MarketingCalendarPage() {
                     byDay={byDay}
                     filterOpts={filterOpts}
                     onSelect={handleSelect}
+                    onOpenDay={(key) => setDayDetail(key)}
                     onDropSchedule={handleDropSchedule}
                     onReschedule={(d, key) => handleRescheduleDrag(d, key)}
                   />
@@ -899,6 +910,40 @@ export default function MarketingCalendarPage() {
         onAssign={(it, patch) => assignMut.mutate({ it, patch })}
         busy={approveMut.isPending || deleteMut.isPending || exportDocxMut.isPending || handoffMut.isPending || assignMut.isPending}
       />
+
+      <Dialog open={!!dayDetail} onOpenChange={(o) => !o && setDayDetail(null)}>
+        <DialogContent className="max-w-lg" data-testid="dialog-day-detail">
+          <DialogHeader>
+            <DialogTitle>{dayDetail ? prettyDay(dayDetail) : ""}</DialogTitle>
+            <DialogDescription>
+              {dayDetail
+                ? `${(byDay.get(dayDetail) || []).length} activit${(byDay.get(dayDetail) || []).length === 1 ? "y" : "ies"} scheduled. Click any item to open it.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-1 overflow-y-auto">
+            {dayDetail && (byDay.get(dayDetail) || []).length === 0 && (
+              <p className="text-sm text-muted-foreground" data-testid="text-day-detail-empty">Nothing scheduled this day.</p>
+            )}
+            {dayDetail && (byDay.get(dayDetail) || []).map((it) => (
+              <button
+                key={`${it.type}-${it.id}`}
+                onClick={() => handleSelectFromDay(it)}
+                className="flex w-full items-center gap-1.5 rounded border p-2 text-left text-xs hover:bg-muted"
+                data-testid={`item-day-detail-${it.type}-${it.id}`}
+                title={it.isBatch ? `${it.title} — click to drill in` : it.title}
+              >
+                {it.isBatch
+                  ? <Inbox className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-300" />
+                  : <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} />}
+                <ChannelFormatTag item={it} />
+                <span className="flex-1 truncate">{it.title}</span>
+                <AssignmentDots item={it} filterOpts={filterOpts} />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
@@ -955,11 +1000,12 @@ function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarIte
   );
 }
 
-function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule, onReschedule }: {
+function MonthGrid({ anchor, byDay, filterOpts, onSelect, onOpenDay, onDropSchedule, onReschedule }: {
   anchor: Date;
   byDay: Map<string, CalendarItem[]>;
   filterOpts?: FilterOptions;
   onSelect: (i: CalendarItem) => void;
+  onOpenDay?: (key: string) => void;
   onDropSchedule?: (descriptors: { type: string; id: string }[], dateKey: string) => void;
   onReschedule?: (descriptor: { type: string; id: string }, dateKey: string) => void;
 }) {
@@ -1022,10 +1068,37 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect, onDropSchedule, onResc
             >
               {date && (
                 <>
-                  <div className={`mb-1 text-right text-xs ${key === todayKey ? "font-bold text-primary" : "text-muted-foreground"}`}>{date.getDate()}</div>
+                  <div className="mb-1 flex items-center justify-end">
+                    {dayItems.length > 0 && onOpenDay ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenDay(key!)}
+                        className={`rounded px-1 text-xs hover:bg-muted ${key === todayKey ? "font-bold text-primary" : "text-muted-foreground"}`}
+                        data-testid={`button-open-day-${key}`}
+                        title="See everything on this day"
+                      >
+                        {date.getDate()}
+                      </button>
+                    ) : (
+                      <span className={`px-1 text-xs ${key === todayKey ? "font-bold text-primary" : "text-muted-foreground"}`}>{date.getDate()}</span>
+                    )}
+                  </div>
                   <div className="space-y-0.5">
                     {dayItems.slice(0, 4).map((it) => <ItemPill key={`${it.type}-${it.id}`} item={it} filterOpts={filterOpts} onSelect={onSelect} draggable={!!onReschedule} />)}
-                    {dayItems.length > 4 && <div className="px-1 text-[10px] text-muted-foreground">+{dayItems.length - 4} more</div>}
+                    {dayItems.length > 4 && (
+                      onOpenDay ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenDay(key!)}
+                          className="w-full rounded px-1 text-left text-[10px] text-muted-foreground hover:bg-muted hover:underline"
+                          data-testid={`button-day-more-${key}`}
+                        >
+                          +{dayItems.length - 4} more
+                        </button>
+                      ) : (
+                        <div className="px-1 text-[10px] text-muted-foreground">+{dayItems.length - 4} more</div>
+                      )
+                    )}
                   </div>
                 </>
               )}
