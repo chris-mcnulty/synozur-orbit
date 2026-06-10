@@ -1,0 +1,32 @@
+The news and intelligence this campaign was founded on — frozen at creation.
+captured Jun 10, 2026
+News
+Microsoft is working to rebuild trust in WindowsThe Verge
+Microsoft is going to spend 2026 improving Windows 11. It comes after Windows update quality issues and complaints about the operating system.
+
+Why Microsoft won't be the company to mainstream consumer AI useWindows Central
+The lobotomization of Bing AI is indicative of a wider issue with Microsoft: they just don't get human beings. And that is why it won't be the company that mainstreams AI use.
+
+Here are the biggest announcements coming out of Microsoft Build 2023Windows Central
+We round up the most important news coming out of Microsoft's Build 2023 developer conference.
+
+Microsoft Surface event: Here's everything that was announcedWindows Central
+Microsoft's fall 2022 Surface event has just wrapped! It was a jam-packed event with three new Surface PCs, a handful of new accessories, and a smattering of new apps and services for Microsoft 365 su
+
+How to get the Microsoft experience on a ChromebookAndroid Central
+While Windows does a lot of things well, it doesn’t hold up well on budget machines the way Chrome OS does. This means that if you’re on a limited budget, the best Microsoft experience to be had is on a Chromebook rather than a Windows laptop!
+
+Anthropic's Fable 5 AI Model Offers More Power At A Higher PriceForbes
+Anthropic says its new Fable 5 AI model can handle long-running tasks and agents. The tradeoff: higher costs, tighter safeguards and usage limits.
+
+Anthropic releases Claude Fable 5, its first MythosTNW
+Anthropic launched Claude Fable 5 on Tuesday, a Mythos-class model with safeguards blocking cybersecurity and biology queries, priced at $10 per million input tokens.
+
+Anthropic brings Mythos to the masses with Claude Fable 5, its most powerful generally available model everVentureBeat
+Anthropic is pricing both Fable 5 and Mythos 5 at $10 per million input tokens and $50 per million output tokens. The company says that is less than half the price of Claude Mythos Preview
+
+Anthropic Offers Mythos Upgrade for Cyber Partners and a ‘Safe’ Version for the Rest of YouWIRED
+Anthropic is releasing Claude Mythos 5 to trusted organizations and Claude Fable 5 to the public, a version it says can’t be used for cyberattacks.
+
+Anthropic is all in on 'AI safety'-and that's helping the $183 billion startup win over big businessFortune
+Founders Daniela and Dario Amodei have made Anthropic and its Claude models the AI many companies prefer over rivals OpenAI and ChatGPT.

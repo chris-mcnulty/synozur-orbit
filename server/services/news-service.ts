@@ -147,10 +147,19 @@ export interface SubjectNews {
 export async function scanNewsForSubjects(
   subjects: string[],
   perSubject: number = 5,
+  withinDays: number = 45,
 ): Promise<SubjectNews[]> {
   const cleaned = Array.from(
     new Set(subjects.map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean)),
   ).slice(0, 8);
+
+  // Relevance sorting with no date window lets GNews return the *most relevant*
+  // match from any year — which is how years-old stories (e.g. an old Surface
+  // or Build keynote) slip into a "founding signals" scan. Constrain the scan
+  // to a recent window so it only surfaces current news.
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - Math.max(1, withinDays));
+  const fromDateStr = fromDate.toISOString().split("T")[0] + "T00:00:00Z";
 
   const out: SubjectNews[] = [];
   for (const subject of cleaned) {
@@ -159,7 +168,7 @@ export async function scanNewsForSubjects(
     // with relevance sorting and title/description matching, this keeps the
     // scan on-topic instead of returning the day's newest loosely-matched news.
     const q = subject.includes(" ") ? `"${subject.replace(/"/g, "")}"` : subject;
-    const { articles } = await searchNews(q, perSubject, undefined, {
+    const { articles } = await searchNews(q, perSubject, fromDateStr, {
       sortBy: "relevance",
       inFields: "title,description",
     });

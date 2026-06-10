@@ -8,7 +8,11 @@ description: Why the campaign ideation news scan must sort by relevance + phrase
 The campaign ideation news scan (`scanNewsForSubjects` in `server/services/news-service.ts`,
 consumed by ideation + frozen onto a campaign's Founding Signals) must:
 - phrase-quote multi-word subjects (`"AI costs"`, not `AI costs`),
-- query GNews with `sortby=relevance` and `in=title,description`.
+- query GNews with `sortby=relevance` and `in=title,description`,
+- ALSO pass a recent `from` date window (`withinDays`, default 45). Relevance sort with NO
+  date window returns the single most-relevant match from ANY year, so years-old stories
+  (e.g. Surface 2022, Build 2023 keynotes) leak into a "founding signals" scan. The window
+  is what keeps it current; relevance alone does not.
 
 **Why:** Production users saw a campaign's frozen "Founding Signals" GNews feed full of
 the day's newest generic headlines (local jobs lists, politics, "pilots switch phones off"
