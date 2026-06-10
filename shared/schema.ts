@@ -1943,6 +1943,7 @@ export const CONTENT_BRIEF_FORMATS = [
   "video_script",
   "case_study",
   "whitepaper",
+  "podcast_outline",
   "other",
 ] as const;
 export type ContentBriefFormat = (typeof CONTENT_BRIEF_FORMATS)[number];

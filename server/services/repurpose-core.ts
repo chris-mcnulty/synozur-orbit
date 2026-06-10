@@ -6,6 +6,7 @@
  */
 
 import type { CarouselSlide, RepurposeMeta } from "@shared/schema";
+import { POLARIS_OUTLINE_GUIDANCE } from "./polaris-outline";
 
 export const SUPPORTED_PLATFORMS = ["linkedin", "twitter", "instagram", "facebook"] as const;
 export type RepurposePlatform = (typeof SUPPORTED_PLATFORMS)[number];
@@ -176,8 +177,7 @@ export const LONGFORM_REPURPOSE_GUIDANCE: Record<LongformRepurposeFormat, string
     "Turn the source into a short-form video script: a 0-3s hook, beat-by-beat spoken lines with brief [VISUAL] cues, ending on the CTA. 45-90 seconds of spoken content.",
   video_shot_list:
     "Turn the source into a video shot list — a production-ready, shot-by-shot plan (not a spoken script). Render in Markdown as a numbered list of 6-12 shots. For each shot include: the shot type/framing (e.g. wide, medium, close-up, screen recording, B-roll), what's on screen, any on-screen text/lower-third, and the matching voiceover or audio cue. Open on a hook shot and end on the CTA shot.",
-  podcast_outline:
-    "Turn the source into a two-host podcast outline in Markdown: episode title, a one-line premise, 4-7 talking-point segments (with a sentence of guidance each), 2-3 pull-quote moments, and an outro CTA.",
+  podcast_outline: POLARIS_OUTLINE_GUIDANCE,
   whitepaper:
     "Expand the source into a whitepaper draft in Markdown: executive summary, problem framing, our point of view, a framework/approach, and a conclusion + CTA. Authoritative and well-structured.",
   carousel:

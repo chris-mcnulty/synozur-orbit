@@ -7,9 +7,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Linkedin, Video, FileText, Mail, Newspaper, Loader2, Sparkles,
-  ImageIcon, Minus, Plus, ArrowLeft, ExternalLink, AlertTriangle,
+  ImageIcon, Minus, Plus, ArrowLeft, ExternalLink, AlertTriangle, Mic,
 } from "lucide-react";
 
 // ── Output formats (mirrors REPURPOSE_FORMAT_DEFS on the server) ──────────────
@@ -112,10 +113,15 @@ export function RepurposeDialog({
   // selection state: format → count (absent = not selected)
   const [counts, setCounts] = useState<Partial<Record<BatchFormat, number>>>({});
   const [results, setResults] = useState<BatchResponse | null>(null);
+  // Polaris podcast outline: optional guest override + the created asset.
+  const [podcastGuest, setPodcastGuest] = useState("");
+  const [podcastAsset, setPodcastAsset] = useState<{ id: string; title: string } | null>(null);
 
   const reset = () => {
     setCounts({});
     setResults(null);
+    setPodcastGuest("");
+    setPodcastAsset(null);
   };
 
   const toggle = (def: FormatDef) => {
@@ -155,6 +161,28 @@ export function RepurposeDialog({
       setResults(data);
       onGenerated?.(data);
       toast.success(`Generated ${data.totalCount} item${data.totalCount === 1 ? "" : "s"}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Polaris podcast outline goes through the long-form repurpose path (it
+  // becomes a Content Library asset), not the batch path of social snippets.
+  const generatePodcast = useMutation({
+    mutationFn: async () => {
+      if (!assetId) throw new Error("No source asset");
+      const guest = podcastGuest.trim();
+      const res = await fetch(`/api/content-assets/${assetId}/repurpose-longform`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(guest ? { format: "podcast_outline", guest } : { format: "podcast_outline" }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to generate outline");
+      return res.json() as Promise<{ asset: { id: string; title: string } }>;
+    },
+    onSuccess: (data) => {
+      setPodcastAsset(data.asset);
+      toast.success(`Created "${data.asset.title}" in the Content Library`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -241,6 +269,55 @@ export function RepurposeDialog({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Polaris podcast outline — long-form path (Content Library asset),
+                with an optional "do you have a guest in mind?" override. */}
+            <div className="rounded-lg border border-dashed p-3 space-y-2" data-testid="section-podcast-outline">
+              <div className="flex items-center gap-1.5">
+                <Mic className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium">Polaris podcast outline</span>
+                <Badge variant="outline" className="text-[10px]">Content Library</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A Polaris house-format outline (recorded live, exported as a Word doc).
+              </p>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Do you have a guest in mind?</label>
+                <Input
+                  value={podcastGuest}
+                  onChange={(e) => setPodcastGuest(e.target.value)}
+                  placeholder="Name, title, company (leave blank to let AI suggest)"
+                  data-testid="input-podcast-guest"
+                />
+              </div>
+              {podcastAsset ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 p-2">
+                  <span className="text-xs truncate">Created “{podcastAsset.title}”</span>
+                  {onOpenLibraryAsset && (
+                    <Button
+                      variant="outline" size="sm" className="shrink-0"
+                      onClick={() => { onOpenLibraryAsset(podcastAsset.id); handleOpenChange(false); }}
+                      data-testid="button-open-podcast-outline"
+                    >
+                      <ExternalLink className="mr-1 h-3 w-3" /> Open
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => generatePodcast.mutate()}
+                  disabled={!assetId || generatePodcast.isPending}
+                  data-testid="button-generate-podcast-outline"
+                >
+                  {generatePodcast.isPending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating…</>
+                  ) : (
+                    <><Mic className="mr-2 h-4 w-4" /> Generate podcast outline</>
+                  )}
+                </Button>
+              )}
             </div>
 
             <DialogFooter className="flex-col sm:flex-row sm:items-center sm:justify-between gap-2">

@@ -15,6 +15,7 @@ import {
   type FunnelStage,
   type CampaignType,
 } from "@shared/schema";
+import { POLARIS_OUTLINE_GUIDANCE } from "./polaris-outline";
 
 export interface DraftBrief {
   title: string;
@@ -276,6 +277,7 @@ export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
     "Write a case study in Markdown: Challenge, Approach, Results (with concrete-but-not-fabricated outcomes framed qualitatively if numbers are unknown), and a closing CTA.",
   whitepaper:
     "Write a whitepaper outline-to-draft in Markdown: executive summary, problem framing, our point of view, a framework or approach, and a conclusion + CTA. Authoritative and well-structured.",
+  podcast_outline: POLARIS_OUTLINE_GUIDANCE,
   other:
     "Write well-structured Markdown copy appropriate to the topic, with a clear headline, body, and a CTA.",
 };

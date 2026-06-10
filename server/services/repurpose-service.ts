@@ -27,6 +27,7 @@ import {
   type GeneratedRepurposeItem,
 } from "./repurpose-core";
 import { parseDraftResponse } from "./editorial-calendar-core";
+import { polarisGuestBlock } from "./polaris-outline";
 
 const SYSTEM_PROMPT =
   "You are a social media copywriter. You repurpose long-form content into punchy, native-feeling " +
@@ -103,6 +104,7 @@ export interface LongformRepurposeParams {
   asset: ContentAsset;
   format: LongformRepurposeFormat;
   isDefaultMarket?: boolean;
+  guest?: string | null;
 }
 
 export interface LongformRepurposeResult {
@@ -136,6 +138,7 @@ export async function repurposeToLongForm(
     strategicBlock,
     `## Source asset\nTitle: ${asset.title}\n\n${sourceBody}`,
     `## Format guidance\n${LONGFORM_REPURPOSE_GUIDANCE[format]}`,
+    format === "podcast_outline" ? polarisGuestBlock(params.guest) : "",
     `## Response format
 Respond with exactly these three sections and nothing else:
 ===TITLE===

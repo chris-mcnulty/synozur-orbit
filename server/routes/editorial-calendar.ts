@@ -14,6 +14,7 @@ import {
   type CampaignBriefContext,
 } from "../services/editorial-calendar-core";
 import type { CampaignType } from "@shared/schema";
+import { CONTENT_BRIEF_FORMATS } from "@shared/schema";
 
 const FORMAT_LABELS: Record<string, string> = {
   blog_post: "Blog post",
@@ -24,6 +25,7 @@ const FORMAT_LABELS: Record<string, string> = {
   video_script: "Video script",
   case_study: "Case study",
   whitepaper: "Whitepaper",
+  podcast_outline: "Podcast outline",
   other: "Other",
 };
 
@@ -416,6 +418,12 @@ export function registerEditorialCalendarRoutes(app: Express) {
         if (req.body?.[field] !== undefined) updates[field] = req.body[field];
       }
 
+      // Validate format against the known brief formats so an unknown value
+      // can't slip into a column the rest of the system reads as an enum.
+      if (updates.format !== undefined && !(CONTENT_BRIEF_FORMATS as readonly string[]).includes(updates.format)) {
+        return res.status(400).json({ error: "Unknown format" });
+      }
+
       // Campaign / theme assignment — validate the referenced row belongs to
       // the caller's tenant+market before linking so the FK can't accumulate
       // cross-tenant references. An empty string / null clears the assignment.
@@ -491,9 +499,11 @@ export function registerEditorialCalendarRoutes(app: Express) {
       if (!brief) return res.status(404).json({ error: "Not found" });
 
       const instructions = typeof req.body?.instructions === "string" ? req.body.instructions : undefined;
+      const guest = typeof req.body?.guest === "string" ? req.body.guest : undefined;
       const draft = await draftFromBrief(brief, {
         isDefaultMarket: ctx.isDefaultMarket,
         instructions,
+        guest,
       });
 
       if (!draft.body?.trim()) {

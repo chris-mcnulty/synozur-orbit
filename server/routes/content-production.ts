@@ -262,10 +262,12 @@ export function registerContentProductionRoutes(app: Express) {
       }
 
       const fmt = format as LongformRepurposeFormat;
+      const guest = typeof req.body?.guest === "string" ? req.body.guest : undefined;
       const { title, body, meta, usage, model } = await repurposeToLongForm({
         asset,
         format: fmt,
         isDefaultMarket: ctx.isDefaultMarket,
+        guest,
       });
       if (!body.trim()) {
         return res.status(502).json({ error: "The AI did not return usable content. Please try again." });

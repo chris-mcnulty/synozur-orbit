@@ -46,6 +46,7 @@ import {
   X,
   FileText,
   Link2,
+  Mic,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -145,8 +146,23 @@ const FORMAT_LABELS: Record<string, string> = {
   video_script: "Video script",
   case_study: "Case study",
   whitepaper: "Whitepaper",
+  podcast_outline: "Podcast outline",
   other: "Other",
 };
+
+// Brief formats a user can pick from per brief. Mirrors CONTENT_BRIEF_FORMATS.
+const BRIEF_FORMAT_OPTIONS: { value: string; label: string }[] = [
+  { value: "blog_post", label: "Blog" },
+  { value: "landing_page", label: "Landing page" },
+  { value: "linkedin_post", label: "LinkedIn" },
+  { value: "x_post", label: "X / Twitter" },
+  { value: "newsletter", label: "Newsletter" },
+  { value: "video_script", label: "Video script" },
+  { value: "case_study", label: "Case study" },
+  { value: "whitepaper", label: "Whitepaper" },
+  { value: "podcast_outline", label: "Podcast outline" },
+  { value: "other", label: "Other" },
+];
 
 const FUNNEL_LABELS: Record<string, string> = {
   awareness: "Awareness",
@@ -216,6 +232,8 @@ export default function EditorialCalendarPage() {
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string } | null>(null);
+  // Per-brief "Do you have a guest in mind?" override for podcast outlines.
+  const [podcastGuest, setPodcastGuest] = useState<Record<string, string>>({});
   const [carouselSlides, setCarouselSlides] = useState<{ assetId: string; title: string; slides: CarouselSlideImage[] } | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [distOpen, setDistOpen] = useState(false);
@@ -319,11 +337,12 @@ export default function EditorialCalendarPage() {
 
   const draftBrief = useMutation({
     mutationFn: async (id: string) => {
+      const guest = podcastGuest[id]?.trim();
       const res = await fetch(`/api/content-briefs/${id}/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({}),
+        body: JSON.stringify(guest ? { guest } : {}),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Failed to draft content");
       return res.json();
@@ -906,6 +925,21 @@ export default function EditorialCalendarPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Select
+                          value={b.format}
+                          onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { format: v } })}
+                        >
+                          <SelectTrigger className="h-8 w-[150px]" data-testid={`format-${b.id}`}>
+                            <SelectValue placeholder="Format" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {BRIEF_FORMAT_OPTIONS.map((f) => (
+                              <SelectItem key={f.value} value={f.value}>
+                                {f.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
                           value={STATUS_OPTIONS.includes(b.status) ? b.status : undefined}
                           onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { status: v } })}
                         >
@@ -1035,6 +1069,22 @@ export default function EditorialCalendarPage() {
                         </Button>
                       </div>
                     </div>
+
+                    {/* Polaris podcast outline: optional guest override. Blank =
+                        the AI suggests a guest; a value overrides it throughout. */}
+                    {b.format === "podcast_outline" && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2">
+                        <Mic className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground">Do you have a guest in mind?</span>
+                        <Input
+                          value={podcastGuest[b.id] ?? ""}
+                          onChange={(e) => setPodcastGuest((p) => ({ ...p, [b.id]: e.target.value }))}
+                          placeholder="Name, title, company (leave blank to let AI suggest)"
+                          className="h-8 flex-1 min-w-[220px]"
+                          data-testid={`input-podcast-guest-${b.id}`}
+                        />
+                      </div>
+                    )}
 
                     {/* Assignment: campaign, theme, category. Campaign and theme
                         live on the brief; category lives on the generated draft

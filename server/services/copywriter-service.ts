@@ -24,6 +24,7 @@ import {
   coerceFormat,
   type ParsedDraft,
 } from "./editorial-calendar-core";
+import { polarisGuestBlock } from "./polaris-outline";
 
 const VOICE_NON_NEGOTIABLES =
   "Voice non-negotiables:\n" +
@@ -65,7 +66,7 @@ export interface DraftFromBriefResult extends ParsedDraft {
 
 export async function draftFromBrief(
   brief: ContentBrief,
-  opts: { isDefaultMarket?: boolean; instructions?: string } = {},
+  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null } = {},
 ): Promise<DraftFromBriefResult> {
   const format = coerceFormat(brief.format);
 
@@ -114,6 +115,7 @@ export async function draftFromBrief(
     personaBlock,
     briefBlock,
     `## Format guidance\n${FORMAT_GUIDANCE[format]}`,
+    format === "podcast_outline" ? polarisGuestBlock(opts.guest) : "",
     opts.instructions?.trim() ? `## Additional instructions\n${opts.instructions.trim()}` : "",
     `## Response format
 Respond with exactly these three sections and nothing else:
