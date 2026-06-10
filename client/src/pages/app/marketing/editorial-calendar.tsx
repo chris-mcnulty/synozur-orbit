@@ -22,6 +22,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   CalendarDays,
   Loader2,
   Sparkles,
@@ -89,9 +94,11 @@ interface DraftResult {
 }
 
 interface RepurposeVariantResult {
+  id: string;
   platform: string;
   content: string;
   hashtags: string[];
+  imagePrompt?: string | null;
   overrideImageUrl?: string | null;
 }
 
@@ -208,7 +215,7 @@ export default function EditorialCalendarPage() {
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string } | null>(null);
-  const [carouselSlides, setCarouselSlides] = useState<{ title: string; slides: CarouselSlideImage[] } | null>(null);
+  const [carouselSlides, setCarouselSlides] = useState<{ assetId: string; title: string; slides: CarouselSlideImage[] } | null>(null);
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [distOpen, setDistOpen] = useState(false);
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -527,7 +534,7 @@ export default function EditorialCalendarPage() {
     },
     onSuccess: (data: { asset: { id: string; title: string }; slideImages?: CarouselSlideImage[] }) => {
       if (data.slideImages?.length) {
-        setCarouselSlides({ title: data.asset.title, slides: data.slideImages });
+        setCarouselSlides({ assetId: data.asset.id, title: data.asset.title, slides: data.slideImages });
         toast.success(`Created "${data.asset.title}" with ${data.slideImages.length} branded slides`);
       } else {
         toast.success(`Created "${data.asset.title}" in the Content Library`);
@@ -535,6 +542,60 @@ export default function EditorialCalendarPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // Regenerate the branded graphic for one repurposed social variant, optionally
+  // with an edited headline. Updates that variant's image in place on success.
+  const regenVariantImage = async (
+    postId: string,
+    idx: number,
+    headline: string,
+  ) => {
+    const res = await fetch(`/api/generated-posts/${postId}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(headline ? { headline } : {}),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed to regenerate graphic");
+    const data: { imageUrl: string } = await res.json();
+    setRepurpose((prev) =>
+      prev ? prev.map((v, i) => (i === idx ? { ...v, overrideImageUrl: data.imageUrl } : v)) : prev,
+    );
+    toast.success("Graphic regenerated");
+  };
+
+  // Regenerate one carousel slide image, optionally with an edited
+  // headline/subtitle. Updates the slide in place on success.
+  const regenCarouselSlide = async (
+    assetId: string,
+    index: number,
+    headline: string,
+    subtitle: string,
+  ) => {
+    const res = await fetch(`/api/content-assets/${assetId}/regenerate-carousel-slide`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        index,
+        headline: headline || undefined,
+        subtitle: subtitle || undefined,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed to regenerate slide");
+    const data: { index: number; headline: string; fileUrl: string } = await res.json();
+    setCarouselSlides((prev) =>
+      prev
+        ? {
+            ...prev,
+            slides: prev.slides.map((s) =>
+              s.index === index ? { ...s, fileUrl: data.fileUrl, headline: data.headline } : s,
+            ),
+          }
+        : prev,
+    );
+    toast.success(`Slide ${index} regenerated`);
+  };
 
   const LONGFORM_FORMATS: { value: string; label: string }[] = [
     { value: "blog_post", label: "Blog post" },
@@ -1351,21 +1412,30 @@ export default function EditorialCalendarPage() {
             </DialogHeader>
             <div className="space-y-3">
               {(repurpose ?? []).map((v, i) => (
-                <div key={i} className="rounded-md border p-3">
+                <div key={v.id ?? i} className="rounded-md border p-3">
                   <div className="mb-1 flex items-center justify-between">
                     <Badge variant="secondary">{v.platform}</Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        navigator.clipboard.writeText(
-                          v.content + (v.hashtags?.length ? "\n\n" + v.hashtags.map((h) => `#${h}`).join(" ") : ""),
-                        );
-                        toast.success("Copied");
-                      }}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {v.id && (
+                        <RegenerateGraphicButton
+                          defaultHeadline={(v.imagePrompt || v.content || "").trim().slice(0, 200)}
+                          onRegenerate={({ headline }) => regenVariantImage(v.id, i, headline)}
+                          testId={`regenerate-variant-${i}`}
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            v.content + (v.hashtags?.length ? "\n\n" + v.hashtags.map((h) => `#${h}`).join(" ") : ""),
+                          );
+                          toast.success("Copied");
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   {v.overrideImageUrl && (
                     <img
@@ -1406,9 +1476,21 @@ export default function EditorialCalendarPage() {
                     className="w-full rounded"
                     data-testid={`img-slide-${s.index}`}
                   />
-                  <p className="mt-2 text-xs font-medium">
-                    Slide {s.index}: {s.headline}
-                  </p>
+                  <div className="mt-2 flex items-start justify-between gap-2">
+                    <p className="text-xs font-medium">
+                      Slide {s.index}: {s.headline}
+                    </p>
+                    {carouselSlides?.assetId && (
+                      <RegenerateGraphicButton
+                        defaultHeadline={s.headline}
+                        withSubtitle
+                        onRegenerate={({ headline, subtitle }) =>
+                          regenCarouselSlide(carouselSlides.assetId, s.index, headline, subtitle)
+                        }
+                        testId={`regenerate-slide-${s.index}`}
+                      />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1622,5 +1704,96 @@ export default function EditorialCalendarPage() {
         </Dialog>
       </FeatureGate>
     </AppLayout>
+  );
+}
+
+// Inline "Regenerate" control for a single branded graphic. Opens a small editor
+// to tweak the headline (and an optional subtitle) that drives the image, then
+// calls the parent's regenerate handler. Errors surface as a toast and keep the
+// editor open so the user can adjust and retry.
+function RegenerateGraphicButton({
+  defaultHeadline,
+  defaultSubtitle,
+  withSubtitle,
+  onRegenerate,
+  testId,
+}: {
+  defaultHeadline?: string;
+  defaultSubtitle?: string;
+  withSubtitle?: boolean;
+  onRegenerate: (vals: { headline: string; subtitle: string }) => Promise<void>;
+  testId?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [headline, setHeadline] = useState(defaultHeadline ?? "");
+  const [subtitle, setSubtitle] = useState(defaultSubtitle ?? "");
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      await onRegenerate({ headline: headline.trim(), subtitle: subtitle.trim() });
+      setOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to regenerate graphic");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) {
+          setHeadline(defaultHeadline ?? "");
+          setSubtitle(defaultSubtitle ?? "");
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="outline" data-testid={testId}>
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Regenerate
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 space-y-3" align="end">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Headline</Label>
+          <Textarea
+            value={headline}
+            onChange={(e) => setHeadline(e.target.value)}
+            rows={2}
+            placeholder="Headline for the graphic"
+            data-testid={testId ? `${testId}-headline` : undefined}
+          />
+        </div>
+        {withSubtitle && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Subtitle (optional)</Label>
+            <Input
+              value={subtitle}
+              onChange={(e) => setSubtitle(e.target.value)}
+              placeholder="Supporting line"
+              data-testid={testId ? `${testId}-subtitle` : undefined}
+            />
+          </div>
+        )}
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={run}
+          disabled={busy}
+          data-testid={testId ? `${testId}-confirm` : undefined}
+        >
+          {busy ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
+          Regenerate graphic
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -514,10 +514,16 @@ export function registerContentProductionRoutes(app: Express) {
       const headline = headlineSource.trim().slice(0, 200);
       if (!headline) return res.status(422).json({ error: "No text available to build a graphic from." });
 
+      const subtitle =
+        typeof req.body?.subtitle === "string" && req.body.subtitle.trim()
+          ? req.body.subtitle.trim().slice(0, 200)
+          : null;
+
       const saved = await generateBrandedPostGraphic({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId || null,
         headline,
+        subtitle,
       });
 
       const [row] = await db
@@ -530,6 +536,66 @@ export function registerContentProductionRoutes(app: Express) {
     } catch (err: any) {
       console.error("[generated-post generate-image]", err);
       res.status(500).json({ error: err.message || "Failed to generate image" });
+    }
+  });
+
+  // Regenerate a single branded carousel slide image for a repurposed carousel
+  // asset (produced by /repurpose-longform). Re-renders one slide — optionally
+  // with an edited headline/subtitle — then swaps the embedded markdown image in
+  // the asset body and refreshes leadImageUrl when the cover slide changes.
+  app.post("/api/content-assets/:id/regenerate-carousel-slide", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "contentRepurposing"))) return;
+      const ctx = await getRequestContext(req);
+
+      const index = Number(req.body?.index);
+      if (!Number.isInteger(index) || index < 1) {
+        return res.status(400).json({ error: "Provide a valid slide index." });
+      }
+
+      const [asset] = await db
+        .select()
+        .from(contentAssets)
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
+      if (!asset) return res.status(404).json({ error: "Content asset not found" });
+
+      const body = asset.content ?? "";
+      // Find the existing embedded slide image so we can reuse its headline when
+      // the caller doesn't supply one, and swap it in place afterwards.
+      const slideRe = new RegExp(`!\\[Slide ${index}:([^\\]]*)\\]\\(([^)]*)\\)`);
+      const match = body.match(slideRe);
+
+      const editedHeadline = typeof req.body?.headline === "string" ? req.body.headline.trim() : "";
+      const subtitle = typeof req.body?.subtitle === "string" ? req.body.subtitle.trim() : "";
+      const headline = (editedHeadline || match?.[1]?.trim() || "").slice(0, 200);
+      if (!headline) {
+        return res.status(422).json({ error: "No headline available to build this slide from." });
+      }
+
+      const rendered = await generateBrandedCarouselSlides({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        slides: [{ index, headline, body: subtitle || null }],
+      });
+      if (rendered.length === 0) {
+        return res.status(502).json({ error: "Failed to render the slide. Please try again." });
+      }
+
+      const fileUrl = rendered[0].fileUrl;
+      const newMarkdown = `![Slide ${index}: ${headline}](${fileUrl})`;
+      const newBody = match ? body.replace(slideRe, newMarkdown) : body;
+      const leadImageUrl = index === 1 ? fileUrl : asset.leadImageUrl;
+
+      const [updated] = await db
+        .update(contentAssets)
+        .set({ content: newBody, leadImageUrl, updatedAt: new Date() })
+        .where(and(eq(contentAssets.id, asset.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)))
+        .returning();
+
+      res.json({ asset: updated, index, headline, fileUrl, leadImageUrl });
+    } catch (err: any) {
+      console.error("[carousel slide regenerate]", err);
+      res.status(500).json({ error: err.message || "Failed to regenerate slide" });
     }
   });
 }

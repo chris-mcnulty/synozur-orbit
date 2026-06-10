@@ -24,3 +24,13 @@ existing image fields — no new tables/columns were added.
 `repurposedFromAssetId`), no image array — so multi-image carousels live in the
 markdown body. docx-generator renders standalone image-markdown lines as an
 italic caption (it can't fetch+embed remote bytes synchronously).
+
+**Per-image regeneration:** social post graphics regen via the existing
+`/api/generated-posts/:id/generate-image` (accepts optional `headline`/`subtitle`,
+updates `overrideImageUrl`). Carousel slide regen
+(`/api/content-assets/:id/regenerate-carousel-slide`, body `{ index, headline?,
+subtitle? }`) must do BOTH: swap the embedded `![Slide N: ...](url)` markdown line
+in the asset body (regex on the literal slide index) AND, when `index === 1`,
+refresh `leadImageUrl`. There is no per-slide row to update — the body markdown +
+leadImageUrl ARE the persistence, so any single-slide regen must keep them in sync.
+If no supplied headline, reuse the alt text parsed from the existing markdown line.
