@@ -7,6 +7,7 @@ import { UserProvider, useUser } from "@/lib/userContext";
 import { UpgradeModalProvider, PageFeatureGate } from "@/components/UpgradePrompt";
 import { ThemeProvider } from "next-themes";
 import { HelmetProvider } from "react-helmet-async";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import NotFound from "@/pages/not-found";
 
 import Landing from "@/pages/landing";
@@ -202,16 +203,18 @@ function App() {
   return (
     <HelmetProvider>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        <QueryClientProvider client={queryClient}>
-          <UserProvider>
-            <UpgradeModalProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Router />
-              </TooltipProvider>
-            </UpgradeModalProvider>
-          </UserProvider>
-        </QueryClientProvider>
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <UserProvider>
+              <UpgradeModalProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Router />
+                </TooltipProvider>
+              </UpgradeModalProvider>
+            </UserProvider>
+          </QueryClientProvider>
+        </ErrorBoundary>
       </ThemeProvider>
     </HelmetProvider>
   );

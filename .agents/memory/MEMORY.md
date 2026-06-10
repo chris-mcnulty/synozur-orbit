@@ -4,6 +4,7 @@
 - [logo_composite render chain](logo-composite-render.md) — logo_composite branch in renderConferenceImage: bg photo → scrim → event logo → white_horizontal company logo → conf name. Falls back to brand-gradient if no backgroundBytes.
 - [Unified Marketing Calendar](unified-marketing-calendar.md) — aggregates social/email/content; social scoped tenant-only (no marketId), emails+briefs tenant+market; lifecycle derived; gated on editorialCalendar feature.
 - [LinkedIn global app + posting gate](linkedin-global-app.md) — LinkedIn uses one Synozur-owned OAuth app (env vars, not per-tenant); direct posting gated by LINKEDIN_DIRECT_PUBLISH_ENABLED until LinkedIn approves.
+- [No error boundary + dark theme = black screen](no-error-boundary-black-screen.md) — uncaught render errors blank the dark app body; global ErrorBoundary now logs the real error + offers recovery. "Black screen" ≠ data loss.
 - [Campaign & Theme Planning Hub](planning-hub.md) — per-campaign/theme aggregation of posts/emails/briefs via existing assoc columns; manual content reuses "Marketing Calendar (manual)" so it shows in calendar too.
 - [Editorial brief → draft flow](editorial-brief-draft-flow.md) — campaign/theme live on the brief; category lives on the draft (content asset) so it's only assignable after drafting.
 - [Multi-format repurposer](multiformat-repurposer.md) — one asset → batch of formats; LinkedIn posts/carousels go to posts pipeline, snippets to Content Library; branded images degrade gracefully; legacy social path kept.
