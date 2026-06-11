@@ -1028,7 +1028,7 @@ export default function CampaignDetailPage() {
     onError: (err: Error) => toast({ title: "Publish failed", description: err.message, variant: "destructive" }),
   });
 
-  const [csvFormat, setCsvFormat] = useState<string>("generic");
+  const [csvFormat, setCsvFormat] = useState<string>("socialpilot");
   const [showExportWarning, setShowExportWarning] = useState(false);
   const [includeUndated, setIncludeUndated] = useState(false);
   const [includeExported, setIncludeExported] = useState(false);
@@ -2031,9 +2031,13 @@ export default function CampaignDetailPage() {
                         </div>
                       </CardHeader>
                       <CardContent className="pt-0 space-y-3">
-                        {post.scheduledDate && (
+                        {post.scheduledDate ? (
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
+                          </Badge>
+                        ) : post.status !== "exported" && post.status !== "published" && (
+                          <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-300" data-testid={`badge-no-date-${post.id}`}>
+                            <Calendar className="w-2.5 h-2.5" />No date — excluded from export
                           </Badge>
                         )}
                         {post.publishedAt && (

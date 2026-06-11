@@ -201,7 +201,9 @@ export function registerMarketingCalendarRoutes(app: Express) {
         .orderBy(desc(generatedEmails.createdAt));
 
       // ── Content briefs / drafts (tenant + market) ──
-      const briefConds = [eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), ne(contentBriefs.status, "removed")];
+      // Exclude briefs that are already done (published) or discarded (removed) from the backlog —
+      // only draft/approved briefs are actionable and should appear as schedulable.
+      const briefConds = [eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), ne(contentBriefs.status, "removed"), ne(contentBriefs.status, "published")];
       if (campaignId) briefConds.push(eq(contentBriefs.campaignId, campaignId));
       if (solutionAreaId) briefConds.push(eq(contentBriefs.solutionAreaId, solutionAreaId));
       if (conferenceId) briefConds.push(eq(contentBriefs.conferenceId, conferenceId));
