@@ -152,7 +152,7 @@ export async function fetchGaDaily(
     dateRanges: [{ startDate, endDate }],
     dimensions: [
       { name: "date" },
-      { name: "sessionSourceMediumLastNonDirect" },
+      { name: "sessionSourceMedium" },
       { name: "sessionCampaignName" },
     ],
     metrics: [
