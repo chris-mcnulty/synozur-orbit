@@ -200,8 +200,8 @@ export default function HomePage() {
       accent: "bg-amber-500",
       stat: `${reports.length} report${reports.length === 1 ? "" : "s"}`,
       sub: `${battleCards.length} battle card${battleCards.length === 1 ? "" : "s"} ready for sellers`,
-      cta: "Open Sales",
-      href: "/app/reports",
+cta: "Open Sales",
+href: "/app/sales",
     },
   ];
 
