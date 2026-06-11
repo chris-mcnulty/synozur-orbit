@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -223,6 +223,13 @@ export default function EditorialCalendarPage() {
       ? new URLSearchParams(window.location.search).get("calendar")
       : null;
   const [selectedId, setSelectedId] = useState<string | null>(initialCalendarId);
+  // Honor a ?brief=<id> deep link (e.g. "Open editor" from the Master Calendar):
+  // once the brief's card renders, scroll to it and briefly highlight it.
+  const [focusBriefId, setFocusBriefId] = useState<string | null>(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("brief")
+      : null,
+  );
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
@@ -284,6 +291,19 @@ export default function EditorialCalendarPage() {
   });
 
   const briefs = detail?.briefs ?? [];
+
+  // Once the deep-linked brief's card is in the DOM, scroll to it and clear the
+  // focus after a moment so the highlight is a one-time cue, not permanent.
+  useEffect(() => {
+    if (!focusBriefId) return;
+    if (!briefs.some((b) => b.id === focusBriefId)) return;
+    const el = document.querySelector(`[data-testid="brief-${focusBriefId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const t = setTimeout(() => setFocusBriefId(null), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [focusBriefId, briefs]);
 
   // Assignment options — campaigns, themes (solution areas), and categories.
   // These are gated behind their own features; when unavailable the lists are
@@ -908,7 +928,7 @@ export default function EditorialCalendarPage() {
           ) : (
             <div className="grid gap-3">
               {briefs.map((b) => (
-                <Card key={b.id} data-testid={`brief-${b.id}`}>
+                <Card key={b.id} data-testid={`brief-${b.id}`} className={focusBriefId === b.id ? "ring-2 ring-primary ring-offset-2" : undefined}>
                   <CardContent className="space-y-3 pt-5">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="space-y-1">

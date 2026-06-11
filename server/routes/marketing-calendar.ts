@@ -24,6 +24,8 @@ import {
   solutionAreas,
   conferences,
   socialAccounts,
+  SOCIAL_BRIEF_FORMATS,
+  isSocialBriefFormat,
 } from "@shared/schema";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -215,6 +217,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
           format: contentBriefs.format,
           status: contentBriefs.status,
           scheduledAt: contentBriefs.scheduledAt,
+          calendarId: contentBriefs.calendarId,
           contentAssetId: contentBriefs.contentAssetId,
           campaignId: contentBriefs.campaignId,
           solutionAreaId: contentBriefs.solutionAreaId,
@@ -223,6 +226,19 @@ export function registerMarketingCalendarRoutes(app: Express) {
         .from(contentBriefs)
         .where(and(...briefConds))
         .orderBy(desc(contentBriefs.createdAt));
+
+      // Pull the drafted asset (image + body) for briefs that have one, so a
+      // content item in the calendar can show its graphic and a text preview
+      // (briefs themselves carry no image/body).
+      const briefAssetIds = Array.from(new Set(briefRows.map((b) => b.contentAssetId).filter((v): v is string => !!v)));
+      const briefAssetMap = new Map<string, { leadImageUrl: string | null; content: string | null }>();
+      if (briefAssetIds.length) {
+        const assetRows = await db
+          .select({ id: contentAssets.id, leadImageUrl: contentAssets.leadImageUrl, content: contentAssets.content })
+          .from(contentAssets)
+          .where(and(eq(contentAssets.tenantDomain, ctx.tenantDomain), inArray(contentAssets.id, briefAssetIds)));
+        for (const a of assetRows) briefAssetMap.set(a.id, { leadImageUrl: a.leadImageUrl, content: a.content });
+      }
 
       const items: any[] = [];
 
@@ -281,16 +297,19 @@ export function registerMarketingCalendarRoutes(app: Express) {
       for (const b of briefRows) {
         const date = b.scheduledAt ?? null;
         if (!includeByDate(date)) continue;
+        const asset = b.contentAssetId ? briefAssetMap.get(b.contentAssetId) : null;
         items.push({
           id: b.id,
           type: "content",
           title: b.title,
-          preview: "",
+          preview: (asset?.content || "").replace(/\s+/g, " ").trim().slice(0, 160),
           date: date ? date.toISOString() : null,
           status: b.status,
           lifecycle: contentLifecycle(b.status),
           format: b.format,
+          calendarId: b.calendarId,
           contentAssetId: b.contentAssetId,
+          imageUrl: asset?.leadImageUrl ?? null,
           campaignId: b.campaignId,
           solutionAreaId: b.solutionAreaId,
           conferenceId: b.conferenceId,
@@ -732,10 +751,32 @@ export function registerMarketingCalendarRoutes(app: Express) {
       if (solutionAreaId) conds.push(eq(generatedPosts.solutionAreaId, solutionAreaId));
       if (conferenceId) conds.push(eq(generatedPosts.conferenceId, conferenceId));
 
-      const posts = await db.select().from(generatedPosts).where(and(...conds));
+      const allMatching = await db.select().from(generatedPosts).where(and(...conds));
+
+      // By default drop posts whose date is in the past — the CSV writer blanks
+      // those dates, which is exactly what produces the "missing dates" the user
+      // saw. Caller can opt them back in.
+      const excludeUndated = req.query.excludeUndated !== "false";
+      const nowFilter = new Date();
+      const posts = excludeUndated
+        ? allMatching.filter((p) => p.scheduledDate && new Date(p.scheduledDate) >= nowFilter)
+        : allMatching;
       if (posts.length === 0) {
         return res.status(422).json({ error: "No scheduled social posts match this view to export." });
       }
+
+      // Tenant + market active social accounts supply the account number when a
+      // post has no account of its own — without this the CSV's account column
+      // comes out blank (the other half of the user's report).
+      const activeAccounts = await db
+        .select({ id: socialAccounts.id })
+        .from(socialAccounts)
+        .where(and(
+          eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+          eq(socialAccounts.marketId, ctx.marketId),
+          eq(socialAccounts.status, "active"),
+        ));
+      const fallbackAccountIds = activeAccounts.map((a) => a.id);
 
       const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
       const clientTzOffset = parseInt((req.query.tzOffset as string) || "0", 10);
@@ -746,6 +787,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
         tenantDomain: ctx.tenantDomain,
         format: csvFormat,
         tzOffset: clientTzOffset,
+        fallbackAccountIds,
         imageBaseUrl: host ? `${proto}://${host}` : undefined,
       });
 
@@ -769,12 +811,200 @@ export function registerMarketingCalendarRoutes(app: Express) {
         console.error("[marketing-calendar export-csv] store failed:", e?.message);
       }
 
+      // Hand back the ids that went into this CSV so the client can confirm the
+      // import worked and then mark just those posts delivered.
+      res.setHeader("Access-Control-Expose-Headers", "X-Exported-Post-Ids");
+      res.setHeader("X-Exported-Post-Ids", posts.map((p) => p.id).join(","));
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="marketing-calendar-${csvFormat}.csv"`);
       res.send(csv);
     } catch (err: any) {
       console.error("[marketing-calendar export-csv]", err.message);
       res.status(500).json({ error: err.message || "Failed to export CSV" });
+    }
+  });
+
+  // ───── Export pre-check: counts so the user knows what's about to leave ─────
+  app.get("/api/marketing-calendar/export-preview", async (req, res) => {
+    if (!(await guardFeature(req, res, "socialPosts"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { from, to, campaignId, solutionAreaId, conferenceId } = req.query as Record<string, string>;
+      const fromDate = from ? new Date(from) : null;
+      const toDate = to ? new Date(to) : null;
+
+      const conds = [
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        isNotNull(generatedPosts.scheduledDate),
+        ne(generatedPosts.status, "rejected"),
+        ne(generatedPosts.status, "deleted"),
+        ne(generatedPosts.status, "archived"),
+        ne(generatedPosts.status, "exported"),
+        ne(generatedPosts.status, "published"),
+      ];
+      if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
+      if (toDate) conds.push(lte(generatedPosts.scheduledDate, toDate));
+      if (campaignId) conds.push(eq(generatedPosts.campaignId, campaignId));
+      if (solutionAreaId) conds.push(eq(generatedPosts.solutionAreaId, solutionAreaId));
+      if (conferenceId) conds.push(eq(generatedPosts.conferenceId, conferenceId));
+
+      const allPosts = await db.select().from(generatedPosts).where(and(...conds));
+      const now = new Date();
+      const dated = allPosts.filter((p) => p.scheduledDate && new Date(p.scheduledDate) >= now);
+      const undated = allPosts.filter((p) => !p.scheduledDate || new Date(p.scheduledDate) < now);
+
+      const activeAccounts = await db
+        .select({ id: socialAccounts.id, accountId: socialAccounts.accountId, platform: socialAccounts.platform })
+        .from(socialAccounts)
+        .where(and(
+          eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+          eq(socialAccounts.marketId, ctx.marketId),
+          eq(socialAccounts.status, "active"),
+        ));
+      const platformAccountFallback = new Map<string, string>();
+      for (const a of activeAccounts) {
+        if (a.accountId && a.platform && !platformAccountFallback.has(a.platform)) {
+          platformAccountFallback.set(a.platform, a.accountId);
+        }
+      }
+      const acctFor = (p: any) => p.socialAccountId ? p.socialAccountId : (platformAccountFallback.get(p.platform) || p.platform);
+
+      let collisions = 0;
+      const slotMap = new Map<string, number>();
+      for (const p of dated) {
+        const key = `${new Date(p.scheduledDate!).toISOString()}|${acctFor(p)}`;
+        const count = (slotMap.get(key) || 0) + 1;
+        slotMap.set(key, count);
+        if (count > 1) collisions++;
+      }
+
+      // Count social-format content drafts (LinkedIn / X) in the same window that
+      // aren't real social posts yet — these are the "purple LinkedIn" items the
+      // user expected in the file but that silently don't export.
+      const briefConds = [
+        eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+        eq(contentBriefs.marketId, ctx.marketId),
+        ne(contentBriefs.status, "removed"),
+        ne(contentBriefs.status, "published"),
+        inArray(contentBriefs.format, SOCIAL_BRIEF_FORMATS as unknown as string[]),
+        isNotNull(contentBriefs.scheduledAt),
+      ];
+      if (fromDate) briefConds.push(gte(contentBriefs.scheduledAt, fromDate));
+      if (toDate) briefConds.push(lte(contentBriefs.scheduledAt, toDate));
+      if (campaignId) briefConds.push(eq(contentBriefs.campaignId, campaignId));
+      if (solutionAreaId) briefConds.push(eq(contentBriefs.solutionAreaId, solutionAreaId));
+      if (conferenceId) briefConds.push(eq(contentBriefs.conferenceId, conferenceId));
+      const pendingDrafts = await db
+        .select({ id: contentBriefs.id })
+        .from(contentBriefs)
+        .where(and(...briefConds));
+
+      res.json({
+        totalPosts: allPosts.length,
+        datedPosts: dated.length,
+        undatedPosts: undated.length,
+        collisions,
+        pendingSocialDrafts: pendingDrafts.length,
+        accountsConfigured: activeAccounts.length,
+      });
+    } catch (err: any) {
+      console.error("[marketing-calendar export-preview]", err.message);
+      res.status(500).json({ error: err.message || "Failed to load export preview" });
+    }
+  });
+
+  // ───── Mark posts delivered after the user confirms the CSV imported OK ─────
+  app.post("/api/marketing-calendar/mark-delivered", async (req, res) => {
+    if (!(await guardFeature(req, res, "socialPosts"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const ids: string[] = Array.isArray(req.body?.postIds) ? req.body.postIds.filter((x: any) => typeof x === "string" && x) : [];
+      if (!ids.length) return res.status(400).json({ error: "No post ids supplied." });
+      const result = await db.update(generatedPosts)
+        .set({ status: "exported", updatedAt: new Date() })
+        .where(and(
+          eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+          inArray(generatedPosts.id, ids),
+        ))
+        .returning({ id: generatedPosts.id });
+      res.json({ updated: result.length });
+    } catch (err: any) {
+      console.error("[marketing-calendar mark-delivered]", err.message);
+      res.status(500).json({ error: err.message || "Failed to mark delivered" });
+    }
+  });
+
+  // ───── Convert a social-format content draft into a real schedulable post ─────
+  app.post("/api/marketing-calendar/content-to-post", async (req, res) => {
+    if (!(await guardFeature(req, res, "socialPosts"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const briefId = typeof req.body?.briefId === "string" ? req.body.briefId : "";
+      if (!briefId) return res.status(400).json({ error: "Missing briefId." });
+
+      // Wrap the whole convert in a transaction and retire the brief with a
+      // "not already published" guard so a double-click / concurrent request
+      // can't create two duplicate social posts from one draft.
+      type ConvResult =
+        | { status: number; error: string }
+        | { ok: true; postId: string; platform: string; scheduled: boolean };
+      const outcome = await db.transaction(async (tx): Promise<ConvResult> => {
+        const [brief] = await tx.select().from(contentBriefs).where(and(
+          eq(contentBriefs.id, briefId),
+          eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+          eq(contentBriefs.marketId, ctx.marketId),
+        ));
+        if (!brief) return { status: 404, error: "Content draft not found." };
+        if (!isSocialBriefFormat(brief.format)) {
+          return { status: 400, error: "Only LinkedIn or X drafts can become social posts." };
+        }
+        if (brief.status === "published") {
+          return { status: 409, error: "This draft has already been scheduled as a social post." };
+        }
+        if (!brief.contentAssetId) {
+          return { status: 400, error: "Draft the content first — there's no written post to schedule yet." };
+        }
+
+        const [asset] = await tx.select().from(contentAssets).where(and(
+          eq(contentAssets.id, brief.contentAssetId),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        ));
+        if (!asset || !asset.content || !asset.content.trim()) {
+          return { status: 400, error: "Draft the content first — there's no written post to schedule yet." };
+        }
+
+        // Retire the brief first, guarded on its current status. If no row comes
+        // back, another request already converted it — bail without inserting.
+        const flipped = await tx.update(contentBriefs)
+          .set({ status: "published", updatedAt: new Date() })
+          .where(and(eq(contentBriefs.id, brief.id), ne(contentBriefs.status, "published")))
+          .returning({ id: contentBriefs.id });
+        if (!flipped.length) {
+          return { status: 409, error: "This draft has already been scheduled as a social post." };
+        }
+
+        const platform = brief.format === "x_post" ? "twitter" : "linkedin";
+        const [post] = await tx.insert(generatedPosts).values({
+          tenantDomain: ctx.tenantDomain,
+          platform,
+          content: asset.content,
+          scheduledDate: brief.scheduledAt ?? null,
+          overrideImageUrl: asset.leadImageUrl ?? null,
+          sourceAssetId: asset.id,
+          campaignId: brief.campaignId ?? null,
+          solutionAreaId: brief.solutionAreaId ?? null,
+          conferenceId: brief.conferenceId ?? null,
+          status: "approved",
+        }).returning({ id: generatedPosts.id });
+
+        return { ok: true, postId: post.id, platform, scheduled: !!brief.scheduledAt };
+      });
+
+      if (!("ok" in outcome)) return res.status(outcome.status).json({ error: outcome.error });
+      res.json({ ok: true, postId: outcome.postId, platform: outcome.platform, scheduled: outcome.scheduled });
+    } catch (err: any) {
+      console.error("[marketing-calendar content-to-post]", err.message);
+      res.status(500).json({ error: err.message || "Failed to convert draft" });
     }
   });
 

@@ -37,6 +37,7 @@ import {
   Mail,
   Share2,
   PenLine,
+  Send,
   ExternalLink,
   Inbox,
   CalendarRange,
@@ -103,6 +104,7 @@ interface CalendarItem {
   lifecycle: Lifecycle;
   platform?: string;
   format?: string;
+  calendarId?: string | null;
   contentAssetId?: string | null;
   campaignId?: string | null;
   solutionAreaId?: string | null;
@@ -678,6 +680,16 @@ export default function MarketingCalendarPage() {
   const [bulkDate, setBulkDate] = useState("");
   const [assignKind, setAssignKind] = useState<AssignmentKind>("campaign");
   const [assignValue, setAssignValue] = useState("none");
+  // Export pre-check + delivery-confirm flow (mirrors the campaign export).
+  const [exportPreview, setExportPreview] = useState<{
+    totalPosts: number; datedPosts: number; undatedPosts: number; collisions: number;
+    pendingSocialDrafts: number; accountsConfigured: number;
+  } | null>(null);
+  const [showExportWarning, setShowExportWarning] = useState(false);
+  const [pendingFormat, setPendingFormat] = useState("socialpilot");
+  const [includeUndated, setIncludeUndated] = useState(false);
+  const [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
+  const [lastExportedIds, setLastExportedIds] = useState<string[]>([]);
 
   const range = useMemo(() => {
     if (grouping === "quarter") return quarterRange(anchor);
@@ -872,20 +884,103 @@ export default function MarketingCalendarPage() {
     onError: (e: any) => toast({ title: "Could not export", description: e.message, variant: "destructive" }),
   });
 
+  // Open the pre-check dialog: fetch counts so the user sees exactly what will
+  // (and won't) leave before any file downloads.
+  const handleExportClick = async (format: string) => {
+    setPendingFormat(format);
+    setIncludeUndated(false);
+    try {
+      const p = new URLSearchParams();
+      p.set("from", range.start.toISOString());
+      p.set("to", range.end.toISOString());
+      if (filters.campaignId !== "all") p.set("campaignId", filters.campaignId);
+      if (filters.solutionAreaId !== "all") p.set("solutionAreaId", filters.solutionAreaId);
+      if (filters.conferenceId !== "all") p.set("conferenceId", filters.conferenceId);
+      const r = await fetch(`/api/marketing-calendar/export-preview?${p.toString()}`, { credentials: "include", headers: getTabContextHeaders() });
+      setExportPreview(r.ok ? await r.json() : null);
+    } catch {
+      setExportPreview(null);
+    }
+    setShowExportWarning(true);
+  };
+
   const exportCsvMut = useMutation({
-    mutationFn: async (format: string = "socialpilot") => {
+    mutationFn: async ({ format, includeUndated: inclUndated }: { format: string; includeUndated: boolean }) => {
       const p = new URLSearchParams();
       p.set("from", range.start.toISOString());
       p.set("to", range.end.toISOString());
       p.set("tzOffset", String(new Date().getTimezoneOffset()));
       p.set("format", format);
+      p.set("excludeUndated", inclUndated ? "false" : "true");
       if (filters.campaignId !== "all") p.set("campaignId", filters.campaignId);
       if (filters.solutionAreaId !== "all") p.set("solutionAreaId", filters.solutionAreaId);
       if (filters.conferenceId !== "all") p.set("conferenceId", filters.conferenceId);
-      await downloadBlob(`/api/marketing-calendar/export-csv?${p.toString()}`, "POST", `social-posts-${format}.csv`);
+      const res = await fetch(`/api/marketing-calendar/export-csv?${p.toString()}`, { method: "POST", credentials: "include", headers: getTabContextHeaders() });
+      if (!res.ok) {
+        let msg = "Export failed";
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const idsHeader = res.headers.get("X-Exported-Post-Ids") || "";
+      const exportedIds = idsHeader ? idsHeader.split(",").filter(Boolean) : [];
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const name = match ? match[1] : `social-posts-${format}.csv`;
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+      return { exportedIds };
     },
-    onSuccess: () => { invalidate(); toast({ title: "Social CSV downloaded", description: "Import the file into your scheduling tool to complete delivery." }); },
+    onSuccess: ({ exportedIds }) => {
+      setShowExportWarning(false);
+      invalidate();
+      if (exportedIds.length > 0) {
+        setLastExportedIds(exportedIds);
+        setShowDeliverConfirm(true);
+      } else {
+        toast({ title: "Social CSV downloaded", description: "No new posts were included in the file." });
+      }
+    },
     onError: (e: any) => toast({ title: "Could not export CSV", description: e.message, variant: "destructive" }),
+  });
+
+  const markDeliveredMut = useMutation({
+    mutationFn: async (postIds: string[]) => {
+      const res = await apiRequest("POST", "/api/marketing-calendar/mark-delivered", { postIds });
+      return res.json() as Promise<{ updated: number }>;
+    },
+    onSuccess: (d) => {
+      setShowDeliverConfirm(false);
+      invalidate();
+      toast({ title: `Marked ${d.updated} post${d.updated === 1 ? "" : "s"} as delivered`, description: "They won't appear in future exports unless you reset them." });
+    },
+    onError: (e: any) => toast({ title: "Couldn't mark delivered", description: e.message, variant: "destructive" }),
+  });
+
+  // Turn a LinkedIn / X content draft into a real, schedulable social post so it
+  // shows up blue and gets included in the social CSV.
+  const contentToPostMut = useMutation({
+    mutationFn: async (it: CalendarItem) => {
+      const res = await apiRequest("POST", "/api/marketing-calendar/content-to-post", { briefId: it.id });
+      return res.json() as Promise<{ platform: string; scheduled: boolean }>;
+    },
+    onSuccess: (d) => {
+      invalidate();
+      setDetail(null);
+      const network = d.platform === "twitter" ? "X" : "LinkedIn";
+      toast({
+        title: "Scheduled as a social post",
+        description: d.scheduled
+          ? `Now a ${network} post — it'll be included in the social CSV.`
+          : `Now a ${network} post. Give it a date in Social Posts so it shows up in the CSV.`,
+      });
+    },
+    onError: (e: any) => toast({ title: "Couldn't schedule", description: e.message, variant: "destructive" }),
   });
 
   const resetExportsMut = useMutation({
@@ -1030,16 +1125,16 @@ export default function MarketingCalendarPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Export format</DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => exportCsvMut.mutate("socialpilot")} data-testid="export-format-socialpilot">
+                <DropdownMenuItem onClick={() => handleExportClick("socialpilot")} data-testid="export-format-socialpilot">
                   <Download className="mr-2 h-4 w-4" /> SocialPilot
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportCsvMut.mutate("hootsuite")} data-testid="export-format-hootsuite">
+                <DropdownMenuItem onClick={() => handleExportClick("hootsuite")} data-testid="export-format-hootsuite">
                   <Download className="mr-2 h-4 w-4" /> Hootsuite
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportCsvMut.mutate("sproutsocial")} data-testid="export-format-sproutsocial">
+                <DropdownMenuItem onClick={() => handleExportClick("sproutsocial")} data-testid="export-format-sproutsocial">
                   <Download className="mr-2 h-4 w-4" /> Sprout Social
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportCsvMut.mutate("generic")} data-testid="export-format-generic">
+                <DropdownMenuItem onClick={() => handleExportClick("generic")} data-testid="export-format-generic">
                   <Download className="mr-2 h-4 w-4" /> Generic CSV
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -1293,8 +1388,68 @@ export default function MarketingCalendarPage() {
         onHandoffEmail={(it) => handoffMut.mutate(it)}
         onReschedule={(it, date) => rescheduleMut.mutate({ it, date })}
         onAssign={(it, patch) => assignMut.mutate({ it, patch })}
-        busy={approveMut.isPending || deleteMut.isPending || exportDocxMut.isPending || handoffMut.isPending || assignMut.isPending}
+        onScheduleAsSocial={(it) => contentToPostMut.mutate(it)}
+        busy={approveMut.isPending || deleteMut.isPending || exportDocxMut.isPending || handoffMut.isPending || assignMut.isPending || contentToPostMut.isPending}
       />
+
+      {/* Export pre-check: show exactly what will and won't leave before downloading. */}
+      <Dialog open={showExportWarning} onOpenChange={(o) => { if (!o) setShowExportWarning(false); }}>
+        <DialogContent data-testid="dialog-export-precheck">
+          <DialogHeader>
+            <DialogTitle>Before you export</DialogTitle>
+            <DialogDescription>Here's what will go into the {pendingFormat} file for the current view.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between"><span>Scheduled posts (will export)</span><strong data-testid="text-precheck-dated">{exportPreview?.datedPosts ?? "—"}</strong></div>
+            {(exportPreview?.undatedPosts ?? 0) > 0 && (
+              <div className="flex justify-between text-amber-600"><span>Past / undated (skipped)</span><strong data-testid="text-precheck-undated">{exportPreview!.undatedPosts}</strong></div>
+            )}
+            {(exportPreview?.collisions ?? 0) > 0 && (
+              <div className="flex justify-between text-amber-600"><span>Same time slot (auto-staggered)</span><strong>{exportPreview!.collisions}</strong></div>
+            )}
+            {(exportPreview?.accountsConfigured ?? 0) === 0 && (
+              <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200" data-testid="warn-no-accounts">
+                No active social accounts are set up, so account numbers will be blank. Add accounts in Social settings so SocialPilot can match them.
+              </div>
+            )}
+            {(exportPreview?.pendingSocialDrafts ?? 0) > 0 && (
+              <div className="rounded border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200" data-testid="warn-pending-drafts">
+                {exportPreview!.pendingSocialDrafts} LinkedIn/X content draft{exportPreview!.pendingSocialDrafts === 1 ? "" : "s"} in this view {exportPreview!.pendingSocialDrafts === 1 ? "is" : "are"} not a scheduled social post yet, so {exportPreview!.pendingSocialDrafts === 1 ? "it" : "they"} won't be in this file. Open one and choose "Schedule as social post" to include it.
+              </div>
+            )}
+            {(exportPreview?.undatedPosts ?? 0) > 0 && (
+              <label className="flex items-center gap-2 pt-1 text-xs" data-testid="label-include-undated">
+                <input type="checkbox" checked={includeUndated} onChange={(e) => setIncludeUndated(e.target.checked)} />
+                Include past/undated posts anyway (their date column will be blank)
+              </label>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportWarning(false)} data-testid="button-precheck-cancel">Cancel</Button>
+            <Button onClick={() => exportCsvMut.mutate({ format: pendingFormat, includeUndated })} disabled={exportCsvMut.isPending} data-testid="button-precheck-download">
+              {exportCsvMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Download CSV
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delivery confirm: mirrors the campaign export so exported posts get marked delivered. */}
+      <Dialog open={showDeliverConfirm} onOpenChange={(o) => { if (!o) setShowDeliverConfirm(false); }}>
+        <DialogContent data-testid="dialog-deliver-confirm">
+          <DialogHeader>
+            <DialogTitle>Did the import work?</DialogTitle>
+            <DialogDescription>
+              Once your scheduling tool accepted the file, mark these {lastExportedIds.length} post{lastExportedIds.length === 1 ? "" : "s"} as delivered so they don't export again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeliverConfirm(false)} data-testid="button-deliver-not-yet">Not yet</Button>
+            <Button onClick={() => markDeliveredMut.mutate(lastExportedIds)} disabled={markDeliveredMut.isPending} data-testid="button-deliver-confirm">
+              {markDeliveredMut.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Yes, mark delivered
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!dayDetail} onOpenChange={(o) => !o && setDayDetail(null)}>
         <DialogContent className="max-w-lg" data-testid="dialog-day-detail">
@@ -1798,7 +1953,20 @@ function AddItemDialog({ open, onOpenChange, filterOpts, onCreated }: {
 function editorHref(it: CalendarItem): string {
   if (it.type === "social") return "/app/marketing/calendar";
   if (it.type === "email") return "/app/marketing/email-newsletters";
-  return "/app/marketing/editorial-calendar";
+  // Deep-link straight to this brief so "Open editor" lands on the right draft
+  // instead of dumping the user into the bare briefs list. Pass the calendar id
+  // too so the page selects the right calendar before scrolling to the brief.
+  const params = new URLSearchParams();
+  if (it.calendarId) params.set("calendar", it.calendarId);
+  params.set("brief", it.id);
+  return `/app/marketing/editorial-calendar?${params.toString()}`;
+}
+
+// A content draft authored for LinkedIn / X is NOT a schedulable social post yet
+// — it has no account or send time, so it never shows up in the social CSV. The
+// dialog uses this to explain that and offer the one-click convert path.
+function isSocialFormatContent(it: CalendarItem): boolean {
+  return it.type === "content" && (it.format === "linkedin_post" || it.format === "x_post");
 }
 
 // Deep-link a single social post into the Social Calendar so it lands on the
@@ -1815,7 +1983,7 @@ function socialCalendarHref(it: CalendarItem): string {
   return qs ? `/app/marketing/calendar?${qs}` : "/app/marketing/calendar";
 }
 
-function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onExportDocx, onHandoffEmail, onReschedule, onAssign, busy }: {
+function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onExportDocx, onHandoffEmail, onReschedule, onAssign, onScheduleAsSocial, busy }: {
   item: CalendarItem | null;
   filterOpts?: FilterOptions;
   onOpenChange: (o: boolean) => void;
@@ -1825,6 +1993,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   onHandoffEmail: (it: CalendarItem) => void;
   onReschedule: (it: CalendarItem, date: string | null) => void;
   onAssign: (it: CalendarItem, patch: Record<string, string | null>) => void;
+  onScheduleAsSocial: (it: CalendarItem) => void;
   busy: boolean;
 }) {
   const [dateVal, setDateVal] = useState(item?.date ? localKey(item.date) || "" : "");
@@ -2081,11 +2250,29 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           </div>
         </div>
 
+        {isSocialFormatContent(item) && (
+          <div className="rounded-md border border-violet-200 bg-violet-50 p-2.5 text-xs text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200" data-testid="note-content-draft">
+            This is a {item.format === "x_post" ? "X" : "LinkedIn"} <strong>content draft</strong>, not a scheduled social post — it has no account or send time yet, so it won't be in the social CSV. Schedule it as a social post to include it.
+          </div>
+        )}
+
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           <div className="flex flex-wrap gap-2">
             <Link href={editorHref(item)}>
               <Button variant="outline" size="sm" data-testid="button-open-editor"><PenLine className="mr-2 h-4 w-4" /> Open editor</Button>
             </Link>
+            {isSocialFormatContent(item) && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => onScheduleAsSocial(item)}
+                disabled={busy || !item.contentAssetId}
+                title={!item.contentAssetId ? "Draft the content first" : undefined}
+                data-testid="button-schedule-as-social"
+              >
+                <Send className="mr-2 h-4 w-4" /> Schedule as social post
+              </Button>
+            )}
             {canApprove && (
               <Button variant="outline" size="sm" onClick={() => onApprove(item)} disabled={busy} data-testid="button-approve">
                 <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
