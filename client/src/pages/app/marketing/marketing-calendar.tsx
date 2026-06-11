@@ -2252,7 +2252,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
 
         {isSocialFormatContent(item) && (
           <div className="rounded-md border border-violet-200 bg-violet-50 p-2.5 text-xs text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200" data-testid="note-content-draft">
-            This is a {item.format === "x_post" ? "X" : "LinkedIn"} <strong>content draft</strong>, not a scheduled social post — it has no account or send time yet, so it won't be in the social CSV. Schedule it as a social post to include it.
+            This is a {item.format === "x_post" ? "X" : "LinkedIn"} <strong>content draft</strong>, not a scheduled social post. The date and time above are just a planning slot — the draft has no posting account assigned and isn't in the social-post pipeline, so it won't appear in the SocialPilot CSV. Click "Schedule as social post" to turn it into a real post that exports.
           </div>
         )}
 
