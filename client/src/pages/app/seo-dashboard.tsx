@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -162,6 +162,44 @@ export default function SeoDashboard() {
 
   const keywords = keywordsQuery.data ?? [];
 
+  // Build a keyword × entity rank matrix from the metrics already in the SOV response.
+  const keywordRankMatrix = useMemo(() => {
+    const metrics = sov.data?.metrics ?? [];
+    const kws = sov.data?.keywords ?? [];
+
+    // Map: keywordId → entityId → rank (null = tracked but not ranking in top results)
+    const rankMap = new Map<string, Map<string, number | null>>();
+    for (const m of metrics) {
+      if (!m.keywordId || !m.entityId) continue;
+      if (!rankMap.has(m.keywordId)) rankMap.set(m.keywordId, new Map());
+      rankMap.get(m.keywordId)!.set(m.entityId, m.rank);
+    }
+
+    // Sort keywords: ranked first (ascending best rank), unranked last.
+    const rows = kws.map((kw) => {
+      const byEntity = rankMap.get(kw.id) ?? new Map<string, number | null>();
+      const ranks = Array.from(byEntity.values()).filter((r): r is number => r !== null && r > 0);
+      const bestRank = ranks.length > 0 ? Math.min(...ranks) : null;
+      return { kw, byEntity, bestRank };
+    });
+    rows.sort((a, b) => {
+      if (a.bestRank === null && b.bestRank === null) return a.kw.keyword.localeCompare(b.kw.keyword);
+      if (a.bestRank === null) return 1;
+      if (b.bestRank === null) return -1;
+      return a.bestRank - b.bestRank;
+    });
+    return rows;
+  }, [sov.data]);
+
+  // Entities sorted: baseline first, then competitors by SOV descending (same as chart).
+  const sortedEntities = useMemo(() => {
+    return [...entities].sort((a, b) => {
+      if (a.type === "baseline" && b.type !== "baseline") return -1;
+      if (b.type === "baseline" && a.type !== "baseline") return 1;
+      return b.shareOfVoice - a.shareOfVoice;
+    });
+  }, [entities]);
+
   return (
     <AppLayout>
       <div className="mb-6">
@@ -281,6 +319,90 @@ export default function SeoDashboard() {
                         </tr>
                       ))}
                     </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Keyword-by-keyword ranking breakdown */}
+          <Card data-testid="card-keyword-rankings">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Search className="h-4 w-4 text-primary" /> Keyword Rankings Breakdown
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                SERP position per keyword, per entity — most recent capture. Lower number = higher on the page.
+                Bold = best rank for that keyword. Refresh anytime to update.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {keywordRankMatrix.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="text-keyword-rankings-empty">
+                  No data yet — add keywords and refresh.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-2 pr-4 text-muted-foreground font-medium min-w-[160px]">Keyword</th>
+                        {sortedEntities.map((e, idx) => (
+                          <th
+                            key={e.entityId}
+                            className="py-2 px-3 text-center text-muted-foreground font-medium whitespace-nowrap"
+                            data-testid={`th-entity-${e.entityId}`}
+                          >
+                            <span
+                              className="inline-block w-2 h-2 rounded-full mr-1.5"
+                              style={{ background: e.type === "baseline" ? "#10b981" : ENTITY_COLORS[idx % ENTITY_COLORS.length] }}
+                            />
+                            {e.name}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {keywordRankMatrix.map(({ kw, byEntity, bestRank }) => (
+                        <tr key={kw.id} className="border-b hover:bg-muted/30" data-testid={`row-keyword-${kw.id}`}>
+                          <td className="py-2 pr-4">
+                            <span className="font-medium">{kw.keyword}</span>
+                            <span className="ml-1.5 text-[10px] text-muted-foreground uppercase">{kw.country}</span>
+                          </td>
+                          {sortedEntities.map((e) => {
+                            const rank = byEntity.get(e.entityId) ?? null;
+                            const isBest = rank !== null && rank > 0 && rank === bestRank;
+                            const rankClass =
+                              rank === null || rank === 0 ? "text-muted-foreground/50" :
+                              rank <= 3 ? "text-emerald-600" :
+                              rank <= 10 ? "text-yellow-600" :
+                              rank <= 20 ? "text-orange-500" :
+                              "text-muted-foreground";
+                            return (
+                              <td
+                                key={e.entityId}
+                                className="py-2 px-3 text-center"
+                                data-testid={`cell-rank-${kw.id}-${e.entityId}`}
+                              >
+                                <span className={`${rankClass} ${isBest ? "font-bold text-base" : "text-sm"}`}>
+                                  {rank !== null && rank > 0 ? `#${rank}` : "—"}
+                                </span>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/20">
+                        <td className="py-2 pr-4 text-xs text-muted-foreground font-medium">Avg Rank</td>
+                        {sortedEntities.map((e) => (
+                          <td key={e.entityId} className="py-2 px-3 text-center text-xs text-muted-foreground font-medium">
+                            {e.averageRank !== null ? e.averageRank.toFixed(1) : "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
