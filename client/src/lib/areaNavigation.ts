@@ -108,6 +108,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
         { label: "Activity", icon: Activity, href: "/app/activity" },
         { label: "Intelligence Feed", icon: Brain, href: "/app/intelligence" },
+        { label: "SEO & Share of Voice", icon: LineChart, href: "/app/seo-dashboard", description: "Keyword rankings (SERP) and competitive share-of-voice tracking." },
         { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
         { label: "Visualizations", icon: BarChart2, href: "/app/insights/visualizations" },
         { label: "Data Sources", icon: Database, href: "/app/data-sources", section: "Sources" },
