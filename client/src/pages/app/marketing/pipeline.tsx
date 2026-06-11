@@ -92,9 +92,12 @@ function PipelineCard({
       role="button"
       tabIndex={0}
       onClick={() => onOpen?.(item)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onOpen?.(item);
-      }}
+onKeyDown={(e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    onOpen?.(item);
+  }
+}}
       data-testid={`pipeline-card-${item.key}`}
       className={cn(
         "rounded-lg border bg-card p-3 text-left shadow-sm transition-shadow cursor-grab active:cursor-grabbing",
