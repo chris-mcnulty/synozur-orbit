@@ -626,8 +626,18 @@ export function registerMarketingCalendarRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const { type, id } = req.params;
       if (type === "content") {
-        const [row] = await db.update(contentBriefs).set({ status: "approved", updatedAt: new Date() })
-          .where(and(eq(contentBriefs.id, id), eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId))).returning({ id: contentBriefs.id });
+        // Approve the brief and activate its linked draft together (one atomic
+        // step) so there's no separate approve-the-draft step.
+        const row = await db.transaction(async (tx) => {
+          const [updatedBrief] = await tx.update(contentBriefs).set({ status: "approved", updatedAt: new Date() })
+            .where(and(eq(contentBriefs.id, id), eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId))).returning({ id: contentBriefs.id, contentAssetId: contentBriefs.contentAssetId });
+          if (!updatedBrief) return null;
+          if (updatedBrief.contentAssetId) {
+            await tx.update(contentAssets).set({ status: "active", updatedAt: new Date() })
+              .where(and(eq(contentAssets.id, updatedBrief.contentAssetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+          }
+          return updatedBrief;
+        });
         if (!row) return res.status(404).json({ error: "Not found" });
         return res.json({ ok: true, lifecycle: "approved" });
       }

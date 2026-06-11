@@ -47,6 +47,7 @@ import {
   FileText,
   Link2,
   Mic,
+  CheckCircle2,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -358,6 +359,26 @@ export default function EditorialCalendarPage() {
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // One-click Finalize: approves the brief and its linked draft together, so
+  // there's no separate "approve the brief" then "approve the draft" step.
+  const finalizeBrief = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/content-briefs/${id}/finalize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to finalize");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast.success("Finalized — brief approved and its draft saved to the library.");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -1062,6 +1083,23 @@ export default function EditorialCalendarPage() {
                                 Generate draft
                               </>
                             )}
+                          </Button>
+                        )}
+                        {b.contentAssetId &&
+                          !["approved", "scheduled", "published", "removed"].includes(b.status) && (
+                          <Button
+                            size="sm"
+                            disabled={finalizeBrief.isPending && finalizeBrief.variables === b.id}
+                            onClick={() => finalizeBrief.mutate(b.id)}
+                            data-testid={`finalize-${b.id}`}
+                            title="Approve the brief and its draft in one step"
+                          >
+                            {finalizeBrief.isPending && finalizeBrief.variables === b.id ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="mr-1 h-4 w-4" />
+                            )}
+                            Finalize
                           </Button>
                         )}
                         {b.contentAssetId && repurposeAllowed && (

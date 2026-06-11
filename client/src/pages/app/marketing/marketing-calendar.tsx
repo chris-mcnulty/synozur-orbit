@@ -2274,8 +2274,8 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
               </Button>
             )}
             {canApprove && (
-              <Button variant="outline" size="sm" onClick={() => onApprove(item)} disabled={busy} data-testid="button-approve">
-                <CheckCircle2 className="mr-2 h-4 w-4" /> Approve
+              <Button variant="outline" size="sm" onClick={() => onApprove(item)} disabled={busy} data-testid="button-approve" title={item.type === "content" ? "Approve the brief and its draft in one step" : undefined}>
+                <CheckCircle2 className="mr-2 h-4 w-4" /> {item.type === "content" ? "Finalize" : "Approve"}
               </Button>
             )}
             {item.type === "content" && (

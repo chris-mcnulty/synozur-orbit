@@ -502,6 +502,65 @@ export function registerEditorialCalendarRoutes(app: Express) {
     }
   });
 
+  // One-click Finalize: approve the brief AND its linked draft together so the
+  // user doesn't have to approve the brief and the draft asset separately. The
+  // brief moves to "approved" and the linked content asset is set "active"
+  // (live in the library). Requires a draft to exist first.
+  app.post("/api/content-briefs/:id/finalize", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [brief] = await db
+        .select()
+        .from(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.id, req.params.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
+          ),
+        );
+      if (!brief) return res.status(404).json({ error: "Not found" });
+      if (!brief.contentAssetId) {
+        return res.status(409).json({ error: "Generate the draft first, then finalize." });
+      }
+
+      // Approve the brief and activate its linked draft as one atomic step so
+      // they can never drift apart (brief approved but draft left inactive).
+      const row = await db.transaction(async (tx) => {
+        const [updatedBrief] = await tx
+          .update(contentBriefs)
+          .set({ status: "approved", updatedAt: new Date() })
+          .where(
+            and(
+              eq(contentBriefs.id, req.params.id),
+              eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+              eq(contentBriefs.marketId, ctx.marketId),
+            ),
+          )
+          .returning();
+
+        await tx
+          .update(contentAssets)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(
+            and(
+              eq(contentAssets.id, brief.contentAssetId!),
+              eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            ),
+          );
+
+        return updatedBrief;
+      });
+
+      res.json(row);
+    } catch (err: any) {
+      console.error("[content-briefs finalize]", err);
+      res.status(500).json({ error: err.message || "Failed to finalize content brief" });
+    }
+  });
+
   // Draft content from a brief: generate a first draft in the brief's format,
   // persist it as a content asset, and link it back to the brief.
   app.post("/api/content-briefs/:id/draft", async (req, res) => {
