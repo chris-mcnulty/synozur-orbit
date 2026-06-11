@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq, and, isNotNull, isNull, or } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, guardFeature } from "./helpers";
 import { contentAssets, products as productsTable, longFormRecommendations } from "@shared/schema";
@@ -62,6 +62,12 @@ export function registerClientProjectRoutes(app: Express) {
         .where(and(
           eq(longFormRecommendations.tenantDomain, ctx.tenantDomain),
           isNotNull(longFormRecommendations.projectId),
+          ctx.isDefaultMarket
+            ? or(
+                eq(longFormRecommendations.marketId, ctx.marketId),
+                isNull(longFormRecommendations.marketId),
+              )
+            : eq(longFormRecommendations.marketId, ctx.marketId),
         ));
       res.json(rows);
     } catch (error: any) {
