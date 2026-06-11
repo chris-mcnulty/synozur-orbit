@@ -51,6 +51,10 @@ import {
   KeyRound,
   Layers,
   Search,
+  Sparkles,
+  TrendingUp,
+  Send,
+  Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -397,6 +401,8 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.socialAccounts === false) locked.add("/app/marketing/social-accounts");
     if (f.saturnCapture === false) locked.add("/app/marketing/browser-extension");
     if (f.seoTracking === false) locked.add("/app/seo-dashboard");
+    if (f.outcomeMetrics === false) locked.add("/app/insights/outcomes");
+    if (f.partnerApi === false) locked.add("/app/developer");
     return locked;
   }, [tenantInfo]);
 
@@ -534,6 +540,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     { label: "Changelog", icon: FileTextIcon, href: "/app/changelog" },
     { label: "Roadmap", icon: Map, href: "/app/roadmap" },
     { label: "About", icon: Info, href: "/app/about" },
+    { label: "Developer Portal", icon: Code2, href: "/app/developer" },
   ];
 
   const navigation: NavGroup[] = [
@@ -555,6 +562,8 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           items: [
             { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
             { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
+            { label: "AI Recommendations", icon: Sparkles, href: "/app/recommendations" },
+            { label: "Executive Summary", icon: FileText, href: "/app/executive-summary" },
             { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
             { label: "Intelligence Feed", icon: Brain, href: "/app/intelligence" },
             { label: "SEO & Share of Voice", icon: Search, href: "/app/seo-dashboard" },
@@ -563,6 +572,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
         {
           label: "Sources",
           items: [
+            { label: "Outcomes & Orbit Score", icon: TrendingUp, href: "/app/insights/outcomes" },
             { label: "Data Sources", icon: Database, href: "/app/data-sources" },
             { label: "Activity", icon: Activity, href: "/app/activity" },
             { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
@@ -605,6 +615,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, description: "Plan every piece of marketing for a campaign or theme in one view." },
             { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true },
             { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
+            { label: "Email Sends", icon: Send, href: "/app/marketing/sends", enterprise: true },
             { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },
             { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
             { label: "Solution Areas", icon: Layers, href: "/app/marketing/solution-areas", enterprise: true },
