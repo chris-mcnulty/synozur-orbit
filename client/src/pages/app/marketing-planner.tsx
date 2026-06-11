@@ -519,9 +519,18 @@ export default function MarketingPlanner() {
                     </div>
                     <div className="pt-2 border-t">
                       <Button variant="outline" className="w-full" asChild>
-                        <a href={`/app/marketing-planner/${plan.id}`}>
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          Configure & Generate
+                        <a href={`/app/marketing-planner/${plan.id}`} data-testid={`link-open-plan-${plan.id}`}>
+                          {plan.configMatrix?.configured ? (
+                            <>
+                              <FileText className="w-4 h-4 mr-2" />
+                              Open Plan
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              Configure & Generate
+                            </>
+                          )}
                         </a>
                       </Button>
                     </div>
