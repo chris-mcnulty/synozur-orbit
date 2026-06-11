@@ -775,6 +775,34 @@ export function registerMarketingCalendarRoutes(app: Express) {
     }
   });
 
+  // ───── Reset exported posts back to approved (recovery from scheduler glitch) ─────
+  app.post("/api/marketing-calendar/reset-exports", async (req, res) => {
+    if (!(await guardFeature(req, res, "socialPosts"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { from, to } = req.query as Record<string, string>;
+      const fromDate = from ? new Date(from) : null;
+      const toDate = to ? new Date(to) : null;
+      const conds: any[] = [
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        or(
+          eq(generatedPosts.status, "exported"),
+          eq(generatedPosts.status, "published"),
+        ),
+      ];
+      if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
+      if (toDate) conds.push(lte(generatedPosts.scheduledDate, toDate));
+      const result = await db.update(generatedPosts)
+        .set({ status: "approved", updatedAt: new Date() })
+        .where(and(...conds))
+        .returning({ id: generatedPosts.id });
+      res.json({ ok: true, affected: result.length });
+    } catch (err: any) {
+      console.error("[marketing-calendar reset-exports]", err.message);
+      res.status(500).json({ error: err.message || "Failed to reset exports" });
+    }
+  });
+
   // ───── Bulk actions on backlog items (schedule / approve / assign / discard) ─────
   app.post("/api/marketing-calendar/bulk", async (req, res) => {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;

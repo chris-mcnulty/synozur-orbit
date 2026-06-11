@@ -28,6 +28,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Loader2,
   Plus,
   Trash2,
@@ -44,7 +45,16 @@ import {
   GripVertical,
   Download,
   Copy,
+  RotateCcw,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -584,18 +594,34 @@ export default function MarketingCalendarPage() {
   });
 
   const exportCsvMut = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (format: string = "socialpilot") => {
       const p = new URLSearchParams();
       p.set("from", range.start.toISOString());
       p.set("to", range.end.toISOString());
       p.set("tzOffset", String(new Date().getTimezoneOffset()));
+      p.set("format", format);
       if (filters.campaignId !== "all") p.set("campaignId", filters.campaignId);
       if (filters.solutionAreaId !== "all") p.set("solutionAreaId", filters.solutionAreaId);
       if (filters.conferenceId !== "all") p.set("conferenceId", filters.conferenceId);
-      await downloadBlob(`/api/marketing-calendar/export-csv?${p.toString()}`, "POST", "social-posts.csv");
+      await downloadBlob(`/api/marketing-calendar/export-csv?${p.toString()}`, "POST", `social-posts-${format}.csv`);
     },
-    onSuccess: () => { invalidate(); toast({ title: "Social CSV exported", description: "Exported posts marked as delivered." }); },
+    onSuccess: () => { invalidate(); toast({ title: "Social CSV downloaded", description: "Import the file into your scheduling tool to complete delivery." }); },
     onError: (e: any) => toast({ title: "Could not export CSV", description: e.message, variant: "destructive" }),
+  });
+
+  const resetExportsMut = useMutation({
+    mutationFn: async () => {
+      const p = new URLSearchParams();
+      p.set("from", range.start.toISOString());
+      p.set("to", range.end.toISOString());
+      const res = await apiRequest("POST", `/api/marketing-calendar/reset-exports?${p.toString()}`);
+      return res.json() as Promise<{ ok: boolean; affected: number }>;
+    },
+    onSuccess: (data) => {
+      invalidate();
+      toast({ title: `Reset ${data.affected} post${data.affected === 1 ? "" : "s"} to ready`, description: "Posts are back in the queue. Re-export when your scheduling tool is ready." });
+    },
+    onError: (e: any) => toast({ title: "Reset failed", description: e.message, variant: "destructive" }),
   });
 
   const bulkMut = useMutation({
@@ -713,9 +739,40 @@ export default function MarketingCalendarPage() {
             <p className="text-sm text-muted-foreground">The cross-channel overview of every scheduled social post, email, and content piece. Nothing here generates with AI — add and plan by hand.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => exportCsvMut.mutate()} disabled={exportCsvMut.isPending} data-testid="button-export-csv">
-              {exportCsvMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Share2 className="mr-2 h-4 w-4" />} Export social CSV
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={exportCsvMut.isPending || resetExportsMut.isPending} data-testid="button-export-csv">
+                  {exportCsvMut.isPending || resetExportsMut.isPending
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : <Share2 className="mr-2 h-4 w-4" />}
+                  Export social CSV
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Export format</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => exportCsvMut.mutate("socialpilot")} data-testid="export-format-socialpilot">
+                  <Download className="mr-2 h-4 w-4" /> SocialPilot
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportCsvMut.mutate("hootsuite")} data-testid="export-format-hootsuite">
+                  <Download className="mr-2 h-4 w-4" /> Hootsuite
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportCsvMut.mutate("sproutsocial")} data-testid="export-format-sproutsocial">
+                  <Download className="mr-2 h-4 w-4" /> Sprout Social
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportCsvMut.mutate("generic")} data-testid="export-format-generic">
+                  <Download className="mr-2 h-4 w-4" /> Generic CSV
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => resetExportsMut.mutate()}
+                  className="text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950"
+                  data-testid="button-reset-exports"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" /> Reset export status for this period
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button onClick={() => setAddOpen(true)} data-testid="button-add-item">
               <Plus className="mr-2 h-4 w-4" /> Add item
             </Button>
