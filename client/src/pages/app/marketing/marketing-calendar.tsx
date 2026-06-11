@@ -1362,10 +1362,14 @@ function AssignmentDots({ item, filterOpts }: { item: CalendarItem; filterOpts?:
 
 function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarItem; filterOpts?: FilterOptions; onSelect: (i: CalendarItem) => void; draggable?: boolean }) {
   const assignments = resolveAssignments(item, filterOpts);
-  // A collapsed batch is never individually draggable (it has no single date/id).
-  const canDrag = !!draggable && !item.isBatch;
+  // A collapsed batch is never individually draggable (it has no single date/id);
+  // a committed (delivered) social post can't be rescheduled, so it's locked too.
+  const locked = isLocked(item);
+  const canDrag = !!draggable && !item.isBatch && !locked;
   const titleAttr = item.isBatch
     ? `${item.title} — click to drill in`
+    : locked
+    ? `${item.title} — already committed to your scheduler; can't be moved`
     : assignments.length
     ? `${item.title} — ${assignments.map((a) => `${ASSIGN_META[a.kind].label}: ${a.name}`).join(", ")}`
     : item.title;

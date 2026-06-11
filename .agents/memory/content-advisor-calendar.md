@@ -13,8 +13,8 @@ description: How the Master Calendar's scheduling advisor and time-of-day field 
 
 # Committed/locked social posts
 - A social post with lifecycle "delivered" (server status `exported` or `published`) is **committed** to the external scheduler (SocialPilot/Hootsuite). Rescheduling it in Orbit does nothing — the date is locked outside Orbit.
-- `isLocked(item) = item.type === "social" && item.lifecycle === "delivered"`. The advisor must not suggest moving these: weekend skips them, overloaded-day only lists/acts on movable items, duplicate flags but notes committed copies can't be removed. DetailDialog disables the date/time editor when locked.
-- Note: the server PATCH still technically allows updating scheduledDate on an exported post and drag-drop reschedule isn't blocked — the lock is enforced at the advisor/detail-editor UI layer only.
+- `isLocked(item) = item.type === "social" && item.lifecycle === "delivered"`. The advisor must not suggest moving these: weekend skips them, overloaded-day only lists/acts on movable items, duplicate flags but notes committed copies can't be removed. DetailDialog disables the date/time editor when locked, and ItemPill sets `canDrag=false` for locked items (no grab cursor, tooltip explains it can't be moved).
+- Note: the server PATCH still technically allows updating scheduledDate on an exported post — the lock is enforced at the UI layer (advisor + detail editor + drag source) only.
 
 # Time-of-day in DetailDialog
 - DetailDialog has separate date + time inputs combined via `pushSchedule(day, time)` into a full ISO string; replaced the old hardcoded `T09:00:00`. Time defaults to 9:00 AM, seeded from `localTime(item.date)`.
