@@ -1943,6 +1943,7 @@ export const CONTENT_BRIEF_FORMATS = [
   "video_script",
   "case_study",
   "whitepaper",
+  "ebook",
   "podcast_outline",
   "other",
 ] as const;

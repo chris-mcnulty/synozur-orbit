@@ -287,6 +287,7 @@ const CHANNEL_MARKERS: Record<string, { abbr: string; label: string }> = {
 const FORMAT_MARKERS: Record<string, { abbr: string; label: string }> = {
   blog_post: { abbr: "Blog", label: "Blog post" },
   whitepaper: { abbr: "WP", label: "Whitepaper" },
+  ebook: { abbr: "Ebook", label: "Ebook" },
   case_study: { abbr: "Case", label: "Case study" },
   landing_page: { abbr: "LP", label: "Landing page" },
   video_script: { abbr: "Video", label: "Video script" },
@@ -1737,6 +1738,7 @@ function AddItemDialog({ open, onOpenChange, filterOpts, onCreated }: {
                 <SelectContent>
                   <SelectItem value="blog_post">Blog post</SelectItem>
                   <SelectItem value="whitepaper">Whitepaper</SelectItem>
+                  <SelectItem value="ebook">Ebook</SelectItem>
                   <SelectItem value="case_study">Case study</SelectItem>
                   <SelectItem value="landing_page">Landing page</SelectItem>
                   <SelectItem value="video_script">Video script</SelectItem>

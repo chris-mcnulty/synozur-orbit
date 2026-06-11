@@ -27,6 +27,7 @@ const FORMAT_CHANNEL: Record<string, Channel> = {
   landing_page: "blog",
   case_study: "blog",
   whitepaper: "blog",
+  ebook: "blog",
   video_script: "instagram",
 };
 

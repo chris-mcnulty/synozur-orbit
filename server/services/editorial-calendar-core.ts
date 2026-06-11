@@ -277,6 +277,8 @@ export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
     "Write a case study in Markdown: Challenge, Approach, Results (with concrete-but-not-fabricated outcomes framed qualitatively if numbers are unknown), and a closing CTA.",
   whitepaper:
     "Write a whitepaper outline-to-draft in Markdown: executive summary, problem framing, our point of view, a framework or approach, and a conclusion + CTA. Authoritative and well-structured.",
+  ebook:
+    "Write an ebook draft in Markdown — structured like a whitepaper (executive summary, problem framing, our point of view, a framework or approach, and a conclusion + CTA) but longer-form and far more visual. Lead with a suggested cover graphic, and weave inline [GRAPHIC: ...] cues throughout — a section-opener visual for each chapter, a diagram for any framework or process, pull-quote callouts for key stats or quotes, and data-viz or illustration ideas where they reinforce the point. Give the design team rich, specific visual direction, not just text.",
   podcast_outline: POLARIS_OUTLINE_GUIDANCE,
   other:
     "Write well-structured Markdown copy appropriate to the topic, with a clear headline, body, and a CTA.",
@@ -288,6 +290,8 @@ export function briefFormatToAssetType(format: ContentBriefFormat): string {
     case "blog_post":
       return "blog_post";
     case "whitepaper":
+      return "whitepaper";
+    case "ebook":
       return "whitepaper";
     case "case_study":
       return "case_study";

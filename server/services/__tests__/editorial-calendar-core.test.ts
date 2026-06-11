@@ -115,6 +115,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
   await test("briefFormatToAssetType maps to contentAssets enum", () => {
     assert.equal(briefFormatToAssetType("blog_post"), "blog_post");
     assert.equal(briefFormatToAssetType("whitepaper"), "whitepaper");
+    assert.equal(briefFormatToAssetType("ebook"), "whitepaper");
     assert.equal(briefFormatToAssetType("case_study"), "case_study");
     assert.equal(briefFormatToAssetType("video_script"), "video");
     assert.equal(briefFormatToAssetType("landing_page"), "other");

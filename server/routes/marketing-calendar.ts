@@ -50,6 +50,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 const FORMAT_LABELS: Record<string, string> = {
   blog_post: "Blog post",
   whitepaper: "Whitepaper",
+  ebook: "Ebook",
   case_study: "Case study",
   landing_page: "Landing page",
   video_script: "Video script",

@@ -29,6 +29,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(formatToChannel("x_post"), "twitter");
     assert.equal(formatToChannel("newsletter"), "email");
     assert.equal(formatToChannel("blog_post"), "blog");
+    assert.equal(formatToChannel("ebook"), "blog");
     assert.equal(formatToChannel("mystery"), "linkedin");
   });
 

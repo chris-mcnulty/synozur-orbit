@@ -147,6 +147,7 @@ const FORMAT_LABELS: Record<string, string> = {
   video_script: "Video script",
   case_study: "Case study",
   whitepaper: "Whitepaper",
+  ebook: "Ebook",
   podcast_outline: "Podcast outline",
   other: "Other",
 };
@@ -161,6 +162,7 @@ const BRIEF_FORMAT_OPTIONS: { value: string; label: string }[] = [
   { value: "video_script", label: "Video script" },
   { value: "case_study", label: "Case study" },
   { value: "whitepaper", label: "Whitepaper" },
+  { value: "ebook", label: "Ebook" },
   { value: "podcast_outline", label: "Podcast outline" },
   { value: "other", label: "Other" },
 ];

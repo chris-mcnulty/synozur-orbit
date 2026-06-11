@@ -162,6 +162,7 @@ const BRIEF_FORMAT_LABELS: Record<string, string> = {
   video_script: "Video script",
   case_study: "Case study",
   whitepaper: "Whitepaper",
+  ebook: "Ebook",
   podcast_outline: "Podcast outline",
   other: "Other",
 };

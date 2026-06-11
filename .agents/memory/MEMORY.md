@@ -20,4 +20,5 @@
 - [Campaign social-posts cleanup — DONE](campaign-socialpost-cleanup-done.md) — T001–T005 plan fully shipped; replayed session context ≠ new user directive; trust "COMPLETE" warnings.
 - [Session replay vs new directive](session-replay-rule.md) — context compression replays prior session plans at session start; if context summary says COMPLETE, skip unconditionally.
 - [Content Advisor + time-of-day](content-advisor-calendar.md) — Master Calendar advisor is pure client-side over visibleScheduled (campaign-scoped server-side); backlog count must be re-scoped to active filter; parse date-only keys as local to avoid UTC week drift.
+- [Adding a content brief format](content-brief-format-checklist.md) — new CONTENT_BRIEF_FORMATS value must be threaded through ~10 spots; only FORMAT_GUIDANCE is compiler-enforced; easy-to-miss hardcoded AI prompt list in editorial-calendar-service.ts.
 - [Editorial calendar schedule/push + Planner naming](editorial-calendar-distribution.md) — "Schedule briefs" = one dialog, preview vs commit via planDistribution; "Planner" = internal Marketing Planner that syncs to Microsoft Planner; brief derivatives land undated in backlog.

@@ -563,6 +563,7 @@ function CreateActionDialog({ open, onOpenChange, scope, id, onDone }: {
                 <SelectContent>
                   <SelectItem value="blog_post">Blog Post</SelectItem>
                   <SelectItem value="whitepaper">Whitepaper</SelectItem>
+                  <SelectItem value="ebook">Ebook</SelectItem>
                   <SelectItem value="case_study">Case Study</SelectItem>
                   <SelectItem value="landing_page">Landing Page</SelectItem>
                   <SelectItem value="video_script">Video Script</SelectItem>
