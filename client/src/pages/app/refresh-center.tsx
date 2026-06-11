@@ -709,13 +709,13 @@ export default function RefreshCenter() {
                         </div>
                         <div className="flex items-center gap-2">
                           {freshness?.isStale ? (
-                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50">{freshness.label}</Badge>
+                            <Badge variant="outline" className="text-xs text-amber-700 border-amber-300 bg-amber-50 dark:text-amber-300 dark:border-amber-700/60 dark:bg-amber-950/60">{freshness.label}</Badge>
                           ) : isStale && ageStatus ? (
-                            <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50/50">Stale ({ageStatus.label})</Badge>
+                            <Badge variant="outline" className="text-xs text-red-700 border-red-300 bg-red-50 dark:text-red-300 dark:border-red-700/60 dark:bg-red-950/60">Stale ({ageStatus.label})</Badge>
                           ) : isAging && ageStatus ? (
-                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-200 bg-amber-50/50">Aging ({ageStatus.label})</Badge>
+                            <Badge variant="outline" className="text-xs text-amber-700 border-amber-300 bg-amber-50 dark:text-amber-300 dark:border-amber-700/60 dark:bg-amber-950/60">Aging ({ageStatus.label})</Badge>
                           ) : a.date ? (
-                            <Badge variant="outline" className="text-xs text-green-600 border-green-200 bg-green-50/50">Current</Badge>
+                            <Badge variant="outline" className="text-xs text-green-700 border-green-300 bg-green-50 dark:text-green-300 dark:border-green-700/60 dark:bg-green-950/60">Current</Badge>
                           ) : (
                             <Badge variant="outline" className="text-xs text-muted-foreground">Pending</Badge>
                           )}
