@@ -153,7 +153,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
           enterprise: true,
           description: "One board for every piece of in-flight content: social posts, emails, and briefs, draggable between stages.",
         },
-        { label: "Master Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
+        { label: "Content Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
         { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework", section: "Plan" },
         { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan", section: "Plan" },
         { label: "Personas", icon: UserCircle, href: "/app/marketing/personas", section: "Plan" },
