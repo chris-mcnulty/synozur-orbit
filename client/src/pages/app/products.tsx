@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,26 @@ const PRODUCT_TYPES = [
 
 interface ContextData {
   activeMarket: { id: string; name: string } | null;
+}
+
+// Per-product generated artifacts (long-form recommendations) surfaced as a
+// freshness strip on each portfolio card. `tab` matches product-detail's tabs.
+const PORTFOLIO_ARTIFACTS = [
+  { type: "gap_analysis", label: "Gaps", tab: "gaps" },
+  { type: "strategic_recommendations", label: "Recs", tab: "recommendations" },
+  { type: "competitive_summary", label: "Summary", tab: "summary" },
+  { type: "gtm_plan", label: "GTM", tab: "gtm_plan" },
+  { type: "messaging_framework", label: "Messaging", tab: "messaging" },
+  { type: "product_one_sheet", label: "One-sheet", tab: "one_sheet" },
+] as const;
+
+const ARTIFACT_STALE_AFTER_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+
+interface ArtifactSummaryRow {
+  projectId: string | null;
+  type: string;
+  status: string;
+  lastGeneratedAt: string | null;
 }
 
 interface CreateFormData {
@@ -135,6 +155,29 @@ export default function Products() {
     },
     retry: false,
   });
+
+  const { data: artifactRows = [] } = useQuery<ArtifactSummaryRow[]>({
+    queryKey: ["/api/projects/artifact-summary"],
+    queryFn: async () => {
+      const response = await fetch("/api/projects/artifact-summary", { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const artifactsByProject = useMemo(() => {
+    const map = new Map<string, Map<string, ArtifactSummaryRow>>();
+    for (const row of artifactRows) {
+      if (!row.projectId) continue;
+      let inner = map.get(row.projectId);
+      if (!inner) {
+        inner = new Map();
+        map.set(row.projectId, inner);
+      }
+      inner.set(row.type, row);
+    }
+    return map;
+  }, [artifactRows]);
 
   const createProject = useMutation({
     mutationFn: async (data: CreateFormData) => {
@@ -646,6 +689,44 @@ export default function Products() {
                         {project.description}
                       </p>
                     )}
+                    <div className="flex items-center gap-1 flex-wrap" data-testid={`artifacts-${project.id}`}>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
+                        Collateral
+                      </span>
+                      {PORTFOLIO_ARTIFACTS.map((artifact) => {
+                        const row = artifactsByProject.get(project.id)?.get(artifact.type);
+                        const generated = row?.status === "generated";
+                        const generating = row?.status === "generating";
+                        const stale =
+                          generated &&
+                          row?.lastGeneratedAt &&
+                          Date.now() - new Date(row.lastGeneratedAt).getTime() > ARTIFACT_STALE_AFTER_MS;
+                        const title = generating
+                          ? `${artifact.label}: generating…`
+                          : generated
+                            ? `${artifact.label}: generated ${row?.lastGeneratedAt ? new Date(row.lastGeneratedAt).toLocaleDateString() : ""}${stale ? " — over 60 days old" : ""}`
+                            : `${artifact.label}: not generated yet — click to create`;
+                        return (
+                          <Link key={artifact.type} href={`/app/products/${project.id}?tab=${artifact.tab}`} title={title}>
+                            <Badge
+                              variant="outline"
+                              className={
+                                generating
+                                  ? "text-[10px] px-1.5 border-primary/40 text-primary"
+                                  : generated
+                                    ? stale
+                                      ? "text-[10px] px-1.5 border-amber-400/60 text-amber-600 dark:text-amber-400"
+                                      : "text-[10px] px-1.5 border-emerald-400/60 text-emerald-600 dark:text-emerald-400"
+                                    : "text-[10px] px-1.5 text-muted-foreground/60 border-dashed"
+                              }
+                            >
+                              {generating ? "… " : generated ? "✓ " : ""}
+                              {artifact.label}
+                            </Badge>
+                          </Link>
+                        );
+                      })}
+                    </div>
                     <div className="flex items-center justify-between pt-2 border-t">
                       <span className="text-xs text-muted-foreground">
                         Created {new Date(project.createdAt).toLocaleDateString()}

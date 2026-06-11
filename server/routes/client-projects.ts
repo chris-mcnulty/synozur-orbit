@@ -1,10 +1,10 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, guardFeature } from "./helpers";
-import { contentAssets, products as productsTable } from "@shared/schema";
+import { contentAssets, products as productsTable, longFormRecommendations } from "@shared/schema";
 
 export function registerClientProjectRoutes(app: Express) {
   // ==================== CLIENT PROJECTS (Pro/Enterprise only) ====================
@@ -35,6 +35,35 @@ export function registerClientProjectRoutes(app: Express) {
       );
       
       res.json(enrichedProjects);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Portfolio artifact freshness: one row per (project, artifact type) so the
+  // Product hub can show every product's collateral status (gap analysis, GTM
+  // plan, messaging, one-sheet, …) without a request per product. Registered
+  // before /api/projects/:id so the literal path isn't captured as an id.
+  app.get("/api/projects/artifact-summary", async (req, res) => {
+    if (!await guardFeature(req, res, "clientProjects")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const rows = await db
+        .select({
+          projectId: longFormRecommendations.projectId,
+          type: longFormRecommendations.type,
+          status: longFormRecommendations.status,
+          lastGeneratedAt: longFormRecommendations.lastGeneratedAt,
+        })
+        .from(longFormRecommendations)
+        .where(and(
+          eq(longFormRecommendations.tenantDomain, ctx.tenantDomain),
+          isNotNull(longFormRecommendations.projectId),
+        ));
+      res.json(rows);
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
