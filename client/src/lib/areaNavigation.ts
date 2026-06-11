@@ -32,6 +32,9 @@ import {
   LineChart,
   Swords,
   FileText,
+  Send,
+  Gauge,
+  Code,
   Handshake,
   Settings,
   Plug,
@@ -110,7 +113,9 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Intelligence Feed", icon: Brain, href: "/app/intelligence" },
         { label: "SEO & Share of Voice", icon: LineChart, href: "/app/seo-dashboard", description: "Keyword rankings (SERP) and competitive share-of-voice tracking." },
         { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
+        { label: "Executive Summary", icon: FileText, href: "/app/executive-summary", description: "Baseline executive summary: company snapshot, market position, landscape, opportunities." },
         { label: "Visualizations", icon: BarChart2, href: "/app/insights/visualizations" },
+        { label: "Outcomes & Orbit Score", icon: Gauge, href: "/app/insights/outcomes", description: "ROI dashboard: Orbit Score, GA4 analytics, and outcome trends." },
         { label: "Data Sources", icon: Database, href: "/app/data-sources", section: "Sources" },
         { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center", section: "Sources" },
         { label: "Documents", icon: BookOpen, href: "/app/documents", section: "Sources" },
@@ -158,6 +163,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true, section: "Create" },
         { label: "Content Briefs", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, section: "Create", description: "Plan and draft long-form content briefs grounded in your strategy." },
         { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true, section: "Create" },
+        { label: "Email Sends", icon: Send, href: "/app/marketing/sends", enterprise: true, section: "Create", indent: true, description: "Delivery tracking: recipient lists, send status, and suppressions." },
         { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true, section: "Create" },
         { label: "Social Calendar", icon: Share2, href: "/app/marketing/calendar", enterprise: true, section: "Create", description: "Social-only view to schedule, reschedule, and add graphics to posts." },
         { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, section: "Create", description: "Plan every piece of marketing for a campaign or theme in one view." },
@@ -189,6 +195,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       items: [
         { label: "Settings", icon: Settings, href: "/app/settings" },
         { label: "Integrations", icon: Plug, href: "/app/settings/integrations" },
+        { label: "Developer Portal", icon: Code, href: "/app/developer", description: "OAuth 2.0 Partner API for third-party integrations." },
         // One-time setup surfaces moved out of the daily-work Marketing menu.
         { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", section: "Connections" },
         { label: "Platform Credentials", icon: KeyRound, href: "/app/marketing/platform-credentials", section: "Connections" },
@@ -204,6 +211,8 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         ...(isGlobalAdmin
           ? [
               { label: "Admin Dashboard", icon: Crown, href: "/app/admin", section: "Administration" },
+              { label: "Organizations", icon: Building2, href: "/app/admin/organizations", section: "Administration" },
+              { label: "OAuth Clients", icon: KeyRound, href: "/app/admin/oauth-clients", section: "Administration" },
               { label: "AI Settings", icon: Brain, href: "/app/admin/ai-settings", section: "Administration" },
             ]
           : []),
