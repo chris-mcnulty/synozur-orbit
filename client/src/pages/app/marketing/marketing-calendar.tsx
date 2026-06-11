@@ -443,6 +443,13 @@ function normalizeContent(s: string): string {
   return s.toLowerCase().replace(/https?:\/\/\S+/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+// A social post that's already been exported/published ("delivered") is
+// committed to the external scheduler — changing its date in Orbit does nothing.
+// The advisor must not suggest rescheduling these.
+function isLocked(it: CalendarItem): boolean {
+  return it.type === "social" && it.lifecycle === "delivered";
+}
+
 function computeAdvisories(scheduled: CalendarItem[], backlogCount: number): Advisory[] {
   const out: Advisory[] = [];
   const todayKey = ymd(new Date());
@@ -484,12 +491,13 @@ function computeAdvisories(scheduled: CalendarItem[], backlogCount: number): Adv
   }
   for (const group of Array.from(byContent.values())) {
     if (group.length >= 2) {
+      const someLocked = group.some(isLocked);
       out.push({
         id: `dup-${group[0].type}-${group[0].id}`,
         kind: "duplicate",
         severity: "high",
         title: `Looks scheduled ${group.length} times: "${(group[0].preview?.trim() || group[0].title).slice(0, 50)}"`,
-        detail: "The same (or nearly the same) content is on the calendar more than once. Keep the one you want and remove or reword the rest.",
+        detail: `The same (or nearly the same) content is on the calendar more than once. Keep the one you want and remove or reword the rest.${someLocked ? " Note: copies already committed can't be removed — adjust the ones that aren't." : ""}`,
         items: group,
       });
     }
@@ -505,13 +513,17 @@ function computeAdvisories(scheduled: CalendarItem[], backlogCount: number): Adv
   }
   for (const [day, group] of Array.from(byDayMap.entries())) {
     if (group.length > DAY_OVERLOAD) {
+      const movable = group.filter((it) => !isLocked(it));
+      // Nothing actionable if every item that day is already committed.
+      if (movable.length === 0) continue;
+      const someLocked = movable.length < group.length;
       out.push({
         id: `overload-${day}`,
         kind: "overload",
         severity: "medium",
         title: `${prettyDay(day)} is crowded — ${group.length} items`,
-        detail: `That's a lot for one day and the audience may tune out. Spread a few onto nearby quieter days.`,
-        items: group,
+        detail: `That's a lot for one day and the audience may tune out. Spread a few onto nearby quieter days.${someLocked ? " Some posts here are already committed and can't be moved — shift the others." : ""}`,
+        items: movable,
       });
     }
   }
@@ -543,9 +555,10 @@ function computeAdvisories(scheduled: CalendarItem[], backlogCount: number): Adv
     }
   }
 
-  // 6) Weekend posts (usually lower engagement for B2B).
+  // 6) Weekend posts (usually lower engagement for B2B). Skip committed posts —
+  // they can't be moved anymore, so flagging them is just noise.
   const weekend = scheduled.filter((it) => {
-    if (!it.date) return false;
+    if (!it.date || isLocked(it)) return false;
     const dow = new Date(it.date).getDay();
     return dow === 0 || dow === 6;
   });
@@ -1818,6 +1831,9 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
     if (!day) { onReschedule(item!, null); return; }
     onReschedule(item!, new Date(`${day}T${(time || "09:00")}:00`).toISOString());
   };
+  // A committed (exported/published) social post can't be rescheduled — it's
+  // already locked into the external scheduler. Disable the date/time editor.
+  const locked = !!item && isLocked(item);
   // Social posts only ship a 160-char preview in the aggregation payload. Fetch
   // the full row (complete copy, branded graphic, carousel slides) on click so
   // the dialog isn't just a snippet. Batches drill down separately, so skip them.
@@ -1989,6 +2005,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             <Input
               type="date"
               value={dateVal}
+              disabled={locked}
               onChange={(e) => {
                 setDateVal(e.target.value);
                 pushSchedule(e.target.value, timeVal);
@@ -2001,7 +2018,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             <Input
               type="time"
               value={timeVal}
-              disabled={!dateVal}
+              disabled={locked || !dateVal}
               onChange={(e) => {
                 setTimeVal(e.target.value);
                 if (dateVal) pushSchedule(dateVal, e.target.value);
@@ -2010,11 +2027,17 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             />
           </div>
           <div className="col-span-2">
-            <DateCrowdingHint
-              date={dateVal}
-              onPick={(d) => { setDateVal(d); pushSchedule(d, timeVal); }}
-              testid="text-detail-crowding"
-            />
+            {locked ? (
+              <p className="text-xs text-muted-foreground" data-testid="text-detail-locked">
+                This post is already committed to your scheduler — its date can't be changed here.
+              </p>
+            ) : (
+              <DateCrowdingHint
+                date={dateVal}
+                onPick={(d) => { setDateVal(d); pushSchedule(d, timeVal); }}
+                testid="text-detail-crowding"
+              />
+            )}
           </div>
         </div>
 
