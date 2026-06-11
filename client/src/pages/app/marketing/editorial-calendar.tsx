@@ -245,8 +245,7 @@ export default function EditorialCalendarPage() {
   const [distEnd, setDistEnd] = useState(in30Iso);
   const [distSkipWeekends, setDistSkipWeekends] = useState(true);
   const [schedule, setSchedule] = useState<ScheduleRow[] | null>(null);
-  // "Push to Planner" dialog — takes the already-scheduled briefs and creates tasks in a marketing plan.
-  const [plannerOpen, setPlannerOpen] = useState(false);
+  // Plan selection + commit result for the "Push to Planner" step inside the schedule dialog.
   const [distPlanId, setDistPlanId] = useState<string>("");
   const [committedPlan, setCommittedPlan] = useState<{ name: string; tasks: number } | null>(null);
 
@@ -262,7 +261,7 @@ export default function EditorialCalendarPage() {
   const { data: marketingPlans } = useQuery<MarketingPlan[]>({
     queryKey: ["/api/marketing-plans"],
     queryFn: async () => (await getJson("/api/marketing-plans")) ?? [],
-    enabled: distOpen || plannerOpen,
+    enabled: distOpen,
   });
 
   const { data: calendars, isLoading: calendarsLoading } = useQuery<EditorialCalendar[]>({
@@ -820,32 +819,20 @@ export default function EditorialCalendarPage() {
                 </SelectContent>
               </Select>
               {activeId && distributionAllowed && briefs.length > 0 && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSchedule(null);
-                      setDistOpen(true);
-                    }}
-                    data-testid="button-suggest-schedule"
-                  >
-                    <CalendarDays className="mr-1 h-4 w-4" />
-                    Suggest schedule
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setCommittedPlan(null);
-                      setPlannerOpen(true);
-                    }}
-                    data-testid="button-push-to-planner"
-                  >
-                    <CalendarClock className="mr-1 h-4 w-4" />
-                    Push to Planner
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSchedule(null);
+                    setCommittedPlan(null);
+                    setDistPlanId("");
+                    setDistOpen(true);
+                  }}
+                  data-testid="button-suggest-schedule"
+                >
+                  <CalendarDays className="mr-1 h-4 w-4" />
+                  Schedule briefs
+                </Button>
               )}
               {activeId && (
                 <Button
@@ -1708,15 +1695,15 @@ export default function EditorialCalendarPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Step 1: Suggest a schedule — recommends publish dates across a window. Preview only, nothing is pushed. */}
+        {/* Schedule briefs — one flow: suggest publish dates (preview), then push to the Marketing
+            Planner (whose tasks sync to Microsoft Planner). No plan = preview; with plan = commit. */}
         <Dialog open={distOpen} onOpenChange={setDistOpen}>
-          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+          <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Suggest a schedule</DialogTitle>
+              <DialogTitle>Schedule briefs</DialogTitle>
               <DialogDescription>
-                Spreads this calendar's briefs across posting windows and recommends a publish date for each. This is a
-                preview only — nothing is sent or added to a plan. When it looks right, use "Push to Planner" to turn it
-                into tasks.
+                Spreads this calendar's briefs across posting windows and recommends a publish date for each. Building a
+                suggestion is just a preview — nothing is saved until you pick a plan and push it.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -1740,35 +1727,17 @@ export default function EditorialCalendarPage() {
                 Skip weekends
               </label>
 
-              {schedule && schedule.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">
-                    Suggested schedule ({schedule.length})
-                  </p>
-                  <div className="divide-y rounded-md border">
-                    {schedule.map((s) => (
-                      <div key={s.briefId} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                        <span className="truncate">{s.title}</span>
-                        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                          <Badge variant="secondary">{s.channel}</Badge>
-                          {new Date(s.scheduledAt).toLocaleDateString()} · {s.timeframe}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setDistOpen(false)}>
-                Close
-              </Button>
               <Button
-                onClick={() => planDistribution.mutate(undefined)}
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setCommittedPlan(null);
+                  planDistribution.mutate(undefined);
+                }}
                 disabled={planDistribution.isPending}
                 data-testid="button-run-distribution"
               >
-                {planDistribution.isPending ? (
+                {planDistribution.isPending && !planDistribution.variables ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Building…
@@ -1780,86 +1749,77 @@ export default function EditorialCalendarPage() {
                   </>
                 )}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
-        {/* Step 2: Push to Planner — turns the schedule into tasks in a marketing plan (rides the Microsoft Planner sync). */}
-        <Dialog open={plannerOpen} onOpenChange={setPlannerOpen}>
-          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Push to Marketing Planner</DialogTitle>
-              <DialogDescription>
-                Turns this calendar's briefs into tasks inside a marketing plan, using the same posting window as the
-                suggested schedule. These tasks ride the existing Microsoft Planner sync. This creates real tasks — it is
-                not a preview.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="planner-start">Start</Label>
-                  <Input id="planner-start" type="date" value={distStart} onChange={(e) => setDistStart(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="planner-end">End</Label>
-                  <Input id="planner-end" type="date" value={distEnd} onChange={(e) => setDistEnd(e.target.value)} />
-                </div>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={distSkipWeekends}
-                  onChange={(e) => setDistSkipWeekends(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Skip weekends
-              </label>
-              <div className="space-y-2">
-                <Label>Marketing plan</Label>
-                <Select value={distPlanId || "__none__"} onValueChange={(v) => setDistPlanId(v === "__none__" ? "" : v)}>
-                  <SelectTrigger data-testid="select-dist-plan">
-                    <SelectValue placeholder="Choose a plan to add tasks to" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Choose a plan…</SelectItem>
-                    {(marketingPlans ?? []).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                        {p.fiscalYear ? ` (FY${p.fiscalYear})` : ""}
-                      </SelectItem>
+              {schedule && schedule.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">
+                    Suggested schedule ({schedule.length})
+                  </p>
+                  <div className="divide-y rounded-md border">
+                    {schedule.map((s) => (
+                      <div key={s.briefId} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                        <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="secondary">{s.channel}</Badge>
+                          {new Date(s.scheduledAt).toLocaleDateString()} · {s.timeframe}
+                        </span>
+                      </div>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  </div>
+                </div>
+              )}
 
-              {committedPlan && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
-                  <span>
-                    Added {committedPlan.tasks} task{committedPlan.tasks === 1 ? "" : "s"} to "{committedPlan.name}".
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => navigate("/app/marketing-planner")}
-                    data-testid="button-open-planner"
-                  >
-                    <CalendarClock className="mr-1 h-4 w-4" />
-                    Open Marketing Planner
-                  </Button>
+              {schedule && schedule.length > 0 && (
+                <div className="space-y-2 rounded-md border border-dashed p-3">
+                  <Label>Push to Planner</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Adds these as tasks in your <strong>Marketing Planner</strong>. Those tasks then sync to{" "}
+                    <strong>Microsoft Planner</strong> automatically. This creates real tasks — it's not a preview.
+                  </p>
+                  <Select value={distPlanId || "__none__"} onValueChange={(v) => setDistPlanId(v === "__none__" ? "" : v)}>
+                    <SelectTrigger data-testid="select-dist-plan">
+                      <SelectValue placeholder="Choose a plan to add tasks to" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Choose a plan…</SelectItem>
+                      {(marketingPlans ?? []).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                          {p.fiscalYear ? ` (FY${p.fiscalYear})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {committedPlan && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+                      <span>
+                        Added {committedPlan.tasks} task{committedPlan.tasks === 1 ? "" : "s"} to "{committedPlan.name}".
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate("/app/marketing-planner")}
+                        data-testid="button-open-planner"
+                      >
+                        <CalendarClock className="mr-1 h-4 w-4" />
+                        Open Marketing Planner
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setPlannerOpen(false)}>
+              <Button variant="ghost" onClick={() => setDistOpen(false)}>
                 Close
               </Button>
               <Button
                 onClick={() => planDistribution.mutate(distPlanId)}
-                disabled={planDistribution.isPending || !distPlanId}
+                disabled={planDistribution.isPending || !distPlanId || !schedule?.length}
                 data-testid="button-push-distribution"
               >
-                {planDistribution.isPending ? (
+                {planDistribution.isPending && planDistribution.variables ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Pushing…
