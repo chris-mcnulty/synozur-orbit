@@ -50,6 +50,7 @@ import {
   Share2,
   KeyRound,
   Layers,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -395,6 +396,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.conferencePromotion === false) locked.add("/app/marketing/conferences");
     if (f.socialAccounts === false) locked.add("/app/marketing/social-accounts");
     if (f.saturnCapture === false) locked.add("/app/marketing/browser-extension");
+    if (f.seoTracking === false) locked.add("/app/seo-dashboard");
     return locked;
   }, [tenantInfo]);
 
@@ -555,6 +557,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
             { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
             { label: "Intelligence Feed", icon: Brain, href: "/app/intelligence" },
+            { label: "SEO & Share of Voice", icon: Search, href: "/app/seo-dashboard" },
           ],
         },
         {
