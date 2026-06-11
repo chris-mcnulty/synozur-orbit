@@ -247,6 +247,7 @@ export default function CampaignDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const [fsOpen, setFsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
@@ -1373,124 +1374,6 @@ export default function CampaignDetailPage() {
           </div>
         )}
 
-        {(() => {
-          const fs = campaign.foundingSignals;
-          const hasSignals =
-            !!fs &&
-            ((fs.newsArticles?.length ?? 0) > 0 ||
-              (fs.actionItems?.length ?? 0) > 0 ||
-              (fs.ideaSignals?.length ?? 0) > 0);
-          const capturedLabel = fs?.capturedAt
-            ? new Date(fs.capturedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-            : null;
-          return (
-            <Card data-testid="card-founding-signals">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Sparkles className="w-4 h-4 text-primary" />
-                      Founding Signals
-                    </CardTitle>
-                    <CardDescription>
-                      The news and intelligence this campaign was founded on — frozen at creation.
-                    </CardDescription>
-                  </div>
-                  {capturedLabel && (
-                    <Badge variant="outline" className="text-[10px]" data-testid="text-founding-signals-captured">
-                      captured {capturedLabel}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {!hasSignals ? (
-                  <p className="text-sm text-muted-foreground" data-testid="text-founding-signals-empty">
-                    No founding signals were captured for this campaign.
-                  </p>
-                ) : (
-                  <div className="space-y-5">
-                    {(fs!.newsArticles?.length ?? 0) > 0 && (
-                      <div>
-                        <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                          <Newspaper className="w-3.5 h-3.5" /> News
-                        </h4>
-                        <ul className="space-y-2">
-                          {fs!.newsArticles.map((n, i) => (
-                            <li key={i} className="text-sm" data-testid={`founding-news-${i}`}>
-                              {n.url ? (
-                                <a
-                                  href={n.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-medium hover:underline inline-flex items-center gap-1"
-                                >
-                                  {n.title}
-                                  <ExternalLink className="w-3 h-3 shrink-0" />
-                                </a>
-                              ) : (
-                                <span className="font-medium">{n.title}</span>
-                              )}
-                              {(n.source || n.publishedAt) && (
-                                <span className="text-muted-foreground text-xs ml-1">
-                                  {n.source}
-                                  {n.source && n.publishedAt ? " · " : ""}
-                                  {n.publishedAt ? new Date(n.publishedAt).toLocaleDateString() : ""}
-                                </span>
-                              )}
-                              {n.description && (
-                                <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{n.description}</p>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {(fs!.actionItems?.length ?? 0) > 0 && (
-                      <div>
-                        <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                          <Zap className="w-3.5 h-3.5" /> Intelligence Action Items
-                        </h4>
-                        <ul className="space-y-2">
-                          {fs!.actionItems.map((a, i) => (
-                            <li key={i} className="text-sm" data-testid={`founding-action-${i}`}>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <Badge variant="secondary" className="text-[10px] capitalize">
-                                  {a.urgency.replace(/_/g, " ")}
-                                </Badge>
-                                <span className="font-medium">{a.title}</span>
-                              </div>
-                              {a.description && (
-                                <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{a.description}</p>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {(fs!.ideaSignals?.length ?? 0) > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                          Founding Notes
-                        </h4>
-                        <ul className="space-y-1 list-disc pl-5">
-                          {fs!.ideaSignals!.map((s, i) => (
-                            <li key={i} className="text-sm text-muted-foreground" data-testid={`founding-signal-${i}`}>
-                              {s}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })()}
-
         <Tabs defaultValue="plan">
           <TabsList>
             <TabsTrigger value="plan" className="gap-1.5" data-testid="tab-plan"><Target className="w-3.5 h-3.5" />Content Plan{briefs.length ? ` (${briefs.length})` : ""}</TabsTrigger>
@@ -1523,6 +1406,93 @@ export default function CampaignDetailPage() {
                 {briefs.length ? "Generate more briefs" : "Generate content briefs"}
               </Button>
             </div>
+
+            {/* Founding Signals — collapsed by default so it doesn't push briefs down */}
+            {(() => {
+              const fs = campaign.foundingSignals;
+              const hasSignals = !!fs && ((fs.newsArticles?.length ?? 0) > 0 || (fs.actionItems?.length ?? 0) > 0 || (fs.ideaSignals?.length ?? 0) > 0);
+              const capturedLabel = fs?.capturedAt ? new Date(fs.capturedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : null;
+              return (
+                <Card data-testid="card-founding-signals" className="border-dashed">
+                  <CardHeader className="pb-2 pt-3 px-4">
+                    <button
+                      className="flex items-center justify-between w-full gap-2 text-left"
+                      onClick={() => setFsOpen(o => !o)}
+                      data-testid="button-toggle-founding-signals"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                        <Sparkles className="w-3.5 h-3.5 text-primary" />
+                        Founding Signals
+                        {capturedLabel && <span className="text-[10px] font-normal">· captured {capturedLabel}</span>}
+                      </span>
+                      <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${fsOpen ? "rotate-180" : ""}`} />
+                    </button>
+                  </CardHeader>
+                  {fsOpen && (
+                    <CardContent className="pt-0 pb-4 px-4">
+                      {!hasSignals ? (
+                        <p className="text-sm text-muted-foreground" data-testid="text-founding-signals-empty">No founding signals were captured for this campaign.</p>
+                      ) : (
+                        <div className="space-y-5">
+                          {(fs!.newsArticles?.length ?? 0) > 0 && (
+                            <div>
+                              <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                <Newspaper className="w-3.5 h-3.5" /> News
+                              </h4>
+                              <ul className="space-y-2">
+                                {fs!.newsArticles.map((n, i) => (
+                                  <li key={i} className="text-sm" data-testid={`founding-news-${i}`}>
+                                    {n.url ? (
+                                      <a href={n.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline inline-flex items-center gap-1">
+                                        {n.title}<ExternalLink className="w-3 h-3 shrink-0" />
+                                      </a>
+                                    ) : <span className="font-medium">{n.title}</span>}
+                                    {(n.source || n.publishedAt) && (
+                                      <span className="text-muted-foreground text-xs ml-1">
+                                        {n.source}{n.source && n.publishedAt ? " · " : ""}{n.publishedAt ? new Date(n.publishedAt).toLocaleDateString() : ""}
+                                      </span>
+                                    )}
+                                    {n.description && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{n.description}</p>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {(fs!.actionItems?.length ?? 0) > 0 && (
+                            <div>
+                              <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                <Zap className="w-3.5 h-3.5" /> Intelligence Action Items
+                              </h4>
+                              <ul className="space-y-2">
+                                {fs!.actionItems.map((a, i) => (
+                                  <li key={i} className="text-sm" data-testid={`founding-action-${i}`}>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <Badge variant="secondary" className="text-[10px] capitalize">{a.urgency.replace(/_/g, " ")}</Badge>
+                                      <span className="font-medium">{a.title}</span>
+                                    </div>
+                                    {a.description && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{a.description}</p>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {(fs!.ideaSignals?.length ?? 0) > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Founding Notes</h4>
+                              <ul className="space-y-1 list-disc pl-5">
+                                {fs!.ideaSignals!.map((s, i) => (
+                                  <li key={i} className="text-sm text-muted-foreground" data-testid={`founding-signal-${i}`}>{s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })()}
 
             {briefs.length === 0 ? (
               <Card>
