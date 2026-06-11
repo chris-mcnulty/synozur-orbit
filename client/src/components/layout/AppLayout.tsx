@@ -1,68 +1,22 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { 
-  LayoutDashboard, 
-  Target, 
-  BarChart2, 
-  Lightbulb, 
-  Activity, 
-  FileText, 
-  Settings, 
+import {
+  Settings,
   LogOut,
   Menu,
   X,
   Plus,
-  Users,
-  LineChart,
-  BookOpen,
-  ClipboardList,
-  Crown,
   Loader2,
-  Package,
   HelpCircle,
-  Building2,
-  Swords,
-  Database,
   Info,
-  Gem,
-  ChevronDown,
-  RefreshCw,
   Lock,
-  Brain,
   Rocket,
-  Megaphone,
-  MessageCircle,
-  Mail,
-  Library,
-  Image,
-  LayoutList,
-  AtSign,
-  HardDrive,
-  Puzzle,
   TicketIcon,
   Map,
   FileText as FileTextIcon,
-  UserCircle,
-  Handshake,
-  PencilLine,
-  CalendarDays,
-  CalendarRange,
-  Share2,
-  KeyRound,
-  Layers,
-  Search,
-  Sparkles,
-  TrendingUp,
-  Send,
-  Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,41 +43,14 @@ import PageBreadcrumbs, { type BreadcrumbCrumb } from "@/components/layout/PageB
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+import { buildAreas, getActiveArea, type AppArea, type AreaNavItem } from "@/lib/areaNavigation";
+
 type NavIndicator = {
   type: "action" | "new" | "count";
   count?: number;
 };
 
-interface NavItem {
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  href: string;
-  enterprise?: boolean;
-  comingSoon?: boolean;
-  // Renders as a subordinate/nested item beneath the preceding primary entry
-  // (extra indentation + a left guide). Used to signal that a calendar feeds
-  // into the Content Calendar above it.
-  indent?: boolean;
-  // Short one-line explanation surfaced as a hover tooltip so each item's
-  // purpose is clear without opening it — used to disambiguate the calendars
-  // and planning surfaces that otherwise read alike.
-  description?: string;
-}
-
-interface NavSubGroup {
-  label: string;
-  items: NavItem[];
-}
-
-type NavGroup =
-  | { group: string; items: NavItem[]; subgroups?: never }
-  | { group: string; subgroups: NavSubGroup[]; items?: never };
-
-// Default expanded sections - Workspace and Intelligence are expanded by default;
-// Marketing/Deliverables/Admin start collapsed to keep the sidebar short.
-const DEFAULT_EXPANDED_SECTIONS = ['Workspace', 'Intelligence'];
-// Bumped key so users on the old structure get the new defaults on first render.
-const EXPANDED_SECTIONS_STORAGE_KEY = 'orbit-expanded-nav-sections-v2';
+type NavItem = AreaNavItem;
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -182,30 +109,6 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
   }, [setLocation]);
-  
-  // Load expanded sections from localStorage or use defaults
-  const [expandedSections, setExpandedSections] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_EXPANDED_SECTIONS;
-    const saved = localStorage.getItem(EXPANDED_SECTIONS_STORAGE_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return DEFAULT_EXPANDED_SECTIONS;
-      }
-    }
-    return DEFAULT_EXPANDED_SECTIONS;
-  });
-
-  const toggleSection = useCallback((sectionId: string) => {
-    setExpandedSections(prev => {
-      const newSections = prev.includes(sectionId)
-        ? prev.filter(s => s !== sectionId)
-        : [...prev, sectionId];
-      localStorage.setItem(EXPANDED_SECTIONS_STORAGE_KEY, JSON.stringify(newSections));
-      return newSections;
-    });
-  }, []);
   
   // Fetch markets data first to get activeMarketId for other queries
   const { data: marketsData } = useQuery<{ markets: Array<{ id: string; name: string; isDefault: boolean }>; activeMarketId: string | null; multiMarketEnabled: boolean }>({
@@ -332,6 +235,17 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const isAdminUser = user?.role === "Domain Admin" || user?.role === "Global Admin";
+  const isGlobalAdmin = user?.role === "Global Admin";
+
+  // Top-level information architecture: Home → Research → Product →
+  // Marketing → Sales in the header; Admin & Settings behind the gear.
+  // The sidebar shows only the active area's items.
+  const areas = useMemo(
+    () => buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }),
+    [isEnterprise, isAdminUser, isGlobalAdmin],
+  );
+  const activeArea = getActiveArea(areas, location);
+  const headerAreas = areas.filter((a) => a.inHeader);
   const inPaymentGrace = !!tenantInfo?.billing?.inPaymentGrace;
   const paymentGraceUntilRaw: string | null = tenantInfo?.billing?.paymentGraceUntil ?? null;
   const graceUntil = paymentGraceUntilRaw
@@ -540,115 +454,6 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     { label: "Changelog", icon: FileTextIcon, href: "/app/changelog" },
     { label: "Roadmap", icon: Map, href: "/app/roadmap" },
     { label: "About", icon: Info, href: "/app/about" },
-    { label: "Developer Portal", icon: Code2, href: "/app/developer" },
-  ];
-
-  const navigation: NavGroup[] = [
-    {
-      group: "Workspace",
-      items: [
-        { label: "Overview", icon: LayoutDashboard, href: "/app" },
-        { label: "Company Profile", icon: Building2, href: "/app/company-profile" },
-        { label: "Competitors", icon: Target, href: "/app/competitors" },
-        { label: "Products", icon: Package, href: "/app/products" },
-        { label: "Documents", icon: BookOpen, href: "/app/documents" },
-      ]
-    },
-    {
-      group: "Intelligence",
-      subgroups: [
-        {
-          label: "",
-          items: [
-            { label: "Analysis", icon: BarChart2, href: "/app/analysis" },
-            { label: "Action Items", icon: Lightbulb, href: "/app/action-items" },
-            { label: "AI Recommendations", icon: Sparkles, href: "/app/recommendations" },
-            { label: "Executive Summary", icon: FileText, href: "/app/executive-summary" },
-            { label: "Positioning Map", icon: Map, href: "/app/positioning-map" },
-            { label: "Intelligence Feed", icon: Brain, href: "/app/intelligence" },
-            { label: "SEO & Share of Voice", icon: Search, href: "/app/seo-dashboard" },
-          ],
-        },
-        {
-          label: "Sources",
-          items: [
-            { label: "Outcomes & Orbit Score", icon: TrendingUp, href: "/app/insights/outcomes" },
-            { label: "Data Sources", icon: Database, href: "/app/data-sources" },
-            { label: "Activity", icon: Activity, href: "/app/activity" },
-            { label: "Intelligence Health", icon: RefreshCw, href: "/app/refresh-center" },
-            { label: "Visualizations", icon: BarChart2, href: "/app/insights/visualizations" },
-          ],
-        },
-      ],
-    },
-    {
-      group: "Marketing",
-      subgroups: [
-        {
-          label: "Plan",
-          items: [
-            { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
-            { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework" },
-            { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan" },
-            { label: "Personas", icon: UserCircle, href: "/app/marketing/personas" },
-            { label: "Battle Cards", icon: Swords, href: "/app/battlecards" },
-            ...(isEnterprise ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true }] : []),
-          ],
-        },
-        {
-          label: "Calendars",
-          items: [
-            // Master, cross-channel overview (social + email + content) listed
-            // first. The two focused execution calendars below feed into it and
-            // render indented to signal that subordinate relationship. Distinct
-            // names + icons + descriptions keep the three from reading alike.
-            { label: "Content Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
-            { label: "Social Posts", icon: Share2, href: "/app/marketing/calendar", enterprise: true, indent: true, description: "Social-only view to schedule, reschedule, and add graphics to posts." },
-            { label: "Content Briefs", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, indent: true, description: "Plan and draft long-form content briefs grounded in your strategy." },
-          ],
-        },
-        {
-          label: "Execute",
-          items: [
-            { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true },
-            { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true, description: "Coordinate multi-channel campaigns and generate their content." },
-            { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, description: "Plan every piece of marketing for a campaign or theme in one view." },
-            { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true },
-            { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true },
-            { label: "Email Sends", icon: Send, href: "/app/marketing/sends", enterprise: true },
-            { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true },
-            { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true },
-            { label: "Solution Areas", icon: Layers, href: "/app/marketing/solution-areas", enterprise: true },
-            { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", enterprise: true },
-            { label: "Platform Credentials", icon: KeyRound, href: "/app/marketing/platform-credentials", enterprise: true },
-            { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", enterprise: true },
-            { label: "Performance", icon: LineChart, href: "/app/marketing/performance", enterprise: true },
-          ],
-        },
-      ],
-    },
-    {
-      group: "Deliverables",
-      items: [
-        { label: "Reports", icon: FileText, href: "/app/reports" },
-        { label: "Relationship Plans", icon: Handshake, href: "/app/relationship-reports" },
-        { label: "Assessments", icon: ClipboardList, href: "/app/assessments" },
-      ]
-    },
-    // Admin renders only when the user has at least one admin-only item.
-    ...(isAdminUser ? [{
-      group: "Admin",
-      items: [
-        { label: "User Management", icon: Users, href: "/app/users" },
-        { label: "Usage & Traffic", icon: LineChart, href: "/app/usage" },
-        { label: "Company Roster", icon: Building2, href: "/app/company-roster" },
-        { label: "Document Storage", icon: HardDrive, href: "/app/admin/spe-storage" },
-        ...(user?.role === "Global Admin" ? [
-          { label: "Admin Dashboard", icon: Crown, href: "/app/admin" },
-          { label: "AI Settings", icon: Brain, href: "/app/admin/ai-settings" },
-        ] : []),
-      ],
-    } as NavGroup] : []),
   ];
 
   return (
@@ -706,107 +511,100 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
            </Button>
         </div>
 
-        {/* Navigation */}
+        {/* Navigation — the sidebar shows only the active area's items on
+            desktop (the header switches areas); the mobile drawer lists every
+            area so nothing is unreachable on small screens. */}
         <div className="flex-1 px-4 py-2 overflow-y-auto min-h-0" style={{ WebkitOverflowScrolling: "touch" }}>
-          <div className="space-y-2">
-            {navigation.map((group, i) => {
-              const isExpanded = expandedSections.includes(group.group);
-              const groupItems: NavItem[] = group.items
-                ? group.items
-                : group.subgroups.flatMap(sg => sg.items);
-              const hasActivePage = groupItems.some(item => location === item.href);
-
-              const renderItem = (item: NavItem) => {
-                const isActive = location === item.href;
-                const indicator = navIndicators[item.href];
-                const isLocked = lockedNavItems.has(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={item.description}
-                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative",
-                      // Indented items nest beneath the preceding primary entry
-                      // with extra left padding and a subtle vertical guide.
-                      item.indent ? "ml-3 pl-5 border-l border-sidebar-border/60" : "pl-4",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm sidebar-item-active-gradient"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-                      isLocked && !isActive && "opacity-50"
-                    )}
-                  >
-                    <div className="relative">
-                      <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
-                      {indicator?.type === "action" && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
-                      )}
-                      {indicator?.type === "new" && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
-                      )}
-                    </div>
-                    <span className="flex-1">{item.label}</span>
-                    {item.comingSoon && (
-                      <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium border-amber-500/50 text-amber-500">
-                        Soon
-                      </Badge>
-                    )}
-                    {isLocked && !item.comingSoon && (
-                      <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
-                    )}
-                    {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (
-                      <Badge
-                        variant="secondary"
-                        className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
-                      >
-                        {indicator.count > 99 ? "99+" : indicator.count}
-                      </Badge>
-                    )}
-                  </Link>
-                );
-              };
-
+          {(() => {
+            const renderItem = (item: NavItem) => {
+              const isActive = location === item.href;
+              const indicator = navIndicators[item.href];
+              const isLocked = lockedNavItems.has(item.href);
               return (
-                <Collapsible
-                  key={i}
-                  open={isExpanded || hasActivePage}
-                  onOpenChange={() => toggleSection(group.group)}
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={item.description}
+                  data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 relative",
+                    // Indented items nest beneath the preceding primary entry
+                    // with extra left padding and a subtle vertical guide.
+                    item.indent ? "ml-3 pl-5 border-l border-sidebar-border/60" : "pl-4",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm sidebar-item-active-gradient"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                    isLocked && !isActive && "opacity-50"
+                  )}
                 >
-                  <CollapsibleTrigger asChild>
-                    <button className="w-full flex items-center justify-between px-2 py-2 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider hover:bg-sidebar-accent/30 rounded-md transition-colors">
-                      <span>{group.group}</span>
-                      <ChevronDown
-                        size={14}
-                        className={cn(
-                          "transition-transform duration-200",
-                          (isExpanded || hasActivePage) && "rotate-180"
-                        )}
-                      />
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="space-y-1 mt-1">
-                      {group.items
-                        ? group.items.map(renderItem)
-                        : group.subgroups.map((sg, sgi) => (
-                            <div key={sgi} className={sgi > 0 ? "mt-3" : ""}>
-                              {sg.label && (
-                                <div className="px-3 pb-1 pt-1 text-[10px] font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
-                                  {sg.label}
-                                </div>
-                              )}
-                              <div className="space-y-1">
-                                {sg.items.map(renderItem)}
-                              </div>
-                            </div>
-                          ))}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
+                  <div className="relative">
+                    <item.icon size={18} className={cn(isActive ? "text-primary" : "opacity-70")} />
+                    {indicator?.type === "action" && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+                    )}
+                    {indicator?.type === "new" && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
+                    )}
+                  </div>
+                  <span className="flex-1">{item.label}</span>
+                  {item.comingSoon && (
+                    <Badge variant="outline" className="h-4 px-1 text-[9px] font-medium border-amber-500/50 text-amber-500">
+                      Soon
+                    </Badge>
+                  )}
+                  {isLocked && !item.comingSoon && (
+                    <Lock size={14} className="text-muted-foreground" data-testid={`lock-${item.label.toLowerCase().replace(/\s+/g, "-")}`} />
+                  )}
+                  {indicator?.type === "count" && indicator.count && indicator.count > 0 && !isLocked && (
+                    <Badge
+                      variant="secondary"
+                      className="h-5 min-w-[20px] px-1.5 text-[10px] font-semibold bg-primary/20 text-primary border-0"
+                    >
+                      {indicator.count > 99 ? "99+" : indicator.count}
+                    </Badge>
+                  )}
+                </Link>
               );
-            })}
-          </div>
+            };
+
+            const renderArea = (area: AppArea, showAreaLabel: boolean) => (
+              <div key={area.id}>
+                {showAreaLabel && (
+                  <div className="flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider">
+                    <area.icon size={14} className="opacity-70" />
+                    <span>{area.label}</span>
+                  </div>
+                )}
+                <div className="space-y-1 mt-1">
+                  {area.items.map((item, idx) => {
+                    const prevSection = idx > 0 ? area.items[idx - 1].section : undefined;
+                    const showSection = item.section && item.section !== prevSection;
+                    return (
+                      <React.Fragment key={item.href}>
+                        {showSection && (
+                          <div className="px-3 pb-1 pt-3 text-[10px] font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
+                            {item.section}
+                          </div>
+                        )}
+                        {renderItem(item)}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+
+            return (
+              <>
+                {/* Desktop: active area only */}
+                <div className="hidden lg:block">{renderArea(activeArea, true)}</div>
+                {/* Mobile drawer: all areas */}
+                <div className="lg:hidden space-y-4">
+                  {areas.map((area) => renderArea(area, true))}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* Sidebar Footer - User Profile */}
@@ -902,8 +700,33 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Desktop Header - global utility bar (Notifications, Help, Settings) */}
-        <header className="h-12 hidden lg:flex items-center justify-end gap-1 px-4 border-b border-border bg-background">
+        {/* Desktop Header - area switcher (the value chain: Research → Product
+            → Marketing → Sales) on the left, global utilities on the right.
+            Home is reached via the sidebar logo. */}
+        <header className="h-12 hidden lg:flex items-center justify-between gap-1 px-4 border-b border-border bg-background">
+          <nav className="flex items-center gap-1" aria-label="App areas">
+            {headerAreas.map((area) => {
+              const isActive = activeArea.id === area.id;
+              return (
+                <Link
+                  key={area.id}
+                  href={area.hubHref}
+                  data-testid={`area-tab-${area.id}`}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  )}
+                >
+                  <area.icon size={15} className={isActive ? "" : "opacity-70"} />
+                  <span>{area.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="flex items-center gap-1">
           {!isMobile && <NotificationCentre />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -947,12 +770,19 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           </DropdownMenu>
           <Link
             href="/app/settings"
-            className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className={cn(
+              "inline-flex items-center justify-center h-8 w-8 rounded-md transition-colors",
+              activeArea.id === "settings"
+                ? "bg-primary/15 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            )}
             data-testid="header-settings"
-            aria-label="Settings"
+            aria-label="Admin & Settings"
+            title="Admin & Settings"
           >
             <Settings size={18} />
           </Link>
+          </div>
         </header>
 
         {/* Context Bar - tenant/market switcher for super users and enterprise tenants */}

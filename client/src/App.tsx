@@ -19,6 +19,8 @@ import VerifyPending from "@/pages/auth/verify-pending";
 import ForgotPassword from "@/pages/auth/forgot-password";
 import ResetPassword from "@/pages/auth/reset-password";
 import Dashboard from "@/pages/app/dashboard";
+import HomePage from "@/pages/app/home";
+import ContentPipelinePage from "@/pages/app/marketing/pipeline";
 import Analysis from "@/pages/app/analysis";
 import Recommendations from "@/pages/app/recommendations";
 import Activity from "@/pages/app/activity";
@@ -122,7 +124,9 @@ function Router() {
       <Route path="/feedback/:token" component={PublicFeedbackPage} />
 
       {/* App Routes */}
-      <Route path="/app" component={Dashboard} />
+      {/* Global Home (company at a glance); the research dashboard keeps its
+          /app/dashboard and /app/overview URLs under the Research area. */}
+      <Route path="/app" component={HomePage} />
       <Route path="/app/overview" component={Dashboard} />
       <Route path="/app/dashboard" component={Dashboard} />
       <Route path="/app/competitors" component={Competitors} />
@@ -161,6 +165,7 @@ function Router() {
       <Route path="/app/battlecards">{() => <PageFeatureGate featureKey="battlecards" label="Sales Battlecards" description="Generate competitive battlecards for sales teams. Upgrade to unlock this feature."><BattleCardsPage /></PageFeatureGate>}</Route>
       <Route path="/app/usage" component={UsagePage} />
       <Route path="/app/marketing" component={MarketingLandingPage} />
+      <Route path="/app/marketing/pipeline" component={ContentPipelinePage} />
       <Route path="/app/marketing/gtm-plan" component={GtmPlanPage} />
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>

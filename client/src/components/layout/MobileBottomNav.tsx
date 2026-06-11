@@ -1,7 +1,8 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { Home, BarChart2, Megaphone, Search, Menu } from "lucide-react";
+import { Home, Telescope, Megaphone, Search, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getActiveAreaId } from "@/lib/areaNavigation";
 
 interface MobileBottomNavProps {
   onOpenMenu: () => void;
@@ -26,23 +27,15 @@ export default function MobileBottomNav({ onOpenMenu, onOpenCommandPalette }: Mo
       label: "Home",
       href: "/app",
       icon: Home,
-      match: (p) => p === "/app" || p === "/app/overview" || p === "/app/dashboard",
+      match: (p) => getActiveAreaId(p) === "home",
       testId: "mobile-nav-home",
     },
     {
       kind: "link",
-      label: "Insights",
-      href: "/app/analysis",
-      icon: BarChart2,
-      match: (p) =>
-        p.startsWith("/app/analysis") ||
-        p.startsWith("/app/action-items") ||
-        p.startsWith("/app/battlecards") ||
-        p.startsWith("/app/intelligence") ||
-        p.startsWith("/app/activity") ||
-        p.startsWith("/app/positioning-map") ||
-        p.startsWith("/app/refresh-center") ||
-        p.startsWith("/app/data-sources"),
+      label: "Research",
+      href: "/app/dashboard",
+      icon: Telescope,
+      match: (p) => getActiveAreaId(p) === "research",
       testId: "mobile-nav-insights",
     },
     {
@@ -50,7 +43,7 @@ export default function MobileBottomNav({ onOpenMenu, onOpenCommandPalette }: Mo
       label: "Marketing",
       href: "/app/marketing",
       icon: Megaphone,
-      match: (p) => p.startsWith("/app/marketing") || p.startsWith("/app/marketing-planner"),
+      match: (p) => getActiveAreaId(p) === "marketing",
       testId: "mobile-nav-marketing",
     },
     {
