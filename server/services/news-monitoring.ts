@@ -39,62 +39,65 @@ function stripHtml(html: string): string {
 
 async function searchNews(query: string): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
-  
+
+  const apiKey = process.env.GNEWS_API_KEY;
+  if (!apiKey) {
+    console.warn("[News] GNEWS_API_KEY not configured, skipping news fetch");
+    return results;
+  }
+
   try {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " news")}`;
-    
+    // Constrain to recent news so old stories don't surface as "mentions".
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 30);
+    const fromDateStr = fromDate.toISOString().split("T")[0] + "T00:00:00Z";
+
+    const params = new URLSearchParams({
+      q: query,
+      token: apiKey,
+      lang: "en",
+      max: "10",
+      sortby: "publishedAt",
+      // Require the keywords in the headline/description so an off-topic body
+      // mention doesn't pull in unrelated stories.
+      in: "title,description",
+      from: fromDateStr,
+    });
+
+    const searchUrl = `https://gnews.io/api/v4/search?${params.toString()}`;
+
     const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-      },
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {
-      console.log(`[News] Search returned status ${response.status}`);
+      const errorText = await response.text().catch(() => "");
+      console.log(`[News] GNews API error ${response.status}: ${errorText}`);
       return results;
     }
 
-    const html = await response.text();
-    
-    const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-    const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
-    
-    const titles: Array<{ href: string; title: string }> = [];
-    let match;
-    while ((match = titleRegex.exec(html)) !== null) {
-      const rawHref = match[1];
-      let url = rawHref;
-      if (rawHref.includes("uddg=")) {
-        try {
-          url = decodeURIComponent(rawHref.replace(/.*uddg=/, "").split("&")[0]);
-        } catch {
-          url = rawHref.replace(/.*uddg=/, "").split("&")[0];
-        }
-      }
-      titles.push({ href: url, title: stripHtml(match[2]) });
+    const data = await response.json();
+    const articles: any[] = data.articles || [];
+
+    for (const article of articles) {
+      if (results.length >= 10) break;
+      const link = article?.url || "";
+      const title = article?.title || "";
+      if (!title || !link.startsWith("http")) continue;
+      results.push({
+        title,
+        link,
+        snippet: article?.description || "",
+        date: article?.publishedAt || undefined,
+      });
     }
-    
-    const snippets: string[] = [];
-    while ((match = snippetRegex.exec(html)) !== null) {
-      snippets.push(stripHtml(match[1]));
-    }
-    
-    for (let i = 0; i < titles.length && results.length < 10; i++) {
-      const { href, title } = titles[i];
-      const snippet = snippets[i] || "";
-      
-      if (title && href && href.startsWith("http") && !href.includes("duckduckgo.com")) {
-        results.push({ title, link: href, snippet });
-      }
-    }
-    
+
     console.log(`[News] Found ${results.length} results for query: "${query}"`);
   } catch (error) {
     console.error("[News] Error searching:", error);
   }
-  
+
   return results;
 }
 
@@ -142,9 +145,11 @@ export async function monitorCompetitorNews(
   const fetchedAt = new Date().toISOString();
   
   try {
-    const domain = companyWebsite ? new URL(companyWebsite).hostname.replace("www.", "") : "";
-    const searchQuery = domain ? `"${competitorName}" OR site:${domain}` : `"${competitorName}"`;
-    
+    // GNews doesn't support the `site:` operator, so search on the quoted
+    // competitor name (phrase match for multi-word names).
+    const cleanedName = competitorName.replace(/"/g, "").trim();
+    const searchQuery = cleanedName.includes(" ") ? `"${cleanedName}"` : cleanedName;
+
     const searchResults = await searchNews(searchQuery);
     
     if (searchResults.length === 0) {
@@ -208,20 +213,36 @@ export async function monitorCompetitorNews(
 }
 
 export async function monitorMultipleCompetitorsNews(
-  competitors: Array<{ id: string; name: string; websiteUrl?: string }>
+  competitors: Array<{ id: string; name: string; websiteUrl?: string }>,
+  opts?: { concurrency?: number; deadlineMs?: number }
 ): Promise<NewsMonitoringResult[]> {
+  // Scan competitors with a small worker pool so a long list (e.g. 20+)
+  // completes well within the HTTP request window instead of running one at a
+  // time. A global deadline returns whatever was gathered so far rather than
+  // letting the request hang and time out.
+  const concurrency = Math.max(1, opts?.concurrency ?? 3);
+  const deadline = Date.now() + (opts?.deadlineMs ?? 50_000);
+
   const results: NewsMonitoringResult[] = [];
-  
-  for (const competitor of competitors) {
-    const result = await monitorCompetitorNews(
-      competitor.id,
-      competitor.name,
-      competitor.websiteUrl
-    );
-    results.push(result);
-    
-    await new Promise(resolve => setTimeout(resolve, 1500));
+  let next = 0;
+
+  async function worker() {
+    while (next < competitors.length && Date.now() < deadline) {
+      const competitor = competitors[next++];
+      const result = await monitorCompetitorNews(
+        competitor.id,
+        competitor.name,
+        competitor.websiteUrl
+      );
+      results.push(result);
+    }
   }
-  
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, competitors.length) },
+    () => worker()
+  );
+  await Promise.all(workers);
+
   return results;
 }

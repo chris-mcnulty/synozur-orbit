@@ -43,7 +43,7 @@ export function registerAnalyticsDataRoutes(app: Express) {
       
       console.log(`[News] User ${req.session.userId} - ${competitors.length} competitors found`);
       
-      const competitorData = competitors.slice(0, 5).map((c: Competitor) => ({
+      const competitorData = competitors.map((c: Competitor) => ({
         id: c.id,
         name: c.name,
         websiteUrl: c.url || undefined,
