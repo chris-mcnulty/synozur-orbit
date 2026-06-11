@@ -1013,7 +1013,7 @@ export default function MarketingCalendarPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold" data-testid="text-page-title">
-              <CalendarRange className="h-6 w-6" /> Master Calendar
+              <CalendarRange className="h-6 w-6" /> Content Calendar
             </h1>
             <p className="text-sm text-muted-foreground">The cross-channel overview of every scheduled social post, email, and content piece. Nothing here generates with AI — add and plan by hand.</p>
           </div>

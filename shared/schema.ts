@@ -1897,6 +1897,7 @@ export const marketingTasks = pgTable("marketing_tasks", {
   status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, completed, removed
   aiGenerated: boolean("ai_generated").notNull().default(true),
   sourceRecommendationId: varchar("source_recommendation_id").references(() => recommendations.id, { onDelete: "set null" }),
+  sourceBriefId: varchar("source_brief_id").references(() => contentBriefs.id, { onDelete: "set null" }),
   assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
   dueDate: timestamp("due_date"),
   plannerTaskId: text("planner_task_id"), // Microsoft Planner task ID for sync

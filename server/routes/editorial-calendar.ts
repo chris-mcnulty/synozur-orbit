@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas } from "@shared/schema";
+import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas, marketingTasks, marketingPlans } from "@shared/schema";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
@@ -393,12 +393,34 @@ export function registerEditorialCalendarRoutes(app: Express) {
         assetMap = new Map(assets.map((a) => [a.id, { title: a.title, categoryId: a.categoryId }]));
       }
 
+      // Which briefs have already been pushed into a marketing plan (via the
+      // distribution planner)? The link is marketing_tasks.source_brief_id.
+      // Scope explicitly to this tenant's plans (join marketing_plans) so the
+      // marker can never reflect a task outside the tenant boundary.
+      const pushedBriefIds = new Set<string>();
+      if (briefs.length) {
+        const pushedTasks = await db
+          .select({ sourceBriefId: marketingTasks.sourceBriefId })
+          .from(marketingTasks)
+          .innerJoin(marketingPlans, eq(marketingTasks.planId, marketingPlans.id))
+          .where(
+            and(
+              inArray(marketingTasks.sourceBriefId, briefs.map((b) => b.id)),
+              eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+            ),
+          );
+        for (const t of pushedTasks) {
+          if (t.sourceBriefId) pushedBriefIds.add(t.sourceBriefId);
+        }
+      }
+
       const enriched = briefs.map((b) => {
         const asset = b.contentAssetId ? assetMap.get(b.contentAssetId) : undefined;
         return {
           ...b,
           draftTitle: asset?.title ?? null,
           draftCategoryId: asset?.categoryId ?? null,
+          pushedToPlanner: pushedBriefIds.has(b.id),
         };
       });
 

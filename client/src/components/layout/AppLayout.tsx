@@ -102,7 +102,7 @@ interface NavItem {
   comingSoon?: boolean;
   // Renders as a subordinate/nested item beneath the preceding primary entry
   // (extra indentation + a left guide). Used to signal that a calendar feeds
-  // into the Master Calendar above it.
+  // into the Content Calendar above it.
   indent?: boolean;
   // Short one-line explanation surfaced as a hover tooltip so each item's
   // purpose is clear without opening it — used to disambiguate the calendars
@@ -602,7 +602,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             // first. The two focused execution calendars below feed into it and
             // render indented to signal that subordinate relationship. Distinct
             // names + icons + descriptions keep the three from reading alike.
-            { label: "Master Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
+            { label: "Content Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
             { label: "Social Posts", icon: Share2, href: "/app/marketing/calendar", enterprise: true, indent: true, description: "Social-only view to schedule, reschedule, and add graphics to posts." },
             { label: "Content Briefs", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, indent: true, description: "Plan and draft long-form content briefs grounded in your strategy." },
           ],

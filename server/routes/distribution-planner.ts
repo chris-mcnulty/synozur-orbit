@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, type InsertMarketingTask } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { editorialCalendars, marketingTasks, type InsertMarketingTask } from "@shared/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { getRequestContext } from "../context";
 import { guardFeature, toContextFilter } from "./helpers";
 import { storage } from "../storage";
@@ -59,8 +59,27 @@ export function registerDistributionPlannerRoutes(app: Express) {
       const plan = await storage.getMarketingPlan(planId, toContextFilter(ctx));
       if (!plan) return res.status(404).json({ error: "Marketing plan not found" });
 
-      const tasks: InsertMarketingTask[] = schedule.map((s) => ({
+      // Idempotent push: skip briefs that already have a task in this plan so
+      // re-running the push doesn't create duplicates. The link is the
+      // marketing_task.source_brief_id back-reference.
+      const briefIds = schedule.map((s) => s.briefId);
+      const existing = await db
+        .select({ sourceBriefId: marketingTasks.sourceBriefId })
+        .from(marketingTasks)
+        .where(
+          and(
+            eq(marketingTasks.planId, plan.id),
+            inArray(marketingTasks.sourceBriefId, briefIds),
+          ),
+        );
+      const alreadyPushed = new Set(
+        existing.map((t) => t.sourceBriefId).filter((id): id is string => !!id),
+      );
+      const toCreate = schedule.filter((s) => !alreadyPushed.has(s.briefId));
+
+      const tasks: InsertMarketingTask[] = toCreate.map((s) => ({
         planId: plan.id,
+        sourceBriefId: s.briefId,
         title: s.title,
         description: `Editorial calendar "${calendar.name}" · ${s.format} · channel: ${s.channel} · publish ${s.scheduledAt.slice(0, 10)}`,
         activityGroup,
@@ -71,13 +90,16 @@ export function registerDistributionPlannerRoutes(app: Express) {
         dueDate: new Date(s.scheduledAt),
       }));
 
-      const created = await storage.createMarketingTasks(tasks, toContextFilter(ctx));
+      const created = tasks.length
+        ? await storage.createMarketingTasks(tasks, toContextFilter(ctx))
+        : [];
 
       res.status(201).json({
         schedule,
         committed: true,
         plan: { id: plan.id, name: plan.name },
         tasksCreated: created.length,
+        tasksSkipped: alreadyPushed.size,
       });
     } catch (err: any) {
       console.error("[distribution-plan]", err);

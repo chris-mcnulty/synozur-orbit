@@ -74,6 +74,7 @@ interface ContentBrief {
   solutionAreaId: string | null;
   draftTitle: string | null;
   draftCategoryId: string | null;
+  pushedToPlanner?: boolean;
 }
 
 interface NamedRow {
@@ -249,7 +250,7 @@ export default function EditorialCalendarPage() {
   const [schedule, setSchedule] = useState<ScheduleRow[] | null>(null);
   // Plan selection + commit result for the "Push to Planner" step inside the schedule dialog.
   const [distPlanId, setDistPlanId] = useState<string>("");
-  const [committedPlan, setCommittedPlan] = useState<{ name: string; tasks: number } | null>(null);
+  const [committedPlan, setCommittedPlan] = useState<{ name: string; tasks: number; skipped?: number } | null>(null);
 
   const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
@@ -667,11 +668,18 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to plan distribution");
       return res.json();
     },
-    onSuccess: (data: { schedule: ScheduleRow[]; committed: boolean; tasksCreated?: number; plan?: { name: string } }) => {
+    onSuccess: (data: { schedule: ScheduleRow[]; committed: boolean; tasksCreated?: number; tasksSkipped?: number; plan?: { name: string } }) => {
       setSchedule(data.schedule);
       if (data.committed) {
-        setCommittedPlan({ name: data.plan?.name ?? "marketing plan", tasks: data.tasksCreated ?? 0 });
-        toast.success(`Added ${data.tasksCreated} tasks to "${data.plan?.name}" — open the Marketing Planner to review.`);
+        const created = data.tasksCreated ?? 0;
+        const skipped = data.tasksSkipped ?? 0;
+        setCommittedPlan({ name: data.plan?.name ?? "marketing plan", tasks: created, skipped });
+        const skippedNote = skipped > 0 ? ` (skipped ${skipped} already in Planner)` : "";
+        if (created === 0 && skipped > 0) {
+          toast.success(`All ${skipped} item${skipped === 1 ? "" : "s"} were already in "${data.plan?.name}" — nothing new to add.`);
+        } else {
+          toast.success(`Added ${created} task${created === 1 ? "" : "s"} to "${data.plan?.name}"${skippedNote} — open the Marketing Planner to review.`);
+        }
       } else {
         setCommittedPlan(null);
         toast.success(`Built a suggested schedule for ${data.schedule.length} item${data.schedule.length === 1 ? "" : "s"}.`);
@@ -794,9 +802,9 @@ export default function EditorialCalendarPage() {
                 </p>
               </div>
               <div>
-                <p className="font-medium">🗓️ Master Calendar</p>
+                <p className="font-medium">🗓️ Content Calendar</p>
                 <p className="text-muted-foreground">
-                  The master day-by-day view for all scheduled content — social posts, emails, and content briefs
+                  The central day-by-day view for all scheduled content — social posts, emails, and content briefs
                   across every campaign.
                 </p>
               </div>
@@ -919,6 +927,15 @@ export default function EditorialCalendarPage() {
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid={`linked-draft-${b.id}`}>
                               <Link2 className="h-3 w-3" />
                               Draft ready
+                            </span>
+                          )}
+                          {b.pushedToPlanner && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
+                              data-testid={`in-planner-${b.id}`}
+                            >
+                              <CalendarClock className="h-3 w-3" />
+                              In Planner
                             </span>
                           )}
                           {b.targetKeyword && (
@@ -1797,6 +1814,7 @@ export default function EditorialCalendarPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
                       <span>
                         Added {committedPlan.tasks} task{committedPlan.tasks === 1 ? "" : "s"} to "{committedPlan.name}".
+                        {committedPlan.skipped ? ` Skipped ${committedPlan.skipped} already in Planner.` : ""}
                       </span>
                       <Button
                         size="sm"
