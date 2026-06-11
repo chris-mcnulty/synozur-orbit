@@ -46,6 +46,9 @@ import {
   Download,
   Copy,
   RotateCcw,
+  AlertTriangle,
+  Sparkles,
+  Clock,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -380,6 +383,13 @@ function localKey(iso: string | null): string | null {
   if (isNaN(d.getTime())) return null;
   return ymd(d);
 }
+// Local HH:mm for an ISO timestamp, used to seed/edit the time-of-day picker.
+function localTime(iso: string | null): string {
+  if (!iso) return "09:00";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "09:00";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -392,6 +402,236 @@ function quarterRange(d: Date) {
 function prettyDay(d: string) {
   const [y, m, dd] = d.split("-").map(Number);
   return new Date(y, m - 1, dd).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+// ───────────────────────── Content Advisor ─────────────────────────
+// A lightweight, client-side scheduling review. It runs over whatever scheduled
+// items are currently visible (so it respects the active campaign/type filter —
+// switch the filter to review one campaign or all of them) plus the backlog
+// count. No backend call: it just looks for the common ways a packed calendar
+// goes wrong and explains, in plain language, how to fix each one.
+type AdvisoryKind = "backlog" | "past" | "duplicate" | "overload" | "gap" | "weekend";
+type AdvisorySeverity = "high" | "medium" | "low";
+
+interface Advisory {
+  id: string;
+  kind: AdvisoryKind;
+  severity: AdvisorySeverity;
+  title: string;
+  detail: string;
+  items?: CalendarItem[];
+}
+
+const DAY_OVERLOAD = 4; // more than this many items in a single day = crowded
+const SEVERITY_RANK: Record<AdvisorySeverity, number> = { high: 0, medium: 1, low: 2 };
+
+// Parse a "YYYY-MM-DD" key into a local Date. Avoids `new Date(string)`, which
+// treats date-only strings as UTC and can shift the day/week in other zones.
+function parseLocalDay(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+// Monday-anchored week key for an item's local date, used for gap detection.
+function mondayKey(d: Date): string {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = (x.getDay() + 6) % 7; // 0 = Monday
+  x.setDate(x.getDate() - dow);
+  return ymd(x);
+}
+
+function normalizeContent(s: string): string {
+  return s.toLowerCase().replace(/https?:\/\/\S+/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function computeAdvisories(scheduled: CalendarItem[], backlogCount: number): Advisory[] {
+  const out: Advisory[] = [];
+  const todayKey = ymd(new Date());
+
+  // 1) Undated pile-up — items that never make it onto the calendar.
+  if (backlogCount > 0) {
+    out.push({
+      id: "backlog",
+      kind: "backlog",
+      severity: backlogCount >= 10 ? "high" : "medium",
+      title: `${backlogCount} item${backlogCount === 1 ? "" : "s"} have no date`,
+      detail: "These sit in the Backlog and never appear on the calendar until scheduled. Open the Backlog, tick the ones you want, and set a date — or drag a draft onto a day.",
+    });
+  }
+
+  // 2) Scheduled in the past but not yet delivered.
+  const stale = scheduled.filter((it) => {
+    const k = localKey(it.date);
+    return k && k < todayKey && it.lifecycle !== "delivered";
+  });
+  if (stale.length > 0) {
+    out.push({
+      id: "past",
+      kind: "past",
+      severity: "high",
+      title: `${stale.length} item${stale.length === 1 ? "" : "s"} scheduled in the past`,
+      detail: "These are dated before today but haven't been marked delivered. Either send/deliver them, move them to a future date, or remove them.",
+      items: stale,
+    });
+  }
+
+  // 3) Duplicate / near-duplicate content scheduled more than once.
+  const byContent = new Map<string, CalendarItem[]>();
+  for (const it of scheduled) {
+    const key = normalizeContent(it.preview?.trim() || it.title);
+    if (!key) continue;
+    if (!byContent.has(key)) byContent.set(key, []);
+    byContent.get(key)!.push(it);
+  }
+  for (const group of Array.from(byContent.values())) {
+    if (group.length >= 2) {
+      out.push({
+        id: `dup-${group[0].type}-${group[0].id}`,
+        kind: "duplicate",
+        severity: "high",
+        title: `Looks scheduled ${group.length} times: "${(group[0].preview?.trim() || group[0].title).slice(0, 50)}"`,
+        detail: "The same (or nearly the same) content is on the calendar more than once. Keep the one you want and remove or reword the rest.",
+        items: group,
+      });
+    }
+  }
+
+  // 4) Overloaded days.
+  const byDayMap = new Map<string, CalendarItem[]>();
+  for (const it of scheduled) {
+    const k = localKey(it.date);
+    if (!k) continue;
+    if (!byDayMap.has(k)) byDayMap.set(k, []);
+    byDayMap.get(k)!.push(it);
+  }
+  for (const [day, group] of Array.from(byDayMap.entries())) {
+    if (group.length > DAY_OVERLOAD) {
+      out.push({
+        id: `overload-${day}`,
+        kind: "overload",
+        severity: "medium",
+        title: `${prettyDay(day)} is crowded — ${group.length} items`,
+        detail: `That's a lot for one day and the audience may tune out. Spread a few onto nearby quieter days.`,
+        items: group,
+      });
+    }
+  }
+
+  // 5) Empty weeks (underload) between the first and last scheduled item.
+  const dated = scheduled.map((it) => localKey(it.date)).filter((k): k is string => !!k).sort();
+  if (dated.length >= 2) {
+    const first = parseLocalDay(dated[0]);
+    const last = parseLocalDay(dated[dated.length - 1]);
+    const weeksWithItems = new Set(scheduled.map((it) => (it.date ? mondayKey(new Date(it.date)) : "")).filter(Boolean));
+    const emptyWeeks: string[] = [];
+    const cursor = new Date(first);
+    cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7));
+    let guard = 0;
+    while (cursor <= last && guard < 200) {
+      const wk = ymd(cursor);
+      if (!weeksWithItems.has(wk)) emptyWeeks.push(wk);
+      cursor.setDate(cursor.getDate() + 7);
+      guard++;
+    }
+    if (emptyWeeks.length > 0) {
+      out.push({
+        id: "gaps",
+        kind: "gap",
+        severity: "low",
+        title: `${emptyWeeks.length} week${emptyWeeks.length === 1 ? "" : "s"} with nothing scheduled`,
+        detail: `Week${emptyWeeks.length === 1 ? "" : "s"} of ${emptyWeeks.map((w) => prettyDay(w)).slice(0, 5).join(", ")}${emptyWeeks.length > 5 ? "…" : ""} ${emptyWeeks.length === 1 ? "has" : "have"} no posts. Consider moving some content there to keep a steady cadence.`,
+      });
+    }
+  }
+
+  // 6) Weekend posts (usually lower engagement for B2B).
+  const weekend = scheduled.filter((it) => {
+    if (!it.date) return false;
+    const dow = new Date(it.date).getDay();
+    return dow === 0 || dow === 6;
+  });
+  if (weekend.length > 0) {
+    out.push({
+      id: "weekend",
+      kind: "weekend",
+      severity: "low",
+      title: `${weekend.length} item${weekend.length === 1 ? "" : "s"} on a weekend`,
+      detail: "Weekend posts usually get less attention for B2B. Move them to a weekday unless that's intentional.",
+      items: weekend,
+    });
+  }
+
+  return out.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+}
+
+const ADVISORY_META: Record<AdvisorySeverity, { dot: string; label: string }> = {
+  high: { dot: "bg-red-500", label: "Needs attention" },
+  medium: { dot: "bg-amber-500", label: "Worth a look" },
+  low: { dot: "bg-blue-500", label: "Suggestion" },
+};
+
+function ContentAdvisorDialog({ open, onOpenChange, advisories, scopeLabel, onSelectItem }: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  advisories: Advisory[];
+  scopeLabel: string;
+  onSelectItem: (it: CalendarItem) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto" data-testid="dialog-content-advisor">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" /> Content Advisor
+          </DialogTitle>
+          <DialogDescription>
+            Reviewing {scopeLabel}. Change the calendar's campaign filter to review a single campaign or all of them.
+          </DialogDescription>
+        </DialogHeader>
+        {advisories.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-10 text-center" data-testid="advisor-empty">
+            <CheckCircle2 className="h-8 w-8 text-green-500" />
+            <p className="text-sm font-medium">Nothing to flag</p>
+            <p className="text-xs text-muted-foreground">No duplicates, crowded days, gaps, or stale dates in this view.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {advisories.map((a) => (
+              <div key={a.id} className="rounded-lg border p-3" data-testid={`advisory-${a.kind}`}>
+                <div className="flex items-start gap-2">
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ADVISORY_META[a.severity].dot}`} title={ADVISORY_META[a.severity].label} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{a.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{a.detail}</p>
+                    {a.items && a.items.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {a.items.slice(0, 8).map((it) => (
+                          <button
+                            key={`${it.type}-${it.id}`}
+                            type="button"
+                            onClick={() => onSelectItem(it)}
+                            className="flex items-center gap-1 rounded border bg-card px-2 py-0.5 text-[11px] hover:bg-muted"
+                            data-testid={`advisory-item-${it.id}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${TYPE_META[it.type].dot}`} />
+                            <span className="max-w-[180px] truncate">{it.preview?.trim() || it.title}</span>
+                            {it.date && <span className="text-muted-foreground">· {prettyDay(localKey(it.date)!)}</span>}
+                          </button>
+                        ))}
+                        {a.items.length > 8 && <span className="px-1 text-[11px] text-muted-foreground">+{a.items.length - 8} more</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-advisor-close">Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export default function MarketingCalendarPage() {
@@ -407,6 +647,7 @@ export default function MarketingCalendarPage() {
   const [typeFilter, setTypeFilter] = useState("all");
 
   const [addOpen, setAddOpen] = useState(false);
+  const [advisorOpen, setAdvisorOpen] = useState(false);
   const [detail, setDetail] = useState<CalendarItem | null>(null);
   // WS4: when drilling into a collapsed social batch (shows its members).
   const [batchDrill, setBatchDrill] = useState<{ key: string; day: string; label: string } | null>(null);
@@ -485,6 +726,30 @@ export default function MarketingCalendarPage() {
     }
     return map;
   }, [visibleScheduled]);
+
+  // Content Advisor: review the currently-visible scheduled items (respects the
+  // active campaign/type filter) plus the undated backlog. Scope the backlog
+  // count to the same campaign/type filter as the scheduled view, so a
+  // per-campaign review doesn't count unrelated campaigns' undated drafts.
+  const advisorBacklogCount = useMemo(
+    () => backlogItems.filter((it) =>
+      (filters.campaignId === "all" || (it.campaignId ?? "") === filters.campaignId)
+      && matchesTypeFilter(it, typeFilter),
+    ).length,
+    [backlogItems, filters.campaignId, typeFilter],
+  );
+  // Re-runs whenever the filtered view changes, so advice re-scopes per campaign.
+  const advisories = useMemo(
+    () => computeAdvisories(visibleScheduled, advisorBacklogCount),
+    [visibleScheduled, advisorBacklogCount],
+  );
+  const advisorScopeLabel = useMemo(() => {
+    if (filters.campaignId !== "all") {
+      const name = filterOpts?.campaigns.find((c) => c.id === filters.campaignId)?.name;
+      return name ? `the "${name}" campaign` : "this campaign";
+    }
+    return "all campaigns in view";
+  }, [filters.campaignId, filterOpts]);
 
   // Invalidate every marketing-calendar query (grid + backlog + filters) so a
   // change in one view reflects in the other.
@@ -773,6 +1038,18 @@ export default function MarketingCalendarPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button variant="outline" onClick={() => setAdvisorOpen(true)} data-testid="button-content-advisor">
+              <Sparkles className="mr-2 h-4 w-4" /> Advisor
+              {advisories.length > 0 && (
+                <Badge
+                  variant="secondary"
+                  className={`ml-2 px-1.5 py-0 text-[10px] ${advisories.some((a) => a.severity === "high") ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : ""}`}
+                  data-testid="badge-advisor-count"
+                >
+                  {advisories.length}
+                </Badge>
+              )}
+            </Button>
             <Button onClick={() => setAddOpen(true)} data-testid="button-add-item">
               <Plus className="mr-2 h-4 w-4" /> Add item
             </Button>
@@ -982,6 +1259,14 @@ export default function MarketingCalendarPage() {
       </Dialog>
 
       <AddItemDialog open={addOpen} onOpenChange={setAddOpen} filterOpts={filterOpts} onCreated={invalidate} />
+
+      <ContentAdvisorDialog
+        open={advisorOpen}
+        onOpenChange={setAdvisorOpen}
+        advisories={advisories}
+        scopeLabel={advisorScopeLabel}
+        onSelectItem={(it) => { setAdvisorOpen(false); handleSelect(it); }}
+      />
 
       <DetailDialog
         key={detail ? itemKey(detail) : "none"}
@@ -1524,7 +1809,15 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   busy: boolean;
 }) {
   const [dateVal, setDateVal] = useState(item?.date ? localKey(item.date) || "" : "");
+  const [timeVal, setTimeVal] = useState(localTime(item?.date ?? null));
   const { toast } = useToast();
+  // Combine the date + time fields into an ISO string the reschedule PATCH
+  // understands. Clearing the date unschedules the item (null); time defaults to
+  // 9:00 AM when left blank.
+  const pushSchedule = (day: string, time: string) => {
+    if (!day) { onReschedule(item!, null); return; }
+    onReschedule(item!, new Date(`${day}T${(time || "09:00")}:00`).toISOString());
+  };
   // Social posts only ship a 160-char preview in the aggregation payload. Fetch
   // the full row (complete copy, branded graphic, carousel slides) on click so
   // the dialog isn't just a snippet. Batches drill down separately, so skip them.
@@ -1690,22 +1983,39 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           );
         })()}
 
-        <div>
-          <Label className="text-xs">Date</Label>
-          <Input
-            type="date"
-            value={dateVal}
-            onChange={(e) => {
-              setDateVal(e.target.value);
-              onReschedule(item, e.target.value ? new Date(`${e.target.value}T09:00:00`).toISOString() : null);
-            }}
-            data-testid="input-detail-date"
-          />
-          <DateCrowdingHint
-            date={dateVal}
-            onPick={(d) => { setDateVal(d); onReschedule(item, new Date(`${d}T09:00:00`).toISOString()); }}
-            testid="text-detail-crowding"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs">Date</Label>
+            <Input
+              type="date"
+              value={dateVal}
+              onChange={(e) => {
+                setDateVal(e.target.value);
+                pushSchedule(e.target.value, timeVal);
+              }}
+              data-testid="input-detail-date"
+            />
+          </div>
+          <div>
+            <Label className="flex items-center gap-1 text-xs"><Clock className="h-3 w-3" /> Time</Label>
+            <Input
+              type="time"
+              value={timeVal}
+              disabled={!dateVal}
+              onChange={(e) => {
+                setTimeVal(e.target.value);
+                if (dateVal) pushSchedule(dateVal, e.target.value);
+              }}
+              data-testid="input-detail-time"
+            />
+          </div>
+          <div className="col-span-2">
+            <DateCrowdingHint
+              date={dateVal}
+              onPick={(d) => { setDateVal(d); pushSchedule(d, timeVal); }}
+              testid="text-detail-crowding"
+            />
+          </div>
         </div>
 
         {/* Campaign / theme / event assignment for the existing item */}
