@@ -24,3 +24,4 @@
 - [Adding a content brief format](content-brief-format-checklist.md) — new CONTENT_BRIEF_FORMATS value must be threaded through ~10 spots; only FORMAT_GUIDANCE is compiler-enforced; easy-to-miss hardcoded AI prompt list in editorial-calendar-service.ts.
 - [Editorial calendar schedule/push + Planner naming](editorial-calendar-distribution.md) — "Schedule briefs" = one dialog, preview vs commit via planDistribution; "Planner" = internal Marketing Planner that syncs to Microsoft Planner; brief derivatives land undated in backlog.
 - [Push-to-Planner idempotency](push-to-planner-idempotency.md) — push uses marketing_tasks.source_brief_id; any brief-keyed task read MUST join marketing_plans + filter tenant_domain (not source_brief_id alone).
+- [App pages need AppLayout wrapper](app-page-layout-wrapper.md) — pages under /app must wrap JSX in <AppLayout> or they render with no nav menu; routes in App.tsx don't add the shell.

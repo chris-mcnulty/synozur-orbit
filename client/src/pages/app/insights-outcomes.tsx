@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { Download, FileText, RefreshCw, Plug } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import AppLayout from "@/components/layout/AppLayout";
 
 interface OutcomesPayload {
   range: { start: string; end: string };
@@ -87,6 +88,7 @@ export default function InsightsOutcomesPage() {
   }, [data]);
 
   return (
+    <AppLayout>
     <div className="container mx-auto p-6 space-y-6" data-testid="page-insights-outcomes">
       <Helmet><title>Outcomes & Orbit Score · Orbit</title></Helmet>
 
@@ -310,6 +312,7 @@ export default function InsightsOutcomesPage() {
         </>
       )}
     </div>
+    </AppLayout>
   );
 }
 
