@@ -157,7 +157,7 @@ export function registerBriefInterviewRoutes(app: Express) {
         return res.json({ results: [] });
       }
       const topic = str(req.query.topic) ?? undefined;
-      const results = await scanNewsForSubjects(subjects, 5, 45, topic);
+      const results = await scanNewsForSubjects(subjects, 8, 60, topic);
       res.json({ results });
     } catch (err: any) {
       console.error("[campaign-interview news-scan]", err);

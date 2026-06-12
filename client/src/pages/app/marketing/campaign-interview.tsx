@@ -273,6 +273,7 @@ export default function CampaignInterviewPage() {
   const [amplificationEnd, setAmplificationEnd] = useState("");
   const [tempoText, setTempoText] = useState("");
   const [newsItems, setNewsItems] = useState<string[]>(["", "", ""]);
+  const [newsSubjects, setNewsSubjects] = useState("");
   const [productQuery, setProductQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<ProductMatch | null>(null);
   const [productNotInOrbit, setProductNotInOrbit] = useState(false);
@@ -761,7 +762,12 @@ export default function CampaignInterviewPage() {
     if (themes.length === 0) return;
     setNewsScanLoading(true);
     try {
+      const extraSubjects = newsSubjects
+        .split(/[,\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
       const subjects = [
+        ...extraSubjects,
         ...themes.slice(0, 4),
         ...(isRelease && (selectedProduct?.name || productQuery.trim())
           ? [selectedProduct?.name || productQuery.trim()]
@@ -1018,22 +1024,33 @@ export default function CampaignInterviewPage() {
                   )}
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
+                    <div className="space-y-1.5">
                       <Label>Top news items for this release (3–6)</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={runNewsScan}
-                        disabled={newsScanLoading || themes.length === 0}
-                        data-testid="button-scan-news"
-                      >
-                        {newsScanLoading ? (
-                          <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Scanning…</>
-                        ) : (
-                          <><Newspaper className="h-3.5 w-3.5 mr-1" /> Scan for news hooks</>
-                        )}
-                      </Button>
+                      <div className="flex gap-2 items-start">
+                        <textarea
+                          value={newsSubjects}
+                          onChange={(e) => setNewsSubjects(e.target.value)}
+                          placeholder="Companies or topics to scan, one per line or comma-separated — e.g. Zscaler, Anthropic, AI infrastructure costs"
+                          className="flex-1 rounded-md border bg-background px-3 py-2 text-sm min-h-[56px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          data-testid="input-news-subjects"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={runNewsScan}
+                          disabled={newsScanLoading || themes.length === 0}
+                          className="shrink-0 mt-0.5"
+                          data-testid="button-scan-news"
+                        >
+                          {newsScanLoading ? (
+                            <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Scanning…</>
+                          ) : (
+                            <><Newspaper className="h-3.5 w-3.5 mr-1" /> Scan</>
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Enter specific companies or industry terms to get broader coverage. Themes are always included automatically.</p>
                     </div>
                     {newsItems.map((item, i) => (
                       <Input
@@ -1078,26 +1095,37 @@ export default function CampaignInterviewPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
+                    <div className="space-y-1.5">
                       <Label>News hooks (optional — up to 6)</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={runNewsScan}
-                        disabled={newsScanLoading || themes.length === 0}
-                        data-testid="button-scan-news"
-                      >
-                        {newsScanLoading ? (
-                          <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Scanning…</>
-                        ) : (
-                          <><Newspaper className="h-3.5 w-3.5 mr-1" /> Scan for news hooks</>
-                        )}
-                      </Button>
+                      <div className="flex gap-2 items-start">
+                        <textarea
+                          value={newsSubjects}
+                          onChange={(e) => setNewsSubjects(e.target.value)}
+                          placeholder="Companies or topics to scan, one per line or comma-separated — e.g. Zscaler, Anthropic, AI infrastructure costs, token pricing"
+                          className="flex-1 rounded-md border bg-background px-3 py-2 text-sm min-h-[56px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          data-testid="input-news-subjects"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={runNewsScan}
+                          disabled={newsScanLoading || themes.length === 0}
+                          className="shrink-0 mt-0.5"
+                          data-testid="button-scan-news"
+                        >
+                          {newsScanLoading ? (
+                            <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Scanning…</>
+                          ) : (
+                            <><Newspaper className="h-3.5 w-3.5 mr-1" /> Scan</>
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Enter specific companies or industry terms to get broader coverage. Themes are always included automatically.</p>
                     </div>
                     {newsItems.filter((n) => n.trim()).length === 0 && newsScanResults.length === 0 && (
                       <p className="text-xs text-muted-foreground">
-                        Add timely news items to anchor briefs to real moments, or scan for headlines based on your themes.
+                        Check a headline from the scan results to add it, or type a news item directly below.
                       </p>
                     )}
                     {newsItems.map((item, i) => (
