@@ -164,6 +164,8 @@ const BRIEF_FORMAT_LABELS: Record<string, string> = {
   whitepaper: "Whitepaper",
   ebook: "Ebook",
   podcast_outline: "Podcast outline",
+  webinar: "Webinar",
+  press_release: "Press release",
   other: "Other",
 };
 
@@ -171,6 +173,7 @@ const CAMPAIGN_TYPE_OPTIONS: { value: string; label: string; hint: string }[] = 
   { value: "theme", label: "Theme", hint: "Ongoing awareness push around a point of view" },
   { value: "event", label: "Event", hint: "Promote a webinar, conference, or dated event" },
   { value: "offering", label: "Offering", hint: "Launch or spotlight a product / service" },
+  { value: "product_release", label: "Product release", hint: "Ramp up to a release date, then amplify for 30+ days" },
 ];
 
 const FUNNEL_BADGE_VARIANT: Record<string, "default" | "secondary" | "outline"> = {

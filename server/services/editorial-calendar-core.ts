@@ -93,6 +93,14 @@ export const RECOMMENDED_ASSET_MIX: Record<CampaignType, AssetMixItem[]> = {
     { format: "linkedin_post", count: 4 },
     { format: "x_post", count: 2 },
   ],
+  product_release: [
+    { format: "press_release", count: 1 },
+    { format: "blog_post", count: 2 },
+    { format: "webinar", count: 1 },
+    { format: "linkedin_post", count: 5 },
+    { format: "x_post", count: 3 },
+    { format: "newsletter", count: 2 },
+  ],
 };
 
 /** Total brief count implied by a campaign type's recommended mix. */
@@ -104,6 +112,7 @@ const CAMPAIGN_TYPE_INTENT: Record<CampaignType, string> = {
   theme: "an ongoing thematic awareness push around a point of view",
   event: "promotion for a specific event (e.g. a webinar or conference) with a registration/attendance goal and a hard date",
   offering: "a launch or spotlight for a specific product/service/offering, oriented toward conversion",
+  product_release: "a product release anchored to a hard release date, with a ramp-up window building anticipation before it and an amplification window (at least 30 days) sustaining momentum after it",
 };
 
 /**
@@ -280,6 +289,10 @@ export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
   ebook:
     "Write an ebook draft in Markdown — structured like a whitepaper (executive summary, problem framing, our point of view, a framework or approach, and a conclusion + CTA) but longer-form and far more visual. Lead with a suggested cover graphic, and weave inline [GRAPHIC: ...] cues throughout — a section-opener visual for each chapter, a diagram for any framework or process, pull-quote callouts for key stats or quotes, and data-viz or illustration ideas where they reinforce the point. Give the design team rich, specific visual direction, not just text.",
   podcast_outline: POLARIS_OUTLINE_GUIDANCE,
+  webinar:
+    "Produce a complete webinar plan in Markdown with two parts. Part 1 — **Webinar Overview**: a registration-page title and abstract (100-150 words), 3-4 audience takeaways as bullets, suggested duration and run-of-show (e.g. 5 min welcome / 30 min presentation / 10 min demo / 15 min Q&A), and the CTA attendees should leave with. Part 2 — **Presentation Deck Outline**: a slide-by-slide outline (typically 12-18 slides) where each slide has a number, a slide title, 2-4 content bullets, and a one-line speaker note. Include a title slide, an agenda slide, a 'why now' problem framing section, the core content sections, a demo or example placeholder slide where relevant, a recap slide, and a closing CTA slide. Add [GRAPHIC: ...] cues on slides that need a diagram or visual.",
+  press_release:
+    "Write a press release in standard newswire style, in Markdown: a factual headline in title case, an optional one-sentence subheadline, a dateline placeholder (CITY, State — [DATE] —), a lead paragraph answering who/what/when/where/why, 2-3 body paragraphs with supporting detail, one or two quote placeholders attributed by role only (e.g. \"[QUOTE: CEO on why this matters]\") — never invent names or quotes, an 'About [Company]' boilerplate paragraph drawn from the positioning context, and a 'Media Contact:' placeholder block. Keep it factual and free of marketing superlatives; 400-600 words.",
   other:
     "Write well-structured Markdown copy appropriate to the topic, with a clear headline, body, and a CTA.",
 };

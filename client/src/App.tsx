@@ -58,6 +58,7 @@ import ContentLibraryPage from "@/pages/app/marketing/content-library";
 import BrandLibraryPage from "@/pages/app/marketing/brand-library";
 import SolutionAreasPage from "@/pages/app/marketing/solution-areas";
 import CampaignsPage from "@/pages/app/marketing/campaigns";
+import CampaignInterviewPage from "@/pages/app/marketing/campaign-interview";
 import ConferencePromotionPage from "@/pages/app/marketing/conference-promotion";
 import ConferenceDetailPage from "@/pages/app/marketing/conference-detail";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
@@ -171,6 +172,7 @@ function Router() {
       <Route path="/app/marketing/brand-library">{() => <PageFeatureGate featureKey="brandLibrary" label="Visual/Brand Assets" description="Manage approved images, logos, and visual brand identity. Upgrade to unlock this feature."><BrandLibraryPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/solution-areas" component={SolutionAreasPage} />
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/campaign-interview">{() => <PageFeatureGate featureKey="editorialCalendar" label="Content Interview" description="Answer a few questions to generate, curate, and schedule a full content plan. Upgrade to unlock this feature."><CampaignInterviewPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
       <Route path="/app/marketing/planning-hub">{() => <PageFeatureGate featureKey="campaigns" label="Planning Hub" description="Plan all marketing for a campaign or theme in one view. Upgrade to unlock this feature."><PlanningHubPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/conferences">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferencePromotionPage /></PageFeatureGate>}</Route>

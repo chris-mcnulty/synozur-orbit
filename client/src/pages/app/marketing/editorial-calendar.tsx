@@ -155,6 +155,8 @@ const FORMAT_LABELS: Record<string, string> = {
   whitepaper: "Whitepaper",
   ebook: "Ebook",
   podcast_outline: "Podcast outline",
+  webinar: "Webinar",
+  press_release: "Press release",
   other: "Other",
 };
 
@@ -170,6 +172,8 @@ const BRIEF_FORMAT_OPTIONS: { value: string; label: string }[] = [
   { value: "whitepaper", label: "Whitepaper" },
   { value: "ebook", label: "Ebook" },
   { value: "podcast_outline", label: "Podcast outline" },
+  { value: "webinar", label: "Webinar" },
+  { value: "press_release", label: "Press release" },
   { value: "other", label: "Other" },
 ];
 
