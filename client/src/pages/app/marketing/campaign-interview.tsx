@@ -34,6 +34,7 @@ import {
   CircleAlert,
   Newspaper,
   User,
+  Image,
 } from "lucide-react";
 import {
   CONTENT_FORM_CATEGORIES,
@@ -554,6 +555,7 @@ export default function CampaignInterviewPage() {
 
   // ── Step 3: asset selection ───────────────────────────────────────────────
   const [selectedInterviewAssets, setSelectedInterviewAssets] = useState<string[]>([]);
+  const [selectedInterviewBrandAssets, setSelectedInterviewBrandAssets] = useState<string[]>([]);
   const [savingInterviewAssets, setSavingInterviewAssets] = useState(false);
   const assetSelectionInitialized = useRef(false);
 
@@ -563,8 +565,19 @@ export default function CampaignInterviewPage() {
     enabled: step >= 3,
   });
 
+  const { data: interviewBrandAssets = [] } = useQuery<Array<{ id: string; name: string; fileUrl?: string | null; url?: string | null; assetType?: string | null; categoryName?: string | null }>>({
+    queryKey: ["/api/brand-assets"],
+    queryFn: () => apiJson("/api/brand-assets"),
+    enabled: step >= 3,
+  });
+
+  const imageBrandAssets = useMemo(
+    () => interviewBrandAssets.filter((ba) => !!(ba.fileUrl || ba.url)),
+    [interviewBrandAssets],
+  );
+
   // Fetch campaign detail to pre-populate existing asset selections when revisiting step 3.
-  const { data: campaignDetail } = useQuery<{ assets: Array<{ assetId: string }> }>({
+  const { data: campaignDetail } = useQuery<{ assets: Array<{ assetId: string }>; pinnedBrandAssets?: Array<{ brandAssetId: string }> }>({
     queryKey: [`/api/campaigns/${result?.campaign.id}`],
     queryFn: () => apiJson(`/api/campaigns/${result!.campaign.id}`),
     enabled: step >= 3 && !!result?.campaign.id,
@@ -575,9 +588,9 @@ export default function CampaignInterviewPage() {
     if (!campaignDetail || assetSelectionInitialized.current) return;
     assetSelectionInitialized.current = true;
     const existingIds = (campaignDetail.assets ?? []).map((a) => a.assetId);
-    if (existingIds.length > 0) {
-      setSelectedInterviewAssets(existingIds);
-    }
+    if (existingIds.length > 0) setSelectedInterviewAssets(existingIds);
+    const existingBrandIds = (campaignDetail.pinnedBrandAssets ?? []).map((a) => a.brandAssetId);
+    if (existingBrandIds.length > 0) setSelectedInterviewBrandAssets(existingBrandIds);
   }, [campaignDetail]);
 
   const visualAssets = useMemo(
@@ -600,7 +613,7 @@ export default function CampaignInterviewPage() {
       const toAdd = selectedInterviewAssets.filter((id) => !existingIds.has(id));
       const toRemove = Array.from(existingIds).filter((id) => !selectedInterviewAssets.includes(id));
 
-      // Add new asset links
+      // Add new content asset links
       if (toAdd.length > 0) {
         await apiJson(`/api/campaigns/${result.campaign.id}/assets`, {
           method: "POST",
@@ -608,7 +621,7 @@ export default function CampaignInterviewPage() {
           body: JSON.stringify({ assetIds: toAdd }),
         });
       }
-      // Remove deselected asset links
+      // Remove deselected content asset links
       await Promise.all(
         toRemove.map((assetId) =>
           apiJson(`/api/campaigns/${result!.campaign.id}/assets/${assetId}`, {
@@ -616,6 +629,25 @@ export default function CampaignInterviewPage() {
           }).catch(() => {/* non-fatal */}),
         ),
       );
+
+      // Sync brand (visual) asset selections
+      const existingBrandIds = new Set((campaignDetail?.pinnedBrandAssets ?? []).map((a) => a.brandAssetId));
+      const brandToAdd = selectedInterviewBrandAssets.filter((id) => !existingBrandIds.has(id));
+      const brandToRemove = Array.from(existingBrandIds).filter((id) => !selectedInterviewBrandAssets.includes(id));
+      await Promise.all([
+        ...brandToAdd.map((brandAssetId) =>
+          apiJson(`/api/campaigns/${result!.campaign.id}/brand-assets`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brandAssetId }),
+          }).catch(() => {/* non-fatal */}),
+        ),
+        ...brandToRemove.map((brandAssetId) =>
+          apiJson(`/api/campaigns/${result!.campaign.id}/brand-assets/${brandAssetId}`, {
+            method: "DELETE",
+          }).catch(() => {/* non-fatal */}),
+        ),
+      ]);
     } catch {
       // Non-blocking — assets can be adjusted later from the campaign page.
     }
@@ -1465,17 +1497,65 @@ export default function CampaignInterviewPage() {
             <CardHeader>
               <CardTitle>Campaign assets</CardTitle>
               <CardDescription>
-                Pin the content library items most relevant to this campaign — images for posts and web pages to link to. The Review Images picker will show these first. You can skip this and add assets later from the campaign page.
+                Pin the content and visual assets most relevant to this campaign. Brand Library images will show up first in the Review Images picker when generating social posts. You can skip this and add assets later from the campaign page.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-6">
+              {/* ── Brand Library images ── */}
+              {imageBrandAssets.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                    <Image className="h-3.5 w-3.5" /> Brand Library images
+                  </div>
+                  <p className="text-xs text-muted-foreground">Select images to pin to this campaign — they'll appear first in the image picker when generating social posts.</p>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {imageBrandAssets.map((ba) => {
+                      const checked = selectedInterviewBrandAssets.includes(ba.id);
+                      const imgSrc = ba.fileUrl || ba.url || "";
+                      return (
+                        <label
+                          key={ba.id}
+                          className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${checked ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                          data-testid={`label-brand-asset-${ba.id}`}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) =>
+                              setSelectedInterviewBrandAssets((prev) =>
+                                v ? [...prev, ba.id] : prev.filter((x) => x !== ba.id),
+                              )
+                            }
+                            data-testid={`checkbox-brand-asset-${ba.id}`}
+                          />
+                          {imgSrc && (
+                            <img
+                              src={imgSrc}
+                              alt=""
+                              className="w-10 h-10 rounded object-cover shrink-0"
+                              onError={(e) => (e.currentTarget.style.display = "none")}
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{ba.name}</div>
+                            {ba.categoryName && <div className="text-xs text-muted-foreground">{ba.categoryName}</div>}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Content Library items ── */}
               {interviewContentAssets.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No content library items found. Add assets in the Content Library first, or skip this step.</p>
+                imageBrandAssets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No assets found. Add assets in the Content Library or Brand Library first, or skip this step.</p>
+                ) : null
               ) : (
                 <>
                   {visualAssets.length > 0 && (
                     <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Visual assets</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Uploaded content assets</div>
                       <div className="grid sm:grid-cols-2 gap-2">
                         {visualAssets.map((a) => {
                           const checked = selectedInterviewAssets.includes(a.id);
@@ -1507,7 +1587,7 @@ export default function CampaignInterviewPage() {
 
                   {digitalAssets.length > 0 && (
                     <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Digital assets</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Digital / web assets</div>
                       <div className="grid sm:grid-cols-2 gap-2">
                         {digitalAssets.map((a) => {
                           const checked = selectedInterviewAssets.includes(a.id);
@@ -1541,8 +1621,8 @@ export default function CampaignInterviewPage() {
 
               <div className="flex items-center justify-between pt-2">
                 <div className="text-sm text-muted-foreground">
-                  {selectedInterviewAssets.length > 0
-                    ? `${selectedInterviewAssets.length} asset${selectedInterviewAssets.length === 1 ? "" : "s"} selected`
+                  {(selectedInterviewAssets.length + selectedInterviewBrandAssets.length) > 0
+                    ? `${selectedInterviewAssets.length + selectedInterviewBrandAssets.length} asset${(selectedInterviewAssets.length + selectedInterviewBrandAssets.length) === 1 ? "" : "s"} selected`
                     : "Nothing selected — full library fallback will apply"}
                 </div>
                 <div className="flex gap-2">
