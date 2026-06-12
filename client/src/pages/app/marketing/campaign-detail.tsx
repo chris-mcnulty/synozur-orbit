@@ -1103,7 +1103,7 @@ export default function CampaignDetailPage() {
   const [showExportWarning, setShowExportWarning] = useState(false);
   const [includeUndated, setIncludeUndated] = useState(false);
   const [includeExported, setIncludeExported] = useState(false);
-  const [exportPreview, setExportPreview] = useState<{ totalPosts: number; datedPosts: number; undatedPosts: number; collisions: number } | null>(null);
+  const [exportPreview, setExportPreview] = useState<{ totalPosts: number; datedPosts: number; undatedPosts: number; collisions: number; postsWithLink: number } | null>(null);
   // After a download, we confirm the scheduling tool accepted the file before
   // marking anything delivered. These hold the ids that were in the last CSV.
   const [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
@@ -4121,6 +4121,14 @@ export default function CampaignDetailPage() {
                         <span className="font-medium text-amber-600">{exportPreview.collisions} (auto-staggered by 15 min)</span>
                       </div>
                     )}
+                  </div>
+                )}
+                {csvFormat === "socialpilot" && exportPreview && exportPreview.postsWithLink > 0 && (
+                  <div className="rounded-md border p-3 bg-muted/50 text-sm">
+                    <p className="font-medium mb-1">Link URLs included</p>
+                    <p className="text-muted-foreground">
+                      {exportPreview.postsWithLink} post{exportPreview.postsWithLink !== 1 ? "s have" : " has"} a link URL attached. These are exported in a dedicated column (LinkedIn, Facebook, and X) so the link carries through to SocialPilot.
+                    </p>
                   </div>
                 )}
                 {exportPreview && exportPreview.undatedPosts > 0 && (

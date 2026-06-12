@@ -312,7 +312,12 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const platformAccountId = getAccountId(post);
         const tags = buildTagsSemicolon(post.hashtags as string[]);
 
-        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},"",${escCsv(tags)}`);
+        const linkUrlValue = post.linkUrl || "";
+        const linkCsvValue = linkUrlValue
+          ? (post.linkLabel ? `${post.linkLabel} | ${linkUrlValue}` : linkUrlValue)
+          : "";
+
+        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},"",${escCsv(tags)},${escCsv(linkCsvValue)}`);
       }
       break;
     }

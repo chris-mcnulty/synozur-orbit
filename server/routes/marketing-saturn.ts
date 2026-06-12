@@ -3052,11 +3052,14 @@ Return ONLY a valid JSON object (no markdown fences) with:
         if (count > 1) collisions++;
       }
 
+      const postsWithLink = allPosts.filter(p => p.linkUrl).length;
+
       res.json({
         totalPosts: allPosts.length,
         datedPosts: dated.length,
         undatedPosts: undated.length,
         collisions,
+        postsWithLink,
       });
     } catch (err: any) {
       console.error("[Export Preview Error]", err.message);
