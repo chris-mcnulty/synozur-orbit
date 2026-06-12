@@ -2506,6 +2506,36 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  app.patch("/api/campaigns/:campaignId/generated-posts/bulk-link", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { postIds, linkUrl, linkLabel } = req.body;
+      if (!Array.isArray(postIds) || postIds.length === 0) {
+        return res.status(400).json({ error: "postIds must be a non-empty array" });
+      }
+      const updateFields: any = {
+        updatedAt: new Date(),
+        linkUrl: linkUrl || null,
+        linkLabel: linkLabel || null,
+      };
+      const rows = await db.update(generatedPosts)
+        .set(updateFields)
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          inArray(generatedPosts.id, postIds as string[]),
+        ))
+        .returning({ id: generatedPosts.id });
+      res.json({ updated: rows.length });
+    } catch (err: any) {
+      console.error("[Bulk Link Update Error]", err.message);
+      res.status(500).json({ error: "Failed to bulk update post links" });
+    }
+  });
+
   app.put("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {

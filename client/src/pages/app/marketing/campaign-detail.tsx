@@ -330,6 +330,7 @@ export default function CampaignDetailPage() {
   const [rvMissingImage, setRvMissingImage] = useState(false);
   const [rvSelectMode, setRvSelectMode] = useState(false);
   const [rvSelectedIds, setRvSelectedIds] = useState<Set<string>>(new Set());
+  const [rvBulkLinkOpen, setRvBulkLinkOpen] = useState(false);
   const [rvGeneratingIds, setRvGeneratingIds] = useState<Set<string>>(new Set());
   const [rvBulkProgress, setRvBulkProgress] = useState(0);
   const [rvBulkTotal, setRvBulkTotal] = useState(0);
@@ -606,6 +607,25 @@ export default function CampaignDetailPage() {
       setEditingPostHashtags(null);
       setImagePickerPostId(null);
       setLinkPopoverPostId(null);
+    },
+  });
+
+  const bulkLinkMutation = useMutation({
+    mutationFn: async ({ postIds, linkUrl, linkLabel }: { postIds: string[]; linkUrl: string | null; linkLabel: string | null }) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/bulk-link`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ postIds, linkUrl, linkLabel }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      setRvBulkLinkOpen(false);
+      setLinkUrlInput("");
+      setLinkLabelInput("");
     },
   });
 
@@ -2692,6 +2712,22 @@ export default function CampaignDetailPage() {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-7 text-xs gap-1.5"
+                          onClick={() => {
+                            setLinkUrlInput("");
+                            setLinkLabelInput("");
+                            setRvBulkLinkOpen(true);
+                          }}
+                          data-testid="button-rv-bulk-add-link"
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                          Add link to selected…
+                        </Button>
+                      )}
+                      {rvSelectedIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
                           className="h-7 text-xs gap-1.5 text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-700 dark:hover:bg-green-950"
                           disabled={rvBulkApproving || rvBulkRejecting || rvBulkTotal > 0}
                           onClick={() => bulkStatusForSelected("approved")}
@@ -3155,14 +3191,23 @@ export default function CampaignDetailPage() {
 
       {/* Link attachment dialog — LinkedIn, Facebook, X */}
       <Dialog
-        open={!!linkPopoverPostId}
-        onOpenChange={v => { if (!v) { setLinkPopoverPostId(null); setLinkUrlInput(""); setLinkLabelInput(""); } }}
+        open={!!linkPopoverPostId || rvBulkLinkOpen}
+        onOpenChange={v => {
+          if (!v) {
+            setLinkPopoverPostId(null);
+            setRvBulkLinkOpen(false);
+            setLinkUrlInput("");
+            setLinkLabelInput("");
+          }
+        }}
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Attach link to post</DialogTitle>
+            <DialogTitle>{rvBulkLinkOpen ? `Attach link to ${rvSelectedIds.size} post${rvSelectedIds.size !== 1 ? "s" : ""}` : "Attach link to post"}</DialogTitle>
             <DialogDescription>
-              Add a URL to accompany this post. The link won't be inserted into the copy — the social publisher handles that.
+              {rvBulkLinkOpen
+                ? `The same URL will be applied to all ${rvSelectedIds.size} selected post${rvSelectedIds.size !== 1 ? "s" : ""}. The link won't be inserted into the copy — the social publisher handles that.`
+                : "Add a URL to accompany this post. The link won't be inserted into the copy — the social publisher handles that."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-1">
@@ -3214,7 +3259,7 @@ export default function CampaignDetailPage() {
             </div>
 
             <div className="flex gap-2 pt-1">
-              {linkPopoverPostId && posts.find(p => p.id === linkPopoverPostId)?.linkUrl && (
+              {!rvBulkLinkOpen && linkPopoverPostId && posts.find(p => p.id === linkPopoverPostId)?.linkUrl && (
                 <Button
                   variant="outline"
                   className="gap-1.5 text-destructive hover:text-destructive"
@@ -3227,14 +3272,23 @@ export default function CampaignDetailPage() {
               )}
               <Button
                 className="flex-1"
-                disabled={!linkUrlInput.trim() || updatePostMutation.isPending}
+                disabled={!linkUrlInput.trim() || updatePostMutation.isPending || bulkLinkMutation.isPending}
                 onClick={() => {
-                  if (!linkPopoverPostId) return;
-                  updatePostMutation.mutate({ postId: linkPopoverPostId, linkUrl: linkUrlInput.trim(), linkLabel: linkLabelInput.trim() || null });
+                  if (rvBulkLinkOpen) {
+                    bulkLinkMutation.mutate({
+                      postIds: Array.from(rvSelectedIds),
+                      linkUrl: linkUrlInput.trim(),
+                      linkLabel: linkLabelInput.trim() || null,
+                    });
+                  } else {
+                    if (!linkPopoverPostId) return;
+                    updatePostMutation.mutate({ postId: linkPopoverPostId, linkUrl: linkUrlInput.trim(), linkLabel: linkLabelInput.trim() || null });
+                  }
                 }}
                 data-testid="button-link-save"
               >
-                Save link
+                {(updatePostMutation.isPending || bulkLinkMutation.isPending) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {rvBulkLinkOpen ? `Apply to ${rvSelectedIds.size} post${rvSelectedIds.size !== 1 ? "s" : ""}` : "Save link"}
               </Button>
             </div>
           </div>
