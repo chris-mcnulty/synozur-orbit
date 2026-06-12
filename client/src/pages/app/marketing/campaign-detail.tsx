@@ -2348,7 +2348,7 @@ export default function CampaignDetailPage() {
               <div>
                 <h3 className="text-sm font-medium mb-2">Content Library — in this campaign</h3>
                 <div className="grid gap-2">
-                  {campaign.assets.map(ca => {
+                  {[...campaign.assets].reverse().map(ca => {
                     const asset = allAssets.find(a => a.id === ca.assetId);
                     return (
                       <Card key={ca.id} data-testid={`card-campaign-asset-${ca.assetId}`}>
@@ -2391,7 +2391,7 @@ export default function CampaignDetailPage() {
               <div>
                 <h3 className="text-sm font-medium mb-2">Visual/Brand Assets — in this campaign</h3>
                 <div className="grid gap-2">
-                  {(campaign.pinnedBrandAssets ?? []).map(cba => {
+                  {[...(campaign.pinnedBrandAssets ?? [])].reverse().map(cba => {
                     const ba = brandAssets.find(b => b.id === cba.brandAssetId);
                     const thumb = ba?.fileUrl || ba?.url;
                     return (
