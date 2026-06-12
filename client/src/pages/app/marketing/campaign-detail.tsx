@@ -621,11 +621,15 @@ export default function CampaignDetailPage() {
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
-      setRvBulkLinkOpen(false);
-      setLinkUrlInput("");
-      setLinkLabelInput("");
+      if (vars.linkUrl === null) {
+        toast({ title: `Link removed from ${vars.postIds.length} post${vars.postIds.length !== 1 ? "s" : ""}` });
+      } else {
+        setRvBulkLinkOpen(false);
+        setLinkUrlInput("");
+        setLinkLabelInput("");
+      }
     },
   });
 
@@ -2560,6 +2564,7 @@ export default function CampaignDetailPage() {
 
               const selectAll = () => setRvSelectedIds(new Set(rvFiltered.map(p => p.id)));
               const clearSelection = () => setRvSelectedIds(new Set());
+              const rvSelectedHasLink = rvFiltered.some(p => rvSelectedIds.has(p.id) && p.linkUrl);
 
               const bulkStatusForSelected = async (status: "approved" | "rejected") => {
                 if (status === "approved") setRvBulkApproving(true);
@@ -2735,6 +2740,19 @@ export default function CampaignDetailPage() {
                         >
                           <Link2 className="w-3.5 h-3.5" />
                           Add link to selected…
+                        </Button>
+                      )}
+                      {rvSelectedIds.size > 0 && rvSelectedHasLink && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5"
+                          disabled={bulkLinkMutation.isPending}
+                          onClick={() => bulkLinkMutation.mutate({ postIds: Array.from(rvSelectedIds), linkUrl: null, linkLabel: null })}
+                          data-testid="button-rv-bulk-remove-link"
+                        >
+                          {bulkLinkMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+                          Remove link from selected…
                         </Button>
                       )}
                       {rvSelectedIds.size > 0 && (
