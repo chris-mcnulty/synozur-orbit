@@ -50,7 +50,7 @@ const SYSTEM_PROMPT =
   VOICE_NON_NEGOTIABLES +
   "\n\n" +
   SELF_CHECK +
-  "\n\nRespond using ONLY the requested ===TITLE===/===BODY===/===META=== format.";
+  "\n\nRespond using ONLY the sections specified in the Response format section of the prompt.";
 
 const REWRITE_SYSTEM_PROMPT =
   "You are a senior B2B copy editor. You revise existing content per the user's instructions while " +
@@ -108,6 +108,31 @@ export async function draftFromBrief(
     .filter(Boolean)
     .join("\n");
 
+  const responseFormat =
+    format === "blog_post"
+      ? `## Response format
+Respond with exactly these six sections and nothing else:
+===TITLE===
+<the final, polished title/headline>
+===SUBTITLE===
+<a single-sentence subtitle that adds context or intrigue to the title>
+===OVERVIEW===
+<a compelling summary of the post's core argument, max 480 characters — this is used as a preview blurb>
+===BODY===
+<the full post — no Markdown heading syntax (#, ##, ###); use **Bold Section Header** for section titles>
+===META===
+<a one-sentence meta description, max 155 characters>
+===TAGS===
+<3-5 comma-delimited tags (topics, themes, keywords relevant to the post)>`
+      : `## Response format
+Respond with exactly these three sections and nothing else:
+===TITLE===
+<the final, polished title/headline>
+===BODY===
+<the full draft in Markdown>
+===META===
+<a one-sentence summary / meta description, max 155 characters>`;
+
   const prompt = [
     `Draft this piece of content.`,
     strategicBlock,
@@ -117,14 +142,7 @@ export async function draftFromBrief(
     `## Format guidance\n${FORMAT_GUIDANCE[format]}`,
     format === "podcast_outline" ? polarisGuestBlock(opts.guest) : "",
     opts.instructions?.trim() ? `## Additional instructions\n${opts.instructions.trim()}` : "",
-    `## Response format
-Respond with exactly these three sections and nothing else:
-===TITLE===
-<the final, polished title/headline>
-===BODY===
-<the full draft in Markdown>
-===META===
-<a one-sentence summary / meta description, max 155 characters>`,
+    responseFormat,
   ]
     .filter(Boolean)
     .join("\n\n");

@@ -27,3 +27,4 @@
 - [Push-to-Planner idempotency](push-to-planner-idempotency.md) — push uses marketing_tasks.source_brief_id; any brief-keyed task read MUST join marketing_plans + filter tenant_domain (not source_brief_id alone).
 - [App pages need AppLayout wrapper](app-page-layout-wrapper.md) — pages under /app must wrap JSX in <AppLayout> or they render with no nav menu; routes in App.tsx don't add the shell.
 - [One-click Finalize](one-click-finalize.md) — Finalize approves brief + activates linked draft atomically; contentAssets has no "approved" state (active/archived only), so finalize = brief→approved + asset→active.
+- [Blog post extra fields](blog-post-draft-fields.md) — blog_post drafts get SUBTITLE/OVERVIEW/TAGS sections (6-section response format); other formats keep 3-section TITLE/BODY/META; parseDraftResponse + ParsedDraft extended; columns subtitle/overview/post_tags on content_assets.

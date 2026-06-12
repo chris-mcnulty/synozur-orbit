@@ -262,7 +262,7 @@ export function assessCalendarWarnings(
  */
 export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
   blog_post:
-    "Write a 700-1100 word blog post in Markdown: a compelling H1, a hook intro, 3-5 H2 sections with skimmable subheads, and a short conclusion that leads into the CTA. Weave the target keyword in naturally (no stuffing).",
+    "Write a 700-1100 word blog post. Do NOT use Markdown heading syntax (#, ##, ###) — use **Bold Section Header** for section titles instead. Structure: a hook intro paragraph, 3-5 sections each opened with a **bold header**, and a short conclusion leading to the CTA. Weave the target keyword in naturally (no stuffing). Include exactly one [VISUAL: brief description of a suggested anchor image] cue placed near the most data-heavy or concept-heavy section.",
   landing_page:
     "Write landing-page copy in Markdown: a benefit-led hero headline + subhead, 3-4 value-proposition blocks (subhead + 1-2 sentences each), a short social-proof/objection-handling section, and a single strong CTA block. Keep it scannable and conversion-focused.",
   linkedin_post:
@@ -305,11 +305,14 @@ export function briefFormatToAssetType(format: ContentBriefFormat): string {
 
 export interface ParsedDraft {
   title: string | null;
+  subtitle: string | null;
+  overview: string | null;
   body: string;
   meta: string | null;
+  tags: string | null;
 }
 
-const DRAFT_SECTION = /===\s*(TITLE|BODY|META)\s*===/gi;
+const DRAFT_SECTION = /===\s*(TITLE|SUBTITLE|OVERVIEW|BODY|META|TAGS)\s*===/gi;
 
 /**
  * Parse a delimiter-formatted copywriter response into title/body/meta.
@@ -340,7 +343,10 @@ export function parseDraftResponse(text: string): ParsedDraft {
 
   return {
     title: norm(sections.TITLE),
+    subtitle: norm(sections.SUBTITLE),
+    overview: sections.OVERVIEW ? norm(sections.OVERVIEW.slice(0, 480)) : null,
     body: body.trim(),
     meta: norm(sections.META),
+    tags: norm(sections.TAGS),
   };
 }

@@ -613,7 +613,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/content-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds } = req.body;
+    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds, subtitle, overview, postTags } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
@@ -625,6 +625,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (leadImageUrl !== undefined) updates.leadImageUrl = leadImageUrl;
     if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
     if (tags !== undefined) updates.tags = tags;
+    if (subtitle !== undefined) updates.subtitle = subtitle;
+    if (overview !== undefined) updates.overview = overview;
+    if (postTags !== undefined) updates.postTags = postTags;
     if (assetType !== undefined && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)) {
       updates.assetType = assetType;
     }

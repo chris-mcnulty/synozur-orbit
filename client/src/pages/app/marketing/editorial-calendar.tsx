@@ -41,6 +41,7 @@ import {
   Library,
   Save,
   FileDown,
+  Download,
   Image as ImageIcon,
   RefreshCw,
   X,
@@ -93,8 +94,11 @@ interface EditorialCalendar {
 
 interface DraftResult {
   title: string | null;
+  subtitle: string | null;
+  overview: string | null;
   body: string;
   meta: string | null;
+  tags: string | null;
   format: string;
 }
 
@@ -419,8 +423,11 @@ export default function EditorialCalendarPage() {
       }
       setDraft({
         title: asset.title ?? null,
+        subtitle: asset.subtitle ?? null,
+        overview: asset.overview ?? null,
         body: asset.content ?? "",
         meta: asset.description ?? null,
+        tags: asset.postTags ?? null,
         format: b.format,
       });
       setDraftAssetId(asset.id);
@@ -482,7 +489,7 @@ export default function EditorialCalendarPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ title: draft.title, content: draft.body }),
+        body: JSON.stringify({ title: draft.title, content: draft.body, subtitle: draft.subtitle, overview: draft.overview, postTags: draft.tags }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Failed to save draft");
       return res.json();
@@ -534,6 +541,25 @@ export default function EditorialCalendarPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const downloadImage = async () => {
+    if (!draftImageUrl) return;
+    try {
+      const res = await fetch(draftImageUrl);
+      const blob = await res.blob();
+      const ext = draftImageUrl.split(".").pop()?.split("?")[0] || "png";
+      const safe = (draft?.title || "image").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "image";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${safe}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      toast.error("Could not download the image.");
+    }
+  };
 
   const downloadDocx = async () => {
     if (!draftAssetId) return;
@@ -1367,6 +1393,43 @@ export default function EditorialCalendarPage() {
                   data-testid="input-draft-title"
                 />
               </div>
+              {draft?.format === "blog_post" && (
+                <>
+                  <div className="space-y-1">
+                    <Label htmlFor="draft-subtitle" className="text-xs font-medium uppercase text-muted-foreground">
+                      Subtitle
+                    </Label>
+                    <Input
+                      id="draft-subtitle"
+                      value={draft?.subtitle ?? ""}
+                      placeholder="A single-sentence subtitle…"
+                      onChange={(e) => {
+                        setDraft((d) => (d ? { ...d, subtitle: e.target.value } : d));
+                        setDraftDirty(true);
+                      }}
+                      data-testid="input-draft-subtitle"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="draft-overview" className="text-xs font-medium uppercase text-muted-foreground">
+                      Overview <span className="normal-case font-normal">(preview blurb, max 480 chars)</span>
+                    </Label>
+                    <Textarea
+                      id="draft-overview"
+                      className="min-h-[80px] font-sans text-sm leading-relaxed"
+                      maxLength={480}
+                      value={draft?.overview ?? ""}
+                      placeholder="A compelling summary shown as a post preview…"
+                      onChange={(e) => {
+                        setDraft((d) => (d ? { ...d, overview: e.target.value } : d));
+                        setDraftDirty(true);
+                      }}
+                      data-testid="input-draft-overview"
+                    />
+                    <p className="text-right text-xs text-muted-foreground">{(draft?.overview ?? "").length}/480</p>
+                  </div>
+                </>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="draft-body" className="text-xs font-medium uppercase text-muted-foreground">
                   Body
@@ -1382,6 +1445,23 @@ export default function EditorialCalendarPage() {
                   data-testid="input-draft-body"
                 />
               </div>
+              {draft?.format === "blog_post" && (
+                <div className="space-y-1">
+                  <Label htmlFor="draft-tags" className="text-xs font-medium uppercase text-muted-foreground">
+                    Tags <span className="normal-case font-normal">(comma-delimited)</span>
+                  </Label>
+                  <Input
+                    id="draft-tags"
+                    value={draft?.tags ?? ""}
+                    placeholder="e.g. AI, private equity, value creation"
+                    onChange={(e) => {
+                      setDraft((d) => (d ? { ...d, tags: e.target.value } : d));
+                      setDraftDirty(true);
+                    }}
+                    data-testid="input-draft-tags"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1490,6 +1570,15 @@ export default function EditorialCalendarPage() {
                           <X className="mr-2 h-4 w-4" />
                         )}
                         Remove
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={downloadImage}
+                        data-testid="button-download-image"
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
                       </Button>
                     </div>
                   </div>
