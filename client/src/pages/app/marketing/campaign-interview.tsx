@@ -18,7 +18,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { format as formatDate } from "date-fns";
 import {
   Sparkles,
@@ -32,6 +32,8 @@ import {
   Loader2,
   CircleCheck,
   CircleAlert,
+  Newspaper,
+  User,
 } from "lucide-react";
 import {
   CONTENT_FORM_CATEGORIES,
@@ -235,8 +237,28 @@ async function apiJson(url: string, init?: RequestInit) {
   return body;
 }
 
+interface InterviewPersona {
+  id: string;
+  name: string;
+  role?: string | null;
+  isIcp?: boolean;
+}
+
+interface NewsScanHeadline {
+  title: string;
+  source: string;
+  url: string;
+  snippet: string;
+}
+
+interface NewsScanResult {
+  subject: string;
+  headlines: NewsScanHeadline[];
+}
+
 export default function CampaignInterviewPage() {
   const { toast } = useToast();
+  const searchStr = useSearch();
   const [step, setStep] = useState(0);
 
   // ── Step 0: interview state ──────────────────────────────────────────────
@@ -256,6 +278,53 @@ export default function CampaignInterviewPage() {
   const [productNotInOrbit, setProductNotInOrbit] = useState(false);
   const [notes, setNotes] = useState("");
   const [briefCount, setBriefCount] = useState(8);
+
+  // ── Persona picker ────────────────────────────────────────────────────────
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
+  const { data: interviewPersonas = [] } = useQuery<InterviewPersona[]>({
+    queryKey: ["/api/personas"],
+    queryFn: () =>
+      apiJson("/api/personas").then((d) => (Array.isArray(d) ? d : d?.items ?? [])),
+  });
+  const sortedPersonas = useMemo(
+    () => [...interviewPersonas].sort((a, b) => Number(b.isIcp ?? false) - Number(a.isIcp ?? false)),
+    [interviewPersonas],
+  );
+
+  // ── News-hook scanner ─────────────────────────────────────────────────────
+  const [newsScanResults, setNewsScanResults] = useState<NewsScanResult[]>([]);
+  const [newsScanLoading, setNewsScanLoading] = useState(false);
+  const [acceptedNewsUrls, setAcceptedNewsUrls] = useState<Set<string>>(new Set());
+
+  // ── Pre-populate from URL params (ideation signals / name) ────────────────
+  const signalsInitialized = useRef(false);
+  useEffect(() => {
+    if (signalsInitialized.current) return;
+    const params = new URLSearchParams(searchStr);
+    const rawSignals = params.get("signals");
+    const rawName = params.get("name");
+    if (rawSignals || rawName) {
+      signalsInitialized.current = true;
+      if (rawName) setName(decodeURIComponent(rawName));
+      if (rawSignals) {
+        try {
+          const parsed: string[] = JSON.parse(decodeURIComponent(rawSignals));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const items = parsed.filter((s) => typeof s === "string" && s.trim()).map((s) => s.trim());
+            if (items.length > 0) {
+              setNewsItems((prev) => {
+                const base = prev.filter((n) => n.trim());
+                const merged = [...base, ...items].slice(0, 6);
+                return merged.length < 3 ? [...merged, ...Array(3 - merged.length).fill("")] : merged;
+              });
+            }
+          }
+        } catch {
+          /* ignore malformed param */
+        }
+      }
+    }
+  }, [searchStr]);
 
   const isRelease = campaignType === "product_release";
   const themes = useMemo(
@@ -319,6 +388,7 @@ export default function CampaignInterviewPage() {
             : undefined,
           notes: notes.trim() || undefined,
           briefCount,
+          personaIds: selectedPersonaIds.length ? selectedPersonaIds : undefined,
         }),
       }) as Promise<GenerateResponse>,
     onSuccess: (data) => {
@@ -687,6 +757,57 @@ export default function CampaignInterviewPage() {
   const setNewsItem = (i: number, value: string) =>
     setNewsItems((prev) => prev.map((n, idx) => (idx === i ? value : n)));
 
+  const runNewsScan = async () => {
+    if (themes.length === 0) return;
+    setNewsScanLoading(true);
+    try {
+      const subjects = [
+        ...themes.slice(0, 4),
+        ...(isRelease && (selectedProduct?.name || productQuery.trim())
+          ? [selectedProduct?.name || productQuery.trim()]
+          : []),
+      ].filter(Boolean);
+      const params = new URLSearchParams({
+        subjects: subjects.join(","),
+        topic: themes.join(" "),
+      });
+      const data = await apiJson(`/api/campaign-interview/news-scan?${params.toString()}`);
+      const results: NewsScanResult[] = data.results ?? [];
+      setNewsScanResults(results);
+      const hasAny = results.some((r) => r.headlines.length > 0);
+      if (!hasAny) {
+        toast({ title: "No recent news found", description: "Try adjusting your themes or add news items manually." });
+      }
+    } catch (err: any) {
+      toast({ title: "Scan failed", description: err.message, variant: "destructive" });
+    } finally {
+      setNewsScanLoading(false);
+    }
+  };
+
+  const toggleNewsHeadline = (headline: NewsScanHeadline) => {
+    const url = headline.url;
+    if (acceptedNewsUrls.has(url)) {
+      setAcceptedNewsUrls((prev) => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
+      });
+      setNewsItems((prev) => {
+        const text = headline.title;
+        const removed = prev.filter((n) => n.trim() !== text);
+        return removed.length < 3 ? [...removed, ...Array(3 - removed.length).fill("")] : removed;
+      });
+    } else {
+      setAcceptedNewsUrls((prev) => new Set(prev).add(url));
+      setNewsItems((prev) => {
+        const filtered = prev.filter((n) => n.trim());
+        const merged = [...filtered, headline.title].slice(0, 6);
+        return merged.length < 3 ? [...merged, ...Array(3 - merged.length).fill("")] : merged;
+      });
+    }
+  };
+
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -757,6 +878,44 @@ export default function CampaignInterviewPage() {
                   data-testid="input-themes"
                 />
               </div>
+
+              {sortedPersonas.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> Who is this campaign for? (optional)</Label>
+                  <div className="flex flex-wrap gap-2" data-testid="persona-picker">
+                    {sortedPersonas.map((p) => {
+                      const selected = selectedPersonaIds.includes(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedPersonaIds((prev) =>
+                              selected ? prev.filter((id) => id !== p.id) : [...prev, p.id],
+                            )
+                          }
+                          data-testid={`button-persona-${p.id}`}
+                          className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
+                            selected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-muted-foreground/40"
+                          }`}
+                        >
+                          {p.isIcp && <Badge variant="secondary" className="text-[9px] px-1 py-0 leading-tight">ICP</Badge>}
+                          <span>{p.name}</span>
+                          {p.role && <span className="text-muted-foreground text-xs">— {p.role}</span>}
+                          {selected && <Check className="h-3 w-3" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedPersonaIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {selectedPersonaIds.length} persona{selectedPersonaIds.length === 1 ? "" : "s"} selected — the AI will tailor concepts and targetReader to these audiences.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {isRelease ? (
                 <div className="space-y-4 border rounded-lg p-4">
@@ -844,7 +1003,23 @@ export default function CampaignInterviewPage() {
                   )}
 
                   <div className="space-y-2">
-                    <Label>Top news items for this release (3–6)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label>Top news items for this release (3–6)</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={runNewsScan}
+                        disabled={newsScanLoading || themes.length === 0}
+                        data-testid="button-scan-news"
+                      >
+                        {newsScanLoading ? (
+                          <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Scanning…</>
+                        ) : (
+                          <><Newspaper className="h-3.5 w-3.5 mr-1" /> Scan for news hooks</>
+                        )}
+                      </Button>
+                    </div>
                     {newsItems.map((item, i) => (
                       <Input
                         key={i}
@@ -869,21 +1044,104 @@ export default function CampaignInterviewPage() {
                   </div>
                 </div>
               ) : (
-                <div className="grid sm:grid-cols-3 gap-3">
-                  {campaignType === "event" && (
+                <>
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    {campaignType === "event" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="interview-event-date">Event date</Label>
+                        <Input id="interview-event-date" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} data-testid="input-event-date" />
+                      </div>
+                    )}
                     <div className="space-y-2">
-                      <Label htmlFor="interview-event-date">Event date</Label>
-                      <Input id="interview-event-date" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} data-testid="input-event-date" />
+                      <Label htmlFor="interview-start">Timeframe start</Label>
+                      <Input id="interview-start" type="date" value={timeframeStart} onChange={(e) => setTimeframeStart(e.target.value)} data-testid="input-timeframe-start" />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="interview-end">Timeframe end</Label>
+                      <Input id="interview-end" type="date" value={timeframeEnd} onChange={(e) => setTimeframeEnd(e.target.value)} data-testid="input-timeframe-end" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>News hooks (optional — up to 6)</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={runNewsScan}
+                        disabled={newsScanLoading || themes.length === 0}
+                        data-testid="button-scan-news"
+                      >
+                        {newsScanLoading ? (
+                          <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Scanning…</>
+                        ) : (
+                          <><Newspaper className="h-3.5 w-3.5 mr-1" /> Scan for news hooks</>
+                        )}
+                      </Button>
+                    </div>
+                    {newsItems.filter((n) => n.trim()).length === 0 && newsScanResults.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Add timely news items to anchor briefs to real moments, or scan for headlines based on your themes.
+                      </p>
+                    )}
+                    {newsItems.map((item, i) => (
+                      <Input
+                        key={i}
+                        value={item}
+                        onChange={(e) => setNewsItem(i, e.target.value)}
+                        placeholder={`News hook ${i + 1}`}
+                        data-testid={`input-news-${i}`}
+                      />
+                    ))}
+                    <div className="flex gap-2">
+                      {newsItems.length < 6 && (
+                        <Button variant="outline" size="sm" onClick={() => setNewsItems((p) => [...p, ""])} data-testid="button-add-news">
+                          Add item
+                        </Button>
+                      )}
+                      {newsItems.length > 3 && (
+                        <Button variant="ghost" size="sm" onClick={() => setNewsItems((p) => p.slice(0, -1))}>
+                          Remove last
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {newsScanResults.length > 0 && (
+                <div className="space-y-2" data-testid="news-scan-results">
+                  <p className="text-sm font-medium flex items-center gap-1.5">
+                    <Newspaper className="h-4 w-4" /> News scan results — check a headline to add it as a news hook
+                  </p>
+                  {newsScanResults.map((r) =>
+                    r.headlines.map((h) => {
+                      const accepted = acceptedNewsUrls.has(h.url);
+                      return (
+                        <label
+                          key={h.url}
+                          className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                            accepted ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40"
+                          }`}
+                          data-testid={`news-headline-${encodeURIComponent(h.url)}`}
+                        >
+                          <Checkbox
+                            checked={accepted}
+                            onCheckedChange={() => toggleNewsHeadline(h)}
+                            className="mt-0.5 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium leading-snug">{h.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {h.source && <span className="font-medium">{h.source} · </span>}
+                              {h.snippet ? h.snippet.slice(0, 180) : ""}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    }),
                   )}
-                  <div className="space-y-2">
-                    <Label htmlFor="interview-start">Timeframe start</Label>
-                    <Input id="interview-start" type="date" value={timeframeStart} onChange={(e) => setTimeframeStart(e.target.value)} data-testid="input-timeframe-start" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="interview-end">Timeframe end</Label>
-                    <Input id="interview-end" type="date" value={timeframeEnd} onChange={(e) => setTimeframeEnd(e.target.value)} data-testid="input-timeframe-end" />
-                  </div>
                 </div>
               )}
 

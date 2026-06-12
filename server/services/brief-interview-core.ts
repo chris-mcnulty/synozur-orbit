@@ -121,6 +121,8 @@ export interface BriefInterviewInput {
   notes?: string | null;
   /** Requested concept-brief count; clamped to 5-10. */
   briefCount?: number;
+  /** IDs of personas explicitly selected by the user for this campaign. */
+  personaIds?: string[];
 }
 
 export const MIN_INTERVIEW_BRIEFS = 5;

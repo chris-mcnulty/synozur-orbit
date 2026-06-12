@@ -8,6 +8,7 @@ import {
   editorialCalendars,
   products,
   productFeatures,
+  personas,
   CONTENT_BRIEF_FORMATS,
   type CampaignInterview,
   type CampaignType,
@@ -19,6 +20,8 @@ import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { generateInterviewBriefs, generateInterviewSocialPosts } from "../services/brief-interview-service";
+import { formatPersonaContextForPrompt } from "../services/strategic-context";
+import { scanNewsForSubjects } from "../services/news-service";
 import { draftFromBrief } from "../services/copywriter-service";
 import {
   DEFAULT_FUNNEL_TARGETS,
@@ -138,6 +141,30 @@ export function registerBriefInterviewRoutes(app: Express) {
     }
   });
 
+  // Scan GNews for news hooks relevant to the supplied subjects (comma-sep or
+  // array). Used by the interview's "Scan for news hooks" button so the user
+  // can accept real headlines as news items instead of typing them manually.
+  app.get("/api/campaign-interview/news-scan", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const raw = req.query.subjects;
+      const subjects: string[] = Array.isArray(raw)
+        ? raw.map(String).flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean)
+        : typeof raw === "string"
+          ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+          : [];
+      if (subjects.length === 0) {
+        return res.json({ results: [] });
+      }
+      const topic = str(req.query.topic) ?? undefined;
+      const results = await scanNewsForSubjects(subjects, 5, 45, topic);
+      res.json({ results });
+    } catch (err: any) {
+      console.error("[campaign-interview news-scan]", err);
+      res.status(500).json({ error: err.message || "Failed to scan news" });
+    }
+  });
+
   // The interview's main step: create (or reuse) the campaign from the
   // interview answers and generate 5-10 format-agnostic concept briefs, each
   // carrying an AI voice/topic fit assessment for the curation step.
@@ -206,6 +233,34 @@ export function registerBriefInterviewRoutes(app: Express) {
 
       const tempo = str(body.tempo) ?? (releaseDate ? formatTempoForDisplay(suggestReleaseTempo()) : null);
 
+      // Load explicitly selected personas so the AI targets the right audience.
+      const personaIds = strArray(body.personaIds);
+      let explicitPersonasBlock: string | undefined;
+      if (personaIds.length > 0) {
+        const personaRows = await db
+          .select({
+            name: personas.name,
+            role: personas.role,
+            industry: personas.industry,
+            companySize: personas.companySize,
+            painPoints: personas.painPoints,
+            goals: personas.goals,
+            objections: personas.objections,
+            preferredChannels: personas.preferredChannels,
+            notes: personas.notes,
+          })
+          .from(personas)
+          .where(
+            and(
+              inArray(personas.id, personaIds),
+              eq(personas.tenantDomain, ctx.tenantDomain),
+            ),
+          );
+        if (personaRows.length > 0) {
+          explicitPersonasBlock = formatPersonaContextForPrompt(personaRows);
+        }
+      }
+
       const interview: BriefInterviewInput = {
         campaignType,
         name: str(body.name),
@@ -223,6 +278,7 @@ export function registerBriefInterviewRoutes(app: Express) {
           : null,
         notes: str(body.notes),
         briefCount: body.briefCount != null ? Number(body.briefCount) : undefined,
+        personaIds: personaIds.length ? personaIds : undefined,
       };
 
       const { briefs: drafted, model } = await generateInterviewBriefs({
@@ -230,6 +286,7 @@ export function registerBriefInterviewRoutes(app: Express) {
         marketId: ctx.marketId,
         isDefaultMarket: ctx.isDefaultMarket,
         interview,
+        explicitPersonasBlock,
       });
       if (drafted.length === 0) {
         return res.status(502).json({ error: "The AI did not return any usable briefs. Please try again." });

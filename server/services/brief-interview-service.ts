@@ -8,7 +8,7 @@
  * demand-pool framing with the user's stated themes, windows, and news items.
  */
 
-import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
+import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "./strategic-context";
 import { completeForFeature } from "./ai-provider";
 import { CONTENT_BRIEF_FORMATS, CONTENT_FORM_CATEGORIES } from "@shared/schema";
 import {
@@ -37,6 +37,8 @@ export interface GenerateInterviewBriefsParams {
   marketId?: string;
   isDefaultMarket?: boolean;
   interview: BriefInterviewInput;
+  /** Pre-formatted personas block from explicitly selected personas, if any. */
+  explicitPersonasBlock?: string;
 }
 
 export interface GenerateInterviewBriefsResult {
@@ -68,7 +70,7 @@ function extractJsonArray(text: string): any[] {
 export async function generateInterviewBriefs(
   params: GenerateInterviewBriefsParams,
 ): Promise<GenerateInterviewBriefsResult> {
-  const { tenantDomain, marketId, interview } = params;
+  const { tenantDomain, marketId, interview, explicitPersonasBlock } = params;
   const count = clampBriefCount(interview.briefCount);
 
   const strategicCtx = await loadStrategicContext(tenantDomain, marketId, params.isDefaultMarket);
@@ -83,6 +85,7 @@ export async function generateInterviewBriefs(
   const prompt = [
     `Produce exactly ${count} content CONCEPTS as JSON. A concept is a core idea that can be produced in several forms — it is NOT tied to one output type. Each concept will later be expanded into short form (social, email), mid form (press release, blog post), long form (whitepaper, ebook), and/or digital interactive (webinar, video, podcast) pieces. Short-form social is multi-channel and LinkedIn-led: a strong social concept should work as a LinkedIn post first, then carry over to X and other networks, so favor ideas that translate across channels rather than ones that only land on a single network.`,
     strategicBlock,
+    explicitPersonasBlock || null,
     interviewBlock,
     `## Rules
 - Every concept must trace directly to the interview answers above (themes, news items, product). No generic filler.

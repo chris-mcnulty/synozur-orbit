@@ -648,9 +648,21 @@ export default function CampaignsPage() {
                                   <p className="text-[11px] text-muted-foreground mt-1">Audience: {idea.suggestedAudience.join(", ")}</p>
                                 )}
                               </div>
-                              <Button size="sm" variant="outline" className="shrink-0" onClick={() => applyIdea(idea)} data-testid={`button-use-idea-${i}`}>
-                                Use this
-                              </Button>
+                              <div className="flex flex-col gap-1 shrink-0">
+                                <Button size="sm" variant="outline" className="shrink-0" onClick={() => applyIdea(idea)} data-testid={`button-use-idea-${i}`}>
+                                  Use this
+                                </Button>
+                                {idea.signals.length > 0 && (
+                                  <Link
+                                    href={`/app/marketing/campaign-interview?signals=${encodeURIComponent(JSON.stringify(idea.signals))}&name=${encodeURIComponent(idea.title)}`}
+                                    data-testid={`button-interview-idea-${i}`}
+                                  >
+                                    <Button size="sm" variant="ghost" className="w-full text-xs gap-1">
+                                      <Sparkles className="w-3 h-3" /> Interview
+                                    </Button>
+                                  </Link>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
