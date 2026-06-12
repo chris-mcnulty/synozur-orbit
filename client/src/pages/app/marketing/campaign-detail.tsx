@@ -44,6 +44,7 @@ import {
   Wand2,
   Square,
   SquareCheck,
+  Users,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -120,6 +121,7 @@ interface Campaign {
   alwaysHashtags?: string[];
   parentCampaignId?: string | null;
   foundingSignals?: FoundingSignals | null;
+  interview?: { newsItems?: string[] } | null;
   assets: CampaignAsset[];
   pinnedBrandAssets: CampaignBrandAssetRef[];
   socialAccounts: CampaignSocialAccount[];
@@ -1586,6 +1588,55 @@ export default function CampaignDetailPage() {
                 {briefs.length ? "Generate more briefs" : "Generate content briefs"}
               </Button>
             </div>
+
+            {/* Campaign Grounding — personas targeted + news hooks used in the interview */}
+            {((campaign.audiencePersonaIds && campaign.audiencePersonaIds.length > 0) || (campaign.interview?.newsItems && campaign.interview.newsItems.length > 0)) && (
+              <Card data-testid="card-campaign-grounding" className="border-dashed">
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Users className="w-3.5 h-3.5 text-primary" />
+                    Campaign grounding
+                  </span>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4 px-4 space-y-4">
+                  {campaign.audiencePersonaIds && campaign.audiencePersonaIds.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Targeted personas</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {campaign.audiencePersonaIds.map(pid => {
+                          const p = availablePersonas.find(x => x.id === pid);
+                          return p ? (
+                            <div key={pid} className="flex items-center gap-1.5" data-testid={`grounding-persona-${pid}`}>
+                              <Badge variant={p.isIcp ? "default" : "secondary"} className="text-xs gap-1">
+                                {p.isIcp && <span className="font-bold">ICP</span>}
+                                {p.name}
+                                {p.role && <span className="opacity-70">· {p.role}</span>}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <Badge key={pid} variant="outline" className="text-xs text-muted-foreground" data-testid={`grounding-persona-${pid}`}>
+                              Unknown persona
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {campaign.interview?.newsItems && campaign.interview.newsItems.length > 0 && (
+                    <div>
+                      <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                        <Newspaper className="w-3.5 h-3.5" /> News hooks
+                      </h4>
+                      <ul className="space-y-1 list-disc pl-5">
+                        {campaign.interview.newsItems.map((item, i) => (
+                          <li key={i} className="text-sm text-muted-foreground" data-testid={`grounding-news-${i}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Founding Signals — collapsed by default so it doesn't push briefs down */}
             {(() => {
