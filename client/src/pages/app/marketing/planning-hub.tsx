@@ -35,6 +35,10 @@ interface HubItem {
   platform?: string;
   format?: string;
   conferenceName?: string | null;
+  calendarId?: string | null;
+  contentAssetId?: string | null;
+  campaignId?: string | null;
+  solutionAreaId?: string | null;
 }
 interface HubResponse {
   scope: Scope;
@@ -322,7 +326,16 @@ export default function PlanningHubPage() {
                                 )}
                                 <p className="text-[11px] text-muted-foreground mt-1.5">
                                   {item.type === "content"
-                                    ? <Link href="/app/marketing/editorial-calendar" className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Content Briefs →</Link>
+                                    ? (() => {
+                                        const p = new URLSearchParams();
+                                        if (item.calendarId) p.set("calendar", item.calendarId);
+                                        if (scope === "campaign" && id) p.set("campaignId", id);
+                                        else if (scope === "theme" && id) p.set("solutionAreaId", id);
+                                        p.set("brief", item.id);
+                                        return (
+                                          <Link href={`/app/marketing/editorial-calendar?${p.toString()}`} className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Content Briefs →</Link>
+                                        );
+                                      })()
                                     : scope === "campaign"
                                       ? <Link href={`/app/marketing/campaigns/${id}`} className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Campaign →</Link>
                                       : <Link href="/app/marketing/calendar" className="underline underline-offset-2 hover:text-foreground" data-testid={`link-open-item-${item.id}`}>Open in Social Posts →</Link>

@@ -231,6 +231,7 @@ export function registerPlanningHubRoutes(app: Express) {
           stage: contentStage(b.status, b.scheduledAt),
           format: b.format,
           contentAssetId: b.contentAssetId,
+          calendarId: b.calendarId,
           campaignId: b.campaignId, solutionAreaId: b.solutionAreaId, conferenceId: b.conferenceId,
         });
       }

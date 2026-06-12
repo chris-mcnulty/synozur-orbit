@@ -1366,16 +1366,6 @@ export default function CampaignDetailPage() {
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={() => navigate(`/app/marketing/planning-hub?scope=campaign&id=${id}`)}
-              data-testid="button-open-planning-hub"
-            >
-              <Target className="w-3.5 h-3.5" />
-              Planning Hub
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
               onClick={() => {
                 setActiveTab("assets");
                 window.history.replaceState(null, "", window.location.pathname + window.location.search + "#assets");
