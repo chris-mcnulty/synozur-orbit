@@ -2513,7 +2513,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [campaign] = await db.select().from(campaigns)
         .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags } = req.body;
+      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel } = req.body;
       if (status === "rejected" || status === "deleted") {
         await db.delete(generatedPosts)
           .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
@@ -2536,6 +2536,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
       if (scheduledDate !== undefined) updateFields.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
       if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
+      if (linkUrl !== undefined) updateFields.linkUrl = linkUrl || null;
+      if (linkLabel !== undefined) updateFields.linkLabel = linkLabel || null;
       const [row] = await db.update(generatedPosts)
         .set(updateFields)
         .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))

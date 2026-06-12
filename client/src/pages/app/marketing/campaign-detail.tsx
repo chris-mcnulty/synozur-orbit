@@ -218,6 +218,7 @@ interface ContentAsset {
   url?: string;
   fileUrl?: string;
   leadImageUrl?: string;
+  assetType?: string;
 }
 
 interface SocialAccount {
@@ -245,6 +246,8 @@ interface GeneratedPost {
   publishedUrl?: string;
   publishError?: string;
   publishAttemptCount?: number;
+  linkUrl?: string | null;
+  linkLabel?: string | null;
 }
 
 
@@ -313,6 +316,12 @@ export default function CampaignDetailPage() {
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
   const [pickerTab, setPickerTab] = useState<"brand" | "content">("brand");
+  const [pickerShowAll, setPickerShowAll] = useState(false);
+
+  // Link attachment popover state
+  const [linkPopoverPostId, setLinkPopoverPostId] = useState<string | null>(null);
+  const [linkUrlInput, setLinkUrlInput] = useState("");
+  const [linkLabelInput, setLinkLabelInput] = useState("");
 
   // Review Posts tab state
   const [rvGroupBy, setRvGroupBy] = useState<"channel" | "concept" | "date">("channel");
@@ -577,15 +586,16 @@ export default function CampaignDetailPage() {
   });
 
   const updatePostMutation = useMutation({
-    mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags }: {
+    mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags, linkUrl, linkLabel }: {
       postId: string; editedContent?: string; status?: string;
       overrideImageUrl?: string | null; overrideBrandAssetId?: string | null; hashtags?: string[];
+      linkUrl?: string | null; linkLabel?: string | null;
     }) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags }),
+        body: JSON.stringify({ editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags, linkUrl, linkLabel }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -595,6 +605,7 @@ export default function CampaignDetailPage() {
       setEditingPostId(null);
       setEditingPostHashtags(null);
       setImagePickerPostId(null);
+      setLinkPopoverPostId(null);
     },
   });
 
@@ -2156,6 +2167,45 @@ export default function CampaignDetailPage() {
                             <span className="truncate">{post.sourceUrl}</span>
                           </a>
                         )}
+                        {["linkedin", "facebook", "twitter"].includes(post.platform) && (
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap" data-testid={`posts-link-row-${post.id}`}>
+                            {post.linkUrl ? (
+                              <>
+                                <div className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 bg-primary/5 border-primary/30 min-w-0">
+                                  <Link2 className="w-3 h-3 text-primary shrink-0" />
+                                  <a
+                                    href={post.linkUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-primary hover:underline truncate max-w-[200px]"
+                                    data-testid={`posts-link-url-${post.id}`}
+                                  >
+                                    {post.linkLabel || post.linkUrl}
+                                  </a>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-xs gap-1 px-2 text-muted-foreground"
+                                  onClick={() => { setLinkUrlInput(post.linkUrl || ""); setLinkLabelInput(post.linkLabel || ""); setLinkPopoverPostId(post.id); }}
+                                  data-testid={`button-posts-edit-link-${post.id}`}
+                                >
+                                  <Pencil className="w-3 h-3" />Edit link
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-xs gap-1 px-2 text-muted-foreground"
+                                onClick={() => { setLinkUrlInput(""); setLinkLabelInput(""); setLinkPopoverPostId(post.id); }}
+                                data-testid={`button-posts-add-link-${post.id}`}
+                              >
+                                <Link2 className="w-3 h-3" />Add link
+                              </Button>
+                            )}
+                          </div>
+                        )}
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {editingPostHashtags === post.id ? (
                             <div className="flex items-center gap-2 w-full">
@@ -2756,6 +2806,16 @@ export default function CampaignDetailPage() {
                                       </div>
                                     )}
 
+                                    {/* Link chip */}
+                                    {post.linkUrl && (
+                                      <div className="flex items-center gap-1 mt-0.5" data-testid={`rv-link-chip-${post.id}`}>
+                                        <Link2 className="w-2.5 h-2.5 text-primary shrink-0" />
+                                        <span className="text-[10px] text-primary truncate max-w-[120px]">
+                                          {post.linkLabel || post.linkUrl}
+                                        </span>
+                                      </div>
+                                    )}
+
                                     {/* Action buttons */}
                                     {!rvSelectMode && (
                                       <div className="flex flex-col gap-1 mt-auto pt-1">
@@ -2804,6 +2864,24 @@ export default function CampaignDetailPage() {
                                         </div>
                                       </div>
                                     )}
+                                    {/* Link attach button — LinkedIn, Facebook, X only */}
+                                    {!rvSelectMode && ["linkedin", "facebook", "twitter"].includes(post.platform) && (
+                                      <Button
+                                        size="sm"
+                                        variant={post.linkUrl ? "default" : "ghost"}
+                                        className="h-6 text-[10px] w-full gap-1 px-2 mt-0.5"
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          setLinkUrlInput(post.linkUrl || "");
+                                          setLinkLabelInput(post.linkLabel || "");
+                                          setLinkPopoverPostId(post.id);
+                                        }}
+                                        data-testid={`button-rv-add-link-${post.id}`}
+                                      >
+                                        <Link2 className="w-3 h-3 shrink-0" />
+                                        {post.linkUrl ? "Edit link" : "Add link"}
+                                      </Button>
+                                    )}
                                   </div>
                                 </div>
                                   </PopoverTrigger>
@@ -2850,7 +2928,7 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Image Override Picker Dialog — brand assets + content assets */}
-      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); } }}>
+      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); setPickerShowAll(false); } }}>
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Choose Image</DialogTitle>
@@ -2965,71 +3043,198 @@ export default function CampaignDetailPage() {
               );
             })()}
 
-            {/* Content assets tab — shows items with url or fileUrl; leadImageUrl is thumbnail only */}
+            {/* Content assets tab — campaign assets first, full library below */}
             {pickerTab === "content" && (() => {
               const contentImageAssets = allAssets.filter(a => a.url || a.fileUrl);
               if (contentImageAssets.length === 0) {
                 return <p className="text-sm text-muted-foreground text-center py-4">No content library items found. Add assets with a URL in the Content Library first.</p>;
               }
-              const totalPages = Math.ceil(contentImageAssets.length / BRAND_PAGE_SIZE);
-              const paged = contentImageAssets.slice(pickerPage * BRAND_PAGE_SIZE, (pickerPage + 1) * BRAND_PAGE_SIZE);
+              const campaignAssetIds = new Set((campaign?.assets ?? []).map(ca => ca.assetId));
+              const campaignFirst = contentImageAssets.filter(a => campaignAssetIds.has(a.id));
+              const restAssets = contentImageAssets.filter(a => !campaignAssetIds.has(a.id));
+              const displayList = pickerShowAll ? contentImageAssets : (campaignFirst.length > 0 ? campaignFirst : contentImageAssets);
+              const totalPages = Math.ceil(displayList.length / BRAND_PAGE_SIZE);
+              const paged = displayList.slice(pickerPage * BRAND_PAGE_SIZE, (pickerPage + 1) * BRAND_PAGE_SIZE);
+              const renderAssetButton = (ca: ContentAsset) => {
+                const imageUrl = ca.leadImageUrl || ca.url || ca.fileUrl || "";
+                const overrideUrl = ca.leadImageUrl || ca.url || ca.fileUrl || "";
+                return (
+                  <button
+                    key={ca.id}
+                    className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
+                    onClick={() => {
+                      if (imagePickerPostId) {
+                        const targets = rvSelectMode && rvSelectedIds.size > 0
+                          ? Array.from(rvSelectedIds)
+                          : [imagePickerPostId];
+                        targets.forEach(pid => updatePostMutation.mutate({
+                          postId: pid,
+                          overrideImageUrl: overrideUrl,
+                          overrideBrandAssetId: null,
+                        }));
+                        if (targets.length > 1) {
+                          setImagePickerPostId(null);
+                          setPickerTab("brand");
+                          setPickerShowAll(false);
+                          setRvSelectMode(false);
+                          setRvSelectedIds(new Set());
+                        }
+                      }
+                    }}
+                    data-testid={`button-content-asset-${ca.id}`}
+                  >
+                    {imageUrl ? (
+                      <OptimizedThumbnail
+                        src={imageUrl}
+                        alt={ca.title}
+                        containerClassName="rounded"
+                      />
+                    ) : (
+                      <div className="aspect-video flex items-center justify-center bg-muted/40 rounded">
+                        <ImageIcon className="w-6 h-6 text-muted-foreground/40" />
+                      </div>
+                    )}
+                    <p className="text-xs mt-1 truncate">{ca.title}</p>
+                    {ca.description && <p className="text-[10px] text-muted-foreground truncate">{ca.description}</p>}
+                  </button>
+                );
+              };
               return (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {paged.map(ca => {
-                      const imageUrl = ca.leadImageUrl || ca.url || ca.fileUrl || "";
-                      const overrideUrl = ca.leadImageUrl || ca.url || ca.fileUrl || "";
-                      return (
+                  {!pickerShowAll && campaignFirst.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Campaign assets</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {campaignFirst.map(renderAssetButton)}
+                      </div>
+                      {restAssets.length > 0 && (
                         <button
-                          key={ca.id}
-                          className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
-                          onClick={() => {
-                            if (imagePickerPostId) {
-                              const targets = rvSelectMode && rvSelectedIds.size > 0
-                                ? Array.from(rvSelectedIds)
-                                : [imagePickerPostId];
-                              targets.forEach(pid => updatePostMutation.mutate({
-                                postId: pid,
-                                overrideImageUrl: overrideUrl,
-                                overrideBrandAssetId: null,
-                              }));
-                              if (targets.length > 1) {
-                                setImagePickerPostId(null);
-                                setPickerTab("brand");
-                                setRvSelectMode(false);
-                                setRvSelectedIds(new Set());
-                              }
-                            }
-                          }}
-                          data-testid={`button-content-asset-${ca.id}`}
+                          className="text-xs text-primary underline-offset-2 hover:underline w-full text-center py-1"
+                          onClick={() => { setPickerShowAll(true); setPickerPage(0); }}
+                          data-testid="button-picker-show-all"
                         >
-                          {imageUrl ? (
-                            <OptimizedThumbnail
-                              src={imageUrl}
-                              alt={ca.title}
-                              containerClassName="rounded"
-                            />
-                          ) : (
-                            <div className="aspect-video flex items-center justify-center bg-muted/40 rounded">
-                              <ImageIcon className="w-6 h-6 text-muted-foreground/40" />
-                            </div>
-                          )}
-                          <p className="text-xs mt-1 truncate">{ca.title}</p>
-                          {ca.description && <p className="text-[10px] text-muted-foreground truncate">{ca.description}</p>}
+                          Show full library ({contentImageAssets.length} items)
                         </button>
-                      );
-                    })}
-                  </div>
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between pt-1">
-                      <Button variant="outline" size="sm" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} data-testid="button-picker-content-prev">Previous</Button>
-                      <span className="text-xs text-muted-foreground">Page {pickerPage + 1} of {totalPages}</span>
-                      <Button variant="outline" size="sm" disabled={pickerPage >= totalPages - 1} onClick={() => setPickerPage(p => p + 1)} data-testid="button-picker-content-next">Next</Button>
-                    </div>
+                      )}
+                    </>
+                  )}
+                  {(pickerShowAll || campaignFirst.length === 0) && (
+                    <>
+                      {campaignFirst.length > 0 && pickerShowAll && (
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Full library</p>
+                          <button
+                            className="text-xs text-primary underline-offset-2 hover:underline"
+                            onClick={() => { setPickerShowAll(false); setPickerPage(0); }}
+                            data-testid="button-picker-show-campaign"
+                          >
+                            Show campaign assets only
+                          </button>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        {paged.map(renderAssetButton)}
+                      </div>
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between pt-1">
+                          <Button variant="outline" size="sm" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} data-testid="button-picker-content-prev">Previous</Button>
+                          <span className="text-xs text-muted-foreground">Page {pickerPage + 1} of {totalPages}</span>
+                          <Button variant="outline" size="sm" disabled={pickerPage >= totalPages - 1} onClick={() => setPickerPage(p => p + 1)} data-testid="button-picker-content-next">Next</Button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );
             })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link attachment dialog — LinkedIn, Facebook, X */}
+      <Dialog
+        open={!!linkPopoverPostId}
+        onOpenChange={v => { if (!v) { setLinkPopoverPostId(null); setLinkUrlInput(""); setLinkLabelInput(""); } }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Attach link to post</DialogTitle>
+            <DialogDescription>
+              Add a URL to accompany this post. The link won't be inserted into the copy — the social publisher handles that.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            {/* Quick-pick: campaign digital assets */}
+            {(() => {
+              const campaignAssetIds = new Set((campaign?.assets ?? []).map(ca => ca.assetId));
+              const digitalCampaignAssets = allAssets.filter(a => campaignAssetIds.has(a.id) && !!a.url);
+              if (digitalCampaignAssets.length === 0) return null;
+              return (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Campaign digital assets</p>
+                  <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
+                    {digitalCampaignAssets.map(a => (
+                      <button
+                        key={a.id}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted/60 transition-colors"
+                        onClick={() => { setLinkUrlInput(a.url || ""); setLinkLabelInput(a.title); }}
+                        data-testid={`button-link-quickpick-${a.id}`}
+                      >
+                        <span className="font-medium block truncate">{a.title}</span>
+                        <span className="text-muted-foreground truncate block">{a.url}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <Label htmlFor="link-url-input">URL</Label>
+              <Input
+                id="link-url-input"
+                type="url"
+                value={linkUrlInput}
+                onChange={e => setLinkUrlInput(e.target.value)}
+                placeholder="https://example.com"
+                data-testid="input-link-url"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="link-label-input">Label (optional)</Label>
+              <Input
+                id="link-label-input"
+                value={linkLabelInput}
+                onChange={e => setLinkLabelInput(e.target.value)}
+                placeholder="e.g. Read the case study"
+                data-testid="input-link-label"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              {linkPopoverPostId && posts.find(p => p.id === linkPopoverPostId)?.linkUrl && (
+                <Button
+                  variant="outline"
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                  onClick={() => updatePostMutation.mutate({ postId: linkPopoverPostId!, linkUrl: null, linkLabel: null })}
+                  disabled={updatePostMutation.isPending}
+                  data-testid="button-link-clear"
+                >
+                  <Unlink className="w-3.5 h-3.5" />Clear
+                </Button>
+              )}
+              <Button
+                className="flex-1"
+                disabled={!linkUrlInput.trim() || updatePostMutation.isPending}
+                onClick={() => {
+                  if (!linkPopoverPostId) return;
+                  updatePostMutation.mutate({ postId: linkPopoverPostId, linkUrl: linkUrlInput.trim(), linkLabel: linkLabelInput.trim() || null });
+                }}
+                data-testid="button-link-save"
+              >
+                Save link
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

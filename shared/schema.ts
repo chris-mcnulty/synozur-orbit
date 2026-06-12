@@ -3115,6 +3115,9 @@ export const generatedPosts = pgTable("generated_posts", {
     personaId?: string | null;
     frameworkRefs?: VoiceFrameworkRef[] | null;
   }>>().default([]),
+  // Post-level link URL + label editors can attach for Facebook, LinkedIn, X.
+  linkUrl: text("link_url"),
+  linkLabel: text("link_label"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

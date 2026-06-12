@@ -169,7 +169,7 @@ const FIT_BADGE: Record<string, "default" | "secondary" | "destructive"> = {
   weak: "destructive",
 };
 
-const STEPS = ["Interview", "Curate briefs", "Plan outputs", "Generate"];
+const STEPS = ["Interview", "Curate briefs", "Plan outputs", "Assets", "Generate"];
 
 // ── Plan windows ───────────────────────────────────────────────────────────
 
@@ -197,6 +197,15 @@ interface GeneratedSocialPost {
   platform: string;
   content: string;
   scheduledDate?: string | null;
+}
+
+interface InterviewContentAsset {
+  id: string;
+  title: string;
+  assetType?: string;
+  url?: string;
+  fileUrl?: string;
+  leadImageUrl?: string;
 }
 
 /** Default window per category: tease early, announce mid, deepen late. */
@@ -471,6 +480,77 @@ export default function CampaignInterviewPage() {
     [socialPlan],
   );
   const totalPlanned = totalDocsPlanned + totalSocialPlanned;
+
+  // ── Step 3: asset selection ───────────────────────────────────────────────
+  const [selectedInterviewAssets, setSelectedInterviewAssets] = useState<string[]>([]);
+  const [savingInterviewAssets, setSavingInterviewAssets] = useState(false);
+  const assetSelectionInitialized = useRef(false);
+
+  const { data: interviewContentAssets = [] } = useQuery<InterviewContentAsset[]>({
+    queryKey: ["/api/content-assets"],
+    queryFn: () => apiJson("/api/content-assets"),
+    enabled: step >= 3,
+  });
+
+  // Fetch campaign detail to pre-populate existing asset selections when revisiting step 3.
+  const { data: campaignDetail } = useQuery<{ assets: Array<{ assetId: string }> }>({
+    queryKey: [`/api/campaigns/${result?.campaign.id}`],
+    queryFn: () => apiJson(`/api/campaigns/${result!.campaign.id}`),
+    enabled: step >= 3 && !!result?.campaign.id,
+  });
+
+  // Pre-check any already-saved campaign assets — runs once after the campaign detail loads.
+  useEffect(() => {
+    if (!campaignDetail || assetSelectionInitialized.current) return;
+    assetSelectionInitialized.current = true;
+    const existingIds = (campaignDetail.assets ?? []).map((a) => a.assetId);
+    if (existingIds.length > 0) {
+      setSelectedInterviewAssets(existingIds);
+    }
+  }, [campaignDetail]);
+
+  const visualAssets = useMemo(
+    () => interviewContentAssets.filter((a) => !!a.fileUrl),
+    [interviewContentAssets],
+  );
+  const digitalAssets = useMemo(
+    () => interviewContentAssets.filter((a) => !!a.url && !a.fileUrl),
+    [interviewContentAssets],
+  );
+
+  const saveInterviewAssets = async () => {
+    if (!result?.campaign.id) {
+      setStep(4);
+      return;
+    }
+    setSavingInterviewAssets(true);
+    try {
+      const existingIds = new Set((campaignDetail?.assets ?? []).map((a) => a.assetId));
+      const toAdd = selectedInterviewAssets.filter((id) => !existingIds.has(id));
+      const toRemove = Array.from(existingIds).filter((id) => !selectedInterviewAssets.includes(id));
+
+      // Add new asset links
+      if (toAdd.length > 0) {
+        await apiJson(`/api/campaigns/${result.campaign.id}/assets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assetIds: toAdd }),
+        });
+      }
+      // Remove deselected asset links
+      await Promise.all(
+        toRemove.map((assetId) =>
+          apiJson(`/api/campaigns/${result!.campaign.id}/assets/${assetId}`, {
+            method: "DELETE",
+          }).catch(() => {/* non-fatal */}),
+        ),
+      );
+    } catch {
+      // Non-blocking — assets can be adjusted later from the campaign page.
+    }
+    setSavingInterviewAssets(false);
+    setStep(4);
+  };
 
   const [deliverables, setDeliverables] = useState<Brief[]>([]);
   const [socialPosts, setSocialPosts] = useState<GeneratedSocialPost[]>([]);
@@ -1066,8 +1146,108 @@ export default function CampaignInterviewPage() {
           </Card>
         )}
 
-        {/* ── Step 3: Generate ── */}
+        {/* ── Step 3: Assets ── */}
         {step === 3 && result && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign assets</CardTitle>
+              <CardDescription>
+                Pin the content library items most relevant to this campaign — images for posts and web pages to link to. The Review Images picker will show these first. You can skip this and add assets later from the campaign page.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {interviewContentAssets.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No content library items found. Add assets in the Content Library first, or skip this step.</p>
+              ) : (
+                <>
+                  {visualAssets.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Visual assets</div>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {visualAssets.map((a) => {
+                          const checked = selectedInterviewAssets.includes(a.id);
+                          return (
+                            <label
+                              key={a.id}
+                              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${checked ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                              data-testid={`label-visual-asset-${a.id}`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(v) =>
+                                  setSelectedInterviewAssets((prev) =>
+                                    v ? [...prev, a.id] : prev.filter((x) => x !== a.id),
+                                  )
+                                }
+                                data-testid={`checkbox-visual-${a.id}`}
+                              />
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">{a.title}</div>
+                                {a.fileUrl && <div className="text-xs text-muted-foreground truncate">{a.fileUrl}</div>}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {digitalAssets.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Digital assets</div>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {digitalAssets.map((a) => {
+                          const checked = selectedInterviewAssets.includes(a.id);
+                          return (
+                            <label
+                              key={a.id}
+                              className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${checked ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                              data-testid={`label-digital-asset-${a.id}`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(v) =>
+                                  setSelectedInterviewAssets((prev) =>
+                                    v ? [...prev, a.id] : prev.filter((x) => x !== a.id),
+                                  )
+                                }
+                                data-testid={`checkbox-digital-${a.id}`}
+                              />
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium truncate">{a.title}</div>
+                                {a.url && <div className="text-xs text-muted-foreground truncate">{a.url}</div>}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <div className="text-sm text-muted-foreground">
+                  {selectedInterviewAssets.length > 0
+                    ? `${selectedInterviewAssets.length} asset${selectedInterviewAssets.length === 1 ? "" : "s"} selected`
+                    : "Nothing selected — full library fallback will apply"}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setStep(2)}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                  </Button>
+                  <Button onClick={saveInterviewAssets} disabled={savingInterviewAssets} data-testid="button-save-interview-assets">
+                    {savingInterviewAssets ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Continue"}
+                    {!savingInterviewAssets && <ChevronRight className="h-4 w-4 ml-1" />}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Step 4: Generate ── */}
+        {step === 4 && result && (
           <Card>
             <CardHeader>
               <CardTitle>On the calendar</CardTitle>
