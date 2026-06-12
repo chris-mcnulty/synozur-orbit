@@ -313,18 +313,28 @@ export default function CampaignInterviewPage() {
         const cats = (b.formCategories ?? []).filter((c): c is ContentFormCategory =>
           (CONTENT_FORM_CATEGORIES as readonly string[]).includes(c),
         );
-        initialPlan[b.id] = cats.map((cat) => {
+        initialPlan[b.id] = cats.flatMap((cat) => {
+          // Short-form social spans two primary channels — pre-select BOTH
+          // LinkedIn and X by default so social coverage isn't single-channel.
+          // (A newsletter-only short-form brief keeps just its own format.)
+          if (cat === "short_form" && b.format !== "newsletter") {
+            return (["linkedin_post", "x_post"] as const).map((fmt) => ({
+              format: fmt,
+              count: DEFAULT_COUNT[fmt] ?? 1,
+              windowKey: String(DEFAULT_WINDOW_BY_CATEGORY[cat]),
+            }));
+          }
           const fmt =
             cat === "mid_form" && b.format === "press_release"
               ? "press_release"
               : FORM_CATEGORY_FORMATS[cat].includes(b.format as any)
                 ? b.format
                 : FORM_CATEGORY_FORMATS[cat][0];
-          return {
+          return [{
             format: fmt,
             count: DEFAULT_COUNT[fmt] ?? 1,
             windowKey: String(DEFAULT_WINDOW_BY_CATEGORY[cat]),
-          };
+          }];
         });
       }
       setPlan(initialPlan);

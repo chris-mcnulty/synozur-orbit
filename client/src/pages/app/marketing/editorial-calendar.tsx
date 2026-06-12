@@ -239,6 +239,14 @@ export default function EditorialCalendarPage() {
       ? new URLSearchParams(window.location.search).get("brief")
       : null,
   );
+  // Honor a ?campaignId=<id> deep link so "Open editor" / "Review campaign" lands
+  // on a campaign-scoped list instead of the full brief pile. Also drives the
+  // campaign filter dropdown, which doubles as the campaign review surface.
+  const [campaignFilter, setCampaignFilter] = useState<string>(() =>
+    (typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("campaignId")
+      : null) ?? "all",
+  );
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
@@ -300,6 +308,16 @@ export default function EditorialCalendarPage() {
   });
 
   const briefs = detail?.briefs ?? [];
+  // Campaign-scoped view: when a campaign is selected (via the filter or a
+  // ?campaignId= deep link), narrow the list to that campaign so the user can
+  // review/approve one campaign at a time instead of the whole calendar.
+  const visibleBriefs =
+    campaignFilter === "all" ? briefs : briefs.filter((b) => (b.campaignId ?? "") === campaignFilter);
+  // Campaigns that actually have briefs in this calendar — drives the filter
+  // dropdown so it only offers campaigns the user can act on here.
+  const campaignsInCalendar = Array.from(
+    new Set(briefs.map((b) => b.campaignId).filter((id): id is string => !!id)),
+  );
 
   // Once the deep-linked brief's card is in the DOM, scroll to it and —
   // if the brief already has a drafted asset — open the editor automatically
@@ -832,11 +850,21 @@ export default function EditorialCalendarPage() {
   });
 
   // Funnel breakdown computed from the current briefs.
-  const funnelCounts = briefs.reduce<Record<string, number>>((acc, b) => {
+  const funnelCounts = visibleBriefs.reduce<Record<string, number>>((acc, b) => {
     acc[b.funnelStage] = (acc[b.funnelStage] ?? 0) + 1;
     return acc;
   }, {});
-  const pct = (n: number) => (briefs.length ? Math.round((n / briefs.length) * 100) : 0);
+  const pct = (n: number) => (visibleBriefs.length ? Math.round((n / visibleBriefs.length) * 100) : 0);
+  // Per-piece review tally for the scoped view: how many are drafted / approved.
+  const reviewCounts = visibleBriefs.reduce(
+    (acc, b) => {
+      if (["approved", "scheduled", "published"].includes(b.status)) acc.approved += 1;
+      else if (b.contentAssetId) acc.drafted += 1;
+      else acc.notDrafted += 1;
+      return acc;
+    },
+    { notDrafted: 0, drafted: 0, approved: 0 },
+  );
 
   return (
     <AppLayout>
@@ -908,6 +936,21 @@ export default function EditorialCalendarPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {activeId && campaignsInCalendar.length > 0 && (
+                <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                  <SelectTrigger className="h-9 w-[220px]" data-testid="filter-campaign">
+                    <SelectValue placeholder="All campaigns" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All campaigns</SelectItem>
+                    {campaignsInCalendar.map((cid) => (
+                      <SelectItem key={cid} value={cid}>
+                        {(campaignOptions ?? []).find((c) => c.id === cid)?.name ?? "Campaign"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {activeId && distributionAllowed && briefs.length > 0 && (
                 <Button
                   variant="outline"
@@ -959,13 +1002,21 @@ export default function EditorialCalendarPage() {
           )}
 
           {/* Funnel summary */}
-          {briefs.length > 0 && (
+          {visibleBriefs.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">
-                  {briefs.length} briefs · funnel mix
+                  {visibleBriefs.length} brief{visibleBriefs.length === 1 ? "" : "s"}
+                  {campaignFilter !== "all" && (
+                    <span className="text-muted-foreground">
+                      {" "}· {(campaignOptions ?? []).find((c) => c.id === campaignFilter)?.name ?? "campaign"}
+                    </span>
+                  )}{" "}
+                  · funnel mix
                 </CardTitle>
-                <CardDescription>Target balance: 40% awareness · 35% consideration · 25% decision</CardDescription>
+                <CardDescription>
+                  Review status: {reviewCounts.notDrafted} not drafted · {reviewCounts.drafted} drafted · {reviewCounts.approved} approved
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-4">
                 {(["awareness", "consideration", "decision"] as const).map((stage) => (
@@ -985,13 +1036,27 @@ export default function EditorialCalendarPage() {
           {/* Briefs */}
           {detailLoading ? (
             <p className="text-sm text-muted-foreground">Loading briefs…</p>
+          ) : visibleBriefs.length === 0 && campaignFilter !== "all" ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
+                <p className="text-sm font-medium">No briefs for this campaign in this calendar</p>
+                <Button variant="outline" size="sm" onClick={() => setCampaignFilter("all")} data-testid="button-clear-campaign-filter">
+                  Show all campaigns
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid gap-3">
-              {briefs.map((b) => (
+              {visibleBriefs.map((b) => (
                 <Card key={b.id} data-testid={`brief-${b.id}`} className={focusBriefId === b.id ? "ring-2 ring-primary ring-offset-2" : undefined}>
                   <CardContent className="space-y-3 pt-5">
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="space-y-1">
+                      {/* Left meta block — fixed order so format / status / draft-state
+                          line up the same way on every card and the list scans cleanly.
+                          Title leads; the key state badges sit on one consistent row;
+                          secondary details (keyword, hours) drop to their own muted line. */}
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="font-medium">{b.title}</p>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`rounded px-2 py-0.5 text-xs font-medium ${FUNNEL_BADGE[b.funnelStage] ?? ""}`}>
                             {FUNNEL_LABELS[b.funnelStage] ?? b.funnelStage}
@@ -1003,12 +1068,13 @@ export default function EditorialCalendarPage() {
                           >
                             {STATUS_LABELS[b.status] ?? b.status}
                           </span>
-                          {b.contentAssetId && (
-                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid={`linked-draft-${b.id}`}>
-                              <Link2 className="h-3 w-3" />
-                              Draft ready
-                            </span>
-                          )}
+                          <span
+                            className={`inline-flex items-center gap-1 text-xs ${b.contentAssetId ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}`}
+                            data-testid={`linked-draft-${b.id}`}
+                          >
+                            <Link2 className="h-3 w-3" />
+                            {b.contentAssetId ? "Draft ready" : "No draft yet"}
+                          </span>
                           {b.pushedToPlanner && (
                             <span
                               className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
@@ -1018,14 +1084,13 @@ export default function EditorialCalendarPage() {
                               In Planner
                             </span>
                           )}
-                          {b.targetKeyword && (
-                            <span className="text-xs text-muted-foreground">🔑 {b.targetKeyword}</span>
-                          )}
-                          {b.estimatedHours != null && (
-                            <span className="text-xs text-muted-foreground">~{b.estimatedHours}h</span>
-                          )}
                         </div>
-                        <p className="font-medium">{b.title}</p>
+                        {(b.targetKeyword || b.estimatedHours != null) && (
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                            {b.targetKeyword && <span>🔑 {b.targetKeyword}</span>}
+                            {b.estimatedHours != null && <span>~{b.estimatedHours}h</span>}
+                          </div>
+                        )}
                         {isSocialBriefFormat(b.format) && (
                           <p
                             className="flex items-start gap-1.5 text-xs text-muted-foreground"

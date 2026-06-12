@@ -75,7 +75,7 @@ export async function generateInterviewBriefs(
       : "";
 
   const prompt = [
-    `Produce exactly ${count} content CONCEPTS as JSON. A concept is a core idea that can be produced in several forms — it is NOT tied to one output type. Each concept will later be expanded into short form (social, email), mid form (press release, blog post), long form (whitepaper, ebook), and/or digital interactive (webinar, video, podcast) pieces.`,
+    `Produce exactly ${count} content CONCEPTS as JSON. A concept is a core idea that can be produced in several forms — it is NOT tied to one output type. Each concept will later be expanded into short form (social, email), mid form (press release, blog post), long form (whitepaper, ebook), and/or digital interactive (webinar, video, podcast) pieces. Short-form social is multi-channel and LinkedIn-led: a strong social concept should work as a LinkedIn post first, then carry over to X and other networks, so favor ideas that translate across channels rather than ones that only land on a single network.`,
     strategicBlock,
     interviewBlock,
     `## Rules

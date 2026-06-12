@@ -32,6 +32,8 @@ import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { buildPostsCsv } from "../services/posts-csv-export";
+import { repurposeAsset } from "../services/repurpose-service";
+import { coercePlatform, SUPPORTED_PLATFORMS } from "../services/repurpose-core";
 import { getScheduledDayCounts } from "../services/schedule-load";
 import { rollupSocialItems, batchDayKey, type RollupSocialItem } from "../services/calendar-rollup-core";
 import { storeArtifact } from "../services/artifact-storage-helper";
@@ -952,39 +954,87 @@ export function registerMarketingCalendarRoutes(app: Express) {
       const briefId = typeof req.body?.briefId === "string" ? req.body.briefId : "";
       if (!briefId) return res.status(400).json({ error: "Missing briefId." });
 
-      // Wrap the whole convert in a transaction and retire the brief with a
-      // "not already published" guard so a double-click / concurrent request
-      // can't create two duplicate social posts from one draft.
+      // The brief's native channel — its draft text is already written for this.
+      // Other requested channels get the post tailored to their native style.
+      // Read the brief + asset first (scoped) so we can do any AI tailoring
+      // BEFORE opening the transaction (don't hold a row lock across an AI call).
+      const [brief] = await db.select().from(contentBriefs).where(and(
+        eq(contentBriefs.id, briefId),
+        eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+        eq(contentBriefs.marketId, ctx.marketId),
+      ));
+      if (!brief) return res.status(404).json({ error: "Content draft not found." });
+      if (!isSocialBriefFormat(brief.format)) {
+        return res.status(400).json({ error: "Only LinkedIn or X drafts can become social posts." });
+      }
+      if (brief.status === "published") {
+        return res.status(409).json({ error: "This draft has already been scheduled as a social post." });
+      }
+      if (!brief.contentAssetId) {
+        return res.status(400).json({ error: "Draft the content first — there's no written post to schedule yet." });
+      }
+      const [asset] = await db.select().from(contentAssets).where(and(
+        eq(contentAssets.id, brief.contentAssetId),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!asset || !asset.content || !asset.content.trim()) {
+        return res.status(400).json({ error: "Draft the content first — there's no written post to schedule yet." });
+      }
+      const draftContent: string = asset.content;
+
+      const nativePlatform = brief.format === "x_post" ? "twitter" : "linkedin";
+      // Requested channels: default to the draft's native channel when none are
+      // given. When provided, validate strictly (reject unknown channels with a
+      // 400 rather than silently coercing them to LinkedIn), then dedupe.
+      const requestedRaw: unknown = req.body?.platforms;
+      if (requestedRaw !== undefined) {
+        const allowed = new Set<string>([...SUPPORTED_PLATFORMS, "x"]);
+        if (!Array.isArray(requestedRaw) || requestedRaw.length === 0) {
+          return res.status(400).json({ error: "Pick at least one channel." });
+        }
+        const bad = requestedRaw.filter((p) => typeof p !== "string" || !allowed.has(p));
+        if (bad.length) {
+          return res.status(400).json({ error: `Unsupported channel: ${bad.join(", ")}` });
+        }
+      }
+      const requested = Array.isArray(requestedRaw) && requestedRaw.length
+        ? Array.from(new Set(requestedRaw.map((p) => coercePlatform(p))))
+        : [nativePlatform as (typeof SUPPORTED_PLATFORMS)[number]];
+      const extras = requested.filter((p) => p !== nativePlatform);
+
+      // Per-channel copy: if the native channel was requested it uses the draft
+      // verbatim; every other requested channel is tailored to its native
+      // style/length via the repurposer (one AI call). The native entry is seeded
+      // here but only used if `requested` actually includes it.
+      const contentByPlatform = new Map<string, string>();
+      contentByPlatform.set(nativePlatform, draftContent);
+      if (extras.length) {
+        try {
+          const { variants } = await repurposeAsset({
+            asset,
+            isDefaultMarket: ctx.isDefaultMarket,
+            platforms: extras,
+            count: Math.max(extras.length, 3),
+          });
+          for (const p of extras) {
+            const match = variants.find((v) => v.platform === p && v.content?.trim());
+            // If the model didn't return copy for a channel, fall back to the
+            // native draft so the post is still created (user can edit later).
+            contentByPlatform.set(p, match?.content?.trim() || draftContent);
+          }
+        } catch (e: any) {
+          console.error("[content-to-post tailoring]", e?.message);
+          for (const p of extras) contentByPlatform.set(p, draftContent);
+        }
+      }
+
+      // Retire the brief with a "not already published" guard so a double-click /
+      // concurrent request can't create duplicate posts from one draft, then
+      // insert one post per requested channel.
       type ConvResult =
         | { status: number; error: string }
-        | { ok: true; postId: string; platform: string; scheduled: boolean };
+        | { ok: true; posts: { postId: string; platform: string }[]; scheduled: boolean };
       const outcome = await db.transaction(async (tx): Promise<ConvResult> => {
-        const [brief] = await tx.select().from(contentBriefs).where(and(
-          eq(contentBriefs.id, briefId),
-          eq(contentBriefs.tenantDomain, ctx.tenantDomain),
-          eq(contentBriefs.marketId, ctx.marketId),
-        ));
-        if (!brief) return { status: 404, error: "Content draft not found." };
-        if (!isSocialBriefFormat(brief.format)) {
-          return { status: 400, error: "Only LinkedIn or X drafts can become social posts." };
-        }
-        if (brief.status === "published") {
-          return { status: 409, error: "This draft has already been scheduled as a social post." };
-        }
-        if (!brief.contentAssetId) {
-          return { status: 400, error: "Draft the content first — there's no written post to schedule yet." };
-        }
-
-        const [asset] = await tx.select().from(contentAssets).where(and(
-          eq(contentAssets.id, brief.contentAssetId),
-          eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        ));
-        if (!asset || !asset.content || !asset.content.trim()) {
-          return { status: 400, error: "Draft the content first — there's no written post to schedule yet." };
-        }
-
-        // Retire the brief first, guarded on its current status. If no row comes
-        // back, another request already converted it — bail without inserting.
         const flipped = await tx.update(contentBriefs)
           .set({ status: "published", updatedAt: new Date() })
           .where(and(eq(contentBriefs.id, brief.id), ne(contentBriefs.status, "published")))
@@ -993,25 +1043,34 @@ export function registerMarketingCalendarRoutes(app: Express) {
           return { status: 409, error: "This draft has already been scheduled as a social post." };
         }
 
-        const platform = brief.format === "x_post" ? "twitter" : "linkedin";
-        const [post] = await tx.insert(generatedPosts).values({
-          tenantDomain: ctx.tenantDomain,
-          platform,
-          content: asset.content,
-          scheduledDate: brief.scheduledAt ?? null,
-          overrideImageUrl: asset.leadImageUrl ?? null,
-          sourceAssetId: asset.id,
-          campaignId: brief.campaignId ?? null,
-          solutionAreaId: brief.solutionAreaId ?? null,
-          conferenceId: brief.conferenceId ?? null,
-          status: "approved",
-        }).returning({ id: generatedPosts.id });
-
-        return { ok: true, postId: post.id, platform, scheduled: !!brief.scheduledAt };
+        const posts: { postId: string; platform: string }[] = [];
+        for (const platform of requested) {
+          const [post] = await tx.insert(generatedPosts).values({
+            tenantDomain: ctx.tenantDomain,
+            platform,
+            content: contentByPlatform.get(platform) ?? draftContent,
+            scheduledDate: brief.scheduledAt ?? null,
+            overrideImageUrl: asset.leadImageUrl ?? null,
+            sourceAssetId: asset.id,
+            campaignId: brief.campaignId ?? null,
+            solutionAreaId: brief.solutionAreaId ?? null,
+            conferenceId: brief.conferenceId ?? null,
+            status: "approved",
+          }).returning({ id: generatedPosts.id });
+          posts.push({ postId: post.id, platform });
+        }
+        return { ok: true, posts, scheduled: !!brief.scheduledAt };
       });
 
       if (!("ok" in outcome)) return res.status(outcome.status).json({ error: outcome.error });
-      res.json({ ok: true, postId: outcome.postId, platform: outcome.platform, scheduled: outcome.scheduled });
+      res.json({
+        ok: true,
+        posts: outcome.posts,
+        // Back-compat single-post fields (first/native post).
+        postId: outcome.posts[0]?.postId,
+        platform: outcome.posts[0]?.platform,
+        scheduled: outcome.scheduled,
+      });
     } catch (err: any) {
       console.error("[marketing-calendar content-to-post]", err.message);
       res.status(500).json({ error: err.message || "Failed to convert draft" });

@@ -585,12 +585,14 @@ const ADVISORY_META: Record<AdvisorySeverity, { dot: string; label: string }> = 
   low: { dot: "bg-blue-500", label: "Suggestion" },
 };
 
-function ContentAdvisorDialog({ open, onOpenChange, advisories, scopeLabel, onSelectItem }: {
+function ContentAdvisorDialog({ open, onOpenChange, advisories, scopeLabel, onSelectItem, onMarkDelivered, markingDelivered }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   advisories: Advisory[];
   scopeLabel: string;
   onSelectItem: (it: CalendarItem) => void;
+  onMarkDelivered: (items: CalendarItem[]) => void;
+  markingDelivered: boolean;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -634,6 +636,24 @@ function ContentAdvisorDialog({ open, onOpenChange, advisories, scopeLabel, onSe
                           </button>
                         ))}
                         {a.items.length > 8 && <span className="px-1 text-[11px] text-muted-foreground">+{a.items.length - 8} more</span>}
+                      </div>
+                    )}
+                    {a.kind === "past" && a.items && a.items.some((it) => it.type === "social") && (
+                      <div className="mt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={markingDelivered}
+                          onClick={() => onMarkDelivered(a.items!.filter((it) => it.type === "social"))}
+                          data-testid="button-advisor-mark-delivered"
+                        >
+                          {markingDelivered ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                          Mark {a.items.filter((it) => it.type === "social").length} posted item
+                          {a.items.filter((it) => it.type === "social").length === 1 ? "" : "s"} as delivered
+                        </Button>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Already shared these (e.g. via SocialPilot)? Clear them here instead of opening each one.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -965,19 +985,21 @@ export default function MarketingCalendarPage() {
   // Turn a LinkedIn / X content draft into a real, schedulable social post so it
   // shows up blue and gets included in the social CSV.
   const contentToPostMut = useMutation({
-    mutationFn: async (it: CalendarItem) => {
-      const res = await apiRequest("POST", "/api/marketing-calendar/content-to-post", { briefId: it.id });
-      return res.json() as Promise<{ platform: string; scheduled: boolean }>;
+    mutationFn: async ({ it, platforms }: { it: CalendarItem; platforms: string[] }) => {
+      const res = await apiRequest("POST", "/api/marketing-calendar/content-to-post", { briefId: it.id, platforms });
+      return res.json() as Promise<{ posts: { postId: string; platform: string }[]; scheduled: boolean }>;
     },
     onSuccess: (d) => {
       invalidate();
       setDetail(null);
-      const network = d.platform === "twitter" ? "X" : "LinkedIn";
+      const names = (d.posts ?? []).map((p) => (p.platform === "twitter" ? "X" : p.platform.charAt(0).toUpperCase() + p.platform.slice(1)));
+      const list = names.join(", ");
+      const n = names.length;
       toast({
-        title: "Scheduled as a social post",
+        title: n === 1 ? "Scheduled as a social post" : `Created ${n} social posts`,
         description: d.scheduled
-          ? `Now a ${network} post — it'll be included in the social CSV.`
-          : `Now a ${network} post. Give it a date in Social Posts so it shows up in the CSV.`,
+          ? `${list} — included in the social CSV.`
+          : `${list}. Give them a date in Social Posts so they show up in the CSV.`,
       });
     },
     onError: (e: any) => toast({ title: "Couldn't schedule", description: e.message, variant: "destructive" }),
@@ -1362,6 +1384,8 @@ export default function MarketingCalendarPage() {
         advisories={advisories}
         scopeLabel={advisorScopeLabel}
         onSelectItem={(it) => { setAdvisorOpen(false); handleSelect(it); }}
+        onMarkDelivered={(items) => markDeliveredMut.mutate(items.map((it) => it.id))}
+        markingDelivered={markDeliveredMut.isPending}
       />
 
       <DetailDialog
@@ -1375,7 +1399,7 @@ export default function MarketingCalendarPage() {
         onHandoffEmail={(it) => handoffMut.mutate(it)}
         onReschedule={(it, date) => rescheduleMut.mutate({ it, date })}
         onAssign={(it, patch) => assignMut.mutate({ it, patch })}
-        onScheduleAsSocial={(it) => contentToPostMut.mutate(it)}
+        onScheduleAsSocial={(it, platforms) => contentToPostMut.mutate({ it, platforms })}
         busy={approveMut.isPending || deleteMut.isPending || exportDocxMut.isPending || handoffMut.isPending || assignMut.isPending || contentToPostMut.isPending}
       />
 
@@ -1965,6 +1989,9 @@ function editorHref(it: CalendarItem): string {
   // too so the page selects the right calendar before scrolling to the brief.
   const params = new URLSearchParams();
   if (it.calendarId) params.set("calendar", it.calendarId);
+  // Pass the campaign too so the editor opens scoped to this piece's campaign
+  // (a campaign-scoped review view) instead of the calendar's full brief list.
+  if (it.campaignId) params.set("campaignId", it.campaignId);
   params.set("brief", it.id);
   return `/app/marketing/editorial-calendar?${params.toString()}`;
 }
@@ -2000,11 +2027,16 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   onHandoffEmail: (it: CalendarItem) => void;
   onReschedule: (it: CalendarItem, date: string | null) => void;
   onAssign: (it: CalendarItem, patch: Record<string, string | null>) => void;
-  onScheduleAsSocial: (it: CalendarItem) => void;
+  onScheduleAsSocial: (it: CalendarItem, platforms: string[]) => void;
   busy: boolean;
 }) {
   const [dateVal, setDateVal] = useState(item?.date ? localKey(item.date) || "" : "");
   const [timeVal, setTimeVal] = useState(localTime(item?.date ?? null));
+  // Which channels to fan this draft out to. The draft's native channel is
+  // pre-checked; the others get the post tailored to their native style.
+  const [channels, setChannels] = useState<string[]>([item?.format === "x_post" ? "twitter" : "linkedin"]);
+  const toggleChannel = (c: string) =>
+    setChannels((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
   const { toast } = useToast();
   // Combine the date + time fields into an ISO string the reschedule PATCH
   // understands. Clearing the date unschedules the item (null); time defaults to
@@ -2269,16 +2301,44 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
               <Button variant="outline" size="sm" data-testid="button-open-editor"><PenLine className="mr-2 h-4 w-4" /> Open editor</Button>
             </Link>
             {isSocialFormatContent(item) && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => onScheduleAsSocial(item)}
-                disabled={busy || !item.contentAssetId}
-                title={!item.contentAssetId ? "Draft the content first" : undefined}
-                data-testid="button-schedule-as-social"
-              >
-                <Send className="mr-2 h-4 w-4" /> Schedule as social post
-              </Button>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground mr-0.5">Channels:</span>
+                  {([
+                    { id: "linkedin", label: "LinkedIn" },
+                    { id: "twitter", label: "X" },
+                    { id: "facebook", label: "Facebook" },
+                    { id: "instagram", label: "Instagram" },
+                  ] as const).map((ch) => {
+                    const on = channels.includes(ch.id);
+                    return (
+                      <Button
+                        key={ch.id}
+                        type="button"
+                        variant={on ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => toggleChannel(ch.id)}
+                        data-testid={`toggle-channel-${ch.id}`}
+                        aria-pressed={on}
+                      >
+                        {ch.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => onScheduleAsSocial(item, channels)}
+                  disabled={busy || !item.contentAssetId || channels.length === 0}
+                  title={!item.contentAssetId ? "Draft the content first" : channels.length === 0 ? "Pick at least one channel" : undefined}
+                  data-testid="button-schedule-as-social"
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  {channels.length > 1 ? `Schedule ${channels.length} social posts` : "Schedule as social post"}
+                </Button>
+              </div>
             )}
             {canApprove && (
               <Button variant="outline" size="sm" onClick={() => onApprove(item)} disabled={busy} data-testid="button-approve" title={item.type === "content" ? "Approve the brief and its draft in one step" : undefined}>
