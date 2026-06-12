@@ -11,7 +11,7 @@
 import { db } from "../db";
 import { analyticsConnections, analyticsDaily, marketingLinkClicks, marketingLinks } from "@shared/schema";
 import { encryptSecret, decryptSecret, tryDecryptSecret } from "../utils/encryption";
-import { eq, and, sql, isNull } from "drizzle-orm";
+import { eq, and, sql, isNull, inArray } from "drizzle-orm";
 
 const GA_SCOPES = [
   "https://www.googleapis.com/auth/analytics.readonly",
@@ -203,7 +203,7 @@ export async function runDailyAnalyticsPull(opts?: { tenantDomain?: string; mark
   let pulled = 0;
   let errors = 0;
 
-  const baseWhere = [eq(analyticsConnections.status, "connected")];
+  const baseWhere = [inArray(analyticsConnections.status, ["connected", "error"])];
   if (opts?.tenantDomain) baseWhere.push(eq(analyticsConnections.tenantDomain, opts.tenantDomain));
   if (opts?.marketId !== undefined) {
     baseWhere.push(opts.marketId === null ? isNull(analyticsConnections.marketId) : eq(analyticsConnections.marketId, opts.marketId));

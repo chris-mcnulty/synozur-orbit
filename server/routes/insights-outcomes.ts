@@ -808,6 +808,37 @@ export function registerInsightsOutcomesRoutes(app: Express) {
     }
   });
 
+  app.post("/api/insights/ga/retry", async (req, res) => {
+    if (!await guardFeature(req, res, "outcomeMetrics")) return;
+    const auth = await guardTenantAdmin(req, res);
+    if (!auth) return;
+    try {
+      const { ctx } = auth;
+      const [conn] = await db.select().from(analyticsConnections).where(and(
+        eq(analyticsConnections.tenantDomain, ctx.tenantDomain),
+        ctx.isDefaultMarket ? isNull(analyticsConnections.marketId) : eq(analyticsConnections.marketId, ctx.marketId),
+      ));
+      if (!conn) return res.status(404).json({ error: "No GA connection found" });
+      // Reset the error state so the connection is eligible for the pull.
+      await db.update(analyticsConnections)
+        .set({ status: "connected", lastError: null, updatedAt: new Date() })
+        .where(eq(analyticsConnections.id, conn.id));
+      // Fire-and-forget: pull last 7 days (same window as /refresh).
+      const today = new Date();
+      const weekAgo = new Date(today.getTime() - 7 * 86400000);
+      runDailyAnalyticsPull({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.isDefaultMarket ? null : ctx.marketId,
+        startDate: weekAgo.toISOString().slice(0, 10),
+        endDate: today.toISOString().slice(0, 10),
+      }).catch((e) => console.error("[ga/retry] pull error", e));
+      res.json({ ok: true });
+    } catch (err) {
+      if (err instanceof ContextError) return res.status(err.status).json({ error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   app.post("/api/insights/refresh", async (req, res) => {
     if (!await guardFeature(req, res, "outcomeMetrics")) return;
     const auth = await guardTenantAdmin(req, res);
