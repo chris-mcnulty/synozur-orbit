@@ -1377,6 +1377,19 @@ export default function CampaignDetailPage() {
               variant="outline"
               size="sm"
               className="gap-1.5"
+              onClick={() => {
+                setActiveTab("assets");
+                window.history.replaceState(null, "", window.location.pathname + window.location.search + "#assets");
+              }}
+              data-testid="button-manage-assets"
+            >
+              <Library className="w-3.5 h-3.5" />
+              Manage assets
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
               onClick={openEditCampaign}
               data-testid="button-edit-campaign"
             >
