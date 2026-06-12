@@ -60,6 +60,11 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -310,6 +315,7 @@ export default function CampaignDetailPage() {
   const [rvGeneratingIds, setRvGeneratingIds] = useState<Set<string>>(new Set());
   const [rvBulkProgress, setRvBulkProgress] = useState(0);
   const [rvBulkTotal, setRvBulkTotal] = useState(0);
+  const [rvHoveredPostId, setRvHoveredPostId] = useState<string | null>(null);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -2603,11 +2609,17 @@ export default function CampaignDetailPage() {
                               const img = getPostImage(post);
                               const isGenerating = rvGeneratingIds.has(post.id);
                               const isSelected = rvSelectedIds.has(post.id);
+                              const fullCopy = post.editedContent ?? post.content ?? "";
+                              const hashtags = fullCopy.match(/#[\w]+/g) ?? [];
+                              const copyWithoutTags = fullCopy.replace(/#[\w]+/g, "").trim();
                               return (
+                                <Popover key={post.id} open={!rvSelectMode && rvHoveredPostId === post.id}>
+                                  <PopoverTrigger asChild>
                                 <div
-                                  key={post.id}
                                   className={`group relative flex flex-col rounded-lg border bg-card overflow-hidden transition-all ${rvSelectMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"}`}
                                   onClick={rvSelectMode ? () => toggleSelect(post.id) : undefined}
+                                  onMouseEnter={() => { if (!rvSelectMode) setRvHoveredPostId(post.id); }}
+                                  onMouseLeave={() => setRvHoveredPostId(null)}
                                   data-testid={`rv-card-${post.id}`}
                                 >
                                   {/* Select checkbox */}
@@ -2695,6 +2707,35 @@ export default function CampaignDetailPage() {
                                     )}
                                   </div>
                                 </div>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    side="right"
+                                    align="start"
+                                    className="w-72 p-3 space-y-2.5"
+                                    onMouseEnter={() => setRvHoveredPostId(post.id)}
+                                    onMouseLeave={() => setRvHoveredPostId(null)}
+                                    data-testid={`rv-post-popover-${post.id}`}
+                                  >
+                                    <p className="text-xs font-medium text-foreground leading-snug whitespace-pre-wrap break-words">
+                                      {copyWithoutTags || fullCopy}
+                                    </p>
+                                    {hashtags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1" data-testid={`rv-popover-hashtags-${post.id}`}>
+                                        {hashtags.map(tag => (
+                                          <span key={tag} className="text-[10px] font-medium text-primary bg-primary/10 rounded px-1.5 py-0.5">
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {post.scheduledDate && (
+                                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground border-t pt-2" data-testid={`rv-popover-date-${post.id}`}>
+                                        <Calendar className="w-3 h-3 shrink-0" />
+                                        <span>Scheduled: {format(new Date(post.scheduledDate), "MMM d, yyyy")}</span>
+                                      </div>
+                                    )}
+                                  </PopoverContent>
+                                </Popover>
                               );
                             })}
                           </div>
