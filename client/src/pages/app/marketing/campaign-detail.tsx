@@ -278,8 +278,7 @@ export default function CampaignDetailPage() {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
-  const [addingAssets, setAddingAssets] = useState(false);
-  const [selectedNewAssets, setSelectedNewAssets] = useState<string[]>([]);
+  const [assetSearch, setAssetSearch] = useState("");
   const [postFilter, setPostFilter] = useState<string>("active");
   // WS4: when drilling into one collapsed social batch (its generation run,
   // repurpose group, or event); null shows the batch overview.
@@ -1032,8 +1031,6 @@ export default function CampaignDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
-      setAddingAssets(false);
-      setSelectedNewAssets([]);
     },
   });
 
@@ -1186,6 +1183,9 @@ export default function CampaignDetailPage() {
   const linkedAssetIds = new Set(campaign?.assets.map(a => a.assetId) ?? []);
   const linkedSocialIds = new Set(campaign?.socialAccounts.map(a => a.socialAccountId) ?? []);
   const availableAssets = allAssets.filter(a => !linkedAssetIds.has(a.id));
+  const filteredAvailableAssets = availableAssets.filter(a =>
+    !assetSearch || a.title?.toLowerCase().includes(assetSearch.toLowerCase()) || a.description?.toLowerCase().includes(assetSearch.toLowerCase())
+  );
   const availableSocial = allSocialAccounts.filter(a => !linkedSocialIds.has(a.id));
 
   const isGenerating = jobStatus?.status === "running" || jobStatus?.status === "pending";
@@ -1245,11 +1245,6 @@ export default function CampaignDetailPage() {
     return null;
   };
 
-  const toggleNewAsset = (assetId: string) => {
-    setSelectedNewAssets(prev =>
-      prev.includes(assetId) ? prev.filter(a => a !== assetId) : [...prev, assetId]
-    );
-  };
 
   const campaignBreadcrumbs = [
     { label: "Marketing", href: "/app/marketing" },
@@ -2321,7 +2316,7 @@ export default function CampaignDetailPage() {
                             <img
                               src={asset.leadImageUrl}
                               alt=""
-                              className="w-12 h-12 rounded object-cover shrink-0"
+                              className="w-10 h-10 rounded object-cover shrink-0"
                               onError={e => (e.currentTarget.style.display = "none")}
                             />
                           )}
@@ -2329,11 +2324,15 @@ export default function CampaignDetailPage() {
                             <p className="text-sm font-medium truncate">{ca.overrideTitle ?? asset?.title ?? ca.assetId}</p>
                             {asset?.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
                           </div>
+                          {asset?.assetType && (
+                            <Badge variant="outline" className="shrink-0 text-xs">{asset.assetType}</Badge>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="shrink-0 h-8 w-8 text-destructive"
+                            className="shrink-0 h-8 w-8 text-destructive hover:text-destructive"
                             onClick={() => removeAssetMutation.mutate(ca.assetId)}
+                            disabled={removeAssetMutation.isPending}
                             data-testid={`button-remove-asset-${ca.assetId}`}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -2350,49 +2349,58 @@ export default function CampaignDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium">Add from Digital/Web Assets</h3>
-                  {!addingAssets ? (
-                    <Button variant="outline" size="sm" onClick={() => setAddingAssets(true)} data-testid="button-add-assets">
-                      Add Assets
-                    </Button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={selectedNewAssets.length === 0 || addAssetsMutation.isPending}
-                        onClick={() => addAssetsMutation.mutate(selectedNewAssets)}
-                        data-testid="button-confirm-add-assets"
-                      >
-                        {addAssetsMutation.isPending ? "Adding..." : `Add ${selectedNewAssets.length} Asset(s)`}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => { setAddingAssets(false); setSelectedNewAssets([]); }}>
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
+                  <span className="text-xs text-muted-foreground">{availableAssets.length} available</span>
                 </div>
-                {addingAssets && (
-                  <div className="border rounded-lg p-3 space-y-2 max-h-64 overflow-y-auto">
-                    {availableAssets.map(asset => (
-                      <label
-                        key={asset.id}
-                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
-                        data-testid={`checkbox-add-asset-${asset.id}`}
-                      >
-                        <Checkbox
-                          checked={selectedNewAssets.includes(asset.id)}
-                          onCheckedChange={() => toggleNewAsset(asset.id)}
-                        />
-                        {asset.leadImageUrl && (
-                          <img src={asset.leadImageUrl} alt="" className="w-10 h-10 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{asset.title}</p>
-                          {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
-                        </div>
-                      </label>
-                    ))}
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="p-2 border-b bg-muted/30">
+                    <Input
+                      placeholder="Search assets…"
+                      value={assetSearch}
+                      onChange={e => setAssetSearch(e.target.value)}
+                      className="h-8 text-sm"
+                      data-testid="input-asset-search"
+                    />
                   </div>
-                )}
+                  <div className="divide-y max-h-72 overflow-y-auto">
+                    {filteredAvailableAssets.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">No assets match your search.</p>
+                    ) : (
+                      filteredAvailableAssets.map(asset => (
+                        <div
+                          key={asset.id}
+                          className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50"
+                          data-testid={`row-available-asset-${asset.id}`}
+                        >
+                          {asset.leadImageUrl ? (
+                            <img src={asset.leadImageUrl} alt="" className="w-8 h-8 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                          ) : (
+                            <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
+                              <Library className="w-3.5 h-3.5 text-muted-foreground" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{asset.title}</p>
+                            {asset.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
+                          </div>
+                          {asset.assetType && (
+                            <Badge variant="outline" className="shrink-0 text-xs hidden sm:inline-flex">{asset.assetType}</Badge>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0"
+                            disabled={addAssetsMutation.isPending}
+                            onClick={() => addAssetsMutation.mutate([asset.id])}
+                            data-testid={`button-add-asset-${asset.id}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1" />
+                            Add
+                          </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
