@@ -22,10 +22,18 @@ import {
   ExternalLink,
   ListChecks,
   Mail,
+  MoreVertical,
   Rows3 as RowsIcon,
   Search,
   Share2,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,11 +84,13 @@ function PipelineCard({
   dragging,
   overlay,
   onOpen,
+  onMove,
 }: {
   item: PipelineItem;
   dragging?: boolean;
   overlay?: boolean;
   onOpen?: (item: PipelineItem) => void;
+  onMove?: (item: PipelineItem, stage: PipelineStage) => void;
 }) {
   const Icon = TYPE_ICONS[item.type];
   // The raw status chip only appears when it says more than the column does
@@ -88,17 +98,18 @@ function PipelineCard({
   const showSourceStatus =
     (item.type === "brief" && ["in_progress", "drafted"].includes(item.sourceStatus)) ||
     item.sourceStatus === "exported";
+  const moveTargets = onMove ? allowedDropStages(item) : [];
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={() => onOpen?.(item)}
-onKeyDown={(e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    onOpen?.(item);
-  }
-}}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen?.(item);
+        }
+      }}
       data-testid={`pipeline-card-${item.key}`}
       className={cn(
         "rounded-lg border bg-card p-3 text-left shadow-sm transition-shadow cursor-grab active:cursor-grabbing",
@@ -112,11 +123,52 @@ onKeyDown={(e) => {
         <span className="text-[11px] font-medium text-muted-foreground truncate">
           {item.subtitle || TYPE_LABELS[item.type]}
         </span>
-        {showSourceStatus && (
-          <Badge variant="outline" className="ml-auto h-4 px-1 text-[9px] capitalize shrink-0">
-            {item.sourceStatus.replace(/_/g, " ")}
-          </Badge>
-        )}
+        <span className="ml-auto flex items-center gap-1 shrink-0">
+          {showSourceStatus && (
+            <Badge variant="outline" className="h-4 px-1 text-[9px] capitalize">
+              {item.sourceStatus.replace(/_/g, " ")}
+            </Badge>
+          )}
+          {/* Keyboard/screen-reader/touch-friendly alternative to dragging:
+              every stage a drag could reach is reachable from this menu. */}
+          {onMove && moveTargets.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Move ${TYPE_LABELS[item.type].toLowerCase()} to another stage`}
+                  className="h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  data-testid={`pipeline-move-${item.key}`}
+                >
+                  <MoreVertical className="w-3.5 h-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuLabel className="text-xs">Move to</DropdownMenuLabel>
+                {moveTargets.map((stage) => {
+                  const stageDef = PIPELINE_STAGES.find((s) => s.id === stage)!;
+                  return (
+                    <DropdownMenuItem
+                      key={stage}
+                      className="text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMove(item, stage);
+                      }}
+                      data-testid={`pipeline-move-${item.key}-${stage}`}
+                    >
+                      <span className={cn("w-2 h-2 rounded-full mr-2", stageDef.dotClass)} />
+                      {stageDef.label}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </span>
       </div>
       <div className="flex gap-2">
         {item.imageUrl && (
@@ -151,7 +203,15 @@ onKeyDown={(e) => {
   );
 }
 
-function DraggableCard({ item, onOpen }: { item: PipelineItem; onOpen: (item: PipelineItem) => void }) {
+function DraggableCard({
+  item,
+  onOpen,
+  onMove,
+}: {
+  item: PipelineItem;
+  onOpen: (item: PipelineItem) => void;
+  onMove: (item: PipelineItem, stage: PipelineStage) => void;
+}) {
   const draggable = item.stage !== "live";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: item.key,
@@ -160,7 +220,7 @@ function DraggableCard({ item, onOpen }: { item: PipelineItem; onOpen: (item: Pi
   });
   return (
     <div ref={setNodeRef} {...listeners} {...attributes} className="touch-manipulation">
-      <PipelineCard item={item} dragging={isDragging} onOpen={onOpen} />
+      <PipelineCard item={item} dragging={isDragging} onOpen={onOpen} onMove={onMove} />
     </div>
   );
 }
@@ -174,6 +234,7 @@ function StageColumn({
   collapsed,
   onToggleCollapsed,
   onOpen,
+  onMove,
 }: {
   stage: PipelineStage;
   label: string;
@@ -183,6 +244,7 @@ function StageColumn({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onOpen: (item: PipelineItem) => void;
+  onMove: (item: PipelineItem, stage: PipelineStage) => void;
 }) {
   const droppable = !!activeItem && allowedDropStages(activeItem).includes(stage);
   const { setNodeRef, isOver } = useDroppable({ id: stage, disabled: !droppable });
@@ -214,7 +276,7 @@ function StageColumn({
       {!collapsed && (
         <div className="flex-1 space-y-2 px-2 pb-2 overflow-y-auto max-h-[calc(100vh-330px)]">
           {items.map((item) => (
-            <DraggableCard key={item.key} item={item} onOpen={onOpen} />
+            <DraggableCard key={item.key} item={item} onOpen={onOpen} onMove={onMove} />
           ))}
           {droppable && isOver && (
             <div className="rounded-lg border-2 border-dashed border-primary/60 bg-primary/5 p-3 text-center text-[11px] font-medium text-primary">
@@ -313,21 +375,13 @@ export default function ContentPipelinePage() {
   });
 
   const { data: briefRows = [] } = useQuery<any[]>({
-    queryKey: ["/api/editorial-calendars", "pipeline-briefs"],
+    queryKey: ["/api/content-briefs"],
     queryFn: async () => {
-      const r = await fetch("/api/editorial-calendars", { credentials: "include" });
+      // Flat, tenant+market-scoped brief list — every calendar's briefs in
+      // one request, so the unified pipeline really is complete.
+      const r = await fetch("/api/content-briefs", { credentials: "include" });
       if (!r.ok) return [];
-      const calendars: { id: string }[] = await r.json();
-      // Briefs live under their calendars; pull the most recent few in parallel.
-      const details = await Promise.all(
-        calendars.slice(0, 5).map(async (c) => {
-          const dr = await fetch(`/api/editorial-calendars/${c.id}`, { credentials: "include" });
-          if (!dr.ok) return [];
-          const detail = await dr.json();
-          return Array.isArray(detail?.briefs) ? detail.briefs : [];
-        }),
-      );
-      return details.flat();
+      return r.json();
     },
   });
 
@@ -376,6 +430,7 @@ export default function ContentPipelinePage() {
     queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
     queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
     queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
   };
 
   const moveMutation = useMutation({
@@ -405,11 +460,8 @@ export default function ContentPipelinePage() {
     setActiveItem((event.active.data.current?.item as PipelineItem) ?? null);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const item = activeItem;
-    setActiveItem(null);
-    if (!item || !event.over) return;
-    const target = event.over.id as PipelineStage;
+  // Single move path shared by drag-and-drop and each card's "Move to" menu.
+  const moveItem = (item: PipelineItem, target: PipelineStage) => {
     if (target === item.stage) return;
     const transition = transitionFor(item, target);
     if (!transition) {
@@ -430,6 +482,13 @@ export default function ContentPipelinePage() {
       return;
     }
     moveMutation.mutate({ item, body: transition.body });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const item = activeItem;
+    setActiveItem(null);
+    if (!item || !event.over) return;
+    moveItem(item, event.over.id as PipelineStage);
   };
 
   const confirmSchedule = () => {
@@ -465,7 +524,7 @@ export default function ContentPipelinePage() {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Every in-flight piece — social posts, emails, and briefs — on one board. Drag between
-              columns to change status; click a card to open its editor.
+              columns or use a card's ⋮ menu to change status; click a card to open its editor.
             </p>
           </div>
           <div className="flex items-center rounded-lg border border-border p-0.5">
@@ -547,6 +606,7 @@ export default function ContentPipelinePage() {
                   collapsed={collapsedStages.has(stage.id)}
                   onToggleCollapsed={() => toggleCollapsed(stage.id)}
                   onOpen={openItem}
+                  onMove={moveItem}
                 />
               ))}
             </div>

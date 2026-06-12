@@ -167,18 +167,18 @@ export default function Products() {
 
   const artifactsByProject = useMemo(() => {
     const map = new Map<string, Map<string, ArtifactSummaryRow>>();
-for (const row of artifactRows) {
-  if (!row.projectId) continue;
-  let inner = map.get(row.projectId);
-  if (!inner) {
-    inner = new Map();
-    map.set(row.projectId, inner);
-  }
-  const existing = inner.get(row.type);
-  const existingTs = existing?.lastGeneratedAt ? new Date(existing.lastGeneratedAt).getTime() : 0;
-  const nextTs = row.lastGeneratedAt ? new Date(row.lastGeneratedAt).getTime() : 0;
-  if (!existing || nextTs >= existingTs) inner.set(row.type, row);
-}
+    for (const row of artifactRows) {
+      if (!row.projectId) continue;
+      let inner = map.get(row.projectId);
+      if (!inner) {
+        inner = new Map();
+        map.set(row.projectId, inner);
+      }
+      const existing = inner.get(row.type);
+      const existingTs = existing?.lastGeneratedAt ? new Date(existing.lastGeneratedAt).getTime() : 0;
+      const nextTs = row.lastGeneratedAt ? new Date(row.lastGeneratedAt).getTime() : 0;
+      if (!existing || nextTs >= existingTs) inner.set(row.type, row);
+    }
     return map;
   }, [artifactRows]);
 
