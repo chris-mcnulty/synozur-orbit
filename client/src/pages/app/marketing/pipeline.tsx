@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -158,7 +159,7 @@ function DraggableCard({ item, onOpen }: { item: PipelineItem; onOpen: (item: Pi
     disabled: !draggable,
   });
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes}>
+    <div ref={setNodeRef} {...listeners} {...attributes} className="touch-manipulation">
       <PipelineCard item={item} dragging={isDragging} onOpen={onOpen} />
     </div>
   );
@@ -236,10 +237,17 @@ export default function ContentPipelinePage() {
 
   const [view, setView] = useState<"board" | "list">(() => {
     try {
-      return localStorage.getItem(VIEW_STORAGE_KEY) === "list" ? "list" : "board";
+      const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+      if (stored === "list" || stored === "board") return stored;
     } catch {
-      return "board";
+      /* fall through to the device default */
     }
+    // Touch-first devices default to the list: vertical scrolling beats a
+    // five-column horizontal board on a phone. The toggle still persists
+    // whichever view the user picks.
+    const coarsePointer =
+      typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+    return coarsePointer ? "list" : "board";
   });
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
@@ -262,8 +270,13 @@ export default function ContentPipelinePage() {
     }
   };
 
+  // Mouse drags start after a small movement; touch drags require a
+  // long-press so scrolling the board (or the page) never turns into an
+  // accidental drag on iOS/Android. MouseSensor + TouchSensor (instead of
+  // PointerSensor) keeps the two activation rules independent.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
   );
 
   // ─── Sources. Each degrades to empty when its feature is gated off. ───
@@ -587,7 +600,8 @@ export default function ContentPipelinePage() {
         <p className="text-[11px] text-muted-foreground">
           Published and sent items can't be moved. Emails are approved here but scheduled per
           recipient list on the Email page. Failed publishes stay in Scheduled with an alert —
-          drag one back to Approved to retry it via a new schedule.
+          drag one back to Approved to retry it via a new schedule. On touch screens,
+          long-press a card to start dragging.
         </p>
       </div>
 
