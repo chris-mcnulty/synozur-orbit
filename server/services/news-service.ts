@@ -204,11 +204,13 @@ export async function scanNewsForSubjects(
     // with relevance sorting and title/description matching, this keeps the
     // scan on-topic instead of returning the day's newest loosely-matched news.
     let q = subject.includes(" ") ? `"${subject.replace(/"/g, "")}"` : subject;
-    // A broad/ambiguous single-word company name (e.g. "Box", "Orbit") matches
-    // lots of unrelated news. When we know the campaign's topic, require one of
-    // its keywords alongside the name so only on-topic stories come back — the
-    // same qualifier trick the competitor scan uses for ambiguous names.
-    if (kws.length && isAmbiguousName(subject)) {
+    // Every single-word subject — including company names like "Microsoft",
+    // "Zscaler", "Anthropic" — will match any news about that entity regardless
+    // of relevance to the campaign topic. Always pair single-word subjects with
+    // topic keywords so GNews only returns stories that mention both the entity
+    // AND at least one topic keyword. Multi-word phrase-quoted subjects are
+    // already self-restricting and don't need the extra qualifier.
+    if (kws.length && !subject.includes(" ")) {
       q = `${q} (${kws.join(" OR ")})`;
     }
     const { articles } = await searchNews(q, perSubject, fromDateStr, {
