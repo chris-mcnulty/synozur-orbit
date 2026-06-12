@@ -6,7 +6,9 @@ import { getRequestContext, ContextError, getActiveTenantId, getActiveMarketId }
 import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction, guardFeature } from "./helpers";
 import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, MANUAL_ACTION_KEYS, MANUAL_ACTION_LABELS, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus, listManualActionBonuses } from "../services/manual-action-quota";
-import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema } from "@shared/schema";
+import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, analyticsConnections } from "@shared/schema";
+import { db } from "../db";
+import { eq, isNull } from "drizzle-orm";
 import { fromError } from "zod-validation-error";
 import Anthropic from "@anthropic-ai/sdk";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
@@ -207,6 +209,42 @@ export function registerAdminRoutes(app: Express) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== GA4 HEALTH (Global Admin + Consultant) ====================
+
+  app.get("/api/admin/ga-health", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const me = await storage.getUser(req.session.userId);
+      if (!me || !hasCrossTenantReadAccess(me.role)) {
+        return res.status(403).json({ error: "Only Global Admins and Consultants can view GA4 health" });
+      }
+      const rows = await db
+        .select({
+          tenantDomain: analyticsConnections.tenantDomain,
+          status: analyticsConnections.status,
+          propertyId: analyticsConnections.propertyId,
+          propertyName: analyticsConnections.propertyName,
+          lastSyncAt: analyticsConnections.lastSyncAt,
+          consecutiveErrors: analyticsConnections.consecutiveErrors,
+        })
+        .from(analyticsConnections)
+        .where(isNull(analyticsConnections.marketId));
+      const byDomain: Record<string, { status: string; propertyId: string | null; propertyName: string | null; lastSyncAt: string | null; consecutiveErrors: number }> = {};
+      for (const r of rows) {
+        byDomain[r.tenantDomain] = {
+          status: r.status,
+          propertyId: r.propertyId,
+          propertyName: r.propertyName,
+          lastSyncAt: r.lastSyncAt ? r.lastSyncAt.toISOString() : null,
+          consecutiveErrors: r.consecutiveErrors,
+        };
+      }
+      res.json(byDomain);
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

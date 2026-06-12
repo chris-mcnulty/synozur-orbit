@@ -38,8 +38,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import type { Tenant } from "@shared/schema";
+import { setTabTenantId, setTabMarketId } from "@/lib/tabContext";
 
 type TenantWithCounts = Tenant & { actualUserCount: number };
+type Ga4HealthEntry = { status: string; propertyId: string | null; propertyName: string | null; lastSyncAt: string | null; consecutiveErrors: number };
+type Ga4HealthMap = Record<string, Ga4HealthEntry>;
 type BlockedDomain = {
   id: string;
   domain: string;
@@ -717,6 +720,15 @@ export default function AdminPage() {
     },
   });
 
+  const { data: ga4Health = {} } = useQuery<Ga4HealthMap>({
+    queryKey: ["/api/admin/ga-health"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/ga-health", { credentials: "include" });
+      if (!response.ok) return {};
+      return response.json();
+    },
+  });
+
   const updateTenantMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Tenant> }) => {
       const response = await fetch(`/api/tenants/${id}`, {
@@ -1241,6 +1253,43 @@ export default function AdminPage() {
     }
   };
 
+  const getGa4Badge = (domain: string) => {
+    const ga = ga4Health[domain];
+    if (!ga) {
+      return (
+        <Badge variant="outline" className="text-muted-foreground text-xs" data-testid={`badge-ga4-none-${domain}`}>
+          none
+        </Badge>
+      );
+    }
+    if (ga.status === "connected") {
+      return (
+        <Badge className="bg-green-500 text-white text-xs" data-testid={`badge-ga4-connected-${domain}`}>
+          connected
+        </Badge>
+      );
+    }
+    if (ga.status === "suspended") {
+      return (
+        <Badge variant="destructive" className="text-xs animate-pulse" data-testid={`badge-ga4-suspended-${domain}`}>
+          suspended
+        </Badge>
+      );
+    }
+    if (ga.status === "error") {
+      return (
+        <Badge variant="destructive" className="text-xs opacity-80" data-testid={`badge-ga4-error-${domain}`}>
+          error
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="secondary" className="text-xs" data-testid={`badge-ga4-${ga.status}-${domain}`}>
+        {ga.status}
+      </Badge>
+    );
+  };
+
   const handleEditClick = (tenant: TenantWithCounts) => {
     setSelectedTenant(tenant);
     setEditForm({
@@ -1534,12 +1583,16 @@ export default function AdminPage() {
                     <TableHead>Status</TableHead>
                     <TableHead className="text-center">Users</TableHead>
                     <TableHead className="text-center">Limits</TableHead>
+                    <TableHead className="text-center">GA4</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tenants.map((tenant) => (
-                    <TableRow key={tenant.id} data-testid={`tenant-row-${tenant.id}`}>
+                  {tenants.map((tenant) => {
+                    const ga = ga4Health[tenant.domain];
+                    const isSuspended = ga?.status === "suspended";
+                    return (
+                    <TableRow key={tenant.id} data-testid={`tenant-row-${tenant.id}`} className={isSuspended ? "bg-destructive/5" : undefined}>
                       <TableCell className="font-medium">{tenant.name}</TableCell>
                       <TableCell className="text-muted-foreground">{tenant.domain}</TableCell>
                       <TableCell>{getPlanBadge(tenant.plan)}</TableCell>
@@ -1549,6 +1602,22 @@ export default function AdminPage() {
                       </TableCell>
                       <TableCell className="text-center text-sm text-muted-foreground">
                         {tenant.competitorLimit} comp / {tenant.analysisLimit} analysis
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <a
+                          href="/app/settings/integrations"
+                          title={ga ? `${ga.status}${ga.propertyName ? ` — ${ga.propertyName}` : ""}` : "No GA4 connection"}
+                          data-testid={`link-ga4-${tenant.domain}`}
+                          className="inline-flex items-center"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setTabTenantId(tenant.id);
+                            setTabMarketId(null);
+                            window.location.href = "/app/settings/integrations";
+                          }}
+                        >
+                          {getGa4Badge(tenant.domain)}
+                        </a>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -1561,7 +1630,8 @@ export default function AdminPage() {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
