@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Plug, Trash2, CheckCircle2, RefreshCw } from "lucide-react";
+import { Plug, Trash2, CheckCircle2, RefreshCw, AlertTriangle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface GaStatus {
@@ -15,6 +15,7 @@ interface GaStatus {
     propertyName: string | null;
     lastSyncAt: string | null;
     lastError: string | null;
+    consecutiveErrors: number;
   } | null;
 }
 
@@ -192,7 +193,7 @@ export function Ga4IntegrationCard({ showHeader = true, showJustConnectedBanner 
                 {status.connection.lastSyncAt && (
                   <span className="text-xs text-muted-foreground">Last sync: {new Date(status.connection.lastSyncAt).toLocaleString()}</span>
                 )}
-                {(status.connection.status === "error" || retryInProgress) && (
+                {(status.connection.status === "error" || status.connection.status === "suspended" || retryInProgress) && (
                   <Button variant="outline" size="sm" onClick={() => retryMutation.mutate()} disabled={retryInProgress} data-testid="button-retry-ga">
                     <RefreshCw className={`w-4 h-4 mr-1${retryInProgress ? " animate-spin" : ""}`} />
                     {retryInProgress ? "Retrying…" : "Retry connection"}
@@ -203,9 +204,21 @@ export function Ga4IntegrationCard({ showHeader = true, showJustConnectedBanner 
                 </Button>
               </div>
 
+              {/* Suspended state: nightly pulls have been halted */}
+              {status.connection.status === "suspended" && !retryInProgress && (
+                <Alert variant="destructive" data-testid="alert-ga-suspended">
+                  <AlertTriangle className="w-4 h-4" />
+                  <AlertTitle>Connection suspended</AlertTitle>
+                  <AlertDescription>
+                    This connection failed {status.connection.consecutiveErrors} nights in a row and has been paused to avoid repeated errors.
+                    Fix the underlying issue (e.g. re-authorise or verify the property ID), then click <strong>Retry connection</strong> to resume nightly pulls.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Show the error message only when not mid-retry to avoid
                   displaying the stale error while the pull is in flight. */}
-              {status.connection.lastError && !retryInProgress && (
+              {status.connection.lastError && status.connection.status !== "suspended" && !retryInProgress && (
                 <p className="text-xs text-destructive" data-testid="text-ga-error">{status.connection.lastError}</p>
               )}
 

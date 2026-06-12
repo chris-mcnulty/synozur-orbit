@@ -669,6 +669,7 @@ export function registerInsightsOutcomesRoutes(app: Express) {
           propertyName: conn.propertyName,
           lastSyncAt: conn.lastSyncAt,
           lastError: conn.lastError,
+          consecutiveErrors: conn.consecutiveErrors,
         } : null,
       });
     } catch (err) {
@@ -819,9 +820,10 @@ export function registerInsightsOutcomesRoutes(app: Express) {
         ctx.isDefaultMarket ? isNull(analyticsConnections.marketId) : eq(analyticsConnections.marketId, ctx.marketId),
       ));
       if (!conn) return res.status(404).json({ error: "No GA connection found" });
-      // Reset the error state so the connection is eligible for the pull.
+      // Reset the error state and consecutive error count so the connection
+      // is eligible for the pull (admin explicitly re-triggering = fresh start).
       await db.update(analyticsConnections)
-        .set({ status: "connected", lastError: null, updatedAt: new Date() })
+        .set({ status: "connected", lastError: null, consecutiveErrors: 0, updatedAt: new Date() })
         .where(eq(analyticsConnections.id, conn.id));
       // Fire-and-forget: pull last 7 days (same window as /refresh).
       const today = new Date();

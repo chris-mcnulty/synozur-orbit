@@ -203,6 +203,8 @@ export async function runDailyAnalyticsPull(opts?: { tenantDomain?: string; mark
   let pulled = 0;
   let errors = 0;
 
+  const MAX_CONSECUTIVE_ERRORS = 7;
+
   const baseWhere = [inArray(analyticsConnections.status, ["connected", "error"])];
   if (opts?.tenantDomain) baseWhere.push(eq(analyticsConnections.tenantDomain, opts.tenantDomain));
   if (opts?.marketId !== undefined) {
@@ -303,15 +305,21 @@ export async function runDailyAnalyticsPull(opts?: { tenantDomain?: string; mark
       }
 
       await db.update(analyticsConnections)
-        .set({ lastSyncAt: new Date(), lastError: null, status: "connected" })
+        .set({ lastSyncAt: new Date(), lastError: null, status: "connected", consecutiveErrors: 0, updatedAt: new Date() })
         .where(eq(analyticsConnections.id, conn.id));
       pulled++;
     } catch (err: any) {
       errors++;
+      const newCount = (conn.consecutiveErrors ?? 0) + 1;
+      const newStatus = newCount >= MAX_CONSECUTIVE_ERRORS ? "suspended" : "error";
       await db.update(analyticsConnections)
-        .set({ lastError: err?.message || String(err), status: "error", updatedAt: new Date() })
+        .set({ lastError: err?.message || String(err), status: newStatus, consecutiveErrors: newCount, updatedAt: new Date() })
         .where(eq(analyticsConnections.id, conn.id));
-      console.error("[GA Daily Pull] error for connection", conn.id, err);
+      if (newStatus === "suspended") {
+        console.warn(`[GA Daily Pull] connection ${conn.id} suspended after ${newCount} consecutive errors`);
+      } else {
+        console.error("[GA Daily Pull] error for connection", conn.id, err);
+      }
     }
   }
 

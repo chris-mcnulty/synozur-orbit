@@ -4085,8 +4085,9 @@ export const analyticsConnections = pgTable("analytics_connections", {
   refreshTokenEnc: text("refresh_token_enc"),
   tokenExpiresAt: timestamp("token_expires_at"),
   scope: text("scope"),
-  status: text("status").notNull().default("connected"), // connected | error | disconnected
+  status: text("status").notNull().default("connected"), // connected | error | suspended | disconnected
   lastError: text("last_error"),
+  consecutiveErrors: integer("consecutive_errors").notNull().default(0),
   lastSyncAt: timestamp("last_sync_at"),
   connectedBy: varchar("connected_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
