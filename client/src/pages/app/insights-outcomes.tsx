@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,10 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis,
   Tooltip, CartesianGrid, Legend,
 } from "recharts";
-import { Download, FileText, RefreshCw, Plug } from "lucide-react";
+import { Download, FileText, RefreshCw, Plug, AlertTriangle, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import AppLayout from "@/components/layout/AppLayout";
+import { useUser } from "@/lib/userContext";
 
 interface OutcomesPayload {
   range: { start: string; end: string };
@@ -51,9 +52,17 @@ const COMPONENT_LABELS: Record<string, string> = {
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function daysAgoISO(d: number) { return new Date(Date.now() - d * 86400000).toISOString().slice(0, 10); }
 
+const GA4_STATUS_KEY = ["/api/insights/ga/status"] as const;
+const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000;
+
 export default function InsightsOutcomesPage() {
+  const { user } = useUser();
+  const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+  const qc = useQueryClient();
+
   const [start, setStart] = useState(daysAgoISO(28));
   const [end, setEnd] = useState(todayISO());
+  const [warnDismissed, setWarnDismissed] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<OutcomesPayload>({
     queryKey: ["/api/insights/outcomes", start, end],
@@ -64,10 +73,28 @@ export default function InsightsOutcomesPage() {
     },
   });
 
+  const retryMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/insights/ga/retry"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: GA4_STATUS_KEY });
+      refetch();
+      setWarnDismissed(false);
+    },
+  });
+
   const refreshMutation = useMutation({
     mutationFn: async () => apiRequest("POST", "/api/insights/refresh"),
     onSuccess: () => { setTimeout(() => refetch(), 1500); },
   });
+
+  const ga4Warning = useMemo(() => {
+    if (!data?.connection) return null;
+    const conn = data.connection;
+    const isError = conn.status === "error";
+    const isStale = !conn.lastSyncAt || (Date.now() - new Date(conn.lastSyncAt).getTime() > STALE_THRESHOLD_MS);
+    if (!isError && !isStale) return null;
+    return { isError, isStale, lastError: conn.lastError };
+  }, [data]);
 
   const exportCsv = () => {
     window.location.href = `/api/insights/outcomes.csv?start=${start}&end=${end}`;
@@ -110,6 +137,56 @@ export default function InsightsOutcomesPage() {
       </div>
 
       {isLoading && <p className="text-muted-foreground">Loading outcomes…</p>}
+
+      {/* GA4 stale/error warning banner */}
+      {ga4Warning && !warnDismissed && (
+        <Alert variant="destructive" className="flex items-start gap-3" data-testid="alert-ga4-sync-warning">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <AlertTitle>
+              {ga4Warning.isError ? "Google Analytics sync error" : "Google Analytics data may be outdated"}
+            </AlertTitle>
+            <AlertDescription className="space-y-1">
+              <p>
+                {ga4Warning.isError
+                  ? "The last GA4 sync failed — charts may be showing stale data."
+                  : "GA4 data hasn't synced in over 48 hours — charts may be outdated."}
+                {ga4Warning.lastError && !ga4Warning.isError && (
+                  <span className="block text-xs opacity-80 mt-0.5">{ga4Warning.lastError}</span>
+                )}
+              </p>
+              <p className="flex flex-wrap items-center gap-2">
+                <a href="/app/settings/integrations" className="underline underline-offset-2 text-sm" data-testid="link-ga4-warn-settings">
+                  Go to Settings → Integrations
+                </a>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs border-destructive/60 hover:bg-destructive/10"
+                    onClick={() => retryMutation.mutate()}
+                    disabled={retryMutation.isPending}
+                    data-testid="button-ga4-warn-retry"
+                  >
+                    <RefreshCw className={`w-3 h-3 mr-1${retryMutation.isPending ? " animate-spin" : ""}`} />
+                    {retryMutation.isPending ? "Retrying…" : "Retry now"}
+                  </Button>
+                )}
+              </p>
+            </AlertDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 shrink-0 opacity-70 hover:opacity-100"
+            onClick={() => setWarnDismissed(true)}
+            aria-label="Dismiss"
+            data-testid="button-ga4-warn-dismiss"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </Alert>
+      )}
 
       {data && (
         <>
