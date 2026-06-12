@@ -1113,40 +1113,27 @@ export default function MarketingCalendarPage() {
             <p className="text-sm text-muted-foreground">The cross-channel overview of every scheduled social post, email, and content piece. Nothing here generates with AI — add and plan by hand.</p>
           </div>
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" disabled={exportCsvMut.isPending || resetExportsMut.isPending} data-testid="button-export-csv">
-                  {exportCsvMut.isPending || resetExportsMut.isPending
-                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    : <Share2 className="mr-2 h-4 w-4" />}
-                  Export social CSV
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Export format</DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => handleExportClick("socialpilot")} data-testid="export-format-socialpilot">
-                  <Download className="mr-2 h-4 w-4" /> SocialPilot
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportClick("hootsuite")} data-testid="export-format-hootsuite">
-                  <Download className="mr-2 h-4 w-4" /> Hootsuite
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportClick("sproutsocial")} data-testid="export-format-sproutsocial">
-                  <Download className="mr-2 h-4 w-4" /> Sprout Social
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportClick("generic")} data-testid="export-format-generic">
-                  <Download className="mr-2 h-4 w-4" /> Generic CSV
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => resetExportsMut.mutate()}
-                  className="text-amber-600 focus:text-amber-600 focus:bg-amber-50 dark:focus:bg-amber-950"
-                  data-testid="button-reset-exports"
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" /> Reset export status for this period
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="outline"
+              disabled={exportCsvMut.isPending || resetExportsMut.isPending}
+              onClick={() => handleExportClick(pendingFormat)}
+              data-testid="button-export-csv"
+            >
+              {exportCsvMut.isPending || resetExportsMut.isPending
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <Share2 className="mr-2 h-4 w-4" />}
+              Export social CSV
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => resetExportsMut.mutate()}
+              disabled={resetExportsMut.isPending}
+              className="text-amber-600 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+              data-testid="button-reset-exports"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" /> Reset export status
+            </Button>
             <Button variant="outline" onClick={() => setAdvisorOpen(true)} data-testid="button-content-advisor">
               <Sparkles className="mr-2 h-4 w-4" /> Advisor
               {advisories.length > 0 && (
@@ -1400,6 +1387,20 @@ export default function MarketingCalendarPage() {
             <DialogDescription>Here's what will go into the {pendingFormat} file for the current view.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between gap-2 border-b pb-3">
+              <label htmlFor="export-format" className="font-medium">CSV format</label>
+              <Select value={pendingFormat} onValueChange={setPendingFormat}>
+                <SelectTrigger className="w-44" id="export-format" data-testid="select-export-format">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="socialpilot">SocialPilot</SelectItem>
+                  <SelectItem value="hootsuite">Hootsuite</SelectItem>
+                  <SelectItem value="sproutsocial">Sprout Social</SelectItem>
+                  <SelectItem value="generic">Generic CSV</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex justify-between"><span>Scheduled posts (will export)</span><strong data-testid="text-precheck-dated">{exportPreview?.datedPosts ?? "—"}</strong></div>
             {(exportPreview?.undatedPosts ?? 0) > 0 && (
               <div className="flex justify-between text-amber-600"><span>Past / undated (skipped)</span><strong data-testid="text-precheck-undated">{exportPreview!.undatedPosts}</strong></div>
@@ -1433,13 +1434,19 @@ export default function MarketingCalendarPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delivery confirm: mirrors the campaign export so exported posts get marked delivered. */}
-      <Dialog open={showDeliverConfirm} onOpenChange={(o) => { if (!o) setShowDeliverConfirm(false); }}>
-        <DialogContent data-testid="dialog-deliver-confirm">
+      {/* Delivery confirm: mirrors the campaign export so exported posts get marked delivered.
+          Intentionally non-dismissible (no onOpenChange, no outside-click close) — the user
+          must explicitly choose "Not yet" or "Yes", so the dialog can't be lost by accident. */}
+      <Dialog open={showDeliverConfirm}>
+        <DialogContent
+          data-testid="dialog-deliver-confirm"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Did the import work?</DialogTitle>
             <DialogDescription>
-              Once your scheduling tool accepted the file, mark these {lastExportedIds.length} post{lastExportedIds.length === 1 ? "" : "s"} as delivered so they don't export again.
+              Once your scheduling tool accepted the file, mark these {lastExportedIds.length} post{lastExportedIds.length === 1 ? "" : "s"} as delivered so they won't appear in future exports. Choose "Not yet" if the import failed or you haven't tried yet.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
