@@ -301,17 +301,26 @@ export default function EditorialCalendarPage() {
 
   const briefs = detail?.briefs ?? [];
 
-  // Once the deep-linked brief's card is in the DOM, scroll to it and clear the
-  // focus after a moment so the highlight is a one-time cue, not permanent.
+  // Once the deep-linked brief's card is in the DOM, scroll to it and —
+  // if the brief already has a drafted asset — open the editor automatically
+  // so the user lands directly in the content instead of a highlighted card.
+  // Clear the highlight after a moment so it's a one-time cue.
   useEffect(() => {
     if (!focusBriefId) return;
-    if (!briefs.some((b) => b.id === focusBriefId)) return;
+    const brief = briefs.find((b) => b.id === focusBriefId);
+    if (!brief) return;
     const el = document.querySelector(`[data-testid="brief-${focusBriefId}"]`);
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Auto-open the draft so "Open editor" from the Master Calendar lands
+      // the user directly in the editor rather than a bare highlighted card.
+      if (brief.contentAssetId) void openDraft(brief);
       const t = setTimeout(() => setFocusBriefId(null), 2500);
       return () => clearTimeout(t);
     }
+  // openDraft is excluded from deps intentionally — it only calls stable
+  // setState setters and an imported getJson, so no stale-closure risk.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusBriefId, briefs]);
 
   // Assignment options — campaigns, themes (solution areas), and categories.
