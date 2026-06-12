@@ -257,11 +257,20 @@ interface BrandAsset {
   categoryName?: string;
 }
 
+const CAMPAIGN_TABS = ["plan", "posts", "review", "assets", "accounts", "links", "children"] as const;
+type CampaignTab = typeof CAMPAIGN_TABS[number];
+
+function getTabFromHash(): CampaignTab {
+  const hash = window.location.hash.replace("#", "");
+  return (CAMPAIGN_TABS as readonly string[]).includes(hash) ? (hash as CampaignTab) : "plan";
+}
+
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const [activeTab, setActiveTab] = useState<CampaignTab>(getTabFromHash);
   const [fsOpen, setFsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -1148,6 +1157,16 @@ export default function CampaignDetailPage() {
 
   const prevJobStatus = useRef(jobStatus?.status);
   useEffect(() => {
+    const onHashChange = () => setActiveTab(getTabFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    setActiveTab(getTabFromHash());
+  }, [id]);
+
+  useEffect(() => {
     const prev = prevJobStatus.current;
     const curr = jobStatus?.status;
     if ((prev === "running" || prev === "pending") && (curr === "completed" || curr === "failed")) {
@@ -1402,7 +1421,10 @@ export default function CampaignDetailPage() {
           </div>
         )}
 
-        <Tabs defaultValue="plan">
+        <Tabs value={activeTab} onValueChange={(tab) => {
+          setActiveTab(tab as CampaignTab);
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
+        }}>
           <TabsList>
             <TabsTrigger value="plan" className="gap-1.5" data-testid="tab-plan"><Target className="w-3.5 h-3.5" />Content Plan{briefs.length ? ` (${briefs.length})` : ""}</TabsTrigger>
             <TabsTrigger value="posts" className="gap-1.5" data-testid="tab-posts"><Share2 className="w-3.5 h-3.5" />Social Posts</TabsTrigger>
