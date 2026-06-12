@@ -39,6 +39,11 @@ import {
   BarChart3,
   Newspaper,
   Zap,
+  LayoutGrid,
+  Layers,
+  Wand2,
+  Square,
+  SquareCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -206,6 +211,7 @@ interface ContentAsset {
   title: string;
   description?: string;
   url?: string;
+  fileUrl?: string;
   leadImageUrl?: string;
 }
 
@@ -292,6 +298,18 @@ export default function CampaignDetailPage() {
   const BRAND_PAGE_SIZE = 12;
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
+  const [pickerTab, setPickerTab] = useState<"brand" | "content">("brand");
+
+  // Review Posts tab state
+  const [rvGroupBy, setRvGroupBy] = useState<"channel" | "concept" | "date">("channel");
+  const [rvPlatforms, setRvPlatforms] = useState<string[]>([]);
+  const [rvStatusFilter, setRvStatusFilter] = useState<string>("active");
+  const [rvMissingImage, setRvMissingImage] = useState(false);
+  const [rvSelectMode, setRvSelectMode] = useState(false);
+  const [rvSelectedIds, setRvSelectedIds] = useState<Set<string>>(new Set());
+  const [rvGeneratingIds, setRvGeneratingIds] = useState<Set<string>>(new Set());
+  const [rvBulkProgress, setRvBulkProgress] = useState(0);
+  const [rvBulkTotal, setRvBulkTotal] = useState(0);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -544,7 +562,7 @@ export default function CampaignDetailPage() {
   const updatePostMutation = useMutation({
     mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags }: {
       postId: string; editedContent?: string; status?: string;
-      overrideImageUrl?: string; overrideBrandAssetId?: string; hashtags?: string[];
+      overrideImageUrl?: string | null; overrideBrandAssetId?: string | null; hashtags?: string[];
     }) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
         method: "PUT",
@@ -1382,6 +1400,7 @@ export default function CampaignDetailPage() {
           <TabsList>
             <TabsTrigger value="plan" className="gap-1.5" data-testid="tab-plan"><Target className="w-3.5 h-3.5" />Content Plan{briefs.length ? ` (${briefs.length})` : ""}</TabsTrigger>
             <TabsTrigger value="posts" className="gap-1.5" data-testid="tab-posts"><Share2 className="w-3.5 h-3.5" />Social Posts</TabsTrigger>
+            <TabsTrigger value="review" className="gap-1.5" data-testid="tab-review"><ImageLucide className="w-3.5 h-3.5" />Review Images</TabsTrigger>
             <TabsTrigger value="assets" className="gap-1.5" data-testid="tab-assets"><Library className="w-3.5 h-3.5" />Assets ({campaign.assets.length})</TabsTrigger>
             <TabsTrigger value="accounts" className="gap-1.5" data-testid="tab-accounts"><AtSign className="w-3.5 h-3.5" />Social Accounts ({campaign.socialAccounts.length})</TabsTrigger>
             <TabsTrigger value="links" className="gap-1.5" data-testid="tab-links"><Link2 className="w-3.5 h-3.5" />Links</TabsTrigger>
@@ -2335,18 +2354,371 @@ export default function CampaignDetailPage() {
               </Card>
             )}
           </TabsContent>
+
+          {/* Review Posts — visual image-forward grid for bulk image QA */}
+          <TabsContent value="review" className="space-y-4">
+            {(() => {
+              // ── helpers ──────────────────────────────────────────────────
+              const activePosts = posts.filter(p => p.status !== "deleted");
+
+              // filter
+              const rvFiltered = activePosts.filter(p => {
+                if (rvStatusFilter === "active" && (p.status === "rejected" || p.status === "archived")) return false;
+                if (rvStatusFilter !== "active" && rvStatusFilter !== "all" && p.status !== rvStatusFilter) return false;
+                if (rvPlatforms.length > 0 && !rvPlatforms.includes(p.platform)) return false;
+                if (rvMissingImage && getPostImage(p)) return false;
+                return true;
+              });
+
+              // grouping
+              const dateLabel = (p: GeneratedPost): string => {
+                if (!p.scheduledDate || !campaign.startDate || !campaign.numberOfDays) return "Unscheduled";
+                const start = new Date(campaign.startDate).getTime();
+                const end = start + campaign.numberOfDays * 86400000;
+                const t = new Date(p.scheduledDate).getTime();
+                const pct = (t - start) / (end - start);
+                if (pct < 0.33) return "Early";
+                if (pct < 0.67) return "Mid";
+                return "Late";
+              };
+
+              const groupMap = new Map<string, GeneratedPost[]>();
+              for (const p of rvFiltered) {
+                let key: string;
+                if (rvGroupBy === "channel") key = p.platform;
+                else if (rvGroupBy === "concept") key = p.variantGroup || "Ungrouped";
+                else key = dateLabel(p);
+                if (!groupMap.has(key)) groupMap.set(key, []);
+                groupMap.get(key)!.push(p);
+              }
+              const groups = Array.from(groupMap.entries()).sort(([a], [b]) => {
+                if (rvGroupBy === "date") {
+                  const order = ["Early", "Mid", "Late", "Unscheduled"];
+                  return order.indexOf(a) - order.indexOf(b);
+                }
+                return a.localeCompare(b);
+              });
+
+              const allPlatforms = Array.from(new Set(activePosts.map(p => p.platform))).sort();
+
+              // ── generate graphic for a single post ───────────────────────
+              const generateGraphic = async (postId: string) => {
+                setRvGeneratingIds(prev => new Set(prev).add(postId));
+                try {
+                  const r = await fetch(`/api/generated-posts/${postId}/generate-image`, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({}),
+                  });
+                  if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    toast({ title: "Image generation failed", description: err.error || "Unknown error", variant: "destructive" });
+                  } else {
+                    queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+                  }
+                } catch {
+                  toast({ title: "Image generation failed", variant: "destructive" });
+                } finally {
+                  setRvGeneratingIds(prev => { const s = new Set(prev); s.delete(postId); return s; });
+                }
+              };
+
+              // ── bulk generate ─────────────────────────────────────────────
+              const bulkGenerateGraphics = async (postIds: string[]) => {
+                setRvBulkTotal(postIds.length);
+                setRvBulkProgress(0);
+                for (let i = 0; i < postIds.length; i++) {
+                  await generateGraphic(postIds[i]);
+                  setRvBulkProgress(i + 1);
+                }
+                setRvBulkTotal(0);
+                setRvBulkProgress(0);
+                toast({ title: "Graphics generated", description: `Generated images for ${postIds.length} post(s).` });
+              };
+
+              const toggleSelect = (postId: string) => {
+                setRvSelectedIds(prev => {
+                  const s = new Set(prev);
+                  if (s.has(postId)) s.delete(postId); else s.add(postId);
+                  return s;
+                });
+              };
+
+              const selectAll = () => setRvSelectedIds(new Set(rvFiltered.map(p => p.id)));
+              const clearSelection = () => setRvSelectedIds(new Set());
+
+              return (
+                <div className="space-y-4">
+                  {/* Toolbar */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Grouping */}
+                    <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-0.5" data-testid="rv-groupby-toggle">
+                      {(["channel", "concept", "date"] as const).map(g => (
+                        <button
+                          key={g}
+                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors capitalize ${rvGroupBy === g ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                          onClick={() => setRvGroupBy(g)}
+                          data-testid={`button-rv-group-${g}`}
+                        >
+                          {g === "channel" && <LayoutGrid className="w-3 h-3" />}
+                          {g === "concept" && <Layers className="w-3 h-3" />}
+                          {g === "date" && <CalendarDays className="w-3 h-3" />}
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Platform multi-select */}
+                    {allPlatforms.length > 1 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="gap-1.5 h-8" data-testid="button-rv-platform-filter">
+                            <Filter className="w-3 h-3" />
+                            {rvPlatforms.length === 0 ? "All platforms" : rvPlatforms.join(", ")}
+                            <ChevronDown className="w-3 h-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          {allPlatforms.map(pl => (
+                            <DropdownMenuCheckboxItem
+                              key={pl}
+                              checked={rvPlatforms.includes(pl)}
+                              onCheckedChange={checked => {
+                                setRvPlatforms(prev => checked ? [...prev, pl] : prev.filter(p => p !== pl));
+                              }}
+                              data-testid={`checkbox-rv-platform-${pl}`}
+                            >
+                              <span className="capitalize">{pl}</span>
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+
+                    {/* Status filter */}
+                    <Select value={rvStatusFilter} onValueChange={setRvStatusFilter}>
+                      <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-rv-status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="exported">Exported</SelectItem>
+                        <SelectItem value="rejected">Rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {/* Missing image toggle */}
+                    <button
+                      onClick={() => setRvMissingImage(v => !v)}
+                      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${rvMissingImage ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-300" : "text-muted-foreground hover:text-foreground"}`}
+                      data-testid="button-rv-missing-image"
+                    >
+                      <ImageIcon className="w-3 h-3" />
+                      Missing image only
+                    </button>
+
+                    {/* Select mode toggle */}
+                    <Button
+                      variant={rvSelectMode ? "secondary" : "outline"}
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      onClick={() => { setRvSelectMode(v => !v); clearSelection(); }}
+                      data-testid="button-rv-select-mode"
+                    >
+                      {rvSelectMode ? <SquareCheck className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                      {rvSelectMode ? "Cancel" : "Select"}
+                    </Button>
+
+                    <span className="text-xs text-muted-foreground ml-auto">
+                      {rvFiltered.length} post{rvFiltered.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+
+                  {/* Bulk action bar */}
+                  {rvSelectMode && (
+                    <div className="flex items-center gap-2 flex-wrap rounded-md border bg-muted/40 px-3 py-2" data-testid="rv-bulk-bar">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {rvSelectedIds.size} selected
+                      </span>
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={selectAll} data-testid="button-rv-select-all">
+                        Select all ({rvFiltered.length})
+                      </Button>
+                      {rvSelectedIds.size > 0 && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={clearSelection} data-testid="button-rv-clear-selection">
+                          Clear
+                        </Button>
+                      )}
+                      {rvSelectedIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5"
+                          onClick={() => {
+                            const first = Array.from(rvSelectedIds)[0];
+                            setImagePickerPostId(first || null);
+                            setPickerTab("brand");
+                          }}
+                          data-testid="button-rv-bulk-replace-image"
+                        >
+                          <ImageLucide className="w-3.5 h-3.5" />
+                          Replace image for selected…
+                        </Button>
+                      )}
+                      {rvSelectedIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1.5"
+                          disabled={rvBulkTotal > 0}
+                          onClick={() => bulkGenerateGraphics(Array.from(rvSelectedIds))}
+                          data-testid="button-rv-bulk-generate"
+                        >
+                          {rvBulkTotal > 0 ? (
+                            <><Loader2 className="w-3.5 h-3.5 animate-spin" />{rvBulkProgress}/{rvBulkTotal}</>
+                          ) : (
+                            <><Wand2 className="w-3.5 h-3.5" />Generate graphics for selected</>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {rvFiltered.length === 0 ? (
+                    <div className="py-12 text-center text-muted-foreground text-sm border rounded-lg" data-testid="rv-empty">
+                      {posts.length === 0 ? "No posts yet — generate some in the Social Posts tab." : "No posts match the current filters."}
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {groups.map(([groupKey, groupPosts]) => (
+                        <div key={groupKey} data-testid={`rv-group-${groupKey}`}>
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-2">
+                            <span className="capitalize">{groupKey}</span>
+                            <span className="normal-case font-normal">({groupPosts.length})</span>
+                          </h3>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {groupPosts.map(post => {
+                              const img = getPostImage(post);
+                              const isGenerating = rvGeneratingIds.has(post.id);
+                              const isSelected = rvSelectedIds.has(post.id);
+                              return (
+                                <div
+                                  key={post.id}
+                                  className={`group relative flex flex-col rounded-lg border bg-card overflow-hidden transition-all ${rvSelectMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"}`}
+                                  onClick={rvSelectMode ? () => toggleSelect(post.id) : undefined}
+                                  data-testid={`rv-card-${post.id}`}
+                                >
+                                  {/* Select checkbox */}
+                                  {rvSelectMode && (
+                                    <div className="absolute top-2 left-2 z-10">
+                                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${isSelected ? "bg-primary border-primary" : "bg-background/80 border-muted-foreground"}`}>
+                                        {isSelected && <CheckCircle className="w-3 h-3 text-primary-foreground" />}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Image area */}
+                                  <div className="relative aspect-video bg-muted/40 flex items-center justify-center overflow-hidden">
+                                    {isGenerating ? (
+                                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10 gap-1">
+                                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                        <span className="text-[10px] text-muted-foreground">Generating…</span>
+                                      </div>
+                                    ) : null}
+                                    {img ? (
+                                      <img
+                                        src={img}
+                                        alt="Post image"
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                        data-testid={`rv-img-${post.id}`}
+                                      />
+                                    ) : (
+                                      <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50 py-4" data-testid={`rv-no-img-${post.id}`}>
+                                        <ImageIcon className="w-8 h-8" />
+                                        <span className="text-[10px]">No image</span>
+                                      </div>
+                                    )}
+                                    {post.overrideImageUrl && (
+                                      <Badge variant="secondary" className="absolute bottom-1 right-1 text-[10px] z-10 pointer-events-none">
+                                        Override
+                                      </Badge>
+                                    )}
+                                  </div>
+
+                                  {/* Card body */}
+                                  <div className="p-2 flex flex-col gap-1.5 flex-1">
+                                    {/* Badges row */}
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      <Badge className="text-[10px] capitalize px-1.5 py-0" data-testid={`rv-badge-platform-${post.id}`}>{post.platform}</Badge>
+                                      <Badge variant={post.status === "approved" ? "default" : post.status === "rejected" ? "destructive" : "secondary"} className="text-[10px] px-1.5 py-0 capitalize" data-testid={`rv-badge-status-${post.id}`}>{post.status}</Badge>
+                                    </div>
+
+                                    {/* Copy excerpt */}
+                                    <p className="text-xs text-muted-foreground line-clamp-2 leading-tight" data-testid={`rv-copy-${post.id}`}>
+                                      {post.editedContent ?? post.content}
+                                    </p>
+
+                                    {/* Date */}
+                                    {post.scheduledDate && (
+                                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground" data-testid={`rv-date-${post.id}`}>
+                                        <Calendar className="w-2.5 h-2.5 shrink-0" />
+                                        {format(new Date(post.scheduledDate), "MMM d")}
+                                      </div>
+                                    )}
+
+                                    {/* Action buttons */}
+                                    {!rvSelectMode && (
+                                      <div className="flex items-center gap-1 mt-auto pt-1">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-6 text-[10px] flex-1 gap-1 px-2"
+                                          onClick={e => { e.stopPropagation(); setImagePickerPostId(post.id); setPickerTab("brand"); }}
+                                          data-testid={`button-rv-replace-img-${post.id}`}
+                                        >
+                                          <ImageLucide className="w-3 h-3 shrink-0" />Replace
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-6 text-[10px] flex-1 gap-1 px-2"
+                                          disabled={isGenerating}
+                                          onClick={e => { e.stopPropagation(); generateGraphic(post.id); }}
+                                          data-testid={`button-rv-generate-img-${post.id}`}
+                                        >
+                                          <Wand2 className="w-3 h-3 shrink-0" />Generate
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </TabsContent>
         </Tabs>
       </div>
 
-      {/* Image Override Picker Dialog */}
-      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerPage(0); } }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+      {/* Image Override Picker Dialog — brand assets + content assets */}
+      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); } }}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Choose Image</DialogTitle>
+            <DialogDescription>
+              Pick a brand asset or a content library item, or clear the override to use the post's default image.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Select a brand asset image to use for this post, or remove the override to use the default content asset image.</p>
-
             <Button
               variant="outline"
               className="w-full gap-2"
@@ -2354,20 +2726,40 @@ export default function CampaignDetailPage() {
                 if (imagePickerPostId) {
                   updatePostMutation.mutate({
                     postId: imagePickerPostId,
-                    overrideImageUrl: null as any,
-                    overrideBrandAssetId: null as any,
+                    overrideImageUrl: null,
+                    overrideBrandAssetId: null,
                   });
                 }
               }}
               data-testid="button-reset-image"
             >
-              <X className="w-4 h-4" /> Use Default (Content Asset Lead Image)
+              <X className="w-4 h-4" /> Clear override (use default)
             </Button>
 
-            {brandAssets.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No brand assets available. Add images in Visual/Brand Assets first.</p>
-            ) : (() => {
+            {/* Tab toggle: brand assets vs content assets */}
+            <div className="flex rounded-md border overflow-hidden" data-testid="picker-tab-toggle">
+              <button
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors ${pickerTab === "brand" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                onClick={() => { setPickerTab("brand"); setPickerPage(0); setPickerCategoryFilter("all"); }}
+                data-testid="button-picker-tab-brand"
+              >
+                Brand Assets
+              </button>
+              <button
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors border-l ${pickerTab === "content" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                onClick={() => { setPickerTab("content"); setPickerPage(0); setPickerCategoryFilter("all"); }}
+                data-testid="button-picker-tab-content"
+              >
+                Content Library
+              </button>
+            </div>
+
+            {/* Brand assets tab */}
+            {pickerTab === "brand" && (() => {
               const imageAssets = brandAssets.filter(ba => ba.fileUrl || ba.url);
+              if (imageAssets.length === 0) {
+                return <p className="text-sm text-muted-foreground text-center py-4">No brand assets available. Add images in Visual/Brand Assets first.</p>;
+              }
               const pickerCategories = [...new Set(imageAssets.map(ba => ba.categoryName).filter(Boolean))] as string[];
               const filtered = pickerCategoryFilter === "all" ? imageAssets : imageAssets.filter(ba => ba.categoryName === pickerCategoryFilter);
               const totalPages = Math.ceil(filtered.length / BRAND_PAGE_SIZE);
@@ -2394,11 +2786,20 @@ export default function CampaignDetailPage() {
                         className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
                         onClick={() => {
                           if (imagePickerPostId) {
-                            updatePostMutation.mutate({
-                              postId: imagePickerPostId,
+                            const targets = rvSelectMode && rvSelectedIds.size > 0
+                              ? Array.from(rvSelectedIds)
+                              : [imagePickerPostId];
+                            targets.forEach(pid => updatePostMutation.mutate({
+                              postId: pid,
                               overrideImageUrl: ba.fileUrl || ba.url || "",
                               overrideBrandAssetId: ba.id,
-                            });
+                            }));
+                            if (targets.length > 1) {
+                              setImagePickerPostId(null);
+                              setPickerTab("brand");
+                              setRvSelectMode(false);
+                              setRvSelectedIds(new Set());
+                            }
                           }
                         }}
                         data-testid={`button-brand-asset-${ba.id}`}
@@ -2418,6 +2819,72 @@ export default function CampaignDetailPage() {
                       <Button variant="outline" size="sm" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} data-testid="button-picker-prev">Previous</Button>
                       <span className="text-xs text-muted-foreground">Page {pickerPage + 1} of {totalPages}</span>
                       <Button variant="outline" size="sm" disabled={pickerPage >= totalPages - 1} onClick={() => setPickerPage(p => p + 1)} data-testid="button-picker-next">Next</Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Content assets tab — shows items with url or fileUrl; leadImageUrl is thumbnail only */}
+            {pickerTab === "content" && (() => {
+              const contentImageAssets = allAssets.filter(a => a.url || a.fileUrl);
+              if (contentImageAssets.length === 0) {
+                return <p className="text-sm text-muted-foreground text-center py-4">No content library items found. Add assets with a URL in the Content Library first.</p>;
+              }
+              const totalPages = Math.ceil(contentImageAssets.length / BRAND_PAGE_SIZE);
+              const paged = contentImageAssets.slice(pickerPage * BRAND_PAGE_SIZE, (pickerPage + 1) * BRAND_PAGE_SIZE);
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {paged.map(ca => {
+                      const imageUrl = ca.leadImageUrl || ca.url || ca.fileUrl || "";
+                      const overrideUrl = ca.leadImageUrl || ca.url || ca.fileUrl || "";
+                      return (
+                        <button
+                          key={ca.id}
+                          className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
+                          onClick={() => {
+                            if (imagePickerPostId) {
+                              const targets = rvSelectMode && rvSelectedIds.size > 0
+                                ? Array.from(rvSelectedIds)
+                                : [imagePickerPostId];
+                              targets.forEach(pid => updatePostMutation.mutate({
+                                postId: pid,
+                                overrideImageUrl: overrideUrl,
+                                overrideBrandAssetId: null,
+                              }));
+                              if (targets.length > 1) {
+                                setImagePickerPostId(null);
+                                setPickerTab("brand");
+                                setRvSelectMode(false);
+                                setRvSelectedIds(new Set());
+                              }
+                            }
+                          }}
+                          data-testid={`button-content-asset-${ca.id}`}
+                        >
+                          {imageUrl ? (
+                            <OptimizedThumbnail
+                              src={imageUrl}
+                              alt={ca.title}
+                              containerClassName="rounded"
+                            />
+                          ) : (
+                            <div className="aspect-video flex items-center justify-center bg-muted/40 rounded">
+                              <ImageIcon className="w-6 h-6 text-muted-foreground/40" />
+                            </div>
+                          )}
+                          <p className="text-xs mt-1 truncate">{ca.title}</p>
+                          {ca.description && <p className="text-[10px] text-muted-foreground truncate">{ca.description}</p>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-1">
+                      <Button variant="outline" size="sm" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} data-testid="button-picker-content-prev">Previous</Button>
+                      <span className="text-xs text-muted-foreground">Page {pickerPage + 1} of {totalPages}</span>
+                      <Button variant="outline" size="sm" disabled={pickerPage >= totalPages - 1} onClick={() => setPickerPage(p => p + 1)} data-testid="button-picker-content-next">Next</Button>
                     </div>
                   )}
                 </div>
