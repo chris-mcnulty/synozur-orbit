@@ -1706,6 +1706,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
           ilike(campaigns.description, pattern),
         )!);
       }
+      const statusFilter = req.query.status as string | undefined;
+      if (statusFilter && statusFilter !== "all") {
+        conditions.push(eq(campaigns.status, statusFilter));
+      }
       const solutionAreaId = req.query.solutionAreaId as string | undefined;
       if (solutionAreaId) {
         const ids = solutionAreaId.split(",").filter(Boolean);
@@ -1723,22 +1727,58 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
       const where = and(...conditions);
 
+      // Helper: fetch postCount + briefCount for a list of campaign ids
+      async function fetchCampaignCounts(ids: string[]): Promise<{
+        childCountMap: Map<string, number>;
+        postCountMap: Map<string, number>;
+        briefCountMap: Map<string, number>;
+      }> {
+        if (ids.length === 0) {
+          return {
+            childCountMap: new Map(),
+            postCountMap: new Map(),
+            briefCountMap: new Map(),
+          };
+        }
+        const [childCountRows, postCountRows, briefCountRows] = await Promise.all([
+          db.select({ parentCampaignId: campaigns.parentCampaignId, value: count() })
+            .from(campaigns)
+            .where(and(
+              inArray(campaigns.parentCampaignId, ids),
+              ne(campaigns.status, "deleted"),
+            ))
+            .groupBy(campaigns.parentCampaignId),
+          db.select({ campaignId: generatedPosts.campaignId, value: count() })
+            .from(generatedPosts)
+            .where(inArray(generatedPosts.campaignId, ids))
+            .groupBy(generatedPosts.campaignId),
+          db.select({ campaignId: contentAssets.campaignId, value: count() })
+            .from(contentAssets)
+            .where(and(
+              inArray(contentAssets.campaignId, ids),
+              ne(contentAssets.status, "removed"),
+            ))
+            .groupBy(contentAssets.campaignId),
+        ]);
+        return {
+          childCountMap: new Map(childCountRows.map(r => [r.parentCampaignId!, Number(r.value)])),
+          postCountMap: new Map(postCountRows.map(r => [r.campaignId!, Number(r.value)])),
+          briefCountMap: new Map(briefCountRows.map(r => [r.campaignId!, Number(r.value)])),
+        };
+      }
+
       if (!pagination.isPaginated) {
         const rows = await db.select().from(campaigns)
           .where(where)
           .orderBy(desc(campaigns.createdAt));
         const ids = rows.map(r => r.id);
-        const childCountRows = ids.length > 0
-          ? await db.select({ parentCampaignId: campaigns.parentCampaignId, value: count() })
-              .from(campaigns)
-              .where(and(
-                inArray(campaigns.parentCampaignId, ids),
-                ne(campaigns.status, "deleted"),
-              ))
-              .groupBy(campaigns.parentCampaignId)
-          : [];
-        const childCountMap = new Map(childCountRows.map(r => [r.parentCampaignId!, Number(r.value)]));
-        return res.json(rows.map(r => ({ ...r, childCount: childCountMap.get(r.id) ?? 0 })));
+        const { childCountMap, postCountMap, briefCountMap } = await fetchCampaignCounts(ids);
+        return res.json(rows.map(r => ({
+          ...r,
+          childCount: childCountMap.get(r.id) ?? 0,
+          postCount: postCountMap.get(r.id) ?? 0,
+          briefCount: briefCountMap.get(r.id) ?? 0,
+        })));
       }
 
       const [{ value: total }] = await db.select({ value: count() }).from(campaigns).where(where);
@@ -1748,17 +1788,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .limit(pagination.limit)
         .offset(pagination.offset);
       const ids = items.map(r => r.id);
-      const childCountRows = ids.length > 0
-        ? await db.select({ parentCampaignId: campaigns.parentCampaignId, value: count() })
-            .from(campaigns)
-            .where(and(
-              inArray(campaigns.parentCampaignId, ids),
-              ne(campaigns.status, "deleted"),
-            ))
-            .groupBy(campaigns.parentCampaignId)
-        : [];
-      const childCountMap = new Map(childCountRows.map(r => [r.parentCampaignId!, Number(r.value)]));
-      const itemsWithCount = items.map(r => ({ ...r, childCount: childCountMap.get(r.id) ?? 0 }));
+      const { childCountMap, postCountMap, briefCountMap } = await fetchCampaignCounts(ids);
+      const itemsWithCount = items.map(r => ({
+        ...r,
+        childCount: childCountMap.get(r.id) ?? 0,
+        postCount: postCountMap.get(r.id) ?? 0,
+        briefCount: briefCountMap.get(r.id) ?? 0,
+      }));
       res.json(buildPaginatedEnvelope(itemsWithCount, Number(total), pagination));
     } catch (err: any) {
       console.error("[Campaigns List Error]", err.message);

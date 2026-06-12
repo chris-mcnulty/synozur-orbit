@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles, Network } from "lucide-react";
+import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles, Network, Share2, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
@@ -50,6 +50,8 @@ interface Campaign {
   createdAt: string;
   childCount?: number;
   parentCampaignId?: string | null;
+  postCount?: number;
+  briefCount?: number;
 }
 
 interface Persona {
@@ -254,17 +256,19 @@ export default function CampaignsPage() {
   const [campaignPage, setCampaignPage] = useState(1);
   const [CAMPAIGNS_PAGE_SIZE, setCampaignsPageSize] = usePersistedPageSize("campaigns");
   const [campaignSearch, setCampaignSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const debouncedCampaignSearch = useDebouncedValue(campaignSearch, 300);
 
   useEffect(() => {
     setCampaignPage(1);
-  }, [debouncedCampaignSearch, CAMPAIGNS_PAGE_SIZE]);
+  }, [debouncedCampaignSearch, CAMPAIGNS_PAGE_SIZE, statusFilter]);
 
   const { data: campaignsPage, isLoading } = useQuery<PaginatedEnvelope<Campaign>>({
-    queryKey: ["/api/campaigns", "paginated", { page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE, q: debouncedCampaignSearch }],
+    queryKey: ["/api/campaigns", "paginated", { page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE, q: debouncedCampaignSearch, status: statusFilter }],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(campaignPage), pageSize: String(CAMPAIGNS_PAGE_SIZE) });
       if (debouncedCampaignSearch) params.set("q", debouncedCampaignSearch);
+      if (statusFilter !== "all") params.set("status", statusFilter);
       const r = await fetch(`/api/campaigns?${params.toString()}`, { credentials: "include" });
       if (!r.ok) return { items: [], total: 0, hasMore: false, page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE };
       return r.json();
@@ -1018,8 +1022,8 @@ export default function CampaignsPage() {
           </div>
         </div>
 
-        <div className="max-w-md">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={campaignSearch}
@@ -1028,6 +1032,22 @@ export default function CampaignsPage() {
               className="pl-9"
               data-testid="input-search-campaigns"
             />
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap" data-testid="status-filter-chips">
+            {(["all", "draft", "active", "completed", "archived"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors capitalize ${
+                  statusFilter === s
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-input hover:bg-muted/50"
+                }`}
+                data-testid={`filter-status-${s}`}
+              >
+                {s === "all" ? "All" : s}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -1067,6 +1087,40 @@ export default function CampaignsPage() {
                   {c.description && <CardDescription className="line-clamp-2">{c.description}</CardDescription>}
                 </CardHeader>
                 <CardContent className="pt-0 space-y-2">
+                  {/* Campaign type badge */}
+                  {c.campaignType && (
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge variant="secondary" className="text-[10px] capitalize" data-testid={`badge-type-${c.id}`}>
+                        {CAMPAIGN_TYPE_OPTIONS.find(o => o.value === c.campaignType)?.label ?? c.campaignType}
+                      </Badge>
+                    </div>
+                  )}
+                  {/* Date range */}
+                  {c.startDate && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground" data-testid={`text-date-${c.id}`}>
+                      <Calendar className="w-3 h-3" />
+                      {format(new Date(c.startDate), "MMM d")}
+                      {c.endDate && <> — {format(new Date(c.endDate), "MMM d, yyyy")}</>}
+                      {c.numberOfDays && <span className="ml-1">({c.numberOfDays}d)</span>}
+                    </div>
+                  )}
+                  {/* Post + brief counts */}
+                  {((c.postCount ?? 0) > 0 || (c.briefCount ?? 0) > 0) && (
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground" data-testid={`text-counts-${c.id}`}>
+                      {(c.postCount ?? 0) > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Share2 className="w-3 h-3" />
+                          {c.postCount} post{c.postCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {(c.briefCount ?? 0) > 0 && (
+                        <span className="flex items-center gap-1">
+                          <FileText className="w-3 h-3" />
+                          {c.briefCount} brief{c.briefCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {c.productIds && c.productIds.length > 0 && (
                     <div className="flex flex-wrap gap-1" data-testid={`campaign-products-${c.id}`}>
                       {c.productIds.map(pid => {
@@ -1077,14 +1131,6 @@ export default function CampaignsPage() {
                           </Badge>
                         ) : null;
                       })}
-                    </div>
-                  )}
-                  {c.startDate && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      {format(new Date(c.startDate), "MMM d")}
-                      {c.endDate && <> — {format(new Date(c.endDate), "MMM d, yyyy")}</>}
-                      {c.numberOfDays && <span className="ml-1">({c.numberOfDays}d)</span>}
                     </div>
                   )}
                   <div className="flex items-center justify-between">

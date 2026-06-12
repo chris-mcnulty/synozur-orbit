@@ -49,6 +49,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
+import {
+  type HubResponse, type ItemType,
+  RollupStat, HubItemsList, AttachDialog, CreateActionDialog,
+  STAGE_META, STAGE_ORDER,
+} from "./hub-components";
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -274,7 +279,7 @@ interface BrandAsset {
   categoryName?: string;
 }
 
-const CAMPAIGN_TABS = ["plan", "posts", "review", "assets", "accounts", "links", "children"] as const;
+const CAMPAIGN_TABS = ["plan", "posts", "review", "assets", "accounts", "links", "children", "hub"] as const;
 type CampaignTab = typeof CAMPAIGN_TABS[number];
 
 function getTabFromHash(): CampaignTab {
@@ -334,6 +339,10 @@ export default function CampaignDetailPage() {
   const [pickerTab, setPickerTab] = useState<"brand" | "content">("brand");
   const [pickerShowAll, setPickerShowAll] = useState(false);
 
+  // Hub tab state
+  const [hubAttachOpen, setHubAttachOpen] = useState(false);
+  const [hubCreateOpen, setHubCreateOpen] = useState(false);
+
   // Link attachment popover state
   const [linkPopoverPostId, setLinkPopoverPostId] = useState<string | null>(null);
   const [linkUrlInput, setLinkUrlInput] = useState("");
@@ -361,6 +370,38 @@ export default function CampaignDetailPage() {
       if (!r.ok) throw new Error("Campaign not found");
       return r.json();
     },
+  });
+
+  // Hub tab: planning-hub data for this campaign
+  const { data: hub, isLoading: hubLoading } = useQuery<HubResponse>({
+    queryKey: ["/api/planning-hub", "campaign", id],
+    enabled: activeTab === "hub" && !!id,
+    queryFn: async () => {
+      const res = await fetch(`/api/planning-hub?scope=campaign&id=${id}`, { credentials: "include" });
+      return res.json();
+    },
+  });
+
+  const refreshHub = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub", "campaign", id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub/available", "campaign", id] });
+  };
+
+  const hubDetachMutation = useMutation({
+    mutationFn: async (item: { type: ItemType; id: string }) => {
+      const res = await fetch("/api/planning-hub/detach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ scope: "campaign", id, items: [item] }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Removed", description: "Item detached from this campaign." });
+      refreshHub();
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
   const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
@@ -1521,6 +1562,9 @@ export default function CampaignDetailPage() {
               <Network className="w-3.5 h-3.5" />
               Campaigns{campaign.children && campaign.children.length > 0 ? ` (${campaign.children.length})` : ""}
             </TabsTrigger>
+            <TabsTrigger value="hub" className="gap-1.5" data-testid="tab-hub">
+              <Layers className="w-3.5 h-3.5" />Hub{hub ? ` (${hub.rollup.total})` : ""}
+            </TabsTrigger>
           </TabsList>
 
           {/* Content Plan — briefs that support this campaign */}
@@ -1801,6 +1845,57 @@ export default function CampaignDetailPage() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* Hub — planning-hub view scoped to this campaign */}
+          <TabsContent value="hub" className="space-y-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold">Campaign Hub</h3>
+                <p className="text-sm text-muted-foreground max-w-xl">
+                  All social posts, emails, and content briefs attached to this campaign, grouped by type. Attach existing items or add a new planned action.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setHubAttachOpen(true)} data-testid="button-hub-attach">
+                  <Link2 className="w-3.5 h-3.5" /> Attach Existing
+                </Button>
+                <Button size="sm" className="gap-1.5" onClick={() => setHubCreateOpen(true)} data-testid="button-hub-create-action">
+                  <Plus className="w-3.5 h-3.5" /> New Action
+                </Button>
+              </div>
+            </div>
+
+            {hubLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : hub ? (
+              <>
+                {/* Rollup stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <RollupStat label="Total" value={hub.rollup.total} testId="hub-rollup-total" highlight />
+                  {STAGE_ORDER.map((st) => (
+                    <RollupStat
+                      key={st}
+                      label={STAGE_META[st].label}
+                      value={hub.rollup.byStage[st]}
+                      testId={`hub-rollup-stage-${st}`}
+                    />
+                  ))}
+                  <RollupStat label="Types" value={Object.values(hub.rollup.byType).filter((n) => n > 0).length} testId="hub-rollup-types" />
+                </div>
+
+                {/* Items list */}
+                <HubItemsList
+                  hub={hub}
+                  scope="campaign"
+                  id={id}
+                  onDetach={(item) => hubDetachMutation.mutate(item)}
+                  detachPending={hubDetachMutation.isPending}
+                />
+              </>
+            ) : null}
           </TabsContent>
 
           {/* Social Posts */}
@@ -4450,6 +4545,14 @@ export default function CampaignDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Hub tab dialogs */}
+      {id && (
+        <>
+          <AttachDialog open={hubAttachOpen} onOpenChange={setHubAttachOpen} scope="campaign" id={id} onDone={refreshHub} />
+          <CreateActionDialog open={hubCreateOpen} onOpenChange={setHubCreateOpen} scope="campaign" id={id} onDone={refreshHub} />
+        </>
+      )}
     </AppLayout>
   );
 }
