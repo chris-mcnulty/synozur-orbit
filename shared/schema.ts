@@ -3022,6 +3022,32 @@ export const insertCampaignAssetSchema = createInsertSchema(campaignAssets).omit
 export type CampaignAsset = typeof campaignAssets.$inferSelect;
 export type InsertCampaignAsset = z.infer<typeof insertCampaignAssetSchema>;
 
+// Campaign ↔ Brand Asset (visual library) join
+export const campaignBrandAssets = pgTable("campaign_brand_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  brandAssetId: varchar("brand_asset_id").notNull().references(() => brandAssets.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const campaignBrandAssetsRelations = relations(campaignBrandAssets, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [campaignBrandAssets.campaignId],
+    references: [campaigns.id],
+  }),
+  brandAsset: one(brandAssets, {
+    fields: [campaignBrandAssets.brandAssetId],
+    references: [brandAssets.id],
+  }),
+}));
+
+export const insertCampaignBrandAssetSchema = createInsertSchema(campaignBrandAssets).omit({
+  id: true, addedAt: true,
+});
+export type CampaignBrandAsset = typeof campaignBrandAssets.$inferSelect;
+export type InsertCampaignBrandAsset = z.infer<typeof insertCampaignBrandAssetSchema>;
+
 // Campaign ↔ Social Account join
 export const campaignSocialAccounts = pgTable("campaign_social_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

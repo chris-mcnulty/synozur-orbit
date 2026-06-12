@@ -33,6 +33,7 @@ import {
   socialAccounts,
   campaigns,
   campaignAssets,
+  campaignBrandAssets,
   campaignSocialAccounts,
   campaignSolutionAreas,
   CAMPAIGN_TYPES,
@@ -1778,10 +1779,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
         ));
       if (!campaign) return res.status(404).json({ error: "Not found" });
 
-      const [assets, socialAccts, areaLinks, childCampaigns, parentCampaign] = await Promise.all([
+      const [assets, pinnedBrandAssets, socialAccts, areaLinks, childCampaigns, parentCampaign] = await Promise.all([
         db.select().from(campaignAssets)
           .where(eq(campaignAssets.campaignId, campaign.id))
           .orderBy(campaignAssets.sortOrder),
+        db.select().from(campaignBrandAssets)
+          .where(eq(campaignBrandAssets.campaignId, campaign.id))
+          .orderBy(campaignBrandAssets.sortOrder),
         db.select().from(campaignSocialAccounts)
           .where(eq(campaignSocialAccounts.campaignId, campaign.id)),
         db.select().from(campaignSolutionAreas)
@@ -1849,6 +1853,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       res.json({
         ...campaign,
         assets,
+        pinnedBrandAssets,
         socialAccounts: socialAccts,
         solutionAreaIds: areaLinks.map(a => a.solutionAreaId),
         // Rollup
@@ -2298,6 +2303,56 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Campaign Asset Delete Error]", err.message);
       res.status(500).json({ error: "Failed to remove campaign asset" });
+    }
+  });
+
+  // Campaign ↔ Brand Asset (Visual/Brand Assets library) routes
+
+  app.post("/api/campaigns/:id/brand-assets", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { brandAssetId } = req.body;
+      if (!brandAssetId) return res.status(400).json({ error: "brandAssetId is required" });
+      // Verify the brand asset belongs to this tenant
+      const [ba] = await db.select({ id: brandAssets.id }).from(brandAssets)
+        .where(and(eq(brandAssets.id, brandAssetId), eq(brandAssets.tenantDomain, ctx.tenantDomain)));
+      if (!ba) return res.status(404).json({ error: "Brand asset not found" });
+      // Idempotent: skip if already pinned
+      const [existing] = await db.select().from(campaignBrandAssets)
+        .where(and(eq(campaignBrandAssets.campaignId, campaign.id), eq(campaignBrandAssets.brandAssetId, brandAssetId)));
+      if (existing) return res.json(existing);
+      const [row] = await db.insert(campaignBrandAssets).values({
+        campaignId: campaign.id,
+        brandAssetId,
+        sortOrder: 0,
+      }).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[Campaign Brand Asset Add Error]", err.message);
+      res.status(500).json({ error: "Failed to add brand asset to campaign" });
+    }
+  });
+
+  app.delete("/api/campaigns/:id/brand-assets/:brandAssetId", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      await db.delete(campaignBrandAssets)
+        .where(and(
+          eq(campaignBrandAssets.campaignId, campaign.id),
+          eq(campaignBrandAssets.brandAssetId, req.params.brandAssetId),
+        ));
+      res.status(204).send();
+    } catch (err: any) {
+      console.error("[Campaign Brand Asset Delete Error]", err.message);
+      res.status(500).json({ error: "Failed to remove brand asset from campaign" });
     }
   });
 

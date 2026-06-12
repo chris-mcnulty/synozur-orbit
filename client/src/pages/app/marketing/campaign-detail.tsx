@@ -116,6 +116,7 @@ interface Campaign {
   parentCampaignId?: string | null;
   foundingSignals?: FoundingSignals | null;
   assets: CampaignAsset[];
+  pinnedBrandAssets: CampaignBrandAssetRef[];
   socialAccounts: CampaignSocialAccount[];
   rollup?: CampaignRollup;
   children?: ChildCampaignRef[];
@@ -205,6 +206,17 @@ interface CampaignAsset {
   sortOrder: number;
 }
 
+interface CampaignBrandAssetRef {
+  id: string;
+  brandAssetId: string;
+  sortOrder: number;
+}
+
+interface BrandAssetCategory {
+  id: string;
+  name: string;
+}
+
 interface CampaignSocialAccount {
   id: string;
   socialAccountId: string;
@@ -279,6 +291,8 @@ export default function CampaignDetailPage() {
   const [editContent, setEditContent] = useState("");
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
   const [assetSearch, setAssetSearch] = useState("");
+  const [brandAssetCategoryFilter, setBrandAssetCategoryFilter] = useState("all");
+  const [brandAssetSearch, setBrandAssetSearch] = useState("");
   const [postFilter, setPostFilter] = useState<string>("active");
   // WS4: when drilling into one collapsed social batch (its generation run,
   // repurpose group, or event); null shows the batch overview.
@@ -382,6 +396,14 @@ export default function CampaignDetailPage() {
     queryKey: ["/api/brand-assets"],
     queryFn: async () => {
       const r = await fetch("/api/brand-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+
+  const { data: brandAssetCategories = [] } = useQuery<BrandAssetCategory[]>({
+    queryKey: ["/api/brand-asset-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-asset-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
@@ -1041,6 +1063,30 @@ export default function CampaignDetailPage() {
         credentials: "include",
       });
       if (!r.ok) throw new Error("Failed to remove asset");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
+  });
+
+  const addBrandAssetMutation = useMutation({
+    mutationFn: async (brandAssetId: string) => {
+      const r = await fetch(`/api/campaigns/${id}/brand-assets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ brandAssetId }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
+  });
+
+  const removeBrandAssetMutation = useMutation({
+    mutationFn: async (brandAssetId: string) => {
+      const r = await fetch(`/api/campaigns/${id}/brand-assets/${brandAssetId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Failed to remove brand asset");
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
   });
@@ -2292,10 +2338,11 @@ export default function CampaignDetailPage() {
 
 
           {/* Assets */}
-          <TabsContent value="assets" className="space-y-4">
+          <TabsContent value="assets" className="space-y-6">
+            {/* ── Pinned content library assets ── */}
             {campaign.assets.length > 0 && (
               <div>
-                <h3 className="text-sm font-medium mb-2">In this campaign</h3>
+                <h3 className="text-sm font-medium mb-2">Content Library — in this campaign</h3>
                 <div className="grid gap-2">
                   {campaign.assets.map(ca => {
                     const asset = allAssets.find(a => a.id === ca.assetId);
@@ -2335,12 +2382,145 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
+            {/* ── Pinned visual/brand assets ── */}
+            {(campaign.pinnedBrandAssets ?? []).length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium mb-2">Visual/Brand Assets — in this campaign</h3>
+                <div className="grid gap-2">
+                  {(campaign.pinnedBrandAssets ?? []).map(cba => {
+                    const ba = brandAssets.find(b => b.id === cba.brandAssetId);
+                    const thumb = ba?.fileUrl || ba?.url;
+                    return (
+                      <Card key={cba.id} data-testid={`card-campaign-brand-asset-${cba.brandAssetId}`}>
+                        <CardContent className="py-3 flex items-center gap-3">
+                          {thumb ? (
+                            <img src={thumb} alt="" className="w-10 h-10 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
+                              <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{ba?.name ?? cba.brandAssetId}</p>
+                            {ba?.categoryName && <p className="text-xs text-muted-foreground truncate">{ba.categoryName}</p>}
+                          </div>
+                          <Badge variant="outline" className="shrink-0 text-xs">Visual</Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0 h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => removeBrandAssetMutation.mutate(cba.brandAssetId)}
+                            disabled={removeBrandAssetMutation.isPending}
+                            data-testid={`button-remove-brand-asset-${cba.brandAssetId}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Add from Visual/Brand Assets ── */}
+            {(() => {
+              const pinnedBrandAssetIds = new Set((campaign.pinnedBrandAssets ?? []).map(p => p.brandAssetId));
+              const imageOnlyBrandAssets = brandAssets.filter(ba => (ba.fileUrl || ba.url) && !pinnedBrandAssetIds.has(ba.id));
+              const filteredByCategory = brandAssetCategoryFilter === "all"
+                ? imageOnlyBrandAssets
+                : imageOnlyBrandAssets.filter(ba => ba.categoryId === brandAssetCategoryFilter);
+              const filteredBrandAssets = brandAssetSearch
+                ? filteredByCategory.filter(ba => ba.name.toLowerCase().includes(brandAssetSearch.toLowerCase()))
+                : filteredByCategory;
+              const categoriesInUse = brandAssetCategories.filter(cat =>
+                imageOnlyBrandAssets.some(ba => ba.categoryId === cat.id)
+              );
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h3 className="text-sm font-medium">Add from Visual/Brand Assets</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Pinned images appear first in the Review Images picker.</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0 ml-3">{imageOnlyBrandAssets.length} available</span>
+                  </div>
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="p-2 border-b bg-muted/30 flex gap-2">
+                      <Input
+                        placeholder="Search brand assets…"
+                        value={brandAssetSearch}
+                        onChange={e => setBrandAssetSearch(e.target.value)}
+                        className="h-8 text-sm flex-1"
+                        data-testid="input-brand-asset-search"
+                      />
+                      {categoriesInUse.length > 0 && (
+                        <Select value={brandAssetCategoryFilter} onValueChange={v => setBrandAssetCategoryFilter(v)}>
+                          <SelectTrigger className="h-8 text-xs w-44 shrink-0" data-testid="select-brand-asset-category">
+                            <SelectValue placeholder="All categories" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All categories</SelectItem>
+                            {categoriesInUse.map(cat => (
+                              <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div className="divide-y max-h-72 overflow-y-auto">
+                      {imageOnlyBrandAssets.length === 0 ? (
+                        <p className="py-6 text-center text-sm text-muted-foreground">No images found in Visual/Brand Assets. Add some there first.</p>
+                      ) : filteredBrandAssets.length === 0 ? (
+                        <p className="py-6 text-center text-sm text-muted-foreground">No assets match your filter.</p>
+                      ) : (
+                        filteredBrandAssets.map(ba => {
+                          const thumb = ba.fileUrl || ba.url;
+                          return (
+                            <div
+                              key={ba.id}
+                              className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50"
+                              data-testid={`row-brand-asset-${ba.id}`}
+                            >
+                              {thumb ? (
+                                <img src={thumb} alt="" className="w-8 h-8 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                              ) : (
+                                <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
+                                  <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{ba.name}</p>
+                                {ba.categoryName && <p className="text-xs text-muted-foreground truncate">{ba.categoryName}</p>}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0"
+                                disabled={addBrandAssetMutation.isPending}
+                                onClick={() => addBrandAssetMutation.mutate(ba.id)}
+                                data-testid={`button-add-brand-asset-${ba.id}`}
+                              >
+                                <Plus className="w-3.5 h-3.5 mr-1" />
+                                Pin
+                              </Button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Add from Content Library ── */}
             {availableAssets.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h3 className="text-sm font-medium">Add from Content Library</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">Visual images and digital/web assets — pinned assets appear first in the image picker and link picker when reviewing social posts.</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Digital/web assets — pinned items appear first in the link picker when reviewing posts.</p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0 ml-3">{availableAssets.length} available</span>
                 </div>
@@ -2397,12 +2577,12 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
-            {campaign.assets.length === 0 && availableAssets.length === 0 && (
+            {campaign.assets.length === 0 && (campaign.pinnedBrandAssets ?? []).length === 0 && availableAssets.length === 0 && brandAssets.filter(ba => ba.fileUrl || ba.url).length === 0 && (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-assets">
                   <Library className="w-8 h-8 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm font-medium mb-1">No content library assets yet</p>
-                  <p className="text-xs">Add visual images or digital/web assets to the Content Library, then come back here to pin them to this campaign.</p>
+                  <p className="text-sm font-medium mb-1">No assets yet</p>
+                  <p className="text-xs">Add images to Visual/Brand Assets or digital/web items to the Content Library, then pin them here.</p>
                 </CardContent>
               </Card>
             )}
@@ -3050,21 +3230,38 @@ export default function CampaignDetailPage() {
               if (imageAssets.length === 0) {
                 return <p className="text-sm text-muted-foreground text-center py-4">No brand assets available. Add images in Visual/Brand Assets first.</p>;
               }
-              const pickerCategories = [...new Set(imageAssets.map(ba => ba.categoryName).filter(Boolean))] as string[];
-              const filtered = pickerCategoryFilter === "all" ? imageAssets : imageAssets.filter(ba => ba.categoryName === pickerCategoryFilter);
+              const pinnedBrandAssetIds = new Set((campaign?.pinnedBrandAssets ?? []).map(p => p.brandAssetId));
+              const campaignFirst = imageAssets.filter(ba => pinnedBrandAssetIds.has(ba.id));
+              const displayList = pickerShowAll || campaignFirst.length === 0 ? imageAssets : campaignFirst;
+              const pickerCategories = [...new Set(displayList.map(ba => ba.categoryName).filter(Boolean))] as string[];
+              const filtered = pickerCategoryFilter === "all" ? displayList : displayList.filter(ba => ba.categoryName === pickerCategoryFilter);
               const totalPages = Math.ceil(filtered.length / BRAND_PAGE_SIZE);
               const paged = filtered.slice(pickerPage * BRAND_PAGE_SIZE, (pickerPage + 1) * BRAND_PAGE_SIZE);
               return (
                 <div className="space-y-3">
+                  {campaignFirst.length > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        {pickerShowAll ? `All ${imageAssets.length} brand assets` : `${campaignFirst.length} pinned to this campaign`}
+                      </span>
+                      <button
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => { setPickerShowAll(s => !s); setPickerPage(0); setPickerCategoryFilter("all"); }}
+                        data-testid="button-picker-show-all-brand"
+                      >
+                        {pickerShowAll ? "Show campaign only" : `Show all ${imageAssets.length}`}
+                      </button>
+                    </div>
+                  )}
                   {pickerCategories.length > 1 && (
                     <Select value={pickerCategoryFilter} onValueChange={v => { setPickerCategoryFilter(v); setPickerPage(0); }}>
                       <SelectTrigger className="h-8 text-xs" data-testid="select-picker-category">
                         <SelectValue placeholder="All categories" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All categories ({imageAssets.length})</SelectItem>
+                        <SelectItem value="all">All categories ({displayList.length})</SelectItem>
                         {pickerCategories.sort().map(cat => (
-                          <SelectItem key={cat} value={cat}>{cat} ({imageAssets.filter(a => a.categoryName === cat).length})</SelectItem>
+                          <SelectItem key={cat} value={cat}>{cat} ({displayList.filter(a => a.categoryName === cat).length})</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -3073,7 +3270,7 @@ export default function CampaignDetailPage() {
                     {paged.map(ba => (
                       <button
                         key={ba.id}
-                        className="border rounded-lg p-2 hover:border-primary transition-colors text-left"
+                        className={`border rounded-lg p-2 hover:border-primary transition-colors text-left ${pinnedBrandAssetIds.has(ba.id) ? "ring-1 ring-primary/30" : ""}`}
                         onClick={() => {
                           if (imagePickerPostId) {
                             const targets = rvSelectMode && rvSelectedIds.size > 0
