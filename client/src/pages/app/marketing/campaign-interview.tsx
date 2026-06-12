@@ -772,9 +772,19 @@ export default function CampaignInterviewPage() {
         topic: themes.join(" "),
       });
       const data = await apiJson(`/api/campaign-interview/news-scan?${params.toString()}`);
-      const results: NewsScanResult[] = data.results ?? [];
-      setNewsScanResults(results);
-      const hasAny = results.some((r) => r.headlines.length > 0);
+      const freshResults: NewsScanResult[] = data.results ?? [];
+      setNewsScanResults((prev) => {
+        const existingUrls = new Set(prev.flatMap((r) => r.headlines.map((h) => h.url)));
+        const mergedResults = [...prev];
+        for (const result of freshResults) {
+          const newHeadlines = result.headlines.filter((h) => !existingUrls.has(h.url));
+          if (newHeadlines.length > 0) {
+            mergedResults.push({ subject: result.subject, headlines: newHeadlines });
+          }
+        }
+        return mergedResults;
+      });
+      const hasAny = freshResults.some((r) => r.headlines.length > 0);
       if (!hasAny) {
         toast({ title: "No recent news found", description: "Try adjusting your themes or add news items manually." });
       }
@@ -783,6 +793,11 @@ export default function CampaignInterviewPage() {
     } finally {
       setNewsScanLoading(false);
     }
+  };
+
+  const clearNewsScan = () => {
+    setNewsScanResults([]);
+    setAcceptedNewsUrls(new Set());
   };
 
   const toggleNewsHeadline = (headline: NewsScanHeadline) => {
@@ -1112,9 +1127,21 @@ export default function CampaignInterviewPage() {
 
               {newsScanResults.length > 0 && (
                 <div className="space-y-2" data-testid="news-scan-results">
-                  <p className="text-sm font-medium flex items-center gap-1.5">
-                    <Newspaper className="h-4 w-4" /> News scan results — check a headline to add it as a news hook
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium flex items-center gap-1.5">
+                      <Newspaper className="h-4 w-4" /> News scan results — check a headline to add it as a news hook
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearNewsScan}
+                      data-testid="button-clear-news-scan"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5 mr-1" /> Clear scan results
+                    </Button>
+                  </div>
                   {newsScanResults.map((r) =>
                     r.headlines.map((h) => {
                       const accepted = acceptedNewsUrls.has(h.url);
