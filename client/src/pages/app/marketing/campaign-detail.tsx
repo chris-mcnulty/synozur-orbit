@@ -2737,11 +2737,13 @@ export default function CampaignDetailPage() {
                               const fullCopy = post.editedContent ?? post.content ?? "";
                               const hashtags = fullCopy.match(/#[\w]+/g) ?? [];
                               const copyWithoutTags = fullCopy.replace(/#[\w]+/g, "").trim();
+                              const isApproved = post.status === "approved";
+                              const isRejected = post.status === "rejected";
                               return (
                                 <Popover key={post.id} open={!rvSelectMode && rvHoveredPostId === post.id}>
                                   <PopoverTrigger asChild>
                                 <div
-                                  className={`group relative flex flex-col rounded-lg border bg-card overflow-hidden transition-all ${rvSelectMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"}`}
+                                  className={`group relative flex flex-col rounded-lg border bg-card overflow-hidden transition-all ${rvSelectMode ? "cursor-pointer" : ""} ${isSelected ? "ring-2 ring-primary border-primary" : isApproved ? "border-green-500/60 bg-green-500/5 hover:border-green-500/80" : isRejected ? "border-destructive/40 bg-destructive/5 opacity-75 hover:border-destructive/60 hover:opacity-90" : "hover:border-primary/50"}`}
                                   onClick={rvSelectMode ? () => toggleSelect(post.id) : undefined}
                                   onMouseEnter={() => { if (!rvSelectMode) setRvHoveredPostId(post.id); }}
                                   onMouseLeave={() => setRvHoveredPostId(null)}
