@@ -325,6 +325,8 @@ export default function CampaignDetailPage() {
   const [rvBulkProgress, setRvBulkProgress] = useState(0);
   const [rvBulkTotal, setRvBulkTotal] = useState(0);
   const [rvHoveredPostId, setRvHoveredPostId] = useState<string | null>(null);
+  const [rvBulkApproving, setRvBulkApproving] = useState(false);
+  const [rvBulkRejecting, setRvBulkRejecting] = useState(false);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -2476,6 +2478,31 @@ export default function CampaignDetailPage() {
               const selectAll = () => setRvSelectedIds(new Set(rvFiltered.map(p => p.id)));
               const clearSelection = () => setRvSelectedIds(new Set());
 
+              const bulkStatusForSelected = async (status: "approved" | "rejected") => {
+                if (status === "approved") setRvBulkApproving(true);
+                else setRvBulkRejecting(true);
+                try {
+                  const ids = Array.from(rvSelectedIds);
+                  await Promise.all(ids.map(postId =>
+                    fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "include",
+                      body: JSON.stringify({ status }),
+                    })
+                  ));
+                  queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+                  toast({ title: `${ids.length} post${ids.length !== 1 ? "s" : ""} ${status === "approved" ? "approved" : "rejected"}` });
+                  clearSelection();
+                  setRvSelectMode(false);
+                } catch {
+                  toast({ title: "Error updating posts", variant: "destructive" });
+                } finally {
+                  setRvBulkApproving(false);
+                  setRvBulkRejecting(false);
+                }
+              };
+
               return (
                 <div className="space-y-4">
                   {/* Toolbar */}
@@ -2611,6 +2638,32 @@ export default function CampaignDetailPage() {
                           )}
                         </Button>
                       )}
+                      {rvSelectedIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5 text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-700 dark:hover:bg-green-950"
+                          disabled={rvBulkApproving || rvBulkRejecting || rvBulkTotal > 0}
+                          onClick={() => bulkStatusForSelected("approved")}
+                          data-testid="button-rv-bulk-approve"
+                        >
+                          {rvBulkApproving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                          Approve selected
+                        </Button>
+                      )}
+                      {rvSelectedIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+                          disabled={rvBulkApproving || rvBulkRejecting || rvBulkTotal > 0}
+                          onClick={() => bulkStatusForSelected("rejected")}
+                          data-testid="button-rv-bulk-reject"
+                        >
+                          {rvBulkRejecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                          Reject selected
+                        </Button>
+                      )}
                     </div>
                   )}
 
@@ -2705,26 +2758,50 @@ export default function CampaignDetailPage() {
 
                                     {/* Action buttons */}
                                     {!rvSelectMode && (
-                                      <div className="flex items-center gap-1 mt-auto pt-1">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-6 text-[10px] flex-1 gap-1 px-2"
-                                          onClick={e => { e.stopPropagation(); setImagePickerPostId(post.id); setPickerTab("brand"); }}
-                                          data-testid={`button-rv-replace-img-${post.id}`}
-                                        >
-                                          <ImageLucide className="w-3 h-3 shrink-0" />Replace
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-6 text-[10px] flex-1 gap-1 px-2"
-                                          disabled={isGenerating}
-                                          onClick={e => { e.stopPropagation(); generateGraphic(post.id); }}
-                                          data-testid={`button-rv-generate-img-${post.id}`}
-                                        >
-                                          <Wand2 className="w-3 h-3 shrink-0" />Generate
-                                        </Button>
+                                      <div className="flex flex-col gap-1 mt-auto pt-1">
+                                        <div className="flex items-center gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[10px] flex-1 gap-1 px-2"
+                                            onClick={e => { e.stopPropagation(); setImagePickerPostId(post.id); setPickerTab("brand"); }}
+                                            data-testid={`button-rv-replace-img-${post.id}`}
+                                          >
+                                            <ImageLucide className="w-3 h-3 shrink-0" />Replace
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[10px] flex-1 gap-1 px-2"
+                                            disabled={isGenerating}
+                                            onClick={e => { e.stopPropagation(); generateGraphic(post.id); }}
+                                            data-testid={`button-rv-generate-img-${post.id}`}
+                                          >
+                                            <Wand2 className="w-3 h-3 shrink-0" />Generate
+                                          </Button>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[10px] flex-1 gap-1 px-2 text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-700 dark:hover:bg-green-950"
+                                            disabled={updatePostMutation.isPending}
+                                            onClick={e => { e.stopPropagation(); updatePostMutation.mutate({ postId: post.id, status: "approved" }); }}
+                                            data-testid={`button-rv-approve-${post.id}`}
+                                          >
+                                            <CheckCircle className="w-3 h-3 shrink-0" />Approve
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-6 text-[10px] flex-1 gap-1 px-2 text-destructive border-destructive/30 hover:bg-destructive/10"
+                                            disabled={updatePostMutation.isPending}
+                                            onClick={e => { e.stopPropagation(); updatePostMutation.mutate({ postId: post.id, status: "rejected" }); }}
+                                            data-testid={`button-rv-reject-${post.id}`}
+                                          >
+                                            <XCircle className="w-3 h-3 shrink-0" />Reject
+                                          </Button>
+                                        </div>
                                       </div>
                                     )}
                                   </div>
