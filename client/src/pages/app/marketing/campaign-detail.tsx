@@ -151,12 +151,14 @@ interface ContentBrief {
   format: string;
   funnelStage: string;
   status: string;
+  summary?: string | null;
   demandSignal?: string | null;
   differentiationAngle?: string | null;
   targetReader?: string | null;
   cta?: string | null;
   channels?: string[] | null;
   estimatedHours?: number | null;
+  ideaSignals?: string[] | null;
 }
 
 interface ContentPlanResponse {
@@ -323,6 +325,7 @@ export default function CampaignDetailPage() {
   const [generateMode, setGenerateMode] = useState<"asset" | "thematic">("asset");
   const [thematicBrief, setThematicBrief] = useState("");
   const [thematicUrl, setThematicUrl] = useState("");
+  const [selectedBriefId, setSelectedBriefId] = useState<string | null>(null);
   const [wrapPostLinks, setWrapPostLinks] = useState(false);
   const [variantsPerPlatform, setVariantsPerPlatform] = useState<number | null>(null);
   const BRAND_PAGE_SIZE = 12;
@@ -588,7 +591,7 @@ export default function CampaignDetailPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -600,6 +603,7 @@ export default function CampaignDetailPage() {
       setThematicBrief("");
       setThematicUrl("");
       setGenerateMode("asset");
+      setSelectedBriefId(null);
       setVariantsPerPlatform(null);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generate-posts-status`] });
       toast({ title: "Post generation started", description: "Social post drafts will appear in the Posts tab below once generation is complete." });
@@ -3939,7 +3943,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -3999,35 +4003,80 @@ export default function CampaignDetailPage() {
                 data-testid="button-mode-asset"
               >
                 <span className="text-sm font-semibold">From Digital Assets</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Use content from your Digital/Web Assets library</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Each pinned content asset <em>drives</em> the post content — posts are written about the asset itself</span>
               </button>
               <button
                 onClick={() => setGenerateMode("thematic")}
                 className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "thematic" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
                 data-testid="button-mode-thematic"
               >
-                <span className="text-sm font-semibold">Thematic Brief</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Start from your own text summary + optional URL</span>
+                <span className="text-sm font-semibold">From Brief / Theme</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Posts come from your brief text — pinned links and images are applied <em>after</em> generation</span>
               </button>
             </div>
 
             {/* Thematic Brief Fields */}
             {generateMode === "thematic" && (
               <div className="space-y-3 p-3 rounded-lg bg-muted/40 border">
+                {/* Brief picker — uses existing campaign briefs */}
+                {briefs.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium">Pick a content brief</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">Select a brief to load its context automatically, or skip this and type below.</p>
+                    <Select
+                      value={selectedBriefId ?? "__none__"}
+                      onValueChange={(v) => {
+                        if (v === "__none__") {
+                          setSelectedBriefId(null);
+                          setThematicBrief("");
+                          return;
+                        }
+                        const picked = briefs.find(b => b.id === v);
+                        if (!picked) return;
+                        setSelectedBriefId(v);
+                        const parts: string[] = [`Brief: ${picked.title}`];
+                        if (picked.summary) parts.push(`Summary: ${picked.summary}`);
+                        if (picked.demandSignal) parts.push(`Why this matters: ${picked.demandSignal}`);
+                        if (picked.differentiationAngle) parts.push(`Our angle: ${picked.differentiationAngle}`);
+                        if (picked.targetReader) parts.push(`Audience: ${picked.targetReader}`);
+                        if (picked.cta) parts.push(`Call to action: ${picked.cta}`);
+                        if (picked.ideaSignals?.length) parts.push(`News hooks / signals:\n${picked.ideaSignals.map(s => `- ${s}`).join("\n")}`);
+                        setThematicBrief(parts.join("\n\n"));
+                      }}
+                    >
+                      <SelectTrigger className="h-9 text-sm" data-testid="select-brief-picker">
+                        <SelectValue placeholder="Select a brief…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— None (type manually) —</SelectItem>
+                        {briefs.filter(b => b.status !== "removed").map(b => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.title}
+                            {b.format ? ` · ${BRIEF_FORMAT_LABELS[b.format] ?? b.format}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div>
-                  <Label className="text-sm font-medium">Campaign Brief</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Describe the theme, story, or message you want to share. AI will rewrite this into platform-native posts — don't worry about polish.</p>
+                  <Label className="text-sm font-medium">
+                    {selectedBriefId ? "Context (loaded from brief — edit if needed)" : "Campaign Brief"}
+                  </Label>
+                  {!selectedBriefId && (
+                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">Describe the theme, story, or message you want to share. AI will rewrite this into platform-native posts — don't worry about polish.</p>
+                  )}
                   <textarea
                     value={thematicBrief}
                     onChange={e => setThematicBrief(e.target.value)}
-                    placeholder="e.g. I recently shot a series of photos previewing my spring collection — bright colours, outdoor settings, early blooms. This is a teaser before the full summer announcement. I want to build excitement and drive people to follow along."
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[100px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder={briefs.length > 0 ? "Pick a brief above, or describe the theme here…" : "Describe the theme, story, or message you want to share…"}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[100px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 mt-1.5"
                     data-testid="input-thematic-brief"
                   />
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Reference URL (optional)</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">A link to include with a call-to-action (e.g. your website, event page, or portfolio). Leave blank to omit links.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">A link to include with a call-to-action. Leave blank to omit links.</p>
                   <input
                     type="url"
                     value={thematicUrl}
@@ -4162,7 +4211,7 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
