@@ -223,6 +223,13 @@ async function getJson(url: string) {
   return res.json();
 }
 
+// A brief can be finalized once it has a drafted asset and hasn't already moved
+// past approval. Shared by the per-card Finalize button and the campaign-scoped
+// "Finalize all drafted" bulk action so the two stay exactly in sync.
+function canFinalizeBrief(b: { contentAssetId?: string | null; status: string }): boolean {
+  return !!b.contentAssetId && !["approved", "scheduled", "published", "removed"].includes(b.status);
+}
+
 export default function EditorialCalendarPage() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
@@ -239,13 +246,13 @@ export default function EditorialCalendarPage() {
       ? new URLSearchParams(window.location.search).get("brief")
       : null,
   );
-  // Honor a ?campaignId=<id> deep link so "Open editor" / "Review campaign" lands
-  // on a campaign-scoped list instead of the full brief pile. Also drives the
-  // campaign filter dropdown, which doubles as the campaign review surface.
-  const [campaignFilter, setCampaignFilter] = useState<string>(() =>
-    (typeof window !== "undefined"
+  // Honor a ?campaignId=<id> deep link (e.g. from the campaign interview /
+  // marketing calendar) — scope the visible briefs to that campaign. Also drives
+  // the campaign review surface (counts + bulk finalize). null = all campaigns.
+  const [campaignFilter, setCampaignFilter] = useState<string | null>(() =>
+    typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("campaignId")
-      : null) ?? "all",
+      : null,
   );
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
@@ -308,16 +315,11 @@ export default function EditorialCalendarPage() {
   });
 
   const briefs = detail?.briefs ?? [];
-  // Campaign-scoped view: when a campaign is selected (via the filter or a
-  // ?campaignId= deep link), narrow the list to that campaign so the user can
-  // review/approve one campaign at a time instead of the whole calendar.
-  const visibleBriefs =
-    campaignFilter === "all" ? briefs : briefs.filter((b) => (b.campaignId ?? "") === campaignFilter);
-  // Campaigns that actually have briefs in this calendar — drives the filter
-  // dropdown so it only offers campaigns the user can act on here.
-  const campaignsInCalendar = Array.from(
-    new Set(briefs.map((b) => b.campaignId).filter((id): id is string => !!id)),
-  );
+  // When a campaign filter is active (deep link or toolbar pick), scope the
+  // cards to that campaign so the page reads as a campaign-scoped review surface.
+  const visibleBriefs = campaignFilter
+    ? briefs.filter((b) => b.campaignId === campaignFilter)
+    : briefs;
 
   // Once the deep-linked brief's card is in the DOM, scroll to it and —
   // if the brief already has a drafted asset — open the editor automatically
@@ -413,6 +415,36 @@ export default function EditorialCalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       toast.success("Finalized — brief approved and its draft saved to the library.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Campaign-scoped bulk finalize — runs the same one-click Finalize across
+  // every drafted brief in the active campaign.
+  const finalizeAll = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          fetch(`/api/content-briefs/${id}/finalize`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+          }).then(async (res) => {
+            if (!res.ok) throw new Error((await res.json()).error || "Failed to finalize");
+          }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      return { total: ids.length, failed };
+    },
+    onSuccess: ({ total, failed }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      if (failed > 0) {
+        toast.warning(`Finalized ${total - failed} of ${total}; ${failed} could not be finalized.`);
+      } else {
+        toast.success(`Finalized ${total} piece${total === 1 ? "" : "s"}.`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -936,21 +968,6 @@ export default function EditorialCalendarPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {activeId && campaignsInCalendar.length > 0 && (
-                <Select value={campaignFilter} onValueChange={setCampaignFilter}>
-                  <SelectTrigger className="h-9 w-[220px]" data-testid="filter-campaign">
-                    <SelectValue placeholder="All campaigns" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All campaigns</SelectItem>
-                    {campaignsInCalendar.map((cid) => (
-                      <SelectItem key={cid} value={cid}>
-                        {(campaignOptions ?? []).find((c) => c.id === cid)?.name ?? "Campaign"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
               {activeId && distributionAllowed && briefs.length > 0 && (
                 <Button
                   variant="outline"
@@ -1001,13 +1018,80 @@ export default function EditorialCalendarPage() {
             </Card>
           )}
 
+          {/* Campaign filter + campaign-scoped review surface */}
+          {briefs.length > 0 && (campaignOptions?.length ?? 0) > 0 && (
+            <Card>
+              <CardContent className="space-y-3 pt-5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm font-medium">Campaign</span>
+                  <Select
+                    value={campaignFilter ?? "__all__"}
+                    onValueChange={(v) => setCampaignFilter(v === "__all__" ? null : v)}
+                  >
+                    <SelectTrigger className="w-[260px]" data-testid="select-campaign-filter">
+                      <SelectValue placeholder="All campaigns" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All campaigns</SelectItem>
+                      {(campaignOptions ?? []).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {campaignFilter && (
+                    <span className="text-sm text-muted-foreground" data-testid="text-campaign-scope-count">
+                      {visibleBriefs.length} piece{visibleBriefs.length === 1 ? "" : "s"} in this campaign
+                    </span>
+                  )}
+                </div>
+
+                {campaignFilter && (() => {
+                  const counts: Record<string, number> = {};
+                  for (const b of visibleBriefs) counts[b.status] = (counts[b.status] ?? 0) + 1;
+                  const finalizable = visibleBriefs.filter(canFinalizeBrief);
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {Object.entries(counts).map(([status, n]) => (
+                          <span
+                            key={status}
+                            className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[status] ?? STATUS_BADGE.suggested}`}
+                            data-testid={`review-count-${status}`}
+                          >
+                            {STATUS_LABELS[status] ?? status}: {n}
+                          </span>
+                        ))}
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={finalizable.length === 0 || finalizeAll.isPending}
+                        onClick={() => finalizeAll.mutate(finalizable.map((b) => b.id))}
+                        data-testid="button-finalize-all"
+                        title="Approve every drafted brief in this campaign and its draft in one step"
+                      >
+                        {finalizeAll.isPending ? (
+                          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="mr-1 h-4 w-4" />
+                        )}
+                        Finalize all drafted ({finalizable.length})
+                      </Button>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Funnel summary */}
           {visibleBriefs.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">
                   {visibleBriefs.length} brief{visibleBriefs.length === 1 ? "" : "s"}
-                  {campaignFilter !== "all" && (
+                  {campaignFilter && (
                     <span className="text-muted-foreground">
                       {" "}· {(campaignOptions ?? []).find((c) => c.id === campaignFilter)?.name ?? "campaign"}
                     </span>
@@ -1036,11 +1120,11 @@ export default function EditorialCalendarPage() {
           {/* Briefs */}
           {detailLoading ? (
             <p className="text-sm text-muted-foreground">Loading briefs…</p>
-          ) : visibleBriefs.length === 0 && campaignFilter !== "all" ? (
+          ) : visibleBriefs.length === 0 && campaignFilter ? (
             <Card>
               <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
                 <p className="text-sm font-medium">No briefs for this campaign in this calendar</p>
-                <Button variant="outline" size="sm" onClick={() => setCampaignFilter("all")} data-testid="button-clear-campaign-filter">
+                <Button variant="outline" size="sm" onClick={() => setCampaignFilter(null)} data-testid="button-clear-campaign-filter">
                   Show all campaigns
                 </Button>
               </CardContent>
@@ -1086,7 +1170,7 @@ export default function EditorialCalendarPage() {
                           )}
                         </div>
                         {(b.targetKeyword || b.estimatedHours != null) && (
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground" data-testid={`brief-meta-${b.id}`}>
                             {b.targetKeyword && <span>🔑 {b.targetKeyword}</span>}
                             {b.estimatedHours != null && <span>~{b.estimatedHours}h</span>}
                           </div>
@@ -1189,8 +1273,7 @@ export default function EditorialCalendarPage() {
                             )}
                           </Button>
                         )}
-                        {b.contentAssetId &&
-                          !["approved", "scheduled", "published", "removed"].includes(b.status) && (
+                        {canFinalizeBrief(b) && (
                           <Button
                             size="sm"
                             disabled={finalizeBrief.isPending && finalizeBrief.variables === b.id}

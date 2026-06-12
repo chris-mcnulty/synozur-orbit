@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,7 @@ interface Brief {
   summary?: string | null;
   format: string;
   formCategories?: string[] | null;
+  channels?: string[] | null;
   fitAssessment?: FitAssessment | null;
   targetKeyword?: string | null;
   demandSignal?: string | null;
@@ -121,6 +122,33 @@ const FORMAT_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+// Real social channels the interview can spread a concept across. Unlike the
+// document formats, these produce schedulable generatedPosts (one per channel
+// per date), not Word-doc drafts. LinkedIn is pre-selected.
+const SOCIAL_CHANNELS: { value: string; label: string }[] = [
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "twitter", label: "X" },
+  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+];
+const SOCIAL_CHANNEL_LABELS: Record<string, string> = Object.fromEntries(
+  SOCIAL_CHANNELS.map((c) => [c.value, c.label]),
+);
+const SUPPORTED_CHANNEL_VALUES = SOCIAL_CHANNELS.map((c) => c.value);
+// Document formats that are really social — handled by the channel picker, so
+// they're hidden from the document checkboxes during planning.
+const SOCIAL_DOC_FORMATS = ["linkedin_post", "x_post"];
+
+/** Normalise a concept's suggested channels onto the supported set (x → twitter). */
+function normalizeChannels(raw?: string[] | null): string[] {
+  if (!Array.isArray(raw)) return [];
+  const mapped = raw
+    .map((c) => String(c).trim().toLowerCase())
+    .map((c) => (c === "x" ? "twitter" : c))
+    .filter((c) => SUPPORTED_CHANNEL_VALUES.includes(c));
+  return Array.from(new Set(mapped));
+}
+
 const CATEGORY_LABELS: Record<ContentFormCategory, string> = {
   short_form: "Short form — social & email",
   mid_form: "Mid form — press & blog",
@@ -156,6 +184,19 @@ interface PlanSelection {
   format: string;
   count: number;
   windowKey: string;
+}
+
+interface SocialSelection {
+  channels: string[];
+  count: number;
+  windowKey: string;
+}
+
+interface GeneratedSocialPost {
+  id: string;
+  platform: string;
+  content: string;
+  scheduledDate?: string | null;
 }
 
 /** Default window per category: tease early, announce mid, deepen late. */
@@ -308,36 +349,43 @@ export default function CampaignInterviewPage() {
     },
     onSuccess: () => {
       // Seed the output plan with each kept brief's suggested form categories.
+      // Social formats (LinkedIn/X posts) are handled by the channel picker, so
+      // they're skipped here and seeded into socialPlan instead.
       const initialPlan: Record<string, PlanSelection[]> = {};
+      const initialSocial: Record<string, SocialSelection> = {};
       for (const b of keptBriefs) {
         const cats = (b.formCategories ?? []).filter((c): c is ContentFormCategory =>
           (CONTENT_FORM_CATEGORIES as readonly string[]).includes(c),
         );
-        initialPlan[b.id] = cats.flatMap((cat) => {
-          // Short-form social spans two primary channels — pre-select BOTH
-          // LinkedIn and X by default so social coverage isn't single-channel.
-          // (A newsletter-only short-form brief keeps just its own format.)
-          if (cat === "short_form" && b.format !== "newsletter") {
-            return (["linkedin_post", "x_post"] as const).map((fmt) => ({
+        initialPlan[b.id] = cats
+          .map((cat) => {
+            const fmt =
+              cat === "mid_form" && b.format === "press_release"
+                ? "press_release"
+                : FORM_CATEGORY_FORMATS[cat].includes(b.format as any)
+                  ? b.format
+                  : FORM_CATEGORY_FORMATS[cat][0];
+            return {
               format: fmt,
               count: DEFAULT_COUNT[fmt] ?? 1,
               windowKey: String(DEFAULT_WINDOW_BY_CATEGORY[cat]),
-            }));
-          }
-          const fmt =
-            cat === "mid_form" && b.format === "press_release"
-              ? "press_release"
-              : FORM_CATEGORY_FORMATS[cat].includes(b.format as any)
-                ? b.format
-                : FORM_CATEGORY_FORMATS[cat][0];
-          return [{
-            format: fmt,
-            count: DEFAULT_COUNT[fmt] ?? 1,
-            windowKey: String(DEFAULT_WINDOW_BY_CATEGORY[cat]),
-          }];
-        });
+            };
+          })
+          .filter((sel) => !SOCIAL_DOC_FORMATS.includes(sel.format));
+
+        // Pre-select channels for concepts that suit short-form social. Use the
+        // AI's suggested channel mix, falling back to LinkedIn.
+        const suitsSocial = cats.includes("short_form");
+        const suggested = normalizeChannels(b.channels);
+        initialSocial[b.id] = {
+          channels: suitsSocial ? (suggested.length ? suggested : ["linkedin"]) : [],
+          count: 3,
+          windowKey: String(DEFAULT_WINDOW_BY_CATEGORY.short_form),
+        };
       }
       setPlan(initialPlan);
+      setSocialPlan(initialSocial);
+      resetExpandProgress();
       setStep(2);
     },
     onError: (err: Error) => toast({ title: "Could not save selections", description: err.message, variant: "destructive" }),
@@ -345,6 +393,7 @@ export default function CampaignInterviewPage() {
 
   // ── Step 2: output plan ──────────────────────────────────────────────────
   const [plan, setPlan] = useState<Record<string, PlanSelection[]>>({});
+  const [socialPlan, setSocialPlan] = useState<Record<string, SocialSelection>>({});
 
   const windows: PlanWindow[] = useMemo(() => {
     if (isRelease && result?.windows?.releaseDate) {
@@ -395,15 +444,50 @@ export default function CampaignInterviewPage() {
     }));
   };
 
-  const totalPlanned = useMemo(
+  const ensureSocial = (s?: SocialSelection): SocialSelection =>
+    s ?? { channels: [], count: 3, windowKey: String(DEFAULT_WINDOW_BY_CATEGORY.short_form) };
+
+  const toggleSocialChannel = (briefId: string, channel: string) => {
+    setSocialPlan((prev) => {
+      const cur = ensureSocial(prev[briefId]);
+      const channels = cur.channels.includes(channel)
+        ? cur.channels.filter((c) => c !== channel)
+        : [...cur.channels, channel];
+      return { ...prev, [briefId]: { ...cur, channels } };
+    });
+  };
+
+  const updateSocialItem = (briefId: string, patch: Partial<SocialSelection>) => {
+    setSocialPlan((prev) => ({ ...prev, [briefId]: { ...ensureSocial(prev[briefId]), ...patch } }));
+  };
+
+  const totalDocsPlanned = useMemo(
     () => Object.values(plan).flat().reduce((sum, i) => sum + i.count, 0),
     [plan],
   );
+  const totalSocialPlanned = useMemo(
+    () =>
+      Object.values(socialPlan).reduce((sum, s) => sum + s.channels.length * s.count, 0),
+    [socialPlan],
+  );
+  const totalPlanned = totalDocsPlanned + totalSocialPlanned;
 
   const [deliverables, setDeliverables] = useState<Brief[]>([]);
+  const [socialPosts, setSocialPosts] = useState<GeneratedSocialPost[]>([]);
+  // Neither expand endpoint is idempotent, so remember each leg's result once it
+  // succeeds. If one leg fails the user retries from Step 2 — we skip any leg
+  // that already landed to avoid duplicating briefs/posts. Reset when the user
+  // goes Back to re-edit the plan or re-enters Step 2.
+  const docsResultRef = useRef<Brief[] | null>(null);
+  const socialResultRef = useRef<GeneratedSocialPost[] | null>(null);
+  const resetExpandProgress = () => {
+    docsResultRef.current = null;
+    socialResultRef.current = null;
+  };
 
   const expandPlan = useMutation({
     mutationFn: async () => {
+      const tzOffsetMinutes = new Date().getTimezoneOffset();
       const items = Object.entries(plan).flatMap(([briefId, selections]) =>
         selections.map((s) => {
           const w = windows.find((x) => x.key === s.windowKey) ?? windows[0];
@@ -416,11 +500,44 @@ export default function CampaignInterviewPage() {
           };
         }),
       );
-      return apiJson(`/api/campaign-interview/${result!.campaign.id}/expand-plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, tzOffsetMinutes: new Date().getTimezoneOffset() }),
-      }) as Promise<{ briefs: Brief[] }>;
+      const socialItems = Object.entries(socialPlan)
+        .filter(([, s]) => s.channels.length > 0)
+        .map(([briefId, s]) => {
+          const w = windows.find((x) => x.key === s.windowKey) ?? windows[0];
+          return {
+            briefId,
+            channels: s.channels,
+            count: s.count,
+            windowStart: toDateKey(w.start),
+            windowEnd: toDateKey(w.end),
+          };
+        });
+
+      // Skip any leg that already succeeded on a prior attempt so a retry after
+      // a partial failure doesn't create duplicate briefs/posts.
+      let briefs: Brief[] = docsResultRef.current ?? [];
+      let posts: GeneratedSocialPost[] = socialResultRef.current ?? [];
+      let failedConceptIds: string[] = [];
+      if (items.length > 0 && docsResultRef.current === null) {
+        const r = (await apiJson(`/api/campaign-interview/${result!.campaign.id}/expand-plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items, tzOffsetMinutes }),
+        })) as { briefs: Brief[] };
+        briefs = r.briefs ?? [];
+        docsResultRef.current = briefs;
+      }
+      if (socialItems.length > 0 && socialResultRef.current === null) {
+        const r = (await apiJson(`/api/campaign-interview/${result!.campaign.id}/expand-social`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: socialItems, tzOffsetMinutes }),
+        })) as { posts: GeneratedSocialPost[]; failedConceptIds?: string[] };
+        posts = r.posts ?? [];
+        failedConceptIds = r.failedConceptIds ?? [];
+        socialResultRef.current = posts;
+      }
+      return { briefs, posts, failedConceptIds };
     },
     onSuccess: (data) => {
       setDeliverables(
@@ -428,6 +545,18 @@ export default function CampaignInterviewPage() {
           (a, b) => new Date(a.scheduledAt ?? 0).getTime() - new Date(b.scheduledAt ?? 0).getTime(),
         ),
       );
+      setSocialPosts(
+        [...data.posts].sort(
+          (a, b) => new Date(a.scheduledDate ?? 0).getTime() - new Date(b.scheduledDate ?? 0).getTime(),
+        ),
+      );
+      if (data.failedConceptIds.length > 0) {
+        toast({
+          title: "Some social posts couldn't be generated",
+          description: `${data.failedConceptIds.length} concept${data.failedConceptIds.length === 1 ? "" : "s"} were skipped for social. You can re-run social planning for them later.`,
+          variant: "destructive",
+        });
+      }
       setStep(3);
     },
     onError: (err: Error) => toast({ title: "Could not build the plan", description: err.message, variant: "destructive" }),
@@ -809,7 +938,9 @@ export default function CampaignInterviewPage() {
                     {CONTENT_FORM_CATEGORIES.map((cat) => (
                       <div key={cat} className="space-y-1.5">
                         <div className="text-xs font-medium text-muted-foreground">{CATEGORY_LABELS[cat]}</div>
-                        {FORM_CATEGORY_FORMATS[cat].map((fmt) => {
+                        {FORM_CATEGORY_FORMATS[cat]
+                          .filter((fmt) => !SOCIAL_DOC_FORMATS.includes(fmt))
+                          .map((fmt) => {
                           const selection = (plan[b.id] ?? []).find((i) => i.format === fmt);
                           return (
                             <div key={fmt} className="flex items-center gap-2">
@@ -854,13 +985,75 @@ export default function CampaignInterviewPage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Social posts — real schedulable posts, one per channel per date. */}
+                  {(() => {
+                    const social = ensureSocial(socialPlan[b.id]);
+                    const perChannel = social.count;
+                    const total = social.channels.length * perChannel;
+                    return (
+                      <div className="space-y-2 border-t pt-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-medium text-muted-foreground">Social posts</div>
+                          {total > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              {total} post{total === 1 ? "" : "s"} ready to schedule
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          {SOCIAL_CHANNELS.map((ch) => (
+                            <div key={ch.value} className="flex items-center gap-1.5">
+                              <Checkbox
+                                checked={social.channels.includes(ch.value)}
+                                onCheckedChange={() => toggleSocialChannel(b.id, ch.value)}
+                                id={`social-${b.id}-${ch.value}`}
+                                data-testid={`checkbox-social-${b.id}-${ch.value}`}
+                              />
+                              <label htmlFor={`social-${b.id}-${ch.value}`} className="text-sm cursor-pointer">
+                                {ch.label}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                        {social.channels.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Posts per channel</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={10}
+                              className="w-16 h-8"
+                              value={social.count}
+                              onChange={(e) =>
+                                updateSocialItem(b.id, { count: Math.min(10, Math.max(1, Number(e.target.value) || 1)) })
+                              }
+                              data-testid={`input-social-count-${b.id}`}
+                            />
+                            <Select value={social.windowKey} onValueChange={(v) => updateSocialItem(b.id, { windowKey: v })}>
+                              <SelectTrigger className="h-8 flex-1" data-testid={`select-social-window-${b.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {windows.map((w) => (
+                                  <SelectItem key={w.key} value={w.key}>
+                                    {w.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
 
               <div className="flex items-center justify-between pt-2">
                 <div className="text-sm text-muted-foreground">{totalPlanned} piece{totalPlanned === 1 ? "" : "s"} planned</div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setStep(1)}>
+                  <Button variant="outline" onClick={() => { resetExpandProgress(); setStep(1); }}>
                     <ChevronLeft className="h-4 w-4 mr-1" /> Back
                   </Button>
                   <Button onClick={() => expandPlan.mutate()} disabled={totalPlanned === 0 || expandPlan.isPending} data-testid="button-expand-plan">
@@ -879,7 +1072,10 @@ export default function CampaignInterviewPage() {
             <CardHeader>
               <CardTitle>On the calendar</CardTitle>
               <CardDescription>
-                {deliverables.length} piece{deliverables.length === 1 ? "" : "s"} are scheduled. Draft them all now, or draft individually later from the editorial calendar.
+                {deliverables.length} document{deliverables.length === 1 ? "" : "s"}
+                {socialPosts.length > 0 && ` and ${socialPosts.length} social post${socialPosts.length === 1 ? "" : "s"}`} are scheduled.
+                {deliverables.length > 0 && " Draft the documents now, or draft individually later from the editorial calendar."}
+                {socialPosts.length > 0 && " Social posts are ready to schedule — no drafting needed."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -887,6 +1083,7 @@ export default function CampaignInterviewPage() {
                 <Progress value={deliverables.length ? (draftedCount / deliverables.length) * 100 : 0} />
               ) : null}
 
+              {deliverables.length > 0 && (
               <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
                 {deliverables.map((d) => (
                   <div key={d.id} className="flex items-center gap-3 p-2.5 text-sm" data-testid={`row-deliverable-${d.id}`}>
@@ -901,6 +1098,26 @@ export default function CampaignInterviewPage() {
                   </div>
                 ))}
               </div>
+              )}
+
+              {socialPosts.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-1.5">Social posts — ready to schedule</div>
+                  <div className="border rounded-lg divide-y max-h-72 overflow-y-auto">
+                    {socialPosts.map((p) => (
+                      <div key={p.id} className="flex items-center gap-3 p-2.5 text-sm" data-testid={`row-social-${p.id}`}>
+                        <span className="text-muted-foreground w-24 shrink-0">
+                          {p.scheduledDate ? formatDate(new Date(p.scheduledDate), "MMM d, yyyy") : "—"}
+                        </span>
+                        <Badge variant="outline" className="shrink-0">
+                          {SOCIAL_CHANNEL_LABELS[p.platform] ?? p.platform}
+                        </Badge>
+                        <span className="truncate flex-1">{p.content}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <div className="flex gap-2">

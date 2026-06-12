@@ -4,6 +4,7 @@ import {
   campaigns,
   contentBriefs,
   contentAssets,
+  generatedPosts,
   editorialCalendars,
   products,
   productFeatures,
@@ -17,7 +18,7 @@ import { and, asc, desc, eq, ilike, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
-import { generateInterviewBriefs } from "../services/brief-interview-service";
+import { generateInterviewBriefs, generateInterviewSocialPosts } from "../services/brief-interview-service";
 import { draftFromBrief } from "../services/copywriter-service";
 import {
   DEFAULT_FUNNEL_TARGETS,
@@ -522,6 +523,156 @@ export function registerBriefInterviewRoutes(app: Express) {
     } catch (err: any) {
       console.error("[campaign-interview expand-plan]", err);
       res.status(500).json({ error: err.message || "Failed to expand the output plan" });
+    }
+  });
+
+  // Expand a concept's SOCIAL plan into real, schedulable posts. Unlike
+  // expand-plan (which creates document deliverable briefs), this generates
+  // platform-tailored copy per channel and lands it directly in the
+  // generated_posts pipeline — one row per channel per scheduled date — so the
+  // posts are immediately schedulable without a draft → repurpose round trip.
+  app.post("/api/campaign-interview/:campaignId/expand-social", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [campaign] = await db
+        .select()
+        .from(campaigns)
+        .where(
+          and(
+            eq(campaigns.id, req.params.campaignId),
+            eq(campaigns.tenantDomain, ctx.tenantDomain),
+            eq(campaigns.marketId, ctx.marketId),
+          ),
+        );
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const SUPPORTED_CHANNELS = ["linkedin", "twitter", "facebook", "instagram"];
+      const rawItems: any[] = Array.isArray(req.body?.items) ? req.body.items : [];
+      const items = rawItems
+        .map((it) => ({
+          briefId: str(it?.briefId),
+          channels: strArray(it?.channels)
+            .map((c) => (c === "x" ? "twitter" : c))
+            .filter((c) => SUPPORTED_CHANNELS.includes(c)),
+          count: Math.min(Math.max(Math.round(Number(it?.count) || 1), 1), MAX_OUTPUTS_PER_ITEM),
+          windowStart: parseDate(it?.windowStart),
+          windowEnd: parseDate(it?.windowEnd),
+        }))
+        .filter((it) => it.briefId && it.channels.length > 0 && it.windowStart && it.windowEnd);
+      if (items.length === 0) {
+        return res.status(400).json({ error: "No valid social plan items provided" });
+      }
+
+      const conceptIds = Array.from(new Set(items.map((it) => it.briefId!)));
+      const concepts = await db
+        .select()
+        .from(contentBriefs)
+        .where(
+          and(
+            inArray(contentBriefs.id, conceptIds),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.campaignId, campaign.id),
+          ),
+        );
+      const conceptMap = new Map(concepts.map((c) => [c.id, c]));
+      const missing = conceptIds.filter((id) => !conceptMap.has(id));
+      if (missing.length) {
+        return res.status(400).json({ error: "Some briefs do not belong to this campaign" });
+      }
+      const notCurated = concepts.filter((c) => c.status !== "accepted" && c.status !== "in_progress");
+      if (notCurated.length) {
+        return res.status(400).json({
+          error: `Briefs must be accepted before planning outputs: ${notCurated.map((c) => c.title).join("; ")}`,
+        });
+      }
+
+      const rawTz = Number(req.body?.tzOffsetMinutes);
+      const tzOffsetMinutes = Number.isFinite(rawTz) ? rawTz : 0;
+
+      // Generate copy per concept in parallel; per-concept failures are reported
+      // but never abort the batch.
+      const perConcept = await Promise.allSettled(
+        items.map(async (item) => {
+          const concept = conceptMap.get(item.briefId!)!;
+          const posts = await generateInterviewSocialPosts({
+            tenantDomain: ctx.tenantDomain,
+            concept: {
+              title: concept.title,
+              summary: concept.summary,
+              differentiationAngle: concept.differentiationAngle,
+              targetReader: concept.targetReader,
+              cta: concept.cta,
+              demandSignal: concept.demandSignal,
+            },
+            channels: item.channels,
+            countPerChannel: item.count,
+          });
+          return { item, concept, posts };
+        }),
+      );
+
+      const rows: Array<typeof generatedPosts.$inferInsert> = [];
+      const errors: string[] = [];
+      for (let i = 0; i < perConcept.length; i++) {
+        const outcome = perConcept[i];
+        if (outcome.status === "rejected") {
+          errors.push(items[i].briefId!);
+          continue;
+        }
+        const { item, concept, posts } = outcome.value;
+        // Bucket the generated copy by platform, then place each channel's posts
+        // across the window at that channel's best local hour.
+        const byPlatform = new Map<string, string[]>();
+        for (const p of posts) {
+          const arr = byPlatform.get(p.platform) ?? [];
+          arr.push(p.content);
+          byPlatform.set(p.platform, arr);
+        }
+        for (const channel of item.channels) {
+          const copies = byPlatform.get(channel) ?? [];
+          if (copies.length === 0) continue;
+          const dates = distributeDates(item.windowStart!, item.windowEnd!, item.count).map((d) =>
+            scheduleAtLocalHour(d, bestHourForChannel(channel), tzOffsetMinutes),
+          );
+          for (let d = 0; d < dates.length; d++) {
+            const content = copies[d] ?? copies[copies.length - 1];
+            rows.push({
+              id: randomUUID(),
+              campaignId: campaign.id,
+              tenantDomain: ctx.tenantDomain,
+              platform: channel,
+              content,
+              status: "draft",
+              postFormat: "single",
+              solutionAreaId: concept.solutionAreaId ?? null,
+              scheduledDate: dates[d],
+            });
+          }
+        }
+      }
+
+      const created = rows.length
+        ? await db.insert(generatedPosts).values(rows).returning()
+        : [];
+
+      // Mark involved concepts as in_progress (idempotent with expand-plan).
+      await db
+        .update(contentBriefs)
+        .set({ status: "in_progress", updatedAt: new Date() })
+        .where(
+          and(
+            inArray(contentBriefs.id, conceptIds),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.status, "accepted"),
+          ),
+        );
+
+      res.status(201).json({ posts: created, failedConceptIds: errors });
+    } catch (err: any) {
+      console.error("[campaign-interview expand-social]", err);
+      res.status(500).json({ error: err.message || "Failed to expand the social plan" });
     }
   });
 
