@@ -233,11 +233,30 @@ async function uploadFile(file: File): Promise<string> {
   return objectPath;
 }
 
+const CONFERENCE_TABS = ["sessions", "graphics", "generate"] as const;
+type ConferenceTab = typeof CONFERENCE_TABS[number];
+
+function getConferenceTabFromHash(): ConferenceTab {
+  const hash = window.location.hash.replace("#", "");
+  return (CONFERENCE_TABS as readonly string[]).includes(hash) ? (hash as ConferenceTab) : "sessions";
+}
+
 export default function ConferenceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<ConferenceTab>(getConferenceTabFromHash);
   const confKey = ["/api/conferences", id];
+
+  useEffect(() => {
+    const onHashChange = () => setActiveTab(getConferenceTabFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    setActiveTab(getConferenceTabFromHash());
+  }, [id]);
 
   const { data: conf, isLoading } = useQuery<Conference>({
     queryKey: confKey,
@@ -327,7 +346,10 @@ export default function ConferenceDetailPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="sessions">
+        <Tabs value={activeTab} onValueChange={(tab) => {
+          setActiveTab(tab as ConferenceTab);
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
+        }}>
           <TabsList>
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="graphics">Graphics</TabsTrigger>

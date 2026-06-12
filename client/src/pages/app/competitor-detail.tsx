@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useRoute, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,14 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Res
 import { ArrowDown, ArrowRight, ArrowUp, Minus } from "lucide-react";
 import { formatCompactUsd, formatLifecycleStage, buildHubspotCompanyUrl } from "@/lib/hubspot-format";
 
+const COMPETITOR_TABS = ["overview", "battlecard", "messaging", "pages", "seo", "documents", "pricing", "history"] as const;
+type CompetitorTab = typeof COMPETITOR_TABS[number];
+
+function getCompetitorTabFromHash(): CompetitorTab {
+  const hash = window.location.hash.replace("#", "");
+  return (COMPETITOR_TABS as readonly string[]).includes(hash) ? (hash as CompetitorTab) : "overview";
+}
+
 export default function CompetitorDetail() {
   const [, params] = useRoute("/app/competitors/:id");
   const id = params?.id;
@@ -34,6 +42,7 @@ export default function CompetitorDetail() {
   const queryClient = useQueryClient();
   const { user: currentUser } = useUser();
   const isAdmin = currentUser?.role === "Domain Admin" || currentUser?.role === "Global Admin";
+  const [activeTab, setActiveTab] = useState<CompetitorTab>(getCompetitorTabFromHash);
   const [editOpen, setEditOpen] = useState(false);
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editInstagram, setEditInstagram] = useState("");
@@ -52,6 +61,16 @@ export default function CompetitorDetail() {
   const [editIndustry, setEditIndustry] = useState("");
   const [aiResearchOpen, setAiResearchOpen] = useState(false);
   const [refreshStrategyOpen, setRefreshStrategyOpen] = useState(false);
+
+  useEffect(() => {
+    const onHashChange = () => setActiveTab(getCompetitorTabFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    setActiveTab(getCompetitorTabFromHash());
+  }, [id]);
 
   const { data: contextData } = useQuery<{ activeMarket?: { businessType?: string } }>({
     queryKey: ["/api/context"],
@@ -983,7 +1002,10 @@ export default function CompetitorDetail() {
           }}
         />
 
-        <Tabs defaultValue="overview" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(tab) => {
+          setActiveTab(tab as CompetitorTab);
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
+        }} className="space-y-6">
           <TabsList className="bg-muted/50 p-1 border border-border rounded-lg">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="battlecard" data-testid="tab-battlecard">
