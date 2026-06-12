@@ -78,7 +78,7 @@ export function buildIdeationPrompt(input: IdeationPromptInput): string {
     `## Rules
 - Each idea must be genuinely different (different angle, audience, or moment) — no near-duplicates.
 - Tie every idea to at least one concrete signal; cite the signal text in "signals".
-- Choose the most fitting campaignType: ${CAMPAIGN_TYPES.join(" | ")} (theme = ongoing awareness; event = a dated event/webinar; offering = product/service launch or spotlight).
+- Choose the most fitting campaignType: ${CAMPAIGN_TYPES.join(" | ")} (theme = ongoing awareness; event = a dated event/webinar; offering = product/service launch or spotlight; product_release = a product release anchored to a hard release date with ramp-up and amplification windows).
 - The objective must be specific and outcome-oriented (what we promote + why now).
 - "suggestedAudience" is 1-3 short persona descriptors drawn from the personas above where possible.
 

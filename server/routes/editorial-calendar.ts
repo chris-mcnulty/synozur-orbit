@@ -27,6 +27,8 @@ const FORMAT_LABELS: Record<string, string> = {
   whitepaper: "Whitepaper",
   ebook: "Ebook",
   podcast_outline: "Podcast outline",
+  webinar: "Webinar",
+  press_release: "Press release",
   other: "Other",
 };
 
@@ -39,6 +41,7 @@ const FUNNEL_LABELS: Record<string, string> = {
 const EDITABLE_BRIEF_FIELDS = [
   "title",
   "format",
+  "summary",
   "targetKeyword",
   "demandSignal",
   "funnelStage",

@@ -1946,9 +1946,67 @@ export const CONTENT_BRIEF_FORMATS = [
   "whitepaper",
   "ebook",
   "podcast_outline",
+  "webinar",
+  "press_release",
   "other",
 ] as const;
 export type ContentBriefFormat = (typeof CONTENT_BRIEF_FORMATS)[number];
+
+// Form categories — the four "lengths" a format-agnostic content brief can be
+// produced in. The interview flow generates concept briefs tagged with the
+// categories they suit, then the user picks concrete formats + counts per
+// category when expanding the plan onto the calendar.
+export const CONTENT_FORM_CATEGORIES = [
+  "short_form",
+  "mid_form",
+  "long_form",
+  "digital_interactive",
+] as const;
+export type ContentFormCategory = (typeof CONTENT_FORM_CATEGORIES)[number];
+
+export const FORM_CATEGORY_FORMATS: Record<ContentFormCategory, ContentBriefFormat[]> = {
+  short_form: ["linkedin_post", "x_post", "newsletter"],
+  mid_form: ["blog_post", "press_release", "landing_page"],
+  long_form: ["whitepaper", "ebook", "case_study"],
+  digital_interactive: ["webinar", "video_script", "podcast_outline"],
+};
+
+export function formCategoryForFormat(format: ContentBriefFormat): ContentFormCategory | null {
+  for (const category of CONTENT_FORM_CATEGORIES) {
+    if (FORM_CATEGORY_FORMATS[category].includes(format)) return category;
+  }
+  return null;
+}
+
+// AI voice/topic fit check stamped onto interview-generated briefs at creation
+// time. Curation surfaces it to encourage rejecting off-voice or off-topic
+// ideas before any content is produced.
+export interface BriefFitAssessment {
+  voiceFit: "strong" | "moderate" | "weak";
+  topicFit: "strong" | "moderate" | "weak";
+  recommendation: "keep" | "reject";
+  rationale: string;
+}
+
+// Answers captured by the campaign content interview, frozen onto the campaign
+// (like FoundingSignals) so brief regeneration never changes what was asked.
+export interface CampaignInterviewProductMatch {
+  productId: string | null; // null when the product isn't in Orbit yet
+  productName: string;
+  matchedFeatures: string[];
+}
+export interface CampaignInterview {
+  capturedAt: string; // ISO timestamp
+  themes: string[];
+  newsItems: string[]; // product_release: the top 3-6 news items
+  eventDate?: string | null;
+  releaseDate?: string | null;
+  rampUpStart?: string | null;
+  amplificationEnd?: string | null; // always ≥ 30 days after releaseDate
+  tempo?: string | null; // the cadence the user accepted, human-readable
+  product?: CampaignInterviewProductMatch | null;
+  notes?: string | null;
+}
 
 // Brief formats that target social channels. Drafting one of these the normal
 // way still produces a document-style draft in the Content Library — it only
@@ -2014,6 +2072,16 @@ export const contentBriefs = pgTable("content_briefs", {
   cta: text("cta"),
   channels: text("channels").array(),
   estimatedHours: real("estimated_hours"),
+  // Interview flow: the format-agnostic core idea. `format` stays the anchor
+  // suggestion; formCategories list the form lengths the idea suits
+  // (short_form / mid_form / long_form / digital_interactive).
+  summary: text("summary"),
+  formCategories: text("form_categories").array(),
+  // AI voice/topic fit check captured at generation (see BriefFitAssessment).
+  fitAssessment: jsonb("fit_assessment").$type<BriefFitAssessment>(),
+  // Deliverable briefs expanded from a concept brief during interview planning
+  // point back at the concept so the calendar can group them.
+  derivedFromBriefId: varchar("derived_from_brief_id").references((): AnyPgColumn => contentBriefs.id, { onDelete: "set null" }),
   status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, drafted, scheduled, approved, published, removed
   aiGenerated: boolean("ai_generated").notNull().default(true),
   // Link to a produced draft once the copywriter runs (Phase 1, step 2).
@@ -2828,7 +2896,9 @@ export const MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES = [
 // Campaign types — the intent that anchors a campaign. Drives brief generation
 // grounding and the recommended asset mix. Kept here so frontend and backend
 // stay in sync. "event" campaigns subsume the conference-promotion flow.
-export const CAMPAIGN_TYPES = ["theme", "event", "offering"] as const;
+// "product_release" campaigns anchor to a release date with a ramp-up window
+// before it and an amplification window (≥30 days) after it.
+export const CAMPAIGN_TYPES = ["theme", "event", "offering", "product_release"] as const;
 export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
 
 // Frozen "founding signals" snapshot captured onto a campaign at planning time:
@@ -2886,6 +2956,9 @@ export const campaigns = pgTable("campaigns", {
   // Frozen news + intelligence action items that founded this campaign (see
   // FoundingSignals). Captured at creation; never mutated by later briefings.
   foundingSignals: jsonb("founding_signals").$type<FoundingSignals>(),
+  // Interview answers captured when the campaign was created through the
+  // content interview flow (themes, release windows, tempo, news items).
+  interview: jsonb("interview").$type<CampaignInterview>(),
   thematicBrief: text("thematic_brief"),
   thematicUrl: text("thematic_url"),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),

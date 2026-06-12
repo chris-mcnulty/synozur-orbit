@@ -151,7 +151,7 @@ export async function generateContentBriefs(
 ## Output format
 Respond with a JSON object: { "briefs": [ ... ] }. Each brief object has:
 - "title": string
-- "format": one of blog_post | linkedin_post | x_post | newsletter | landing_page | video_script | case_study | whitepaper | ebook | podcast_outline | other ("ebook" = a whitepaper-style long-form piece with rich suggested graphics)
+- "format": one of blog_post | linkedin_post | x_post | newsletter | landing_page | video_script | case_study | whitepaper | ebook | podcast_outline | webinar | press_release | other ("ebook" = a whitepaper-style long-form piece with rich suggested graphics; "webinar" = a webinar plan including a presentation deck outline)
 - "targetKeyword": string
 - "demandSignal": string (the evidence people care)
 - "funnelStage": one of awareness | consideration | decision

@@ -63,6 +63,7 @@ const CAMPAIGN_TYPE_OPTIONS: { value: string; label: string; hint: string }[] = 
   { value: "theme", label: "Theme", hint: "Ongoing awareness push around a point of view" },
   { value: "event", label: "Event", hint: "Promote a webinar, conference, or dated event" },
   { value: "offering", label: "Offering", hint: "Launch or spotlight a product / service" },
+  { value: "product_release", label: "Product release", hint: "Ramp up to a release date, then amplify for 30+ days" },
 ];
 
 interface CampaignIdea {
@@ -461,7 +462,7 @@ export default function CampaignsPage() {
       .map(p => p.id);
     setForm(f => ({
       ...f,
-      campaignType: ["theme", "event", "offering"].includes(idea.campaignType) ? idea.campaignType : f.campaignType,
+      campaignType: ["theme", "event", "offering", "product_release"].includes(idea.campaignType) ? idea.campaignType : f.campaignType,
       name: idea.title || f.name,
       objective: idea.objective || f.objective,
       selectedPersonaIds: matched.length ? matched : f.selectedPersonaIds,
@@ -547,6 +548,10 @@ export default function CampaignsPage() {
             </h1>
             <p className="text-muted-foreground text-sm mt-1">Create and manage campaigns. Use AI ideation to scan news and intelligence for starting points, then generate briefs, emails, and social posts in one place.</p>
           </div>
+          <div className="flex gap-2">
+          <Button asChild variant="outline" data-testid="button-content-interview">
+            <Link href="/app/marketing/campaign-interview"><Sparkles className="w-4 h-4 mr-2" />Content Interview</Link>
+          </Button>
           <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
             <DialogTrigger asChild>
               <Button data-testid="button-new-campaign"><Plus className="w-4 h-4 mr-2" />{isInstant ? "Instant Campaign" : "New Campaign"}</Button>
@@ -1010,6 +1015,7 @@ export default function CampaignsPage() {
               )}
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <div className="max-w-md">
