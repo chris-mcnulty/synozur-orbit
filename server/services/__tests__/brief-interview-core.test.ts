@@ -10,6 +10,7 @@ import {
   coerceFitAssessment,
   coerceFormCategories,
   distributeDates,
+  scheduleAtLocalHour,
   deliverableTitle,
   categoriesForFormat,
   addDays,
@@ -145,6 +146,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(b!.fitAssessment.recommendation, "keep");
   });
 
+  await test("normalizeInterviewBrief leaves categories empty for an unmapped anchor format", () => {
+    const b = normalizeInterviewBrief({ title: "Concept", format: "other" });
+    assert.ok(b);
+    assert.deepEqual(b!.formCategories, []);
+  });
+
   await test("normalizeInterviewBrief returns null without a title", () => {
     assert.equal(normalizeInterviewBrief({ summary: "no title" }), null);
   });
@@ -174,6 +181,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(dates.length, 1);
     assert.equal(dates[0].getTime(), start.getTime());
     assert.equal(distributeDates(start, start, 99).length, 10);
+  });
+
+  await test("scheduleAtLocalHour pins the UTC day to a local wall-clock hour", () => {
+    // A mid-window distributed instant (12:00 UTC on Sep 15) for a UTC user.
+    const d = new Date("2026-09-15T12:00:00Z");
+    assert.equal(scheduleAtLocalHour(d, 9, 0).toISOString(), "2026-09-15T09:00:00.000Z");
+    // US Eastern (UTC-4, offset +240): local 9am = 13:00 UTC, same local day.
+    assert.equal(scheduleAtLocalHour(d, 9, 240).toISOString(), "2026-09-15T13:00:00.000Z");
+    // UTC+10 (offset -600): local 9am = 23:00 UTC the previous day.
+    assert.equal(scheduleAtLocalHour(d, 9, -600).toISOString(), "2026-09-14T23:00:00.000Z");
   });
 
   await test("deliverableTitle numbers multi-piece items only", () => {

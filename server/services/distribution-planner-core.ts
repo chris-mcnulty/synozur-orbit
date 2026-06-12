@@ -28,6 +28,7 @@ const FORMAT_CHANNEL: Record<string, Channel> = {
   case_study: "blog",
   whitepaper: "blog",
   ebook: "blog",
+  press_release: "blog",
   video_script: "instagram",
 };
 

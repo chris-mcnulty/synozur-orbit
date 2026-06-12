@@ -19,7 +19,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { Link } from "wouter";
-import { format as formatDate, addDays } from "date-fns";
+import { format as formatDate } from "date-fns";
 import {
   Sparkles,
   Check,
@@ -168,6 +168,16 @@ const DEFAULT_WINDOW_BY_CATEGORY: Record<ContentFormCategory, number> = {
 
 const DEFAULT_COUNT: Record<string, number> = { linkedin_post: 3, x_post: 3 };
 
+// Window math runs on UTC calendar days (date inputs parse to UTC midnight);
+// plain ms arithmetic keeps it DST-proof, and the server re-anchors each piece
+// to a local posting hour via tzOffsetMinutes.
+const addDaysUtc = (d: Date, days: number) => new Date(d.getTime() + days * 86_400_000);
+const toDateKey = (d: Date) => d.toISOString().slice(0, 10);
+const todayUtc = () => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+};
+
 async function apiJson(url: string, init?: RequestInit) {
   const r = await fetch(url, { credentials: "include", ...init });
   const body = await r.json().catch(() => ({}));
@@ -282,12 +292,18 @@ export default function CampaignInterviewPage() {
 
   const confirmCuration = useMutation({
     mutationFn: async () => {
-      for (const b of result?.briefs ?? []) {
-        await apiJson(`/api/content-briefs/${b.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: decisions[b.id] === "reject" ? "removed" : "accepted" }),
-        });
+      const outcomes = await Promise.allSettled(
+        (result?.briefs ?? []).map((b) =>
+          apiJson(`/api/content-briefs/${b.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: decisions[b.id] === "reject" ? "removed" : "accepted" }),
+          }),
+        ),
+      );
+      const failed = outcomes.filter((o) => o.status === "rejected").length;
+      if (failed > 0) {
+        throw new Error(`${failed} of ${outcomes.length} briefs could not be updated. Please try again.`);
       }
     },
     onSuccess: () => {
@@ -323,17 +339,17 @@ export default function CampaignInterviewPage() {
   const windows: PlanWindow[] = useMemo(() => {
     if (isRelease && result?.windows?.releaseDate) {
       const release = new Date(result.windows.releaseDate);
-      const ramp = result.windows.rampUpStart ? new Date(result.windows.rampUpStart) : addDays(release, -42);
-      const ampEnd = result.windows.amplificationEnd ? new Date(result.windows.amplificationEnd) : addDays(release, 45);
+      const ramp = result.windows.rampUpStart ? new Date(result.windows.rampUpStart) : addDaysUtc(release, -42);
+      const ampEnd = result.windows.amplificationEnd ? new Date(result.windows.amplificationEnd) : addDaysUtc(release, 45);
       return [
-        { key: "0", label: "Ramp-up (before release)", start: ramp, end: addDays(release, -1) },
-        { key: "1", label: "Launch week", start: release, end: addDays(release, 6) },
-        { key: "2", label: "Amplification (30+ days after)", start: addDays(release, 7), end: ampEnd },
+        { key: "0", label: "Ramp-up (before release)", start: ramp, end: addDaysUtc(release, -1) },
+        { key: "1", label: "Launch week", start: release, end: addDaysUtc(release, 6) },
+        { key: "2", label: "Amplification (30+ days after)", start: addDaysUtc(release, 7), end: ampEnd },
       ];
     }
-    const start = timeframeStart ? new Date(timeframeStart) : new Date();
+    const start = timeframeStart ? new Date(timeframeStart) : todayUtc();
     const endCandidate = eventDate || timeframeEnd;
-    const end = endCandidate ? new Date(endCandidate) : addDays(start, 30);
+    const end = endCandidate ? new Date(endCandidate) : addDaysUtc(start, 30);
     const span = Math.max(end.getTime() - start.getTime(), 0);
     const third = span / 3;
     const at = (ms: number) => new Date(start.getTime() + ms);
@@ -385,15 +401,15 @@ export default function CampaignInterviewPage() {
             briefId,
             format: s.format,
             count: s.count,
-            windowStart: w.start.toISOString(),
-            windowEnd: w.end.toISOString(),
+            windowStart: toDateKey(w.start),
+            windowEnd: toDateKey(w.end),
           };
         }),
       );
       return apiJson(`/api/campaign-interview/${result!.campaign.id}/expand-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, tzOffsetMinutes: new Date().getTimezoneOffset() }),
       }) as Promise<{ briefs: Brief[] }>;
     },
     onSuccess: (data) => {

@@ -237,8 +237,11 @@ export function normalizeInterviewBrief(raw: any): InterviewDraftBrief | null {
 
   let formCategories = coerceFormCategories(raw?.formCategories ?? raw?.form_categories);
   if (formCategories.length === 0) {
+    // Fall back to the anchor format's category; an unmapped anchor (e.g.
+    // "other") yields no categories rather than an arbitrary guess — the user
+    // picks forms manually during planning.
     const fallback = formCategoryForFormat(base.format);
-    formCategories = fallback ? [fallback] : ["mid_form"];
+    formCategories = fallback ? [fallback] : [];
   }
 
   const summary = typeof raw?.summary === "string" && raw.summary.trim() ? raw.summary.trim() : null;
@@ -275,6 +278,24 @@ export function distributeDates(start: Date, end: Date, count: number): Date[] {
   if (n === 1) return [new Date(s)];
   const step = (e - s) / (n - 1);
   return Array.from({ length: n }, (_, i) => new Date(Math.round(s + step * i)));
+}
+
+/**
+ * Pin a distributed date to a local wall-clock hour on its UTC calendar day.
+ * Mirrors the distribution planner's timezone convention: callers pass the
+ * client's `Date.getTimezoneOffset()` and the stored UTC instant is
+ * `localWallClock + offset`, so the piece lands on the intended local day.
+ */
+export function scheduleAtLocalHour(date: Date, localHour: number, tzOffsetMinutes: number): Date {
+  const localWallClock = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    localHour,
+    0,
+    0,
+  );
+  return new Date(localWallClock + tzOffsetMinutes * 60_000);
 }
 
 /** Human label for a deliverable expanded from a concept brief. */

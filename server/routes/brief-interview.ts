@@ -29,12 +29,14 @@ import {
   suggestReleaseTempo,
   formatTempoForDisplay,
   distributeDates,
+  scheduleAtLocalHour,
   deliverableTitle,
   categoriesForFormat,
   MAX_OUTPUTS_PER_ITEM,
   type BriefInterviewInput,
   type OutputPlanItem,
 } from "../services/brief-interview-core";
+import { formatToChannel, bestHourForChannel } from "../services/distribution-planner-core";
 
 const str = (v: unknown): string | null => {
   const s = typeof v === "string" ? v.trim() : "";
@@ -427,17 +429,46 @@ export function registerBriefInterviewRoutes(app: Express) {
         return res.status(400).json({ error: "Some briefs do not belong to this campaign" });
       }
 
+      // Only curated concepts can be expanded — rejected ("removed") or
+      // still-uncurated ("suggested") briefs would bypass the curation step.
+      // "in_progress" is allowed so a plan can be re-run with more formats.
+      const notCurated = concepts.filter((c) => c.status !== "accepted" && c.status !== "in_progress");
+      if (notCurated.length) {
+        return res.status(400).json({
+          error: `Briefs must be accepted before planning outputs: ${notCurated.map((c) => c.title).join("; ")}`,
+        });
+      }
+
+      // Local-day fidelity: window bounds arrive as calendar days; the client's
+      // tz offset places each piece at a sensible local posting hour (mirrors
+      // the distribution planner's convention).
+      const rawTz = Number(req.body?.tzOffsetMinutes);
+      const tzOffsetMinutes = Number.isFinite(rawTz) ? rawTz : 0;
+
       const created = await db.transaction(async (tx) => {
         const rows: (typeof contentBriefs.$inferSelect)[] = [];
-        let sortBase = Date.now() % 100000; // keep deliverables after concepts without an extra query
+
+        // Continue sortOrder after everything already in the affected calendars
+        // so deliverables never interleave with existing briefs.
+        const calendarIds = Array.from(new Set(concepts.map((c) => c.calendarId)));
+        const [maxRow] = await tx
+          .select({ sortOrder: contentBriefs.sortOrder })
+          .from(contentBriefs)
+          .where(inArray(contentBriefs.calendarId, calendarIds))
+          .orderBy(desc(contentBriefs.sortOrder))
+          .limit(1);
+        let sortBase = (maxRow?.sortOrder ?? -1) + 1;
 
         for (const item of items) {
           const concept = conceptMap.get(item.briefId)!;
           const start = parseDate(item.windowStart)!;
           const end = parseDate(item.windowEnd)!;
           const count = Math.min(Math.max(Math.round(Number(item.count) || 1), 1), MAX_OUTPUTS_PER_ITEM);
-          const dates = distributeDates(start, end, count);
           const format = item.format as ContentBriefFormat;
+          const postingHour = bestHourForChannel(formatToChannel(format));
+          const dates = distributeDates(start, end, count).map((d) =>
+            scheduleAtLocalHour(d, postingHour, tzOffsetMinutes),
+          );
 
           const inserted = await tx
             .insert(contentBriefs)
