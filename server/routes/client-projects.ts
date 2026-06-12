@@ -57,6 +57,8 @@ export function registerClientProjectRoutes(app: Express) {
           type: longFormRecommendations.type,
           status: longFormRecommendations.status,
           lastGeneratedAt: longFormRecommendations.lastGeneratedAt,
+          updatedAt: longFormRecommendations.updatedAt,
+          createdAt: longFormRecommendations.createdAt,
         })
         .from(longFormRecommendations)
         .where(and(
@@ -69,7 +71,25 @@ export function registerClientProjectRoutes(app: Express) {
               )
             : eq(longFormRecommendations.marketId, ctx.marketId),
         ));
-      res.json(rows);
+
+      // The table accumulates rows over time; keep only the newest per
+      // (projectId, type) so the response honors the one-row contract.
+      const recency = (r: (typeof rows)[number]) =>
+        new Date(r.lastGeneratedAt ?? r.updatedAt ?? r.createdAt ?? 0).getTime();
+      const latest = new Map<string, (typeof rows)[number]>();
+      for (const row of rows) {
+        const key = `${row.projectId}:${row.type}`;
+        const prev = latest.get(key);
+        if (!prev || recency(row) >= recency(prev)) latest.set(key, row);
+      }
+      res.json(
+        Array.from(latest.values(), ({ projectId, type, status, lastGeneratedAt }) => ({
+          projectId,
+          type,
+          status,
+          lastGeneratedAt,
+        })),
+      );
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

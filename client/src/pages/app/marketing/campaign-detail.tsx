@@ -2346,8 +2346,17 @@ export default function CampaignDetailPage() {
                       <CardContent className="pt-0 space-y-3">
                         {!isExpanded ? (
                           <div
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={false}
                             className="flex items-start gap-3 cursor-pointer group/compact"
                             onClick={() => togglePostExpanded(post.id)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                togglePostExpanded(post.id);
+                              }
+                            }}
                             title="Click to expand"
                             data-testid={`post-compact-${post.id}`}
                           >

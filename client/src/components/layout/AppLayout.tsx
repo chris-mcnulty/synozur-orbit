@@ -522,8 +522,15 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             area so nothing is unreachable on small screens. */}
         <div className="flex-1 px-4 py-2 overflow-y-auto min-h-0" style={{ WebkitOverflowScrolling: "touch" }}>
           {(() => {
-            const renderItem = (item: NavItem) => {
-              const isActive = location === item.href;
+            // An item is active when the location is its href or a descendant
+            // of it (e.g. /app/products/123 → Products). Only the longest
+            // matching href in an area lights up, so a hub item like
+            // /app/marketing doesn't stay lit on every marketing page.
+            const matchesItem = (href: string) =>
+              location === href || location.startsWith(href + "/") || location.startsWith(href + "?");
+
+            const renderItem = (item: NavItem, activeHref: string | null) => {
+              const isActive = item.href === activeHref;
               const indicator = navIndicators[item.href];
               const isLocked = lockedNavItems.has(item.href);
               return (
@@ -573,32 +580,40 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
               );
             };
 
-            const renderArea = (area: AppArea, showAreaLabel: boolean) => (
-              <div key={area.id}>
-                {showAreaLabel && (
-                  <div className="flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider">
-                    <area.icon size={14} className="opacity-70" />
-                    <span>{area.label}</span>
+            const renderArea = (area: AppArea, showAreaLabel: boolean) => {
+              const activeHref = area.items
+                .filter((i) => matchesItem(i.href))
+                .reduce<string | null>(
+                  (best, i) => (best && best.length >= i.href.length ? best : i.href),
+                  null,
+                );
+              return (
+                <div key={area.id}>
+                  {showAreaLabel && (
+                    <div className="flex items-center gap-2 px-2 pt-3 pb-1 text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider">
+                      <area.icon size={14} className="opacity-70" />
+                      <span>{area.label}</span>
+                    </div>
+                  )}
+                  <div className="space-y-1 mt-1">
+                    {area.items.map((item, idx) => {
+                      const prevSection = idx > 0 ? area.items[idx - 1].section : undefined;
+                      const showSection = item.section && item.section !== prevSection;
+                      return (
+                        <React.Fragment key={item.href}>
+                          {showSection && (
+                            <div className="px-3 pb-1 pt-3 text-[10px] font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
+                              {item.section}
+                            </div>
+                          )}
+                          {renderItem(item, activeHref)}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
-                )}
-                <div className="space-y-1 mt-1">
-                  {area.items.map((item, idx) => {
-                    const prevSection = idx > 0 ? area.items[idx - 1].section : undefined;
-                    const showSection = item.section && item.section !== prevSection;
-                    return (
-                      <React.Fragment key={item.href}>
-                        {showSection && (
-                          <div className="px-3 pb-1 pt-3 text-[10px] font-semibold text-sidebar-foreground/40 uppercase tracking-wider">
-                            {item.section}
-                          </div>
-                        )}
-                        {renderItem(item)}
-                      </React.Fragment>
-                    );
-                  })}
                 </div>
-              </div>
-            );
+              );
+            };
 
             return (
               <>
