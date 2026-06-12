@@ -2338,8 +2338,11 @@ export default function CampaignDetailPage() {
             {availableAssets.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium">Add from Digital/Web Assets</h3>
-                  <span className="text-xs text-muted-foreground">{availableAssets.length} available</span>
+                  <div>
+                    <h3 className="text-sm font-medium">Add from Content Library</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Visual images and digital/web assets — pinned assets appear first in the image picker and link picker when reviewing social posts.</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0 ml-3">{availableAssets.length} available</span>
                 </div>
                 <div className="border rounded-lg overflow-hidden">
                   <div className="p-2 border-b bg-muted/30">
@@ -2397,7 +2400,9 @@ export default function CampaignDetailPage() {
             {campaign.assets.length === 0 && availableAssets.length === 0 && (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground" data-testid="text-no-assets">
-                  No content assets available. Add assets to Digital/Web Assets first.
+                  <Library className="w-8 h-8 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm font-medium mb-1">No content library assets yet</p>
+                  <p className="text-xs">Add visual images or digital/web assets to the Content Library, then come back here to pin them to this campaign.</p>
                 </CardContent>
               </Card>
             )}
