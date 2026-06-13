@@ -36,6 +36,7 @@ import Settings from "@/pages/app/settings";
 import UsersPage from "@/pages/app/users";
 import AdminPage from "@/pages/app/admin";
 import ProductsPage from "@/pages/app/products";
+import ProductCollateralPage from "@/pages/app/products/collateral";
 import ProductDetail from "@/pages/app/product-detail";
 import ExecutiveSummary from "@/pages/app/executive-summary";
 import BaselineSummary from "@/pages/app/baseline-summary";
@@ -152,6 +153,8 @@ function Router() {
       <Route path="/app/company-roster" component={CompanyRosterPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/products">{() => <PageFeatureGate featureKey="productManagement" label="Product Management" description="Roadmap prioritization and feature tracking. Upgrade to unlock this feature."><ProductsPage /></PageFeatureGate>}</Route>
+      {/* Literal /collateral must precede the /:id route so it isn't captured as a product id. */}
+      <Route path="/app/products/collateral">{() => <PageFeatureGate featureKey="productManagement" label="Product Management" description="Roadmap prioritization and feature tracking. Upgrade to unlock this feature."><ProductCollateralPage /></PageFeatureGate>}</Route>
       <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />
       <Route path="/app/products/:id/roadmap" component={ProductRoadmapRedirect} />
       <Route path="/app/products/:productId/executive-summary" component={ExecutiveSummary} />
