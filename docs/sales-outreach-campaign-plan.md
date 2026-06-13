@@ -222,6 +222,7 @@ New pages, wired into `client/src/App.tsx` and `client/src/lib/areaNavigation.ts
 - `campaign-detail.tsx` — prospects table (state badges, ICP score, next action); bulk compose/approve; attached-resources panel; event banner when `conferenceId` set.
 - `prospect-detail.tsx` — dossier, score breakdown, touch timeline, **draft editor with compliance flags** (reuse `components/marketing/AIRewritePanel.tsx`), resource chips, "Approve → Outlook" button.
 - `outreach-settings.tsx` — **per-user**: connect mailbox (incremental Graph consent) + extract/preview personal voice; **per-tenant** (admin): caps/kill-switch (global pause), suppression, LinkedIn MCP, HubSpot.
+- **Active Outreach widget on Sales home** (`pages/app/sales.tsx`) — a live rollup card alongside the existing deliverable cards: **what's running** (active campaigns), **how long** (days running), **contacts developed** (prospects researched/qualified), **in communication** (prospects in `awaiting_reply`/`replied`/`cadence_step_due`), and **success rate** (reply / meeting-booked rate). Backed by `GET /api/sales-outreach/summary` (a rollup over `prospects` states + `outreach_touches` outcomes, same query style as the current home counts / `calendar-rollup-core`). **Not Phase 0** — it needs live state + reply data, so it lands in Phase 3 (a counts-only version is possible from Phase 1).
 
 ### 5.6 Master circuit breakers & caps *(safety-critical)*
 
@@ -258,7 +259,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices; re
 
 **Phase 2 — Composer + Outlook drafts + resources.** `outreach-composer` (email + LinkedIn copy) grounded in dossier + **personal** voice + objections, surfacing the right **campaign resource** (scheduler/event/product) per step; **`compliance-core` cliché/banned-phrase + suppression + CAN-SPAM scan** on every draft; `outlook-draft-service` pushes approved drafts to the seller's Outlook Drafts via their **delegated token** (incremental `Mail.ReadWrite` consent). HubSpot activity logging.
 
-**Phase 3 — Cadence + events + kill-switches.** `cadence-core` state machine + timing windows, including **event-anchored** sequences back-dated from `eventDate` (the Seattle conference case); `cadence-service` reply/send detection via Graph (scheduled); follow-up drafting; `outreach_settings` caps + global pause + reply-rate floor.
+**Phase 3 — Cadence + events + kill-switches + Sales-home widget.** `cadence-core` state machine + timing windows, including **event-anchored** sequences back-dated from `eventDate` (the Seattle conference case); `cadence-service` reply/send detection via Graph (scheduled); follow-up drafting; `outreach_settings` caps + global pause + reply-rate floor. Ship the **Active Outreach widget** on Sales home (`GET /api/sales-outreach/summary`: running campaigns, days running, contacts developed, in communication, success rate) — now that prospect states and reply data are flowing.
 
 **Phase 4 — LinkedIn MCP + performance loop.** Wire the LinkedIn **MCP client** for research/messaging; close the loop — reply/meeting rates and HubSpot deal attribution feed back into ICP scoring (mirrors the marketing performance-analyst).
 
