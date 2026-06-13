@@ -194,6 +194,30 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
   });
 
+  const markReplied = useMutation({
+    mutationFn: async (prospectId: string) => {
+      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${prospectId}/mark-replied`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      toast({ title: "Marked replied" });
+    },
+    onError: (err: any) => toast({ title: "Couldn't update", description: err?.message, variant: "destructive" }),
+  });
+
+  const tick = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/sales-outreach/cadence/tick", {});
+      return res.json();
+    },
+    onSuccess: (data: { prospectsAdvanced: number }) => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      toast({ title: "Cadence refreshed", description: `${data.prospectsAdvanced} step(s) now due.` });
+    },
+    onError: (err: any) => toast({ title: "Cadence refresh failed", description: err?.message, variant: "destructive" }),
+  });
+
   const importHubspot = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/import-hubspot`, { limit: 50 });
@@ -259,6 +283,10 @@ export default function OutreachCampaignDetailPage() {
             {campaign.salesGoal && <p className="text-muted-foreground mt-1 max-w-2xl">{campaign.salesGoal}</p>}
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => tick.mutate()} disabled={tick.isPending} data-testid="button-refresh-cadence">
+              {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
+              Refresh cadence
+            </Button>
             <Button variant="outline" onClick={() => importHubspot.mutate()} disabled={importHubspot.isPending} data-testid="button-import-hubspot">
               {importHubspot.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
               Import from HubSpot
@@ -340,7 +368,18 @@ export default function OutreachCampaignDetailPage() {
                           )}
                           {p.researchDossier ? "Re-score" : "Research"}
                         </Button>
-                        {p.status !== "dormant" && (
+                        {(p.status === "awaiting_reply" || p.status === "cadence_step_due") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => markReplied.mutate(p.id)}
+                            disabled={markReplied.isPending && markReplied.variables === p.id}
+                            data-testid={`mark-replied-${p.id}`}
+                          >
+                            Mark replied
+                          </Button>
+                        )}
+                        {p.status !== "dormant" && p.status !== "replied" && (
                           <Button
                             variant="outline"
                             size="sm"

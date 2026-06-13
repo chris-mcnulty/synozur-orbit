@@ -7,6 +7,10 @@ import {
   FileText,
   Handshake,
   Swords,
+  Send,
+  Users,
+  MessageSquare,
+  TrendingUp,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +62,22 @@ export default function SalesHubPage() {
       if (!r.ok) return [];
       const data = await r.json();
       return Array.isArray(data) ? data : data.assessments ?? [];
+    },
+  });
+
+  const { data: outreach } = useQuery<{
+    activeCampaigns: number;
+    daysRunning: number | null;
+    contactsDeveloped: number;
+    inCommunication: number;
+    replied: number;
+    successRate: number;
+  }>({
+    queryKey: ["/api/sales-outreach/summary"],
+    queryFn: async () => {
+      const r = await fetch("/api/sales-outreach/summary", { credentials: "include" });
+      if (!r.ok) return null as any;
+      return r.json();
     },
   });
 
@@ -146,6 +166,28 @@ export default function SalesHubPage() {
           </p>
         </div>
 
+        {/* Active Outreach — live rollup of running campaigns */}
+        {outreach && outreach.activeCampaigns > 0 && (
+          <Card data-testid="active-outreach-widget">
+            <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Send className="w-4 h-4 text-primary" /> Active Outreach
+              </CardTitle>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/app/sales/outreach">Open <ArrowRight className="w-3.5 h-3.5 ml-1" /></Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 sm:grid-cols-5 gap-4 py-2">
+              <Metric icon={Send} label="Running" value={outreach.activeCampaigns}
+                sub={outreach.daysRunning != null ? `${outreach.daysRunning}d` : undefined} />
+              <Metric icon={Users} label="Developed" value={outreach.contactsDeveloped} />
+              <Metric icon={MessageSquare} label="In comms" value={outreach.inCommunication} />
+              <Metric icon={Handshake} label="Replied" value={outreach.replied} />
+              <Metric icon={TrendingUp} label="Reply rate" value={`${Math.round(outreach.successRate * 100)}%`} />
+            </CardContent>
+          </Card>
+        )}
+
         {totalDeliverables > 0 && (
           <Card data-testid="sales-deliverables-mix">
             <CardContent className="py-4">
@@ -203,5 +245,29 @@ export default function SalesHubPage() {
         </p>
       </div>
     </AppLayout>
+  );
+}
+
+function Metric({
+  icon: Icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: typeof Send;
+  label: string;
+  value: number | string;
+  sub?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+        <Icon className="w-3 h-3" /> {label}
+      </span>
+      <span className="text-xl font-bold tabular-nums">
+        {value}
+        {sub && <span className="text-xs font-normal text-muted-foreground ml-1">{sub}</span>}
+      </span>
+    </div>
   );
 }

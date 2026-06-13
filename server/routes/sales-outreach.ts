@@ -24,6 +24,7 @@ import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-c
 import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
+import { assertApprovalAllowed, getOutreachSummary, tickCadence } from "../services/cadence-service";
 
 function domainOf(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -394,16 +395,6 @@ export function registerSalesOutreachRoutes(app: Express) {
         return res.status(409).json({ error: "Draft is not pending approval." });
       }
 
-      // Circuit breaker: honor the global pause (full per-channel caps land in
-      // Phase 3 with the cadence engine + send ledger counting).
-      const [settings] = await db
-        .select()
-        .from(outreachSettings)
-        .where(eq(outreachSettings.tenantDomain, ctx.tenantDomain));
-      if (settings?.globalPause) {
-        return res.status(423).json({ error: "Outreach is paused (global circuit breaker). Resume in settings." });
-      }
-
       // Compliance hard blockers (suppression / self-email) cannot be approved.
       const flags = touch.complianceFlags;
       if (flags && flags.pass === false) {
@@ -411,6 +402,17 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
 
       const [prospect] = await db.select().from(prospects).where(eq(prospects.id, touch.prospectId));
+
+      // Circuit breakers: master + per-channel + per-domain caps + global pause,
+      // counted from the durable send ledger. Fails closed.
+      const decision = await assertApprovalAllowed(
+        ctx.tenantDomain,
+        touch.channel as OutreachChannel,
+        domainOf(prospect?.email),
+      );
+      if (!decision.allowed) {
+        return res.status(423).json({ error: decision.reason, code: "cap_reached" });
+      }
 
       let outlookDraftId: string | null = null;
       let webLink: string | undefined;
@@ -438,6 +440,14 @@ export function registerSalesOutreachRoutes(app: Express) {
         .set({ status: "approved", outlookDraftId })
         .where(eq(outreachTouches.id, touch.id))
         .returning();
+
+      // Advance the prospect: a touch is now out, awaiting a reply.
+      if (prospect && prospect.status === "draft_pending_approval") {
+        await db
+          .update(prospects)
+          .set({ status: "awaiting_reply", updatedAt: new Date() })
+          .where(eq(prospects.id, prospect.id));
+      }
 
       // Record in the send ledger (authoritative source for the breakers).
       await db.insert(outreachSendLedger).values({
@@ -630,6 +640,52 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach:sync-hubspot]", err);
       res.status(500).json({ error: err.message || "Failed to sync to HubSpot" });
+    }
+  });
+
+  // ── Cadence + Active Outreach summary ───────────────────────────────────────
+
+  // Active Outreach rollup for the Sales home widget.
+  app.get("/api/sales-outreach/summary", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      res.json(await getOutreachSummary(ctx.tenantDomain));
+    } catch (err: any) {
+      console.error("[sales-outreach:summary]", err);
+      res.status(500).json({ error: err.message || "Failed to load outreach summary" });
+    }
+  });
+
+  // Advance due cadence steps + apply the reply-rate floor. Safe to call on a
+  // schedule; also exposed for a manual "refresh cadence" action.
+  app.post("/api/sales-outreach/cadence/tick", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "outreachCadence"))) return;
+      const ctx = await getRequestContext(req);
+      res.json(await tickCadence(ctx.tenantDomain));
+    } catch (err: any) {
+      console.error("[sales-outreach:tick]", err);
+      res.status(500).json({ error: err.message || "Failed to run cadence tick" });
+    }
+  });
+
+  // Mark a prospect as having replied (until Graph reply auto-detection lands).
+  app.post("/api/sales-outreach/prospects/:id/mark-replied", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      const [updated] = await db
+        .update(prospects)
+        .set({ status: "replied", nextActionAt: null, updatedAt: new Date() })
+        .where(eq(prospects.id, prospect.id))
+        .returning();
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[sales-outreach:mark-replied]", err);
+      res.status(500).json({ error: err.message || "Failed to mark replied" });
     }
   });
 }
