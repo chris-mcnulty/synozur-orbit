@@ -85,26 +85,21 @@ export default function HomePage() {
     },
   });
 
-  const { data: companyProfile } = useQuery<{ id?: string } | null>({
-    queryKey: ["/api/company-profile"],
-    queryFn: async () => {
-      const r = await fetch("/api/company-profile", { credentials: "include" });
-      if (!r.ok) return null;
-      return r.json();
-    },
-  });
-
+  // Score history keys off the baseline id that /api/dashboard/scores already
+  // returns — no separate company-profile fetch, and no race against the
+  // scores endpoint recording the current period.
+  const baselineId = dashboardScores?.baseline?.id;
   const { data: scoreHistory = [] } = useQuery<
     { period: string; overallScore: number }[]
   >({
-    queryKey: ["/api/score-history", companyProfile?.id],
+    queryKey: ["/api/score-history", baselineId],
     queryFn: async () => {
-      if (!companyProfile?.id) return [];
-      const r = await fetch(`/api/score-history/baseline/${companyProfile.id}?limit=26`, { credentials: "include" });
+      if (!baselineId) return [];
+      const r = await fetch(`/api/score-history/baseline/${baselineId}?limit=26`, { credentials: "include" });
       if (!r.ok) return [];
       return r.json();
     },
-    enabled: !!companyProfile?.id,
+    enabled: !!baselineId,
   });
 
   const { data: recommendations = [] } = useQuery<any[]>({

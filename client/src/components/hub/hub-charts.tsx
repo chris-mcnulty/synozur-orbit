@@ -79,6 +79,7 @@ export function PositioningScatter({
             shape={(props: any) => {
               const { cx, cy, payload } = props;
               const isUs = payload?.type === "us";
+              const interactive = !!onSelect && !!payload;
               return (
                 <circle
                   cx={cx}
@@ -86,9 +87,22 @@ export function PositioningScatter({
                   r={isUs ? 11 : 7}
                   fill={isUs ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"}
                   opacity={isUs ? 1 : 0.6}
-                  style={{ cursor: onSelect ? "pointer" : "default" }}
+                  style={{ cursor: interactive ? "pointer" : "default" }}
                   data-testid={`hub-scatter-point-${payload?.id}`}
-                  onClick={() => payload && onSelect?.(payload)}
+                  role={interactive ? "button" : undefined}
+                  tabIndex={interactive ? 0 : undefined}
+                  aria-label={
+                    interactive
+                      ? `${payload.name}: innovation ${Math.round(payload.x)} percent, market presence ${Math.round(payload.y)} percent`
+                      : undefined
+                  }
+                  onClick={() => interactive && onSelect!(payload)}
+                  onKeyDown={(e) => {
+                    if (interactive && (e.key === "Enter" || e.key === " ")) {
+                      e.preventDefault();
+                      onSelect!(payload);
+                    }
+                  }}
                 />
               );
             }}

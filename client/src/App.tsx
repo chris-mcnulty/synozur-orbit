@@ -153,8 +153,9 @@ function Router() {
       <Route path="/app/company-roster" component={CompanyRosterPage} />
       <Route path="/app/admin" component={AdminPage} />
       <Route path="/app/products">{() => <PageFeatureGate featureKey="productManagement" label="Product Management" description="Roadmap prioritization and feature tracking. Upgrade to unlock this feature."><ProductsPage /></PageFeatureGate>}</Route>
-      {/* Literal /collateral must precede the /:id route so it isn't captured as a product id. */}
-      <Route path="/app/products/collateral">{() => <PageFeatureGate featureKey="productManagement" label="Product Management" description="Roadmap prioritization and feature tracking. Upgrade to unlock this feature."><ProductCollateralPage /></PageFeatureGate>}</Route>
+      {/* Literal /collateral must precede the /:id route so it isn't captured as a product id.
+          Gated on clientProjects to match the server guard on /api/projects[/artifact-summary]. */}
+      <Route path="/app/products/collateral">{() => <PageFeatureGate featureKey="clientProjects" label="Product Collateral" description="Generated strategy and go-to-market artifacts across your products. Upgrade to unlock this feature."><ProductCollateralPage /></PageFeatureGate>}</Route>
       <Route path="/app/products/:id/features" component={ProductFeaturesRedirect} />
       <Route path="/app/products/:id/roadmap" component={ProductRoadmapRedirect} />
       <Route path="/app/products/:productId/executive-summary" component={ExecutiveSummary} />
