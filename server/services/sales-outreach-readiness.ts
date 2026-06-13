@@ -10,7 +10,7 @@
 import { storage, type ContextFilter } from "../storage";
 import { db } from "../db";
 import { socialAccountVoiceProfiles } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { deriveSalesReadiness } from "./sales-outreach-readiness-core";
 
 export {
@@ -55,6 +55,7 @@ export async function assessSalesOutreachReadiness(
     voiceProfilesR,
     hubspotR,
     userR,
+    personalVoiceR,
   ] = await Promise.allSettled([
     storage.getPersonasByContext(ctx),
     storage.getProductsByContext(ctx),
@@ -68,6 +69,12 @@ export async function assessSalesOutreachReadiness(
       .where(eq(socialAccountVoiceProfiles.tenantDomain, tenantDomain)),
     storage.getHubspotConnection(tenantDomain),
     userId ? storage.getUser(userId) : Promise.resolve(undefined),
+    userId
+      ? db
+          .select({ id: socialAccountVoiceProfiles.id })
+          .from(socialAccountVoiceProfiles)
+          .where(and(eq(socialAccountVoiceProfiles.ownerUserId, userId), isNull(socialAccountVoiceProfiles.socialAccountId)))
+      : Promise.resolve([]),
   ]);
 
   const personas = personasR.status === "fulfilled" ? personasR.value : [];
@@ -77,6 +84,7 @@ export async function assessSalesOutreachReadiness(
   const voiceProfiles = voiceProfilesR.status === "fulfilled" ? voiceProfilesR.value : [];
   const hubspot = hubspotR.status === "fulfilled" ? hubspotR.value : undefined;
   const user = userR.status === "fulfilled" ? userR.value : undefined;
+  const personalVoice = personalVoiceR.status === "fulfilled" ? personalVoiceR.value : [];
 
   const isGenerated = (rec: any) => Boolean(rec && rec.status === "generated" && rec.content);
 
@@ -96,9 +104,7 @@ export async function assessSalesOutreachReadiness(
     productCount: products.length,
     battlecardWithObjectionsCount: battlecards.filter(hasObjections).length,
     voiceProfileCount: voiceProfiles.length,
-    // Per-seller voice profiles arrive in Phase 1 (ownerUserId on the profile);
-    // until then readiness reports firm-level voice only.
-    hasPersonalVoiceProfile: false,
+    hasPersonalVoiceProfile: personalVoice.length > 0,
     hubspotConnected: Boolean(hubspot),
     mailboxConnected,
     mailboxCanDraft,

@@ -23,6 +23,7 @@ import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
+import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 
 function domainOf(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -143,6 +144,13 @@ export function registerSalesOutreachRoutes(app: Express) {
       const name = String(body.name ?? "").trim();
       if (!name) return res.status(400).json({ error: "Campaign name is required" });
 
+      // Default to the creator's personal voice profile so drafts sound like them.
+      let voiceProfileId = body.voiceProfileId ?? null;
+      if (!voiceProfileId) {
+        const personal = await getPersonalVoiceProfile(ctx.userId);
+        voiceProfileId = personal?.id ?? null;
+      }
+
       const result = await createCampaignFromInterview({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
@@ -153,7 +161,7 @@ export function registerSalesOutreachRoutes(app: Express) {
         targetPersonaIds: Array.isArray(body.targetPersonaIds) ? body.targetPersonaIds : null,
         conferenceId: body.conferenceId ?? null,
         eventDate: body.eventDate ? new Date(body.eventDate) : null,
-        voiceProfileId: body.voiceProfileId ?? null,
+        voiceProfileId,
       });
       res.status(201).json(result);
     } catch (err: any) {
@@ -509,6 +517,41 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach:mailbox-consent]", err);
       res.status(500).json({ error: err.message || "Failed to build consent URL" });
+    }
+  });
+
+  // ── Outbound voice (personal voice DNA from Sent Items) ─────────────────────
+
+  app.get("/api/sales-outreach/voice", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const profile = await getPersonalVoiceProfile(ctx.userId);
+      res.json(profile ?? null);
+    } catch (err: any) {
+      console.error("[sales-outreach:voice-get]", err);
+      res.status(500).json({ error: err.message || "Failed to load voice profile" });
+    }
+  });
+
+  app.post("/api/sales-outreach/voice/extract", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const result = await extractOutboundVoice(ctx.userId, ctx.tenantDomain);
+      await logAiUsage(
+        { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+        "extractOutboundVoice",
+        result.provider,
+        result.model,
+        { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens },
+      );
+      res.json({ profile: result.profile, sampleCount: result.sampleCount });
+    } catch (err: any) {
+      if (err instanceof VoiceExtractError) {
+        return res.status(err.code === "insufficient_samples" ? 422 : 409).json({ error: err.message, code: err.code });
+      }
+      console.error("[sales-outreach:voice-extract]", err);
+      res.status(500).json({ error: err.message || "Failed to extract voice" });
     }
   });
 

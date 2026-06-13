@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Mail, ShieldAlert, Loader2, CheckCircle2, Plug } from "lucide-react";
+import { ArrowLeft, Mail, ShieldAlert, Loader2, CheckCircle2, Plug, Mic } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,11 @@ interface MailboxStatus {
   connected: boolean;
   canDraft: boolean;
   scopes: string[];
+}
+interface VoiceProfile {
+  id: string;
+  styleGuidance: string | null;
+  preferredPhrases: string[] | null;
 }
 interface OutreachSettings {
   globalPause: boolean;
@@ -49,6 +54,28 @@ export default function OutreachSettingsPage() {
       if (!r.ok) return { connected: false, canDraft: false, scopes: [] };
       return r.json();
     },
+  });
+
+  const { data: voice } = useQuery<VoiceProfile | null>({
+    queryKey: ["/api/sales-outreach/voice"],
+    queryFn: async () => {
+      const r = await fetch("/api/sales-outreach/voice", { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+  });
+
+  const extractVoice = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/sales-outreach/voice/extract", {});
+      return res.json();
+    },
+    onSuccess: (data: { sampleCount: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/voice"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/readiness"] });
+      toast({ title: "Voice extracted", description: `Analyzed ${data.sampleCount} sent emails.` });
+    },
+    onError: (err: any) => toast({ title: "Couldn't extract voice", description: err?.message, variant: "destructive" }),
   });
 
   const { data: settings } = useQuery<OutreachSettings>({
@@ -125,6 +152,40 @@ export default function OutreachSettingsPage() {
               {connectMailbox.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plug className="w-4 h-4 mr-1" />}
               {mailbox?.canDraft ? "Reconnect" : "Connect mailbox"}
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Personal voice */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2"><Mic className="w-4 h-4" /> Your voice</CardTitle>
+            <CardDescription>Extracted from your Sent Items so drafts sound like you. Refresh anytime.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-sm">
+                {voice ? (
+                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" /> Voice profile set
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">No personal voice yet</span>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => extractVoice.mutate()}
+                disabled={extractVoice.isPending || !mailbox?.canDraft}
+                title={!mailbox?.canDraft ? "Connect your mailbox first" : undefined}
+                data-testid="button-extract-voice"
+              >
+                {extractVoice.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Mic className="w-4 h-4 mr-1" />}
+                {voice ? "Re-extract" : "Extract from Sent Items"}
+              </Button>
+            </div>
+            {voice?.styleGuidance && (
+              <p className="text-xs text-muted-foreground border-l-2 pl-2 leading-relaxed">{voice.styleGuidance}</p>
+            )}
           </CardContent>
         </Card>
 

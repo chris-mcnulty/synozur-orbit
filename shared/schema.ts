@@ -1692,6 +1692,7 @@ export const AI_FEATURES = {
   OUTREACH_INTERVIEW: 'outreach_interview',
   PROSPECT_RESEARCH: 'prospect_research',
   OUTREACH_COMPOSER: 'outreach_composer',
+  OUTREACH_VOICE_EXTRACT: 'outreach_voice_extract',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1714,6 +1715,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   outreach_interview: 'Outreach Campaign Interview',
   prospect_research: 'Prospect Research & Scoring',
   outreach_composer: 'Outreach Draft Composer',
+  outreach_voice_extract: 'Outbound Voice Extraction',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -2845,9 +2847,14 @@ export interface VoiceProfileSnapshot {
 
 export const socialAccountVoiceProfiles = pgTable("social_account_voice_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  socialAccountId: varchar("social_account_id").notNull()
+  // Nullable for per-seller "personal" outbound voice profiles (sales outreach),
+  // which have an ownerUserId instead. Postgres UNIQUE ignores NULLs, so the
+  // one-profile-per-social-account guarantee still holds for real accounts.
+  socialAccountId: varchar("social_account_id")
     .references(() => socialAccounts.id, { onDelete: "cascade" })
     .unique(),
+  // Set for a seller's personal outbound voice (extracted from their Sent Items).
+  ownerUserId: varchar("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   // Voice fundamentals
   person: text("person").notNull().default("first"), // 'first' | 'third'
