@@ -13,6 +13,7 @@ import {
   Rocket,
   TicketIcon,
   Map,
+  Home,
   FileText as FileTextIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -718,11 +719,27 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Desktop Header - area switcher (the value chain: Research → Product
-            → Marketing → Sales) on the left, global utilities on the right.
-            Home is reached via the sidebar logo. */}
+        {/* Desktop Header - area switcher (Home, then the value chain:
+            Research → Product → Marketing → Sales) on the left, global
+            utilities on the right. */}
         <header className="h-12 hidden lg:flex items-center justify-between gap-1 px-4 border-b border-border bg-background">
           <nav className="flex items-center gap-1" aria-label="App areas">
+            {/* Explicit Home affordance so the front page isn't logo-only. */}
+            <Link
+              href="/app"
+              data-testid="area-tab-home"
+              aria-current={activeArea.id === "home" ? "page" : undefined}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                activeArea.id === "home"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              )}
+            >
+              <Home size={15} className={activeArea.id === "home" ? "" : "opacity-70"} />
+              <span>Home</span>
+            </Link>
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
             {headerAreas.map((area) => {
               const isActive = activeArea.id === area.id;
               return (

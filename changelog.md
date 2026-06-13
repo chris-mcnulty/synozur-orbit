@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Explicit Home in the desktop header**: the header area switcher now leads with a labeled **Home** tab (active on `/app`) before the value-chain tabs, so the front page is reachable by an obvious navigation element rather than only the logo — matching the labeled Home button the mobile bottom nav already has.
 - **Research sidebar grouped into sections**: the area's 16 items now render under scannable headings (Workspace / Analysis / Signals / Insights / Sources) instead of a flat list, directly addressing the "hard to scan" length without removing or merging any pages.
 - **Campaign detail — compact post cards**: generated posts now render collapsed by default (56px thumbnail, 2-line clamped copy, status/schedule/hashtag chips) so a generation batch fits on one screen instead of one post per screen. Click a card (or its chevron) to expand to the full text, full-size image, and the inline copy/hashtag editors — editing auto-expands; an Expand all / Collapse all toggle sits next to the post filter.
 - **Marketing hub — pipeline pulse**: the Marketing landing page now opens with live counts (in pipeline, awaiting approval, scheduled next 7 days) and a needs-your-attention list (drafts awaiting approval, approved-but-unscheduled, failed publishes) linking into the Content Pipeline board; the directory card for Social Accounts (now under Admin & Settings → Connections) is replaced by a Content Pipeline card.
