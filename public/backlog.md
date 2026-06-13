@@ -307,6 +307,63 @@ Generate competitive battlecards for sales enablement:
 - [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
 - [x] `competitorAlerts` plan feature gates Pro / Enterprise access
 
+### Area-Based Navigation & Home Page ✅
+**Status**: Implemented (May 2026)
+- [x] Value-chain header: Research / Product / Marketing / Sales tabs (desktop)
+- [x] Sidebar shows only the active area's items
+- [x] Global Home page (`/app`) with Orbit Score, area scorecards, live signals, and needs-attention list
+- [x] Sales Hub landing page with staleness indicators for battlecards, reports, plans, and assessments
+- [x] Admin & Settings area for Social Accounts, Platform Credentials, and Browser Extension
+- [x] Mobile drawer lists all areas; mobile bottom nav maps to Home/Research/Marketing
+
+### Content Pipeline Board ✅
+**Status**: Implemented (May 2026)
+- [x] Unified kanban board across social posts, saved emails, and content briefs
+- [x] Five canonical stages: Draft → In Review → Approved → Scheduled → Published/Sent
+- [x] Drag-and-drop stage transitions with per-type rules; illegal moves rejected with toast
+- [x] Board / List view toggle (persisted per user via localStorage)
+- [x] Type filter, campaign filter (restored after campaigns endpoint fix), and full-text search
+- [x] Date picker dialog when dropping onto Scheduled stage
+- [x] Publish-failed posts surface as alerts in Scheduled; drag back to Approved to retry
+- [x] Published/Sent archive loads collapsed by default
+
+### Editorial Calendar — Full Content Execution Stack ✅
+**Status**: Implemented (May 2026)
+- [x] AI content brief generation with demand scoring, funnel-mix targeting (40/35/25), and quality warnings
+- [x] Multi-format copywriter: blog post, landing page, LinkedIn/X post, newsletter, video script, case study, whitepaper
+- [x] Content repurposing engine: one asset → batch of LinkedIn + X/Twitter social variants with distinct angles
+- [x] SEO/AEO optimizer: SEO title/description/slug, answer-engine blocks, FAQ pairs, validated internal links, content gaps
+- [x] In-editor repurpose and SEO/AEO action dialogs on drafted briefs
+- [x] Long-form AI rewrite: inline revision from editorial calendar with brand-voice grounding
+- [x] Distribution planner: channel-aware posting schedule, deterministic across date range, materializes into Marketing Planner tasks
+- [x] Timezone-aware scheduling (client sends `tzOffsetMinutes`)
+
+### Conference Social Promotion ✅
+**Status**: Implemented (May 2026)
+- [x] Conference + session CRUD with bulk paste/CSV session import
+- [x] AI generation: 1-2 anchor posts + one post per session, 2-3 copy variations each
+- [x] Hero graphics composited from brand template (Sharp) with event logo and session data
+- [x] Promotion window, posts-per-day, and weekend toggle controls
+- [x] Posts flow into shared social posts/calendar/publishing pipeline
+- [x] Dedicated archivable conference image space (kept separate from Brand Library)
+- [x] One-click "Archive conference" + restore
+
+### Marketing Performance Report ✅
+**Status**: Implemented (May 2026)
+- [x] Closed-loop content report: tracked-link clicks + GA4 conversions joined through campaigns
+- [x] Benchmark indices vs. prior equal-length period (clicks, conversions)
+- [x] By-campaign and by-content breakdown tables
+- [x] AI analyst summary + specific recommendations
+- [x] Emitted recommendations written as `recommendations` rows (area "Marketing")
+- [x] Editorial calendar generation folds open marketing recs into grounding
+- [x] Marketing → Performance page
+
+### Marketing Context Readiness ✅
+**Status**: Implemented (May 2026)
+- [x] Scores company profile, ICP personas, messaging framework, GTM plan, products, competitors, and brand kit
+- [x] Per-field fix hints and a 0–100 readiness score
+- [x] Surfaces as a readiness banner/card in the Marketing hub
+
 ### CRM Integration - HubSpot (Q2)
 - [ ] Competitor sync from HubSpot
 - [ ] Push Orbit insights back to CRM

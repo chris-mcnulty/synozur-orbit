@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [3.0.0] - 2026-06-13
 
 ### Added
+
+- **Campaigns list fix**: `fetchCampaignCounts()` was querying `contentAssets.campaignId` (undefined column) — changed to `contentBriefs.campaignId` in `server/routes/marketing-saturn.ts`. Campaign filter in the Content Pipeline board now works correctly.
 
 - **Global Home page** (`/app`): a pure company-at-a-glance landing page — live signals first (high-impact prioritized), the baseline executive summary digest, the Orbit Score with trend, and one glance-card per area (Research / Product / Marketing / Sales) showing a headline stat and its most pressing action. The research workspace dashboard keeps its existing URLs at `/app/dashboard` and `/app/overview` under the Research area. New file: `client/src/pages/app/home.tsx`.
 - **Content Pipeline board** (`/app/marketing/pipeline`, Marketing area): one kanban board for every in-flight content item across the previously separate pipelines — campaign/social posts, saved emails, and content briefs — with Board/List view toggle (persisted per user), source/campaign/search filters, and drag-between-columns status changes (`@dnd-kit`). Stages are canonical (Draft → In Review → Approved → Scheduled → Published/Sent) and mapped per source by adapters in `client/src/lib/pipeline.ts` — no schema changes. Dropping a post on Scheduled opens a date picker; illegal moves (e.g. anything out of Published) are rejected with a toast; publish failures surface in Scheduled with an alert; the Published/Sent archive loads collapsed. Cards are compact (2-line clamp, small thumbnail) and click through to the item's full editor.

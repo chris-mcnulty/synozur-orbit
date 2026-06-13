@@ -4269,18 +4269,18 @@ export type InsertCollaborationThread = z.infer<typeof insertCollaborationThread
 export type InsertCollaborationComment = z.infer<typeof insertCollaborationCommentSchema>;
 export type InsertAnnotation = z.infer<typeof insertAnnotationSchema>;
 
-export const CURRENT_APP_VERSION = "2.0.0";
+export const CURRENT_APP_VERSION = "3.0.0";
 
 export const WHATS_NEW_HIGHLIGHTS = [
-  { emoji: "📚", text: "Content Library & Brand Library for managing marketing assets" },
-  { emoji: "📣", text: "Social Campaigns with AI-powered post generation and CSV export" },
-  { emoji: "✉️", text: "Email Newsletter generator with platform-specific formatting" },
-  { emoji: "🎙️", text: "Intelligence Briefing podcasts and scheduled email subscriptions" },
-  { emoji: "✅", text: "Action Item lifecycle management with bulk operations" },
-  { emoji: "🩺", text: "Intelligence Health dashboard with data freshness tracking" },
+  { emoji: "🗺️", text: "Area-based navigation — Research, Product, Marketing, and Sales each have their own focused workspace" },
+  { emoji: "🏠", text: "New Home page with live Orbit Score, area scorecards, and needs-attention signals at a glance" },
+  { emoji: "📋", text: "Content Pipeline board — every social post, email, and brief in one drag-and-drop kanban with campaign filter" },
+  { emoji: "📅", text: "Editorial Calendar with AI content briefs, multi-format copywriter, repurposing engine, and SEO/AEO optimizer" },
+  { emoji: "🎪", text: "Conference Social Promotion — anchor + per-session posts with matched hero graphics and an archivable image space" },
+  { emoji: "📈", text: "Marketing Performance closed-loop report and AI distribution planner with Microsoft Planner sync" },
 ];
 
-export const WHATS_NEW_SUMMARY = "Orbit 2.0 introduces a full marketing content suite — Content & Brand Libraries, Social Campaigns with AI post generation, and Email Newsletters. Intelligence Briefings now include podcast audio summaries and scheduled email subscriptions. Action Items support bulk accept/dismiss with reasons, and a new Intelligence Health dashboard tracks data freshness across all sources.";
+export const WHATS_NEW_SUMMARY = "Orbit 3.0 is a major platform upgrade. The navigation is restructured into four value-chain areas (Research → Product → Marketing → Sales) with a new global Home page. Marketing gains a full content execution stack: Editorial Calendar with AI briefs, copywriter, repurpose engine, SEO/AEO optimizer, distribution planner, and a unified Content Pipeline board. Conference Social Promotion drives coordinated event marketing with composited hero graphics. A closed-loop Marketing Performance report ties content back to conversions.";
 
 export const DEFAULT_CONTENT_CATEGORIES = [
   "Blog Post", "White Paper", "Case Study", "eBook", "Infographic",

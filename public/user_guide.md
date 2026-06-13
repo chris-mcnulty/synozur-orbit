@@ -1,30 +1,37 @@
-# Synozur Orbit User Guide
+# Synozur Orbit User Guide — v3.0
 
 ## Table of Contents
 1. [Overview](#overview)
 2. [Getting Started](#getting-started)
 3. [User Roles & Permissions](#user-roles--permissions)
-4. [Core Features](#core-features)
-5. [Understanding Orbit Scores](#understanding-orbit-scores)
-6. [Managing Competitors](#managing-competitors)
-7. [Running Analysis](#running-analysis)
-8. [Battlecards & Reports](#battlecards--reports)
-9. [Client Projects](#client-projects)
-10. [Marketing Planner](#marketing-planner)
-11. [Content Library](#content-library)
-12. [Brand Library](#brand-library)
-13. [Social Campaigns](#social-campaigns)
-14. [Email Newsletters](#email-newsletters)
-15. [Intelligence Briefings](#intelligence-briefings)
-16. [Action Items](#action-items)
-17. [Intelligence Health](#intelligence-health)
-18. [Support Tickets](#support-tickets)
-19. [Saturn Capture Browser Extension](#saturn-capture-browser-extension)
-20. [What's New & Changelog](#whats-new--changelog)
-21. [Team Management](#team-management)
-22. [Settings & Configuration](#settings--configuration)
-23. [Administrator Guide](#administrator-guide)
-24. [Troubleshooting & FAQs](#troubleshooting--faqs)
+4. [Navigation & Areas (v3.0)](#navigation--areas)
+5. [Home Page](#home-page)
+6. [Core Features](#core-features)
+7. [Understanding Orbit Scores](#understanding-orbit-scores)
+8. [Managing Competitors](#managing-competitors)
+9. [Running Analysis](#running-analysis)
+10. [Battlecards & Reports](#battlecards--reports)
+11. [Client Projects](#client-projects)
+12. [Sales Hub](#sales-hub)
+13. [Marketing Planner](#marketing-planner)
+14. [Content Library](#content-library)
+15. [Brand Library](#brand-library)
+16. [Social Campaigns](#social-campaigns)
+17. [Email Newsletters](#email-newsletters)
+18. [Editorial Calendar](#editorial-calendar)
+19. [Content Pipeline](#content-pipeline)
+20. [Conference Social Promotion](#conference-social-promotion)
+21. [Marketing Performance](#marketing-performance)
+22. [Intelligence Briefings](#intelligence-briefings)
+23. [Action Items](#action-items)
+24. [Intelligence Health](#intelligence-health)
+25. [Support Tickets](#support-tickets)
+26. [Saturn Capture Browser Extension](#saturn-capture-browser-extension)
+27. [What's New & Changelog](#whats-new--changelog)
+28. [Team Management](#team-management)
+29. [Settings & Configuration](#settings--configuration)
+30. [Administrator Guide](#administrator-guide)
+31. [Troubleshooting & FAQs](#troubleshooting--faqs)
 
 ---
 
@@ -237,11 +244,65 @@ Orbit uses a role-based access control (RBAC) system with four distinct roles:
 
 ---
 
+## Navigation & Areas
+
+Starting in version 3.0, Orbit is organized around four value-chain areas that match how a GTM team works — from gathering intelligence through to sales enablement.
+
+### The Four Areas
+
+| Area | What you'll find |
+|------|-----------------|
+| **Research** | Competitors, Analysis, Battlecards, Briefings, Reports, GTM Plan, Messaging Framework, Action Items, Intelligence Health |
+| **Product** | Products, Feature Catalog, Roadmap, Customer Feedback |
+| **Marketing** | Marketing Home, Planner, Content Library, Brand Library, Campaigns, Email Newsletters, Editorial Calendar, Content Pipeline, Conference Social Promotion, Performance |
+| **Sales** | Sales Hub, Battle Cards, Reports, Relationship Plans, Assessments |
+
+### How the Navigation Works
+
+**Desktop (wider screens):** A horizontal tab bar at the top of the screen switches between areas. The left sidebar shows only the items for the active area, organized into light sections. Click the Orbit logo to go to the global Home page.
+
+**Mobile:** A menu drawer shows all four areas. A bottom navigation bar gives quick access to Home, Research, and Marketing.
+
+**Admin & Settings:** Gear icon in the top-right corner. Contains Connections (Social Accounts, Platform Credentials, Browser Extension), Organization settings, and the Global Admin panel for Synozur staff.
+
+### Marketing Context Readiness
+
+When you first set up the Marketing area, a readiness banner shows how complete your grounding data is — scoring company profile, ICP personas, messaging framework, GTM plan, products, competitors, and brand kit. Each missing piece shows a specific fix hint so you know exactly what to fill in.
+
+---
+
+## Home Page
+
+**Access:** Click the Orbit logo (or navigate to `/app`).
+
+The Home page gives you the entire GTM picture on a single screen:
+
+### Orbit Score
+
+A 0–100 score computed from the freshness and completeness of your competitive intelligence data. A trend arrow shows whether the score has improved or slipped since last week. Click it to go to the Intelligence Health page for details.
+
+### Area Scorecards
+
+One card per area (Research / Product / Marketing / Sales) showing a key headline stat and the single most pressing action that needs your attention. For example:
+- **Research**: "6 competitors tracked — 2 analyses overdue"
+- **Marketing**: "4 items in Content Pipeline awaiting approval"
+- **Sales**: "Battle cards last refreshed 62 days ago"
+
+### Live Signals
+
+A feed of high-impact, high-priority action items drawn from across all areas — competitor threats, content recommendations, product gaps. Each signal links to the relevant page so you can act immediately.
+
+### Baseline Digest
+
+A short excerpt of your company's executive summary and the latest competitor movements so you always have strategic context at hand.
+
+---
+
 ## Core Features
 
 ### Overview Page
 
-The Overview page (located at `/app`) is your home page and central dashboard when you log in:
+The Overview page (located at `/app/overview`) is your Research area dashboard showing competitive intelligence status:
 
 **What You'll See:**
 
@@ -937,6 +998,34 @@ Each project can generate:
 
 ---
 
+## Sales Hub
+
+**Access:** Click the **Sales** area tab, or navigate to `/app/sales`.
+
+The Sales Hub is the landing page for the Sales area. It gives your sales team an instant view of every sales-enablement asset in Orbit and whether each one is still current.
+
+### What You'll See
+
+**Asset tiles** for:
+- **Battle Cards** — count of generated battlecards and when they were last built
+- **Reports** — count of PDF reports available for sharing
+- **Relationship Plans** — count of active relationship/account plans
+- **Assessments** — count of completed assessments
+
+Each tile links directly to the relevant list page.
+
+### Staleness Warning
+
+If any battle cards were built on competitive data that is more than 60 days old, a staleness warning banner appears at the top of the hub. Click the banner to go to Intelligence Health and refresh your data before your next sales meeting.
+
+### Using Sales Assets
+
+- **Battle Cards** (`/app/battlecards`): Head-to-head competitive comparison cards with objection handling and talk tracks. Generate from the Battlecards page and export to PDF, clipboard, or text.
+- **Reports** (`/app/reports`): Branded PDF competitive intelligence reports. Generate from the Reports page.
+- **Relationship Plans / Assessments**: Account-level strategic planning and readiness scoring tools.
+
+---
+
 ## Marketing Planner
 
 ### Overview
@@ -1295,6 +1384,218 @@ Email Newsletters (Enterprise plan) let you generate professional marketing emai
 - Generated emails can be saved with a custom label
 - Access saved drafts from the Email Newsletters page
 - Edit and refine drafts before sending
+
+---
+
+## Editorial Calendar
+
+**Access:** Navigate to Marketing > Editorial Calendar, or go to `/app/marketing/editorial-calendar`.
+
+The Editorial Calendar is a full content execution stack — from generating a demand-scored content plan, through writing first drafts, repurposing assets, and optimizing for search.
+
+### Generating a Content Calendar
+
+1. Click **Generate Calendar**
+2. Set the number of briefs you want (default: 12)
+3. Optionally add a focus (campaign name, theme, product launch, etc.)
+4. Orbit analyzes your competitive intelligence, GTM plan, and recent recommendations to produce a prioritized list of content briefs
+5. Each brief shows: format, title, funnel stage, target keyword, effort estimate, demand signal, differentiation angle, target reader, and CTA
+
+**Funnel mix targeting:** Orbit aims for a 40/35/25 split across TOFU/MOFU/BOFU briefs. The calendar summary card shows how close the generated batch is to the target.
+
+**Quality warnings:** If a brief's demand signal is weak or the keyword intent is unclear, a caution indicator appears.
+
+### Browsing Calendars
+
+- Past calendars are saved and listed chronologically
+- Each calendar shows the total brief count and its funnel-mix breakdown
+- Click any calendar to review or act on individual briefs
+
+### Working with Content Briefs
+
+Each brief card has a set of action buttons:
+
+**Accept / Dismiss**: Accept the brief to move it into your content pipeline. Dismissed briefs stay in the calendar for reference but are removed from backlog counts.
+
+**Draft**: Generates a full first draft of the content in the brief's format, grounded in your brand voice and competitive positioning. The draft is saved as a content asset and linked back to the brief. Draft formats include:
+- Blog post
+- Landing page copy
+- LinkedIn post / X post
+- Email newsletter
+- Video script
+- Case study
+- Whitepaper
+- Podcast outline (Polaris format)
+
+**Rewrite (after drafting)**: In the draft viewer, enter a revision instruction (e.g., "make the opening more direct" or "add a competitor comparison table") and click **Rewrite** — Orbit revises the draft in place.
+
+**Repurpose**: Takes a drafted asset and generates a batch of LinkedIn and X/Twitter social post variants, each with a distinct angle. Variants are written into the social posts pipeline as standalone drafts for review, editing, and scheduling.
+
+**SEO/AEO**: Runs the optimizer on the brief or draft and shows results in a dialog:
+- **SEO title** (≤60 chars), **meta description** (≤155 chars), **recommended slug**, and **target keyword**
+- **Answer Engine blocks**: short, structured answers designed to appear in AI/LLM overviews
+- **FAQ pairs**: question + concise answer pairs for structured data markup
+- **Internal link suggestions**: validated against your actual Content Library inventory
+- **Content gap notes**: what's missing relative to competing content
+
+Results are saved to `content_optimizations` and can be exported.
+
+### Distribution Planner
+
+The Distribution Planner takes a calendar's schedulable briefs and builds a posting schedule across a date range.
+
+**To run the planner:**
+1. Open a calendar and click **Plan Distribution**
+2. Set the start date, end date, and daily posting cadence
+3. Click **Preview** to see the proposed schedule — each brief gets a channel (derived from its format) and a posting date/time in your local timezone
+4. Click **Commit** to lock the schedule and (if a marketing plan is selected) create matching tasks in the Marketing Planner, which then syncs to Microsoft Planner
+
+**Channels are derived from brief formats:**
+- Blog post / whitepaper / case study → blog
+- LinkedIn post → LinkedIn
+- X post → X/Twitter
+- Newsletter → email
+- Video script → video
+
+---
+
+## Content Pipeline
+
+**Access:** Navigate to Marketing > Content Pipeline, or go to `/app/marketing/pipeline`.
+
+The Content Pipeline is a single kanban board showing every in-flight piece of content — social posts, saved email drafts, and content briefs — in one place.
+
+### The Five Stages
+
+| Stage | What it means |
+|-------|---------------|
+| **Draft** | Created but not yet reviewed |
+| **In Review** | Submitted for team review |
+| **Approved** | Approved and ready to schedule |
+| **Scheduled** | Has a publish date/time assigned |
+| **Published / Sent** | Live or sent (archive, loads collapsed) |
+
+### Board vs. List View
+
+Click the **Board/List** toggle in the top-right to switch views. Your preference is remembered per browser.
+
+### Filters
+
+- **Type**: Social Post / Email / Brief (or All)
+- **Campaign**: Filter to a specific campaign — all posts and briefs tagged to that campaign appear together
+- **Search**: Full-text search across title and content
+
+### Moving Items
+
+**Drag and drop** a card to a different column to change its stage. Rules:
+- Dropping onto **Scheduled** opens a date/time picker — set a date to confirm the move
+- Only **Approved** items can move to Scheduled; going backwards to Draft or In Review is always allowed
+- Items cannot jump from Draft directly to Published — they must pass through Approved first
+- If a publish attempt fails, the card stays in Scheduled with a red alert; drag it back to Approved to retry
+
+### Campaign Filter
+
+Posts and briefs carry their campaign tag through to the pipeline board, so you can filter by campaign to see exactly what's in flight for a given initiative.
+
+---
+
+## Conference Social Promotion
+
+**Access:** Navigate to Marketing > Conferences, or go to `/app/marketing/conferences`.
+
+Conference Social Promotion lets you plan, generate, and schedule a coordinated social media push for a conference or event — anchor posts for overall presence and one post per session, each paired with a matched hero graphic.
+
+### Creating a Conference
+
+1. Click **New Conference**
+2. Fill in:
+   - **Conference name and description**
+   - **Event dates** (start and end)
+   - **Promotion window** (when to start and stop posting)
+   - **Posts per day** and **weekend posting** preference
+   - **Copy variations per post** (2 or 3 distinct copy angles per piece)
+3. Click **Save**
+
+### Adding Sessions
+
+**One at a time:**
+1. Click **Add Session** on the conference detail page
+2. Enter: session title, speaker name, date/time, room/track, and a short description
+3. Click **Save**
+
+**Bulk import:**
+1. Click **Import Sessions**
+2. Paste a list (one session per line) or upload a CSV
+3. Orbit parses speaker names, times, and titles automatically
+4. Review and confirm the parsed sessions
+
+### Generating Posts
+
+Once your sessions are added:
+1. Click **Generate Posts**
+2. Orbit creates:
+   - **1–2 anchor posts** covering the conference overall — great for "We're attending!" and "Come find us at booth X" messaging
+   - **1 post per session** — highlight each talk with the session title, speaker, and a compelling hook
+   - **2–3 copy variations per post** — each takes a different angle (educational, engaging, provocative) so you have options
+3. Each post is paired with a **composited hero graphic** — a 1:1 image built from your brand template, the event logo, session metadata, and a background from the conference image space
+4. All posts flow into the shared social posts pipeline for review, editing, approval, scheduling, and export
+
+### Conference Image Space
+
+Each conference has its own dedicated image gallery — background location photos, venue shots, or event branding — that the hero compositor uses to pair with generated posts.
+
+**Adding images:**
+1. Open the conference and click the **Images** tab
+2. Upload images or add them from URLs
+3. The compositor will randomly sample from these images when generating hero graphics
+
+### Archiving a Conference
+
+Once the event is over, click **Archive Conference** to hide it from the active list. All posts, images, and graphics are preserved and can be restored later — nothing is deleted.
+
+---
+
+## Marketing Performance
+
+**Access:** Navigate to Marketing > Performance, or go to `/app/marketing/performance`.
+
+The Marketing Performance report closes the loop between content creation and actual results — showing which campaigns and content pieces are driving clicks and conversions.
+
+### Generating a Performance Report
+
+1. Navigate to Marketing > Performance
+2. Click **Generate Report**
+3. Choose the reporting period (default: last 30 days)
+4. Orbit computes the report — typically takes 30–60 seconds
+
+### What the Report Shows
+
+**Period summary:**
+- Total clicks, conversions, and conversion rate for the period
+- Benchmark vs. the prior equal-length period (e.g., last 30 days vs. the 30 days before that)
+- Trend arrows showing improvement or decline
+
+**By campaign:**
+- Clicks, conversions, and conversion rate per campaign
+- Which campaigns are outperforming the benchmark
+
+**By content:**
+- Top-performing content assets by clicks and conversions
+- Which pieces are driving the most qualified traffic
+
+**AI analysis:**
+- A plain-language summary of what the data means for your strategy
+- Specific recommendations for improving underperforming areas
+- Recommendations are saved and fed back into the next Editorial Calendar generation so your next content plan responds to what's working
+
+### Data Sources
+
+The performance report connects:
+- **Tracked links** (Orbit UTM/short links) → clicks attributed to campaigns and content
+- **GA4 conversions** → goal completions attributed back through UTM parameters
+- **Campaign metadata** → maps links and content to campaigns
+
+**Note:** GA4 must be connected and your tracked links must carry Orbit UTM parameters for the conversion attribution to work. Contact your Domain Admin or Synozur support to configure the connection.
 
 ---
 

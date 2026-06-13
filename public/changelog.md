@@ -7,31 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [3.0.0] - 2026-06-13
 
 ### Added
 
-- **Microsoft Planner integration (Marketing Planner, phase 1)**: One-way push from Orbit marketing plans to a Microsoft Planner plan. Per-plan picker for Microsoft 365 group → Planner plan → bucket, with the option to select an existing bucket or create a dedicated "Orbit" bucket. Delegated OAuth with `Tasks.ReadWrite Group.Read.All offline_access`; refresh tokens stored per user. Sync creates new Planner tasks and updates previously synced tasks (title, priority, due date, % complete) using `If-Match` etags. Status banner on the plan detail surfaces last sync time and any errors. New files: `server/services/planner-graph-client.ts`, `server/services/planner-service.ts`, `server/routes/planner.ts`, `client/src/components/PlannerSyncDialog.tsx`.
-- **Support ticket attachments**: Attach screenshots and documents (PDF, DOCX, TXT, images up to 10 MB) to a new ticket or to any reply, on both the user and admin views. Backed by object storage with per-ticket access control; attachments tied to internal-only replies are hidden from non-admins.
-- **Support ticket reply notifications**: Email and in-app notifications now fire on non-internal replies — admin replies notify the ticket owner; owner replies notify the assignee (or all admins if unassigned). New `support_reply` notification type.
-- **Admin support triage UX**: Admin Support card now has search across ticket #/subject/submitter/tenant; filters for status (defaulting to "Active"), priority, category, assignee, and tenant; an Age column with staleness colouring (>7d orange, >14d red); CSV export; and bulk status / priority / assignee updates via row checkboxes.
-- **Account / Billing / Other ticket categories**: New Ticket form now exposes the `account`, `billing`, and `other` categories that were already in the schema.
-- **Persona text ingestion**: Paste text from CRM records, research reports, strategy documents, meeting notes, or any source — AI extracts a structured persona with name, role, industry, pain points, goals, objections, and preferred channels. Available via "Import from Text" button on the Personas page.
-- **Email newsletter product filter**: Content asset picker now includes a Product filter dropdown alongside the existing Category filter, with product badges on each asset row.
+- **Area-based navigation (UX restructuring)**: The sidebar's 44-item accordion is replaced by a value-chain header — **Research → Product → Marketing → Sales** tabs (desktop), with **Home** on the sidebar logo and **Admin & Settings** behind the header gear. The sidebar now shows only the active area's items with light section headings. One-time setup pages (Social Accounts, Platform Credentials, Browser Extension) moved to Admin & Settings → Connections — their URLs are unchanged. All existing routes keep working.
 
-### Fixed
+- **Global Home page** (`/app`): A company-at-a-glance landing page — live signals (high-impact, prioritized), the baseline executive summary digest, the Orbit Score with trend, and one glance-card per area (Research / Product / Marketing / Sales) showing a headline stat and its most pressing action. The research workspace dashboard keeps its existing URLs at `/app/dashboard` and `/app/overview` under the Research area.
 
-- **HubSpot email formatting**: Changed inner table width from 600px to 560px to fit within HubSpot's editor frame without overflow. Stripped `<style>` blocks, `<!DOCTYPE>`, `<html>`, `<head>`, and `<body>` tags that HubSpot doesn't support. Removed default "Hi there" greeting since HubSpot provides its own greeting section.
+- **Sales hub** (`/app/sales`): The Sales area now lands on a hub showing live counts and last-updated times for Battle Cards, Reports, Relationship Plans, and Assessments — with a staleness warning when battle cards were built on data over 60 days old.
+
+- **Content Pipeline board** (`/app/marketing/pipeline`): One kanban board for every in-flight content item across social posts, saved emails, and content briefs — with Board/List view toggle (persisted per user), source/campaign/search filters, and drag-between-columns status changes. Stages are canonical (Draft → In Review → Approved → Scheduled → Published/Sent). Dropping a post on Scheduled opens a date picker; illegal moves are rejected with a toast; publish failures surface in Scheduled with an alert; the Published/Sent archive loads collapsed.
+
+- **Campaign filter in Content Pipeline**: The pipeline's campaign dropdown now works correctly following the fix to the campaigns list endpoint. Posts and briefs both carry their `campaignId` through to the board.
+
+- **Conference Social Promotion** (`/app/marketing/conferences`): Drive coordinated social promotion for a single conference. Define the event and a detailed promotion window (start/end, posts per day, weekend toggles, copy variations per post). Add sessions one at a time or via bulk paste/CSV import. The generator produces 1-2 anchor posts for overall presence plus one post per session — each with 2-3 distinct copy variations and a matched 1:1 graphic composited from your brand template — scheduled across the promotion window into the shared posts/calendar/publishing flow. Conference images live in their own dedicated, archivable space. One-click "Archive conference" hides the event and all its images after it's over, restorable later.
+
+- **Editorial Calendar** (`/app/marketing/editorial-calendar`): Generate a demand-scored content calendar (with optional focus and brief count), browse calendars, and review each brief as a card showing funnel stage, format, target keyword, effort estimate, demand signal, differentiation angle, target reader, and CTA — plus a funnel-mix summary against the 40/35/25 target.
+
+- **Multi-format copywriter (Draft from brief)**: Turn an accepted content brief into a publishable first draft in the brief's format — blog post, landing page, LinkedIn/X post, newsletter, video script, case study, or whitepaper — each with format-specific structure and length guidance. Voice and positioning bound from the StrategicContext. The draft is persisted as a content asset row and linked back to the brief.
+
+- **Content repurposing engine**: Turn a content asset into a batch of brand-aligned social variants across platforms (LinkedIn + X/Twitter), each taking a distinct angle. Variants are written into the existing generated posts pipeline as standalone drafts.
+
+- **SEO/AEO optimizer**: Produces search metadata (SEO title ≤60c, meta description ≤155c, slug, target keyword), answer-engine blocks + FAQ pairs, internal-link suggestions validated against real content library inventory, and content-gap notes. Results persist to the `content_optimizations` table.
+
+- **Editorial Calendar — repurpose & optimize actions**: Drafted briefs now expose **Repurpose** and **SEO/AEO** actions that run the new engines and show results in dialogs — completing the in-product flow from brief → draft → repurpose/optimize.
+
+- **Distribution planner**: Recommends a posting schedule for a calendar's schedulable briefs — assigning each a channel (from the brief's channels or its format) and a posting window, spread deterministically across a date range on weekdays at channel-appropriate hours, mapped to a fiscal quarter. When a plan ID is supplied it materializes the schedule into the marketing planner as `marketing_tasks`, which then rides the existing Microsoft Planner sync.
+
+- **Distribution planner — timezone-aware scheduling**: The planner places best-posting hours in the user's local timezone. The client sends `tzOffsetMinutes` and the scheduled UTC instant is computed from the local wall clock.
+
+- **Long-form AI rewrite in the draft viewer**: A drafted brief's content can be revised in place from the Editorial Calendar — enter an instruction and `POST /api/content-assets/:id/rewrite` returns a brand-voice-grounded revision and persists it back to the content asset.
+
+- **Marketing performance report (closed loop)**: `POST /api/marketing/performance-report` computes a conversion-first content report for a period (default last 30 days). Joins first-party tracked-link clicks and GA4 conversions to content through campaigns, benchmarks clicks/conversions against the prior equal-length period, and asks the analyst model for a summary and specific recommendations. Emitted recommendations are written as `recommendations` rows (area "Marketing"), and editorial-calendar generation folds recent open marketing recommendations into its grounding so the next calendar responds to what's working.
+
+- **Marketing context readiness**: `GET /api/marketing/context-readiness` reports how complete a tenant's intrinsic marketing data is — scores company profile, ICP personas, messaging framework, GTM plan, products, competitors, and brand kit as ready/thin/missing with per-field fix hints and a 0–100 readiness score.
+
+- **Brand identity in AI grounding**: `StrategicContext` now assembles a Brand Identity section from intrinsic tenant data — brand colors, logo variants, and custom brand fonts — and injects it into content-generation prompts so copy and proposed graphics stay on-brand.
+
+- **Product portfolio collateral strip**: Each product card on `/app/products` now shows a per-artifact freshness strip — Gaps, Recs, Summary, GTM, Messaging, One-sheet — with ✓ generated (amber when over 60 days old), generating, or not-yet states; each chip deep-links to that artifact's tab on the product workspace.
+
+- **Campaign detail — compact post cards**: Generated posts now render collapsed by default (56px thumbnail, 2-line clamped copy, status/schedule/hashtag chips) so a generation batch fits on one screen. Click a card or its chevron to expand to full text and the inline copy/hashtag editors.
+
+- **Marketing hub — pipeline pulse**: The Marketing landing page now opens with live counts (in pipeline, awaiting approval, scheduled next 7 days) and a needs-your-attention list (drafts awaiting approval, approved-but-unscheduled, failed publishes) linking into the Content Pipeline board.
+
+- **Microsoft Planner integration (Marketing Planner)**: One-way push from Orbit marketing plans to a Microsoft Planner plan. Per-plan picker for Microsoft 365 group → Planner plan → bucket. Delegated OAuth with `Tasks.ReadWrite Group.Read.All offline_access`; refresh tokens stored per user. Sync creates new Planner tasks and updates previously synced tasks (title, priority, due date, % complete) using `If-Match` etags. Status banner on the plan detail surfaces last sync time and any errors.
+
+- **Support ticket attachments**: Attach screenshots and documents (PDF, DOCX, TXT, images up to 10 MB) to a new ticket or to any reply, on both user and admin views. Backed by object storage with per-ticket access control.
+
+- **Support ticket reply notifications**: Email and in-app notifications fire on non-internal replies — admin replies notify the ticket owner; owner replies notify the assignee (or all admins if unassigned).
+
+- **Admin support triage UX**: Admin Support card now has search across ticket #/subject/submitter/tenant; filters for status, priority, category, assignee, and tenant; an Age column with staleness colouring (>7d orange, >14d red); CSV export; and bulk status/priority/assignee updates via row checkboxes.
+
+- **Account / Billing / Other ticket categories**: New Ticket form now exposes the `account`, `billing`, and `other` categories.
+
+- **Persona text ingestion**: Paste text from CRM records, research reports, or strategy documents — AI extracts a structured persona. Available via "Import from Text" on the Personas page.
+
+- **Email newsletter product filter**: Content asset picker now includes a Product filter dropdown alongside the Category filter.
 
 ### Changed
 
+- **Area navigation labels**: Marketing Calendar = `/marketing-calendar`, Content Briefs = `/editorial-calendar`, Social Posts = `/calendar`; labels renamed but routes and feature keys are unchanged.
 - **GTM Plan generation**: Now automatically pulls buyer personas to tailor market targeting, distribution channels, and buyer segment strategies.
 - **Messaging Framework generation**: Now automatically pulls buyer personas to tailor audience segments, messaging pillars, and tone guidance.
 - **Product One Sheet generation**: Now automatically pulls buyer personas to tailor challenge/solution framing, benefits, and audience targeting.
 
 ### Fixed
 
-- **Artifact Freshness accuracy**: Previously, artifacts that were months old would show "Current" as long as source data was equally stale. Now applies absolute age thresholds — artifacts older than 14 days show "Aging" and older than 30 days show "Stale" regardless of source data age.
+- **Campaigns list 500 error**: `fetchCampaignCounts()` was querying `contentAssets.campaignId` (undefined column) — changed to `contentBriefs.campaignId`. Campaign filter in Content Pipeline now works.
+- **HubSpot email formatting**: Changed inner table width from 600px to 560px. Stripped `<style>`, `<!DOCTYPE>`, `<html>`, `<head>`, and `<body>` tags that HubSpot doesn't support.
+- **Artifact Freshness accuracy**: Now applies absolute age thresholds — artifacts older than 14 days show "Aging" and older than 30 days show "Stale" regardless of source data age.
 - **Intelligence Briefings in Artifact Freshness**: Added Intelligence Report to the Artifact Freshness card so all generated intelligence artifacts are tracked.
 
 ---
@@ -58,12 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Campaign wizard: Details → Assets → Accounts → Schedule
   - AI-powered social post generation across LinkedIn, X/Twitter, Facebook, and Instagram
   - Intelligence-enriched generation using GTM Plan, Messaging Framework, and competitive insights
-  - Per-asset post generation with correct source URL and lead image resolution
   - Intelligent scheduling with configurable campaign dates, posting days, and weekend preferences
   - Post review, edit, approve/reject workflow
   - CSV export with SocialPilot-compatible format and schedule guard warning for unscheduled posts
   - Automatic hashtag merging from multiple content sources
-  - Scaling: 3 variants per combo (1 asset), 2 (2-3 assets), 1 (4+ assets)
 
 - **Email Newsletters** (Enterprise)
   - AI-powered email generation from Content Library assets
@@ -87,21 +130,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - AI-generated podcast-style audio summaries of intelligence briefings
   - Two-host conversational format using OpenAI TTS (echo and nova voices)
   - In-browser playback and MP3 download
-  - Audio stored in Replit Object Storage
 
 - **Intelligence Briefing Subscriptions** (Enterprise/Unlimited)
   - Per-user email subscription management for weekly briefings
   - Domain Admin configuration for organization-wide scheduled briefing generation
   - Automated weekly digest job generates briefings and emails subscribers via SendGrid
-  - Branded email templates with executive summary and key themes
 
 - **Intelligence Freshness UX**
-  - Intelligence Health dashboard replacing Refresh Center (moved from System to Insights nav group)
+  - Intelligence Health dashboard replacing Refresh Center
   - Health percentage score computed from source/artifact freshness
   - "Needs Attention" card surfacing stale sources and outdated artifacts with contextual refresh actions
   - "Built from data as of" banners on Analysis, Battlecards, GTM Plan, and Messaging Framework pages with inline rebuild buttons
   - Data Currency badges on Reports list
-  - Staleness utilities: `checkArtifactFreshness`, `computeIntelligenceHealth`, `formatShortDate`
 
 - **Action Item Lifecycle Management**
   - Dismiss with reason dialog (Not relevant, Already addressed, Duplicate, Other)
@@ -110,19 +150,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dismissed items tracked with reason and timestamp for audit
   - Gap analysis deduplication prevents dismissed items from reappearing
 
-- **SEO Optimization**
-  - Semantic HTML improvements (headings, landmarks, ARIA labels)
-  - Open Graph and Twitter Card meta tag updates
-  - Structured page titles and descriptions
-
 - **CSV Export Schedule Guard**
   - Warning dialog before exporting campaign posts that have no scheduled dates
-  - Prevents exporting unscheduled posts to social media scheduling tools
 
 - **News Monitoring Integration**
   - GNews API integration for competitor and baseline company news
   - News items included in intelligence briefings
-  - Enhanced change detection with structured AI analysis categorizing changes by type and significance
+  - Enhanced change detection with structured AI analysis
 
 - **Canonical Organization Layer**
   - Centralizes public company data in the `organizations` table
@@ -132,15 +166,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Priority-based, concurrency-limited queue for heavy background tasks
   - PDF generation, crawls, monitors, and analysis all routed through unified queue
 
-- **PDF Browser Pool**
-  - Singleton Chromium instance for efficient PDF generation
-  - Shared across report generation and battlecard PDF exports
-
 ### Changed
 - Refresh Center renamed to "Intelligence Health" and relocated from System nav group to Insights group
 - Action Items page replaces "Recommendations" in sidebar navigation
-- Post image resolution now matches by `sourceUrl` to correct content asset `leadImageUrl`
-- Backend CSV export uses `contentAssetByUrl` map for accurate image URLs
 - `CURRENT_APP_VERSION` bumped to `"2.0.0"`
 
 ### Fixed
@@ -151,7 +179,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PDF Report: Messaging comparison shows "Market Positioning" header when competitor names unavailable
 - PDF Report: Numbered lists properly wrapped in ordered list tags
 - PDF Report: Added h4 heading support in markdown-to-HTML conversion
-- PDF Report: Resolved LSP type errors for faviconUrl, talkingPoints, and companyProfile fields
 
 ---
 
@@ -178,29 +205,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-beta.1] - 2026-01-26
 
 ### Added
-- Marketing Planner (Enterprise-only) - AI-powered marketing planning module
+- Marketing Planner (Enterprise-only) — AI-powered marketing planning module
   - Create quarterly, half-year, or annual marketing plans
-  - Organize activities across 19 marketing categories (Events, Digital Marketing, Outbound, etc.)
+  - Organize activities across 19 marketing categories
   - Track tasks with priority levels and status workflow
-  - Enterprise feature with Diamond (Gem) icon in navigation
-  - Defense-in-depth security with market context filtering on all operations
-- Redesigned Homepage - New "Go-to-Market Intelligence Platform" positioning
-  - New tagline: "From insight to action in one platform"
-  - Three Pillars section: Competitive Intelligence, Marketing Planner, Product Management
-  - "How It Works" flow diagram: Monitor → Analyze → Plan → Execute
-  - Updated capabilities tabs with Marketing Planner and Product Roadmap
-  - New "Who It's For" section targeting four audience types
-  - Updated pricing preview with 60-day trial messaging
-  - Added GTM Maturity Assessment link (https://orion.synozur.com/gtm)
-- Organization Filter for User Management - Global Admins can now filter users by organization
+- Redesigned Homepage — new "Go-to-Market Intelligence Platform" positioning
+- Organization Filter for User Management
 - Auto-Promotion for First Domain User to Domain Admin role
 - One-Click Full Report Generation for projects
 - Battlecard Export Options (clipboard, PDF, text file)
 - 60-Day Trial System with automated reminder emails
-- AI Usage Tracker - Global Admin dashboard
+- AI Usage Tracker — Global Admin dashboard
 - Blog/RSS Feed Monitoring for competitors and baseline company
-- Enhanced Blog Discovery in Web Crawler (insights/insights pages)
-- Backlog.md file with comprehensive MVP feature tracking
 
 ### Fixed
 - "Regenerate All" now preserves manual research for competitors with manually entered data
@@ -208,9 +224,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Separated Company Baseline and Competitors screens into distinct pages
 - Unified Overview page consolidated from Command Center and Overview
-- Overview is now the home page hero when logging in
-- Added "Rebuild All" button to Overview for admins
-- Enhanced AI Insights section with action item assignment
 
 ---
 
@@ -220,70 +233,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Authentication & Security
 - Microsoft Entra ID SSO integration using @azure/msal-node with OAuth 2.0 flow
-- SSO users linked via `entraId` field with `authProvider: "entra"`
-- Password login blocked for SSO-authenticated users
 - Session-based authentication with express-session
 - Role-based access control (Global Admin, Domain Admin, Standard User)
-- First registered user becomes Global Admin
-- First user per email domain becomes Domain Admin
+- First registered user becomes Global Admin; first user per email domain becomes Domain Admin
 
 #### Multi-Tenant Architecture
 - Tenant isolation by email domain
 - Tenants table with plan, status, and usage limits
-- Role hierarchy enforcement across tenants
 
 #### Data Inputs
 - Competitor URL entry and management
-- Grounding document upload (PDF, DOCX) with text extraction using mammoth and pdf-parse
+- Grounding document upload (PDF, DOCX) with text extraction
 - Company profile baselining for self-analysis
-- Tenant demographics collection (company, jobTitle, industry, companySize, country)
 
 #### Core AI Analysis
 - Competitive website analysis with Claude Sonnet via Anthropic SDK
 - AI-guided recommendations with RAG-style architecture
 - Gap analysis between company positioning and competitors
-- Provider abstraction supporting MockAIProvider for development
 
 #### User Interface
-- Combined signin/signup auth page with tabs (Vega-style)
-- Dark mode default with light/dark mode toggle using next-themes
+- Combined signin/signup auth page with tabs
+- Dark mode default with light/dark mode toggle
 - Synozur brand colors (#810FFB purple, #E60CB3 pink)
-- Satellite dish hero background on landing page
-- Synozur mark favicon and brand logo
 - Dashboard, Competitors, Analysis, Recommendations pages
 - Activity log for tracking changes
 - Assessments with proxy capability for admins
 - Global Admin tenant dashboard
 - shadcn/ui component library with Radix UI primitives
 
-#### Branding & Meta
-- Page title: "Orbit Competitive Market Analysis | The Synozur Alliance"
-- Open Graph and Twitter Card meta tags for social sharing
-- Synozur Alliance horizontal logo for social previews
-
-#### Technical Infrastructure
-- React with TypeScript using Vite
-- Express.js backend with TypeScript
-- PostgreSQL database with Drizzle ORM
-- Wouter for client-side routing
-- TanStack React Query for server state
-- Tailwind CSS v4 with CSS variables for theming
-
 ---
 
-## Changelog & Backlog Guidelines
+## Changelog Guidelines
 
-### Updating the Changelog
-1. Add entries under `[Unreleased]` as features are completed
+1. Add entries under the current version section as features are completed
 2. Group changes by category: Added, Changed, Deprecated, Removed, Fixed, Security
-3. When releasing, move unreleased items to a new version section with date
-4. Write entries from user perspective, not technical implementation details
-5. Include ticket/issue references when applicable
-
-### Updating the Backlog
-1. Mark items complete with `[x]` when fully implemented and tested
-2. Add new items under appropriate priority level
-3. Move items between priority levels as requirements evolve
-4. Add effort estimates for new items
-5. Update status descriptions when partial progress is made
-6. Archive completed sections to a separate "Completed" file quarterly
+3. Write entries from the user perspective, not technical implementation details
+4. When releasing, create a new version section with date
