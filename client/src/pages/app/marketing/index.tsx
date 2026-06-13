@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
+import { StageBar } from "@/components/hub/hub-charts";
 import { useQuery } from "@tanstack/react-query";
 
 type LongFormRecommendation = {
@@ -132,6 +133,19 @@ export default function MarketingLandingPage() {
     return t >= now && t <= weekAhead;
   }).length;
   const inFlight = pipelinePosts.filter(p => !["published", "exported"].includes(p.status)).length;
+
+  // "Pipeline at a glance" — post counts mapped to the board's canonical
+  // stages, rendered as the segmented bar from the hub mockup.
+  const scheduledCount = pipelinePosts.filter(
+    p => !p.publishedAt && (p.status === "publish_failed" || (p.status === "approved" && p.scheduledDate)),
+  ).length;
+  const publishedCount = pipelinePosts.filter(p => p.status === "published" || p.status === "exported").length;
+  const pipelineSegments = [
+    { label: "Draft", value: awaitingApproval, className: "bg-gray-400" },
+    { label: "Approved", value: approvedUnscheduled, className: "bg-blue-500" },
+    { label: "Scheduled", value: scheduledCount, className: "bg-teal-500" },
+    { label: "Published", value: publishedCount, className: "bg-green-500" },
+  ];
 
   const attentionItems = [
     awaitingApproval > 0 && {
@@ -381,6 +395,14 @@ export default function MarketingLandingPage() {
                         </Link>
                       </Button>
                     </div>
+                    {inFlight + publishedCount > 0 && (
+                      <div className="mt-4 pt-3 border-t border-border">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          Pipeline at a glance
+                        </p>
+                        <StageBar segments={pipelineSegments} />
+                      </div>
+                    )}
                     {attentionItems.length > 0 && (
                       <div className="mt-4 pt-3 border-t border-border space-y-2">
                         {attentionItems.map(item => (

@@ -12,6 +12,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StageBar } from "@/components/hub/hub-charts";
 
 const STALE_AFTER_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
 
@@ -59,6 +60,14 @@ export default function SalesHubPage() {
       return Array.isArray(data) ? data : data.assessments ?? [];
     },
   });
+
+  const deliverableSegments = [
+    { label: "Battle Cards", value: battleCards.length, className: "bg-primary" },
+    { label: "Reports", value: reports.length, className: "bg-sky-500" },
+    { label: "Relationship Plans", value: relationshipReports.length, className: "bg-amber-500" },
+    { label: "Assessments", value: assessments.length, className: "bg-violet-500" },
+  ];
+  const totalDeliverables = deliverableSegments.reduce((sum, s) => sum + s.value, 0);
 
   const staleBattleCards = battleCards.filter((bc: any) => {
     const ts = bc.generatedFromDataAsOf || bc.lastGeneratedAt || bc.createdAt;
@@ -136,6 +145,17 @@ export default function SalesHubPage() {
             Deliverables and enablement, ready for the next conversation.
           </p>
         </div>
+
+        {totalDeliverables > 0 && (
+          <Card data-testid="sales-deliverables-mix">
+            <CardContent className="py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                Deliverables on hand
+              </p>
+              <StageBar segments={deliverableSegments} />
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           {sections.map((section) => (
