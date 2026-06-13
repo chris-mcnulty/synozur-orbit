@@ -75,6 +75,7 @@ export interface BriefRow {
   format: string;
   status: string; // suggested | accepted | in_progress | drafted | scheduled | approved | published | removed
   campaignId?: string | null;
+  scheduledAt?: string | null;
   createdAt?: string | null;
 }
 
@@ -161,6 +162,9 @@ export function briefToPipelineItem(row: BriefRow): PipelineItem | null {
       break;
     case "in_progress":
     case "drafted":
+    // "completed" predates the current status set; legacy rows map like
+    // drafted — done but not yet published.
+    case "completed":
     case "approved":
       stage = "approved";
       break;
@@ -182,6 +186,7 @@ export function briefToPipelineItem(row: BriefRow): PipelineItem | null {
     title: row.title,
     subtitle: row.format?.replace(/_/g, " "),
     campaignId: row.campaignId ?? null,
+    scheduledAt: row.scheduledAt ?? null,
     createdAt: row.createdAt ?? null,
     href: "/app/marketing/editorial-calendar",
   };

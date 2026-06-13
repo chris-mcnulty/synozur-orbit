@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import {
   Home,
   Rocket,
@@ -49,7 +50,7 @@ import {
 
 export interface AreaNavItem {
   label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: ComponentType<{ size?: number; className?: string }>;
   href: string;
   enterprise?: boolean;
   comingSoon?: boolean;
@@ -65,7 +66,7 @@ export type AreaId = "home" | "research" | "product" | "marketing" | "sales" | "
 export interface AppArea {
   id: AreaId;
   label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: ComponentType<{ size?: number; className?: string }>;
   /** Landing page for the area — what the header tab links to. */
   hubHref: string;
   /** Areas shown as labeled tabs in the header. Settings is reached via the gear instead. */

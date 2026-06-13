@@ -320,9 +320,6 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.conferencePromotion === false) locked.add("/app/marketing/conferences");
     if (f.socialAccounts === false) locked.add("/app/marketing/social-accounts");
     if (f.saturnCapture === false) locked.add("/app/marketing/browser-extension");
-    if (f.seoTracking === false) locked.add("/app/seo-dashboard");
-    if (f.outcomeMetrics === false) locked.add("/app/insights/outcomes");
-    if (f.partnerApi === false) locked.add("/app/developer");
     return locked;
   }, [tenantInfo]);
 

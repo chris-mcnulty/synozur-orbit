@@ -358,6 +358,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
           status: contentBriefs.status,
           campaignId: contentBriefs.campaignId,
           calendarId: contentBriefs.calendarId,
+          scheduledAt: contentBriefs.scheduledAt,
           createdAt: contentBriefs.createdAt,
         })
         .from(contentBriefs)
