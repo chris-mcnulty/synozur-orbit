@@ -10,7 +10,9 @@
 
 > **Locked decisions (from kickoff):**
 > 1. **Send model = draft + human approval.** Orbit generates personalized outreach into the seller's **Outlook Drafts**; a human clicks Send. No silent auto-send in v1. This mirrors the Cowork harness invariant: *"every send goes through Outlook Drafts and waits for a human click."*
-> 2. **Plumbing:** **Outlook** via Orbit's **existing M365 Graph connection**; **HubSpot** via the **existing HubSpot OAuth client**; **LinkedIn** via a **new server-side MyMCP/MCP client** (the LinkedIn MCP server). LinkedIn is the only net-new integration architecture.
+> 2. **Plumbing:** **Outlook** via Orbit's **per-user delegated M365 Graph connection**; **HubSpot** via the **existing tenant HubSpot OAuth client**; **LinkedIn** via a **new server-side MCP client** (the LinkedIn MCP server). LinkedIn is the only net-new integration architecture.
+> 3. **Two-tier configuration.** A **per-tenant** layer (HubSpot connection, firm brand/messaging, LinkedIn MCP, caps/kill-switches) **and** a **per-user** layer (the seller's own delegated mailbox + their **personal voice profile**, so drafts sound like *that* person). See §3a.
+> 4. **Campaign onboarding = guided interview.** A new campaign is created through a conversational **interview wizard** (goal → message → target ICP → refinements → offering → CTA → optional event/resources), reusing the existing brief/campaign-interview pattern. See §5.0.
 
 ---
 
@@ -77,8 +79,23 @@ Orbit already supplies, as live multi-tenant data, almost everything the harness
 | Suppression list | **`email_suppressions`** (unsubscribe/bounce/spam/manual) | `shared/schema.ts:3874` |
 | Send rail (Outlook) | M365 **Graph** connection | `server/services/entra-graph-service.ts`, `server/auth/msal-config.ts` |
 | Relationship posture / account strategy | `relationship_reports` (`cooperate/compete/sell_to/...`) | `shared/schema.ts:722` |
+| Events to drive meetings around (e.g. Seattle, Aug) | **`conferences`** (conferences/webinars/receptions) | `shared/schema.ts:3251` |
+| Digital resources to send (product info, scheduler, event details) | **`content_assets`** + **`marketing_links`** (trackable URLs) | `shared/schema.ts:2475`, `:3434` |
 
-**Consequence:** the harness's hand-authored `variables.md`/`icp-definition.md`/`voice-dna.md` are replaced by intrinsic loaders + a **readiness check** that flags thin fields (no ICP persona, no messaging framework, no voice profile, HubSpot not connected, Outlook scope not granted).
+**Consequence:** the harness's hand-authored `variables.md`/`icp-definition.md`/`voice-dna.md` are replaced by intrinsic loaders + a **readiness check** that flags thin fields (no ICP persona, no messaging framework, no voice profile, HubSpot not connected, Outlook scope not granted). The firm-intrinsic data needs no interview — but the **campaign brief** (goal/ICP slice/offer/CTA/event) is goal-specific and time-bound, so it *is* gathered via the §5.0 interview.
+
+---
+
+## 3a. Configuration — two tiers (tenant + per-user)
+
+Outreach config splits cleanly into a shared firm layer and a personal seller layer. **Both already have a home in the schema** — the per-user piece is the part that makes a draft sound like the specific seller, not the firm.
+
+| Layer | What it holds | Storage (verified) |
+|---|---|---|
+| **Per-tenant connection** | HubSpot OAuth (read contacts/companies/deals, write notes/tasks); brand voice + messaging framework; LinkedIn MCP credentials; Entra/Graph app registration; campaign caps + global pause + reply-rate floor | `hubspot_connections` (`schema.ts:3709`); `social_account_voice_profiles` (firm voice, `:2839`); `outreach_settings` (new) |
+| **Per-user connection & voice** | The seller's **delegated Graph token** — used to (a) read **their** Sent Items for voice-DNA extraction and (b) create drafts in **their** Outlook; plus the seller's **personal voice profile** ("sound like *me*") | **`users.graphAccessToken/graphRefreshToken/graphScopes`** already exist (`schema.ts:34`, "captured via incremental consent… mailbox actions"); per-user voice profile = a `social_account_voice_profiles` row scoped to the user (new `ownerUserId`) |
+
+**Why this matters:** the existing delegated-token store means we do **not** need a new app-only `Mail.ReadWrite` grant — each seller grants **incremental consent** for their own mailbox (the same mechanism already used for Planner sync). Voice is resolved with precedence **personal → firm default**, so a campaign run by Chris drafts in Chris's voice, by Wes in Wes's.
 
 ---
 
@@ -103,13 +120,39 @@ Orbit already supplies, as live multi-tenant data, almost everything the harness
 
 All AI generation reuses `completeForFeature()` (`server/services/ai-provider.ts`) for caching/retry/multi-provider, the extended `StrategicContext` for grounding, `job-queue.ts` for async 202 + polling on long operations (prospecting a list), and `plan-policy.ts` `FEATURE_REGISTRY` + `manual-action-quota.ts` for gating/metering. Every service is a pure `*-core.ts` (unit-tested) + a side-effecting `*-service.ts`, following `editorial-calendar-core/service.ts` and `distribution-planner-core/service.ts`.
 
+### 5.0 Campaign onboarding — the interview wizard *(the front door)*
+
+A new campaign is created through a **conversational, AI-assisted wizard**, reusing the proven pattern in `server/services/brief-interview-core.ts` + `client/src/pages/app/marketing/campaign-interview.tsx` (multi-step, debounced autosave, AI suggestions, editable accepted text). The wizard captures the **campaign brief**, then hands a structured config to the prospector.
+
+**Interview steps (each pre-filled from intrinsic data, all editable):**
+1. **Goal / outcome** — free text, e.g. *"book 10 discovery calls"*; classified into a goal type (`meeting | event_invite | intro | nurture`).
+2. **Core message / offering** — pre-populated from `products` + messaging framework; the value prop and which product/service this is about.
+3. **Target ICP** — choose/confirm `personas` (`isIcp`) and named roles (e.g. *PE CIOs and ops leaders*, *IT directors evaluating Copilot*, *VC/PE leadership*).
+4. **Refinements** — **geography** (city/region — drives event-proximity targeting), **industry**, company size/segment, named-account list. These become the prospecting filter (HubSpot query + LinkedIn MCP research).
+5. **Call to action** — the concrete ask + its mechanism (a **meeting scheduler** link, an **event invite**, a resource).
+6. **Event (optional)** — link to a `conferences` record; anchors cadence windows to the event date.
+7. **Resources (optional)** — attach `content_assets` / `marketing_links` to inject at the right step (§5.1).
+8. **Voice** — confirm which **personal voice profile** drafts in (§3a).
+
+Output: an `outreach_campaigns` row (with the brief stored as structured `interview` jsonb, like `campaigns.interview` already does) + a cadence template + a prospecting filter. The interview's classification of goal type also selects a **default cadence archetype** (a meeting-drive sequence vs. an event-invite sequence are timed differently).
+
+**Worked examples (campaign archetypes the wizard must handle):**
+
+| Goal | ICP + refinement | Offering | CTA | Cadence archetype |
+|---|---|---|---|---|
+| Drive a meeting | Mid-market **PE CIOs & ops leaders** | AI value-realization services | Book a discovery call (scheduler link) | meeting-drive (3–4 touches) |
+| Introduce a product | **IT directors** evaluating Copilot | **Zenith** platform | Short intro call (scheduler link) | meeting-drive |
+| Invite to an event | **VC/PE leadership in a given city** | Industry dinner / roundtable | RSVP (event details + reply) | event-invite (anchored to event date) |
+| **Conference (Seattle, end of Aug)** | **Financial leadership** in/near Seattle | Meet at / near the event | Book a slot at the conference (scheduler link) | event-anchored, **back-dated from the event** |
+
 ### 5.1 Data model (new tables in `shared/schema.ts`)
 
 > The harness's "MD file is the prospect" becomes relational. All tables tenant-scoped (`tenantDomain` + `marketId`), mirroring existing conventions.
 
-- **`outreach_campaigns`** — the goal-driven container. `id`, `tenantDomain`, `marketId`, `name`, `salesGoal` (free text — "book 10 discovery calls for Polaris in mid-market healthcare"), `productId`, `targetPersonaIds[]`, `channels[]` (`email`/`linkedin`), `cadenceTemplateId`, `voiceProfileId`, `status` (`draft|active|paused|completed|archived`), `createdBy`, timestamps.
+- **`outreach_campaigns`** — the goal-driven container. `id`, `tenantDomain`, `marketId`, `name`, `goalType` (`meeting|event_invite|intro|nurture`), `salesGoal` (free text), `interview` (jsonb — the captured brief, mirrors `campaigns.interview`), `productId`, `targetPersonaIds[]`, `targetingFilter` (jsonb — geography/industry/segment/named accounts), `channels[]` (`email`/`linkedin`), **`conferenceId`** (FK → `conferences`, nullable — event-anchored campaigns), **`eventDate`** (anchors cadence windows), `cadenceTemplateId`, `voiceProfileId` (the **personal** profile from §3a), `status` (`draft|active|paused|completed|archived`), `createdBy`, timestamps.
+- **`outreach_campaign_resources`** — digital assets attached to a campaign, injected at the right cadence step. `campaignId`, `resourceType` (`product_info|scheduler|event_details|case_study|other`), `contentAssetId` (FK → `content_assets`), `marketingLinkId` (FK → `marketing_links` for trackable scheduler/event URLs), `injectAtStep` (which cadence step surfaces it), `label`.
 - **`prospects`** — the state machine. `id`, `campaignId`, `tenantDomain`, `marketId`, `name`, `title`, `companyName`, `email`, `linkedinUrl`, `hubspotContactId`, `hubspotCompanyId`, `source` (`hubspot|manual|linkedin|import`), `icpScore` (int), `scoreBreakdown` (jsonb — per-signal), `disqualifiedReason`, `researchDossier` (text/markdown), `signals` (jsonb), **`status`** (the enum from §2.1), `ownerUserId`, `nextActionAt`, timestamps.
-- **`cadence_templates`** + **`cadence_steps`** — reusable sequences. Step: `stepNumber`, `channel`, `dayOffset`, `businessHoursOnly`, `templateHint`, `purpose` (`intro|value|case_study|breakup`).
+- **`cadence_templates`** + **`cadence_steps`** — reusable sequences. Template carries an `archetype` (`meeting_drive|event_invite|nurture`) and an optional `anchor` (`start_date|event_date` — event-invite steps are back-dated from `eventDate`). Step: `stepNumber`, `channel`, `dayOffset` (negative offsets allowed when anchored to an event), `businessHoursOnly`, `templateHint`, `purpose` (`intro|value|case_study|invite|breakup`), `resourceType` (which attached resource to surface).
 - **`outreach_touches`** — generated drafts + history (one row per touch). `id`, `prospectId`, `campaignId`, `channel`, `stepNumber`, `subject`, `body`, **`status`** (`draft_pending_approval|approved|sent|skipped|bounced|replied`), `outlookDraftId` (Graph message id), `linkedinThreadRef`, `complianceFlags` (jsonb), `voiceProfileId`, `generatedAt`, `approvedBy`, `sentAt`.
 - **`outreach_settings`** (per tenant) — kill-switches/caps: `globalPause` (bool), `dailySendCap`, `weeklyPerDomainCap`, `minReplyRateFloor`, `defaultVoiceProfileId`. (Suppression reuses **`email_suppressions`**.)
 
@@ -119,7 +162,9 @@ Migrations follow the repo convention: edit `shared/schema.ts` → `npm run db:g
 
 | File | Type | Responsibility |
 |---|---|---|
-| `server/services/prospector-core.ts` | pure | ICP scoring math (weighted signals vs. persona), disqualifier rules, score→qualified/disqualified threshold. Unit-tested. |
+| `server/services/outreach-interview-core.ts` | pure | Interview step graph, pre-fill from intrinsic data, goal-type classification → cadence-archetype selection, targeting-filter normalization. Unit-tested. Mirrors `brief-interview-core.ts`. |
+| `server/services/outreach-interview-service.ts` | side-effecting | Runs the wizard turns via `completeForFeature('outreachInterview', …)`; on finish writes the `outreach_campaigns` row + cadence template + targeting filter. |
+| `server/services/prospector-core.ts` | pure | ICP scoring math (weighted signals vs. persona), disqualifier rules, score→qualified/disqualified threshold, **geo/industry refinement filters** (incl. event-proximity). Unit-tested. |
 | `server/services/prospector-service.ts` | side-effecting | Pull candidates from HubSpot (+ optional LinkedIn MCP research), call `completeForFeature('prospectResearch', …)` for the dossier, write `prospects` rows, advance `new→researched`. |
 | `server/services/outbound-voice-service.ts` | side-effecting | **Voice-DNA extraction** from the seller's Graph **Sent Items** (the harness's "20+ replied messages"); produce/update a `social_account_voice_profiles`-shaped outbound profile. Reuses `voice-service.ts`. |
 | `server/services/outreach-composer-core.ts` | pure | Prompt assembly from dossier + voice + battlecard objections; per-channel format/length guardrails. |
@@ -136,7 +181,9 @@ HubSpot reuse: `hubspot-integration.ts` already does read (contacts/companies/de
 
 Each route gates with `guardFeature(req, res, …)` and meters AI-heavy actions via `reserveManualAction()` (commit on success/fail), exactly like `editorial-calendar.ts`.
 
-- `POST /api/sales-outreach/campaigns` — create from goal + product + personas + channels
+- `POST /api/sales-outreach/interview` / `…/interview/:id/turn` — run the onboarding wizard (conversational, autosave); on finish creates the campaign
+- `POST /api/sales-outreach/campaigns` — create directly (skip-wizard path) from goal + product + personas + channels
+- `GET/POST /api/sales-outreach/campaigns/:id/resources` — attach/list digital resources (scheduler, event details, product info) + `injectAtStep`
 - `POST /api/sales-outreach/campaigns/:id/prospect` — find/import + score (async **202 + job-queue**)
 - `GET  /api/sales-outreach/prospects?campaignId=` / `GET …/prospects/:id` (dossier + touch history)
 - `POST /api/sales-outreach/prospects/:id/research` — re-score + dossier
@@ -152,10 +199,11 @@ Each route gates with `guardFeature(req, res, …)` and meters AI-heavy actions 
 
 New pages, wired into `client/src/App.tsx` and `client/src/lib/areaNavigation.ts` (Sales area `items`, currently `areaNavigation.ts:185`; add to `SALES_PREFIXES` at `:242`). React Query + `useMutation`, mirroring `pages/app/marketing/editorial-calendar.tsx`.
 
-- `outreach-campaigns.tsx` — list/create campaigns by goal; readiness banner.
-- `campaign-detail.tsx` — prospects table (state badges, ICP score, next action); bulk compose/approve.
-- `prospect-detail.tsx` — dossier, score breakdown, touch timeline, **draft editor with compliance flags** (reuse `components/marketing/AIRewritePanel.tsx`), "Approve → Outlook" button.
-- `outreach-settings.tsx` — voice profile + extraction, caps/kill-switch (global pause), suppression.
+- `outreach-interview.tsx` — the **onboarding wizard** (clone `campaign-interview.tsx`): goal → message → ICP → refinements → CTA → event → resources → voice.
+- `outreach-campaigns.tsx` — list/create campaigns by goal; readiness banner; "New campaign" launches the wizard.
+- `campaign-detail.tsx` — prospects table (state badges, ICP score, next action); bulk compose/approve; attached-resources panel; event banner when `conferenceId` set.
+- `prospect-detail.tsx` — dossier, score breakdown, touch timeline, **draft editor with compliance flags** (reuse `components/marketing/AIRewritePanel.tsx`), resource chips, "Approve → Outlook" button.
+- `outreach-settings.tsx` — **per-user**: connect mailbox (incremental Graph consent) + extract/preview personal voice; **per-tenant** (admin): caps/kill-switch (global pause), suppression, LinkedIn MCP, HubSpot.
 
 ### 5.5 Feature gating & metering
 
@@ -164,6 +212,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices; re
 | Feature key | Category | Suggested tiers | Metered action |
 |---|---|---|---|
 | `salesOutreachCampaigns` | sales | enterprise, unlimited | — |
+| `outreachInterview` | sales | enterprise, unlimited | `runOutreachInterview` |
 | `prospectResearch` | sales | enterprise, unlimited | `generateProspectDossier` |
 | `outreachComposer` | sales | enterprise, unlimited | `generateOutreachDraft` |
 | `outreachCadence` | sales | enterprise, unlimited | — |
@@ -172,13 +221,13 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices; re
 
 ## 6. Roadmap
 
-**Phase 0 — Grounding & schema.** Add the 5 tables; extend `strategic-context.ts` with a sales bundle (products + battlecard objections + ICP personas + voice); ship `GET /readiness`. Register feature keys + `AIFeature`s.
+**Phase 0 — Grounding, config & schema.** Add the tables; extend `strategic-context.ts` with a sales bundle (products + battlecard objections + ICP personas + voice); ship `GET /readiness`. Stand up **two-tier config** (§3a): per-user incremental Graph consent for the mailbox + per-user voice profile, per-tenant caps. Register feature keys + `AIFeature`s.
 
-**Phase 1 — Prospector.** Campaign creation from a goal; HubSpot contact/company import; `prospector-core` scoring + `completeForFeature` dossier; `prospects` state machine `new→researched`. Outbound **voice-DNA extraction** from Graph Sent Items.
+**Phase 1 — Interview + Prospector.** The **onboarding wizard** (reuse `brief-interview` pattern) → campaign brief + targeting filter; HubSpot contact/company import filtered by geography/industry; `prospector-core` scoring + `completeForFeature` dossier; `prospects` state machine `new→researched`. Per-user **voice-DNA extraction** from the seller's Graph Sent Items.
 
-**Phase 2 — Composer + Outlook drafts.** `outreach-composer` (email + LinkedIn copy) grounded in dossier + voice + objections; **`compliance-core` cliché/banned-phrase + suppression + CAN-SPAM scan** on every draft; **`Mail.ReadWrite` Graph scope** + `outlook-draft-service` to push approved drafts to the seller's Outlook Drafts. HubSpot activity logging.
+**Phase 2 — Composer + Outlook drafts + resources.** `outreach-composer` (email + LinkedIn copy) grounded in dossier + **personal** voice + objections, surfacing the right **campaign resource** (scheduler/event/product) per step; **`compliance-core` cliché/banned-phrase + suppression + CAN-SPAM scan** on every draft; `outlook-draft-service` pushes approved drafts to the seller's Outlook Drafts via their **delegated token** (incremental `Mail.ReadWrite` consent). HubSpot activity logging.
 
-**Phase 3 — Cadence + kill-switches.** `cadence-core` state machine + timing windows; `cadence-service` reply/send detection via Graph (scheduled); follow-up drafting; `outreach_settings` caps + global pause + reply-rate floor.
+**Phase 3 — Cadence + events + kill-switches.** `cadence-core` state machine + timing windows, including **event-anchored** sequences back-dated from `eventDate` (the Seattle conference case); `cadence-service` reply/send detection via Graph (scheduled); follow-up drafting; `outreach_settings` caps + global pause + reply-rate floor.
 
 **Phase 4 — LinkedIn MCP + performance loop.** Wire the LinkedIn **MCP client** for research/messaging; close the loop — reply/meeting rates and HubSpot deal attribution feed back into ICP scoring (mirrors the marketing performance-analyst).
 
@@ -186,8 +235,9 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices; re
 
 ## 7. Dependencies, risks & open questions
 
-- **Graph scope (blocks Phase 2).** Today's Graph connection is **app-only, read** (`msal-config.ts`). Creating drafts in a seller's mailbox needs **`Mail.ReadWrite`** (app-only with a target user, or delegated) — a new admin-consented scope. Confirm the tenant-admin consent path before Phase 2.
-- **Reading the seller's mailbox (privacy).** Cadence reply/send detection and voice-DNA extraction read Sent Items + Inbox. Needs explicit per-seller opt-in and a clear data-use note; scope to the connected user only.
+- **Graph scope (resolved, smaller than it looked).** Orbit **already stores per-user delegated Graph tokens** (`users.graphAccessToken/...`, used for Planner sync + "mailbox actions"). Outlook drafts + Sent-Items voice extraction ride that rail via **incremental consent** for `Mail.ReadWrite` per seller — no new app-only grant. Confirm the existing consent flow can request the added scope.
+- **Reading the seller's mailbox (privacy).** Cadence reply/send detection and voice-DNA extraction read Sent Items + Inbox. Needs explicit per-seller opt-in and a clear data-use note; scoped to the connected user's own token only.
+- **Seattle conference timing (act now).** The conference is **end of August**; an event-anchored sequence back-dates touches from the event date, so meaningful lead time means **standing up Phases 0–2 (config → interview → prospector → composer/drafts) within roughly the next 6–8 weeks**. Recommendation: prioritize the *meeting-drive* and *event-invite* archetypes first; the full automated cadence engine (Phase 3) can follow, with early sends approved manually from the draft queue.
 - **LinkedIn MCP (Phase 4).** Net-new server-side MCP-client architecture (none exists in `server/` today). Which MCP server, auth model, and **LinkedIn ToS** for automated messaging must be settled before build; until then LinkedIn is **copy-assist** (generate text, seller pastes).
 - **Draft-only invariant.** v1 never auto-sends. Auto-send (reusing the SendGrid pipeline) is a deliberate later decision, not in scope.
 - **Voice DNA quality.** Extraction needs enough real sent mail ("20+ replied messages"); readiness check warns when thin and falls back to the messaging-framework tone.
