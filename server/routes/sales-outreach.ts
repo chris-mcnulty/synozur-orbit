@@ -10,7 +10,9 @@ import {
   type OutreachChannel,
 } from "@shared/schema";
 import { desc, eq } from "drizzle-orm";
+import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
+import { storage } from "../storage";
 import { guardFeature, guardManualAction, logAiUsage } from "./helpers";
 import { assessSalesOutreachReadiness } from "../services/sales-outreach-readiness";
 import { createCampaignFromInterview, getCampaign } from "../services/outreach-interview-service";
@@ -18,6 +20,9 @@ import { researchProspect } from "../services/prospector-service";
 import { composeTouch, loadComplianceContext } from "../services/outreach-composer-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
+import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
+import { getRedirectUri } from "./planner";
+import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
 
 function domainOf(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -435,10 +440,169 @@ export function registerSalesOutreachRoutes(app: Express) {
         ownerUserId: ctx.userId,
       });
 
+      // Best-effort HubSpot logging: ensure the contact exists and log the
+      // approved outreach as a note. Never fail the approval on a CRM hiccup.
+      if (prospect) {
+        try {
+          const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+          if (conn) {
+            const [first, ...rest] = (prospect.name || "").split(" ");
+            const contactId =
+              prospect.hubspotContactId ||
+              (await pushProspectToHubspot(ctx.tenantDomain, prospect, first, rest.join(" ")));
+            if (!prospect.hubspotContactId) {
+              await db.update(prospects).set({ hubspotContactId: contactId }).where(eq(prospects.id, prospect.id));
+            }
+            const summary = `<p><strong>Outreach approved via Orbit</strong> (${touch.channel}, step ${touch.stepNumber})</p>${touch.subject ? `<p>Subject: ${touch.subject}</p>` : ""}`;
+            await logContactNote(ctx.tenantDomain, contactId, summary);
+          }
+        } catch (hsErr: any) {
+          console.warn("[sales-outreach:approve] HubSpot logging skipped:", hsErr?.message);
+        }
+      }
+
       res.json({ touch: updated, webLink });
     } catch (err: any) {
       console.error("[sales-outreach:approve]", err);
       res.status(500).json({ error: err.message || "Failed to approve draft" });
     }
+  });
+
+  // ── Mailbox consent (per-seller delegated Graph for Outlook drafts) ─────────
+
+  app.get("/api/sales-outreach/mailbox/status", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      const scopes = (user?.graphScopes || "").toLowerCase();
+      res.json({
+        connected: !!user?.graphRefreshToken,
+        canDraft: !!user?.graphRefreshToken && scopes.includes("mail."),
+        scopes: (user?.graphScopes || "").split(/\s+/).filter(Boolean),
+      });
+    } catch (err: any) {
+      console.error("[sales-outreach:mailbox-status]", err);
+      res.status(500).json({ error: err.message || "Failed to load mailbox status" });
+    }
+  });
+
+  // Build the consent URL for Mail.ReadWrite. We request the UNION of the user's
+  // already-granted scopes and the mail scopes so connecting the mailbox never
+  // drops Planner. Reuses the shared Planner OAuth callback.
+  app.get("/api/sales-outreach/mailbox/consent-url", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      if (!process.env.ENTRA_CLIENT_ID || !process.env.ENTRA_CLIENT_SECRET) {
+        return res.status(503).json({ error: "Microsoft Entra is not configured on this server." });
+      }
+      const user = await storage.getUser(req.session.userId);
+      const existing = (user?.graphScopes || "").split(/\s+/).filter(Boolean);
+      const union = Array.from(new Set([...existing, ...MAIL_SCOPES]));
+
+      const returnTo = (req.query.returnTo as string) || "/app/sales/outreach/settings";
+      const state = Buffer.from(
+        JSON.stringify({ userId: req.session.userId, returnTo, nonce: randomBytes(16).toString("hex") }),
+      ).toString("base64url");
+      const url = buildPlannerConsentUrl({ state, redirectUri: getRedirectUri(req), scopes: union });
+      if (!url) return res.status(503).json({ error: "Failed to build consent URL" });
+      res.json({ url });
+    } catch (err: any) {
+      console.error("[sales-outreach:mailbox-consent]", err);
+      res.status(500).json({ error: err.message || "Failed to build consent URL" });
+    }
+  });
+
+  // ── HubSpot two-way ─────────────────────────────────────────────────────────
+
+  // Pull existing HubSpot contacts into a campaign as prospects (dedupes).
+  app.post("/api/sales-outreach/campaigns/:id/import-hubspot", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Integrations.", code: "no_hubspot" });
+
+      const query = typeof req.body?.query === "string" ? req.body.query : undefined;
+      const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 50;
+      const contacts = await listContacts(ctx.tenantDomain, { query, limit });
+
+      // Dedupe against prospects already on this campaign.
+      const existing = await db
+        .select({ hsId: prospects.hubspotContactId, email: prospects.email })
+        .from(prospects)
+        .where(eq(prospects.campaignId, campaign.id));
+      const haveIds = new Set(existing.map((e) => e.hsId).filter(Boolean) as string[]);
+      const haveEmails = new Set(existing.map((e) => (e.email || "").toLowerCase()).filter(Boolean));
+
+      const toInsert = contacts.filter(
+        (c) => !haveIds.has(c.hubspotContactId) && !(c.email && haveEmails.has(c.email.toLowerCase())),
+      );
+      if (toInsert.length > 0) {
+        await db.insert(prospects).values(
+          toInsert.map((c) => ({
+            campaignId: campaign.id,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            name: c.name,
+            title: c.jobTitle,
+            companyName: c.company,
+            email: c.email,
+            hubspotContactId: c.hubspotContactId,
+            source: "hubspot",
+            ownerUserId: ctx.userId,
+            status: "new" as const,
+          })),
+        );
+      }
+      res.json({ imported: toInsert.length, skipped: contacts.length - toInsert.length, fetched: contacts.length });
+    } catch (err: any) {
+      console.error("[sales-outreach:import-hubspot]", err);
+      res.status(500).json({ error: err.message || "Failed to import from HubSpot" });
+    }
+  });
+
+  // Push a prospect into HubSpot (create/update the contact). Returns the id.
+  app.post("/api/sales-outreach/prospects/:id/sync-hubspot", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Integrations.", code: "no_hubspot" });
+
+      const [first, ...rest] = (prospect.name || "").split(" ");
+      const hubspotContactId = await pushProspectToHubspot(ctx.tenantDomain, prospect, first, rest.join(" "));
+      const [updated] = await db
+        .update(prospects)
+        .set({ hubspotContactId, updatedAt: new Date() })
+        .where(eq(prospects.id, prospect.id))
+        .returning();
+      res.json({ prospect: updated, hubspotContactId });
+    } catch (err: any) {
+      console.error("[sales-outreach:sync-hubspot]", err);
+      res.status(500).json({ error: err.message || "Failed to sync to HubSpot" });
+    }
+  });
+}
+
+/** Create/update a prospect's HubSpot contact. Shared by manual sync + approve. */
+async function pushProspectToHubspot(
+  tenantDomain: string,
+  prospect: { name: string; email: string | null; title: string | null; companyName: string | null },
+  firstName: string,
+  lastName: string,
+): Promise<string> {
+  return upsertContact(tenantDomain, {
+    email: prospect.email,
+    firstName: firstName || null,
+    lastName: lastName || null,
+    jobTitle: prospect.title,
+    company: prospect.companyName,
   });
 }

@@ -20,6 +20,15 @@ export const PLANNER_SCOPES = [
   "offline_access",
 ];
 
+// Delegated mailbox scopes for the sales-outreach Outlook-draft flow. Granted
+// per-seller via incremental consent; the union with any already-granted scopes
+// is requested so connecting the mailbox never drops Planner access.
+export const MAIL_SCOPES = [
+  "Mail.ReadWrite",
+  "User.Read",
+  "offline_access",
+];
+
 export interface PlannerGroup {
   id: string;
   displayName: string;
@@ -119,12 +128,20 @@ async function refreshGraphToken(user: User): Promise<string | null> {
   const tenant = process.env.ENTRA_TENANT_ID || "common";
   const tokenUrl = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
 
+  // Refresh with exactly the scopes this user actually granted (Planner, Mail,
+  // or both) — never a hardcoded set — so a Planner-only or Mail-only consent
+  // refreshes cleanly without requesting an unconsented scope.
+  const grantedScopes = (user.graphScopes || "")
+    .split(/\s+/)
+    .filter((s) => s && !s.startsWith("openid") && s !== "profile" && s !== "email");
+  const refreshScopes = grantedScopes.length > 0 ? grantedScopes : PLANNER_SCOPES;
+
   const params = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
     grant_type: "refresh_token",
     refresh_token: user.graphRefreshToken,
-    scope: PLANNER_SCOPES.join(" "),
+    scope: refreshScopes.join(" "),
   });
 
   try {
@@ -374,6 +391,8 @@ export async function getTask(token: string, taskId: string): Promise<PlannerTas
 export function buildPlannerConsentUrl(opts: {
   state: string;
   redirectUri: string;
+  /** Scopes to request. Defaults to the Planner set. */
+  scopes?: string[];
 }): string | null {
   const clientId = process.env.ENTRA_CLIENT_ID;
   if (!clientId) return null;
@@ -382,7 +401,7 @@ export function buildPlannerConsentUrl(opts: {
     response_type: "code",
     redirect_uri: opts.redirectUri,
     response_mode: "query",
-    scope: PLANNER_SCOPES.join(" "),
+    scope: (opts.scopes ?? PLANNER_SCOPES).join(" "),
     state: opts.state,
     prompt: "consent",
   });
@@ -403,13 +422,15 @@ export async function exchangeCodeForGraphTokens(opts: {
   if (!clientId || !clientSecret) return false;
 
   const tokenUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/token`;
+  // No `scope` on the auth-code exchange: the code already carries the consented
+  // scopes, and the response returns them. This keeps the exchange flow-agnostic
+  // so the same callback serves both Planner and mailbox (Mail.ReadWrite) consent.
   const params = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
     grant_type: "authorization_code",
     code: opts.code,
     redirect_uri: opts.redirectUri,
-    scope: PLANNER_SCOPES.join(" "),
   });
 
   try {

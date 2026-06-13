@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Send,
   ExternalLink,
+  Download,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +194,23 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
   });
 
+  const importHubspot = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/import-hubspot`, { limit: 50 });
+      return res.json();
+    },
+    onSuccess: (data: { imported: number; skipped: number }) => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      toast({ title: `Imported ${data.imported} contact(s)`, description: data.skipped ? `${data.skipped} already on this campaign.` : undefined });
+    },
+    onError: (err: any) =>
+      toast({
+        title: "HubSpot import failed",
+        description: err?.message?.includes("connected") ? "Connect HubSpot in Integrations first." : err?.message,
+        variant: "destructive",
+      }),
+  });
+
   const approve = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/approve`, {});
@@ -240,9 +258,15 @@ export default function OutreachCampaignDetailPage() {
             <h1 className="text-2xl font-bold tracking-tight mt-1.5">{campaign.name}</h1>
             {campaign.salesGoal && <p className="text-muted-foreground mt-1 max-w-2xl">{campaign.salesGoal}</p>}
           </div>
-          <Button onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
-            <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => importHubspot.mutate()} disabled={importHubspot.isPending} data-testid="button-import-hubspot">
+              {importHubspot.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
+              Import from HubSpot
+            </Button>
+            <Button onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
+              <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
+            </Button>
+          </div>
         </div>
 
         {adding && (

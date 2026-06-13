@@ -3704,6 +3704,8 @@ export const HUBSPOT_OAUTH_SCOPES = [
   "crm.objects.companies.write",
   "crm.objects.deals.read",
   "crm.objects.contacts.read",
+  // Required to add outreach prospects into HubSpot as contacts
+  "crm.objects.contacts.write",
   "crm.objects.owners.read",
   // Required to push battlecards/briefings as Notes
   "crm.objects.notes.read",

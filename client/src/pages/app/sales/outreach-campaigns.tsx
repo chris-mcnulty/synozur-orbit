@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Send, Plus, ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Send, Plus, ArrowRight, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,11 +81,16 @@ export default function OutreachCampaignsPage() {
               Prospect, draft in your voice, and sequence follow-ups — you approve every send.
             </p>
           </div>
-          <Button asChild data-testid="button-new-campaign">
-            <Link href="/app/sales/outreach/new">
-              <Plus className="w-4 h-4 mr-1.5" /> New campaign
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" asChild data-testid="button-outreach-settings" title="Outreach settings">
+              <Link href="/app/sales/outreach/settings"><Settings className="w-4 h-4" /></Link>
+            </Button>
+            <Button asChild data-testid="button-new-campaign">
+              <Link href="/app/sales/outreach/new">
+                <Plus className="w-4 h-4 mr-1.5" /> New campaign
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {readiness && readiness.overall !== "ready" && (
