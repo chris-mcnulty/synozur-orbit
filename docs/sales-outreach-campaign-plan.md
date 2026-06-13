@@ -254,6 +254,7 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices; re
 ## 6. Roadmap
 
 **Phase 0 — Grounding, config & schema.** Add the tables; extend `strategic-context.ts` with a sales bundle (products + battlecard objections + ICP personas + voice); ship `GET /readiness`. Stand up **two-tier config** (§3a): per-user incremental Graph consent for the mailbox + per-user voice profile, per-tenant caps. Register feature keys + `AIFeature`s.
+> **Status (in progress):** ✅ schema (8 tables + migration `0044_sales_outreach.sql`), ✅ `AIFeature`s + `FEATURE_REGISTRY`/plan-gating/quota keys (`sales` category), ✅ readiness core+loader+route (`GET /api/sales-outreach/readiness`) with unit tests, ✅ circuit-breaker settings route (`GET/PUT /api/sales-outreach/settings`). **Remaining:** per-user incremental Graph consent flow for the mailbox, the per-user voice-profile `ownerUserId` column, and the settings/readiness UI surface.
 
 **Phase 1 — Interview + Prospector.** The **onboarding wizard** (reuse `brief-interview` pattern) → campaign brief + targeting filter; HubSpot contact/company import filtered by geography/industry; `prospector-core` scoring + `completeForFeature` dossier; `prospects` state machine `new→researched`. Per-user **voice-DNA extraction** from the seller's Graph Sent Items.
 

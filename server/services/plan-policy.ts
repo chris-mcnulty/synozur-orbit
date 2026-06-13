@@ -4,7 +4,7 @@ export interface FeatureDefinition {
   key: string;
   label: string;
   description: string;
-  category: "intelligence" | "monitoring" | "planning" | "marketing" | "platform";
+  category: "intelligence" | "monitoring" | "planning" | "marketing" | "sales" | "platform";
 }
 
 export const FEATURE_REGISTRY: FeatureDefinition[] = [
@@ -36,6 +36,11 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "conferencePromotion", label: "Event Promotion", description: "Drive coordinated social promotion for an event: anchor posts plus a matched post + graphic for every session, with archivable event image space", category: "marketing" },
   { key: "socialAccounts", label: "Social Accounts", description: "Connect and manage social media accounts for publishing", category: "marketing" },
   { key: "saturnCapture", label: "Saturn Capture Extension", description: "Browser extension for capturing web content into the content library", category: "marketing" },
+  { key: "salesOutreachCampaigns", label: "Sales Outreach Campaigns", description: "Goal-driven 1:1 outbound: prospect, score, draft personalized outreach in the seller's voice, sequence follow-ups, and manage the campaign — with a human approving every send in Outlook", category: "sales" },
+  { key: "outreachInterview", label: "Outreach Campaign Interview", description: "Create an outreach campaign through a guided interview that captures goal, message, target ICP, geography/industry refinements, offering, and call to action", category: "sales" },
+  { key: "prospectResearch", label: "Prospect Research & Scoring", description: "Research and ICP-score prospects against the tenant's personas, with an AI dossier per prospect", category: "sales" },
+  { key: "outreachComposer", label: "Outreach Composer", description: "Draft personalized email + LinkedIn outreach grounded in the prospect dossier, the seller's personal voice, and competitive objections, with AI-cliché and compliance scanning", category: "sales" },
+  { key: "outreachCadence", label: "Outreach Cadence", description: "Sequence follow-ups with reply/send detection, event-anchored timing, and master circuit breakers (incl. stricter LinkedIn limits)", category: "sales" },
   { key: "intelligenceBriefings", label: "Intelligence Briefings", description: "AI-synthesized periodic market intelligence reports with executive summaries", category: "intelligence" },
   { key: "podcastBriefings", label: "Podcast Briefings", description: "AI-generated podcast-style audio summaries of intelligence briefings", category: "intelligence" },
   { key: "scheduledBriefingUpdates", label: "Scheduled Briefing Updates", description: "Automatic weekly briefing generation with email delivery", category: "intelligence" },
@@ -62,6 +67,7 @@ export const FEATURE_CATEGORIES = [
   { key: "monitoring", label: "Monitoring" },
   { key: "planning", label: "Planning & Management" },
   { key: "marketing", label: "Marketing" },
+  { key: "sales", label: "Sales" },
   { key: "platform", label: "Platform" },
 ] as const;
 
@@ -272,6 +278,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     hubspotIntegration: true,
     pricingIntelligence: true,
     visualizationDashboard: true,
+    salesOutreachCampaigns: true,
+    outreachInterview: true,
+    prospectResearch: true,
+    outreachComposer: true,
+    outreachCadence: true,
   },
   unlimited: {
     battlecards: true,
@@ -321,6 +332,11 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     hubspotIntegration: true,
     pricingIntelligence: true,
     visualizationDashboard: true,
+    salesOutreachCampaigns: true,
+    outreachInterview: true,
+    prospectResearch: true,
+    outreachComposer: true,
+    outreachCadence: true,
   },
 };
 
@@ -639,7 +655,10 @@ export type ManualActionKey =
   | "aiPersonaGen"
   | "manualBriefingRebuild"
   | "manualBattlecardRegen"
-  | "pricingRefresh";
+  | "pricingRefresh"
+  | "runOutreachInterview"
+  | "generateProspectDossier"
+  | "generateOutreachDraft";
 
 export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   linkedinRefresh: "LinkedIn Refresh",
@@ -655,6 +674,9 @@ export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   manualBriefingRebuild: "Manual Briefing Rebuild",
   manualBattlecardRegen: "Manual Battlecard Regeneration",
   pricingRefresh: "Pricing Snapshot Refresh",
+  runOutreachInterview: "Outreach Campaign Interview",
+  generateProspectDossier: "Prospect Research & Scoring",
+  generateOutreachDraft: "Outreach Draft Generation",
 };
 
 export const MANUAL_ACTION_KEYS: ManualActionKey[] = Object.keys(MANUAL_ACTION_LABELS) as ManualActionKey[];
@@ -674,6 +696,9 @@ export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" 
   manualBriefingRebuild: "high",
   manualBattlecardRegen: "medium",
   pricingRefresh: "medium",
+  runOutreachInterview: "medium",
+  generateProspectDossier: "high",
+  generateOutreachDraft: "medium",
 };
 
 const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
@@ -691,6 +716,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     manualBriefingRebuild: 0,
     manualBattlecardRegen: 0,
     pricingRefresh: 0,
+    runOutreachInterview: 0,
+    generateProspectDossier: 0,
+    generateOutreachDraft: 0,
   },
   trial: {
     linkedinRefresh: 5,
@@ -706,6 +734,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     manualBriefingRebuild: 3,
     manualBattlecardRegen: 5,
     pricingRefresh: 0,
+    runOutreachInterview: 0,
+    generateProspectDossier: 0,
+    generateOutreachDraft: 0,
   },
   pro: {
     linkedinRefresh: 25,
@@ -721,6 +752,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     manualBriefingRebuild: 15,
     manualBattlecardRegen: 25,
     pricingRefresh: 25,
+    runOutreachInterview: 0,
+    generateProspectDossier: 0,
+    generateOutreachDraft: 0,
   },
   enterprise: {
     linkedinRefresh: 100,
@@ -736,6 +770,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     manualBriefingRebuild: 50,
     manualBattlecardRegen: 100,
     pricingRefresh: 100,
+    runOutreachInterview: 100,
+    generateProspectDossier: 200,
+    generateOutreachDraft: 200,
   },
   unlimited: {
     linkedinRefresh: -1,
@@ -751,6 +788,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     manualBriefingRebuild: -1,
     manualBattlecardRegen: -1,
     pricingRefresh: -1,
+    runOutreachInterview: -1,
+    generateProspectDossier: -1,
+    generateOutreachDraft: -1,
   },
 };
 

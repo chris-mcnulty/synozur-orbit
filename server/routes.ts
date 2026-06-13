@@ -49,6 +49,7 @@ import { registerMarketingCalendarRoutes } from "./routes/marketing-calendar";
 import { registerContentProductionRoutes } from "./routes/content-production";
 import { registerCampaignIdeationRoutes } from "./routes/campaign-ideation";
 import { registerDistributionPlannerRoutes } from "./routes/distribution-planner";
+import { registerSalesOutreachRoutes } from "./routes/sales-outreach";
 import { registerMarketingPerformanceRoutes } from "./routes/marketing-performance";
 import { registerPlanningHubRoutes } from "./routes/planning-hub";
 
@@ -138,6 +139,7 @@ export async function registerRoutes(
   registerDistributionPlannerRoutes(app);
   registerMarketingPerformanceRoutes(app);
   registerPlanningHubRoutes(app);
+  registerSalesOutreachRoutes(app);
 
   return httpServer;
 }

@@ -1688,6 +1688,10 @@ export const AI_FEATURES = {
   MARKETING_TASKS: 'marketing_tasks',
   COMPANY_RESEARCH: 'company_research',
   RELATIONSHIP_REPORT: 'relationship_report',
+  // Sales outreach (see docs/sales-outreach-campaign-plan.md)
+  OUTREACH_INTERVIEW: 'outreach_interview',
+  PROSPECT_RESEARCH: 'prospect_research',
+  OUTREACH_COMPOSER: 'outreach_composer',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1707,6 +1711,9 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   marketing_tasks: 'Marketing Task Generation',
   company_research: 'AI Company Research',
   relationship_report: 'Relationship Report (12-month plan)',
+  outreach_interview: 'Outreach Campaign Interview',
+  prospect_research: 'Prospect Research & Scoring',
+  outreach_composer: 'Outreach Draft Composer',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -4353,3 +4360,339 @@ export const insertManualActionBonusSchema = createInsertSchema(manualActionBonu
 });
 export type InsertManualActionBonus = z.infer<typeof insertManualActionBonusSchema>;
 export type ManualActionBonus = typeof manualActionBonuses.$inferSelect;
+
+// ============================================================================
+// Sales Outreach Campaigns (Phase 0 — schema foundation)
+//
+// A goal-driven 1:1 outbound system: prospect -> score -> draft in the
+// seller's voice -> sequence follow-ups -> manage, with a human approving
+// every send in Outlook. Translates the Cowork sales-harness-bundle (where
+// "the MD file is the prospect") into relational tables + a state machine.
+// See docs/sales-outreach-campaign-plan.md.
+// ============================================================================
+
+/** The campaign brief captured by the onboarding interview wizard. */
+export interface OutreachInterview {
+  /** The outcome in the user's words ("book 10 discovery calls"). */
+  goal?: string;
+  /** Core message / offering this campaign is about. */
+  message?: string;
+  /** The concrete ask + its mechanism (scheduler link, event RSVP, resource). */
+  callToAction?: string;
+  /** Free-text notes captured across the wizard turns. */
+  notes?: string;
+  /** Raw question/answer pairs, for replay + regeneration grounding. */
+  answers?: { question: string; answer: string }[];
+}
+
+/** Refinements that narrow prospecting (drives the HubSpot/LinkedIn query). */
+export interface OutreachTargetingFilter {
+  /** City / region — also used for event-proximity targeting. */
+  geographies?: string[];
+  industries?: string[];
+  /** Company-size bands or segment labels (e.g. "mid-market"). */
+  segments?: string[];
+  /** Named-account allow-list (company names or domains). */
+  namedAccounts?: string[];
+  /** Free-text titles/roles to target ("PE CIOs", "IT directors"). */
+  targetRoles?: string[];
+}
+
+export type OutreachGoalType = "meeting" | "event_invite" | "intro" | "nurture";
+export type OutreachChannel = "email" | "linkedin";
+export type OutreachCampaignStatus = "draft" | "active" | "paused" | "completed" | "archived";
+
+// The campaign container — created via the §5.0 interview wizard.
+export const outreachCampaigns = pgTable("outreach_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  // What kind of campaign this is — selects the default cadence archetype.
+  goalType: text("goal_type").notNull().default("meeting"), // OutreachGoalType
+  // The goal in the user's words ("book 10 discovery calls for Polaris").
+  salesGoal: text("sales_goal"),
+  // The captured interview brief (mirrors campaigns.interview).
+  interview: jsonb("interview").$type<OutreachInterview>(),
+  // The product/service this campaign is about (optional).
+  productId: varchar("product_id").references((): AnyPgColumn => products.id, { onDelete: "set null" }),
+  // ICP personas this campaign targets (FK ids into personas; array, no cascade).
+  targetPersonaIds: text("target_persona_ids").array(),
+  // Geography/industry/segment/named-account refinements (the prospecting filter).
+  targetingFilter: jsonb("targeting_filter").$type<OutreachTargetingFilter>(),
+  // Channels this campaign uses (email / linkedin).
+  channels: text("channels").array(),
+  // Optional event anchor — when set, event-invite cadences back-date from eventDate.
+  conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
+  eventDate: timestamp("event_date"),
+  // The cadence template that drives follow-up sequencing.
+  cadenceTemplateId: varchar("cadence_template_id"),
+  // The voice profile drafts are written in — the seller's PERSONAL profile.
+  voiceProfileId: varchar("voice_profile_id").references((): AnyPgColumn => socialAccountVoiceProfiles.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("draft"), // OutreachCampaignStatus
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index("outreach_campaigns_tenant_idx").on(table.tenantDomain),
+  tenantStatusIdx: index("outreach_campaigns_tenant_status_idx").on(table.tenantDomain, table.status),
+}));
+
+export type CadenceArchetype = "meeting_drive" | "event_invite" | "nurture";
+export type CadenceAnchor = "start_date" | "event_date";
+
+// Reusable follow-up sequences. A template carries an archetype + an anchor
+// (event-invite steps are back-dated from the campaign's eventDate).
+export const cadenceTemplates = pgTable("cadence_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),
+  archetype: text("archetype").notNull().default("meeting_drive"), // CadenceArchetype
+  anchor: text("anchor").notNull().default("start_date"), // CadenceAnchor
+  // System-provided default templates are seeded per tenant and not deletable.
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index("cadence_templates_tenant_idx").on(table.tenantDomain),
+}));
+
+export type CadenceStepPurpose = "intro" | "value" | "case_study" | "invite" | "breakup";
+
+// Individual touches within a cadence template.
+export const cadenceSteps = pgTable("cadence_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => cadenceTemplates.id, { onDelete: "cascade" }),
+  stepNumber: integer("step_number").notNull(),
+  channel: text("channel").notNull().default("email"), // OutreachChannel
+  // Days from the anchor. Negative offsets allowed when anchored to an event.
+  dayOffset: integer("day_offset").notNull().default(0),
+  businessHoursOnly: boolean("business_hours_only").notNull().default(true),
+  purpose: text("purpose").notNull().default("intro"), // CadenceStepPurpose
+  // Guidance fed to the composer for this step.
+  templateHint: text("template_hint"),
+  // Which attached campaign resource (if any) this step surfaces.
+  resourceType: text("resource_type"), // OutreachResourceType
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  templateStepIdx: index("cadence_steps_template_step_idx").on(table.templateId, table.stepNumber),
+}));
+
+/** Per-signal contribution to a prospect's ICP score. */
+export interface ProspectScoreBreakdown {
+  signals: { key: string; label: string; weight: number; matched: boolean; note?: string }[];
+  total: number;
+  /** Threshold the total was compared against. */
+  threshold: number;
+}
+
+/** Raw research signals gathered about a prospect (sourced, never fabricated). */
+export interface ProspectSignals {
+  [key: string]: unknown;
+  sources?: string[];
+}
+
+// The prospect state machine. Replaces the harness "MD file is the prospect".
+export type ProspectStatus =
+  | "new"
+  | "researched"
+  | "draft_pending_approval"
+  | "sent"
+  | "awaiting_reply"
+  | "replied"
+  | "cadence_step_due"
+  | "dormant";
+
+export const prospects = pgTable("prospects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  title: text("title"),
+  companyName: text("company_name"),
+  email: text("email"),
+  linkedinUrl: text("linkedin_url"),
+  // CRM linkage (enriched from / pushed to HubSpot).
+  hubspotContactId: text("hubspot_contact_id"),
+  hubspotCompanyId: text("hubspot_company_id"),
+  source: text("source").notNull().default("manual"), // hubspot | manual | linkedin | import
+  // ICP qualification.
+  icpScore: integer("icp_score"),
+  scoreBreakdown: jsonb("score_breakdown").$type<ProspectScoreBreakdown>(),
+  disqualifiedReason: text("disqualified_reason"),
+  // The AI research summary (markdown) — the "dossier".
+  researchDossier: text("research_dossier"),
+  signals: jsonb("signals").$type<ProspectSignals>(),
+  status: text("status").notNull().default("new"), // ProspectStatus
+  // Seller who owns this prospect (drives whose mailbox/voice is used).
+  ownerUserId: varchar("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  // When the next cadence action is due (computed by the cadence engine).
+  nextActionAt: timestamp("next_action_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  campaignIdx: index("prospects_campaign_idx").on(table.campaignId),
+  tenantStatusIdx: index("prospects_tenant_status_idx").on(table.tenantDomain, table.status),
+  nextActionIdx: index("prospects_next_action_idx").on(table.nextActionAt),
+}));
+
+/** Compliance / AI-cliché scan result attached to a generated draft. */
+export interface OutreachComplianceFlags {
+  pass: boolean;
+  flags: { kind: "cliche" | "banned_phrase" | "suppression" | "self_email" | "can_spam"; detail: string }[];
+  suggestedFixes?: string[];
+}
+
+export type OutreachTouchStatus =
+  | "draft_pending_approval"
+  | "approved"
+  | "sent"
+  | "skipped"
+  | "bounced"
+  | "replied";
+
+// One generated draft / touch in a prospect's history.
+export const outreachTouches = pgTable("outreach_touches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  prospectId: varchar("prospect_id").notNull().references(() => prospects.id, { onDelete: "cascade" }),
+  campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  channel: text("channel").notNull().default("email"), // OutreachChannel
+  stepNumber: integer("step_number").notNull().default(1),
+  subject: text("subject"),
+  body: text("body"),
+  status: text("status").notNull().default("draft_pending_approval"), // OutreachTouchStatus
+  // Graph message id of the draft created in the seller's Outlook.
+  outlookDraftId: text("outlook_draft_id"),
+  // LinkedIn thread / conversation reference (via the LinkedIn provider).
+  linkedinThreadRef: text("linkedin_thread_ref"),
+  complianceFlags: jsonb("compliance_flags").$type<OutreachComplianceFlags>(),
+  voiceProfileId: varchar("voice_profile_id").references((): AnyPgColumn => socialAccountVoiceProfiles.id, { onDelete: "set null" }),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  approvedBy: varchar("approved_by").references(() => users.id, { onDelete: "set null" }),
+  sentAt: timestamp("sent_at"),
+}, (table) => ({
+  prospectIdx: index("outreach_touches_prospect_idx").on(table.prospectId),
+  campaignStatusIdx: index("outreach_touches_campaign_status_idx").on(table.campaignId, table.status),
+}));
+
+export type OutreachResourceType = "product_info" | "scheduler" | "event_details" | "case_study" | "other";
+
+// Digital assets attached to a campaign, injected at the right cadence step.
+export const outreachCampaignResources = pgTable("outreach_campaign_resources", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  resourceType: text("resource_type").notNull().default("other"), // OutreachResourceType
+  label: text("label"),
+  // Either an inventory asset or a trackable link (or both).
+  contentAssetId: varchar("content_asset_id").references((): AnyPgColumn => contentAssets.id, { onDelete: "set null" }),
+  marketingLinkId: varchar("marketing_link_id").references((): AnyPgColumn => marketingLinks.id, { onDelete: "set null" }),
+  // Which cadence step surfaces this resource (null = composer decides).
+  injectAtStep: integer("inject_at_step"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  campaignIdx: index("outreach_campaign_resources_campaign_idx").on(table.campaignId),
+}));
+
+// Per-tenant circuit breakers + caps (§5.6). Defaults ship conservative.
+export const outreachSettings = pgTable("outreach_settings", {
+  tenantDomain: text("tenant_domain").primaryKey(),
+  // Global kill switch — when true, all outreach is halted.
+  globalPause: boolean("global_pause").notNull().default(false),
+  // Master breaker: hard ceiling on total approvals/sends per day.
+  masterDailyCap: integer("master_daily_cap").notNull().default(100),
+  // Per-channel daily/weekly caps. LinkedIn ships far stricter than email.
+  emailDailyCap: integer("email_daily_cap").notNull().default(50),
+  emailWeeklyCap: integer("email_weekly_cap").notNull().default(200),
+  linkedinDailyCap: integer("linkedin_daily_cap").notNull().default(15),
+  linkedinWeeklyCap: integer("linkedin_weekly_cap").notNull().default(50),
+  // No more than N touches into one company's domain per week.
+  weeklyPerDomainCap: integer("weekly_per_domain_cap").notNull().default(3),
+  // Campaigns auto-pause if reply rate falls below this floor (0–1). 0 = off.
+  minReplyRateFloor: real("min_reply_rate_floor").notNull().default(0),
+  defaultVoiceProfileId: varchar("default_voice_profile_id").references((): AnyPgColumn => socialAccountVoiceProfiles.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Append-only ledger of every send/approval — the authoritative source the
+// circuit breakers count against (never in-memory counters alone).
+export const outreachSendLedger = pgTable("outreach_send_ledger", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  touchId: varchar("touch_id").references(() => outreachTouches.id, { onDelete: "set null" }),
+  channel: text("channel").notNull(), // OutreachChannel
+  // Recipient domain — for the per-domain weekly cap.
+  recipientDomain: text("recipient_domain"),
+  ownerUserId: varchar("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantChannelTimeIdx: index("outreach_send_ledger_tenant_channel_time_idx").on(table.tenantDomain, table.channel, table.occurredAt),
+  tenantDomainTimeIdx: index("outreach_send_ledger_domain_time_idx").on(table.tenantDomain, table.recipientDomain, table.occurredAt),
+}));
+
+// ── Relations ───────────────────────────────────────────────────────────────
+export const outreachCampaignsRelations = relations(outreachCampaigns, ({ one, many }) => ({
+  product: one(products, { fields: [outreachCampaigns.productId], references: [products.id] }),
+  conference: one(conferences, { fields: [outreachCampaigns.conferenceId], references: [conferences.id] }),
+  prospects: many(prospects),
+  resources: many(outreachCampaignResources),
+  touches: many(outreachTouches),
+}));
+
+export const cadenceTemplatesRelations = relations(cadenceTemplates, ({ many }) => ({
+  steps: many(cadenceSteps),
+}));
+
+export const cadenceStepsRelations = relations(cadenceSteps, ({ one }) => ({
+  template: one(cadenceTemplates, { fields: [cadenceSteps.templateId], references: [cadenceTemplates.id] }),
+}));
+
+export const prospectsRelations = relations(prospects, ({ one, many }) => ({
+  campaign: one(outreachCampaigns, { fields: [prospects.campaignId], references: [outreachCampaigns.id] }),
+  owner: one(users, { fields: [prospects.ownerUserId], references: [users.id] }),
+  touches: many(outreachTouches),
+}));
+
+export const outreachTouchesRelations = relations(outreachTouches, ({ one }) => ({
+  prospect: one(prospects, { fields: [outreachTouches.prospectId], references: [prospects.id] }),
+  campaign: one(outreachCampaigns, { fields: [outreachTouches.campaignId], references: [outreachCampaigns.id] }),
+}));
+
+export const outreachCampaignResourcesRelations = relations(outreachCampaignResources, ({ one }) => ({
+  campaign: one(outreachCampaigns, { fields: [outreachCampaignResources.campaignId], references: [outreachCampaigns.id] }),
+}));
+
+// ── Insert schemas + types ──────────────────────────────────────────────────
+export const insertOutreachCampaignSchema = createInsertSchema(outreachCampaigns).omit({ id: true, createdAt: true, updatedAt: true });
+export type OutreachCampaign = typeof outreachCampaigns.$inferSelect;
+export type InsertOutreachCampaign = z.infer<typeof insertOutreachCampaignSchema>;
+
+export const insertCadenceTemplateSchema = createInsertSchema(cadenceTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type CadenceTemplate = typeof cadenceTemplates.$inferSelect;
+export type InsertCadenceTemplate = z.infer<typeof insertCadenceTemplateSchema>;
+
+export const insertCadenceStepSchema = createInsertSchema(cadenceSteps).omit({ id: true, createdAt: true });
+export type CadenceStep = typeof cadenceSteps.$inferSelect;
+export type InsertCadenceStep = z.infer<typeof insertCadenceStepSchema>;
+
+export const insertProspectSchema = createInsertSchema(prospects).omit({ id: true, createdAt: true, updatedAt: true });
+export type Prospect = typeof prospects.$inferSelect;
+export type InsertProspect = z.infer<typeof insertProspectSchema>;
+
+export const insertOutreachTouchSchema = createInsertSchema(outreachTouches).omit({ id: true, generatedAt: true });
+export type OutreachTouch = typeof outreachTouches.$inferSelect;
+export type InsertOutreachTouch = z.infer<typeof insertOutreachTouchSchema>;
+
+export const insertOutreachCampaignResourceSchema = createInsertSchema(outreachCampaignResources).omit({ id: true, createdAt: true });
+export type OutreachCampaignResource = typeof outreachCampaignResources.$inferSelect;
+export type InsertOutreachCampaignResource = z.infer<typeof insertOutreachCampaignResourceSchema>;
+
+export const insertOutreachSettingsSchema = createInsertSchema(outreachSettings).omit({ updatedAt: true });
+export type OutreachSettings = typeof outreachSettings.$inferSelect;
+export type InsertOutreachSettings = z.infer<typeof insertOutreachSettingsSchema>;
+
+export const insertOutreachSendLedgerSchema = createInsertSchema(outreachSendLedger).omit({ id: true, occurredAt: true });
+export type OutreachSendLedgerEntry = typeof outreachSendLedger.$inferSelect;
+export type InsertOutreachSendLedgerEntry = z.infer<typeof insertOutreachSendLedgerSchema>;
