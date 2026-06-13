@@ -3,7 +3,6 @@
 **Status:** Proposal
 **Created:** 2026-06-13
 **Owner:** chris.mcnulty@synozur.com
-**Requested by:** Wes
 **Branch:** `claude/sales-outreach-campaign-xbbtzs`
 **Source analyzed:** [`chris-mcnulty/copilot-skills`](https://github.com/chris-mcnulty/copilot-skills) — `cowork/sales-harness-bundle` (prospector → composer → cadence + ICP, outbound-voice, compliance, kill-switches)
 **Companion doc:** [`docs/cowork-skills-orbit-plan.md`](./cowork-skills-orbit-plan.md) (the marketing equivalent — the same "skills → in-product capabilities" thesis applied to sales)
@@ -20,7 +19,7 @@
 
 ## 1. Executive summary
 
-Wes wants a **sales outreach campaign system**: given a sales/product goal, Orbit should **prospect**, **score/qualify**, **draft personalized outreach** (Outlook email + LinkedIn), **sequence follow-ups**, and **manage the campaign** — with the seller's real voice, no AI clichés, and a human in the loop on every send.
+We want a **sales outreach campaign system**: given a sales/product goal, Orbit should **prospect**, **score/qualify**, **draft personalized outreach** (Outlook email + LinkedIn), **sequence follow-ups**, and **manage the campaign** — with the seller's real voice, no AI clichés, and a human in the loop on every send.
 
 The Cowork `sales-harness-bundle` is exactly this loop, expressed as M365 Copilot skills over markdown "prospect files." Orbit's advantage is the same one the marketing plan exploits: **Orbit already holds the intrinsic data the harness makes you type into config** — products, ICP personas, competitive battlecards/objections, messaging framework, brand voice, and a live HubSpot connection — so we build it as **brand- and data-grounded in-product features**, not markdown skills.
 
