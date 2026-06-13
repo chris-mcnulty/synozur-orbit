@@ -24,7 +24,7 @@ import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-c
 import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
-import { assertApprovalAllowed, getOutreachSummary, tickCadence } from "../services/cadence-service";
+import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
 import { getCampaignPerformance } from "../services/outreach-performance-service";
 
@@ -698,7 +698,10 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "outreachCadence"))) return;
       const ctx = await getRequestContext(req);
-      res.json(await tickCadence(ctx.tenantDomain));
+      const tick = await tickCadence(ctx.tenantDomain);
+      // Also read the current seller's mailbox for sends/replies (best-effort).
+      const activity = await detectMailboxActivity(ctx.userId, ctx.tenantDomain).catch(() => ({ touchesConfirmedSent: 0, repliesDetected: 0 }));
+      res.json({ ...tick, ...activity });
     } catch (err: any) {
       console.error("[sales-outreach:tick]", err);
       res.status(500).json({ error: err.message || "Failed to run cadence tick" });

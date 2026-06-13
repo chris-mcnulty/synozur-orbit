@@ -18,15 +18,19 @@ import {
   type OutreachChannel,
 } from "@shared/schema";
 import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { getValidGraphToken } from "./planner-graph-client";
 import {
   checkCaps,
   nextDueStep,
   isExhausted,
   belowReplyFloor,
+  advanceProspectState,
   type CapSettings,
   type CapDecision,
   type CadenceStepLike,
 } from "./cadence-core";
+
+const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 // Mirror the schema column defaults so a tenant with no saved settings still
 // gets conservative, enforced caps.
@@ -227,4 +231,104 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
   }
 
   return result;
+}
+
+// ── Graph-based send / reply auto-detection (best-effort) ────────────────────
+
+export interface MailboxActivityResult {
+  touchesConfirmedSent: number;
+  repliesDetected: number;
+}
+
+async function graphGet(token: string, path: string): Promise<{ status: number; json: any }> {
+  const res = await fetch(`${GRAPH_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  const json = res.ok ? await res.json().catch(() => null) : null;
+  return { status: res.status, json };
+}
+
+/**
+ * Read the seller's mailbox to advance the lifecycle automatically:
+ *  - confirm approved email touches were actually SENT (draft left Drafts),
+ *  - detect inbound REPLIES from prospects → advance to `replied`.
+ * Best-effort and gated on the delegated token; degrades silently without it.
+ */
+export async function detectMailboxActivity(userId: string, tenantDomain: string): Promise<MailboxActivityResult> {
+  const result: MailboxActivityResult = { touchesConfirmedSent: 0, repliesDetected: 0 };
+  const token = await getValidGraphToken(userId);
+  if (!token) return result;
+
+  const owned = await db
+    .select()
+    .from(prospects)
+    .where(and(eq(prospects.tenantDomain, tenantDomain), eq(prospects.ownerUserId, userId)));
+  if (owned.length === 0) return result;
+  const ownedIds = new Set(owned.map((p) => p.id));
+
+  // 1) Confirm sends: approved email touches whose draft has left the Drafts
+  //    folder (isDraft=false, or 404 because the id changed on send).
+  const approved = await db
+    .select()
+    .from(outreachTouches)
+    .where(and(eq(outreachTouches.tenantDomain, tenantDomain), eq(outreachTouches.status, "approved"), eq(outreachTouches.channel, "email")));
+  for (const t of approved) {
+    if (!t.outlookDraftId || !ownedIds.has(t.prospectId)) continue;
+    try {
+      const { status, json } = await graphGet(token, `/me/messages/${t.outlookDraftId}?$select=isDraft`);
+      const wasSent = status === 404 || (status === 200 && json?.isDraft === false);
+      if (wasSent) {
+        await db.update(outreachTouches).set({ status: "sent", sentAt: new Date() }).where(eq(outreachTouches.id, t.id));
+        result.touchesConfirmedSent++;
+      }
+    } catch { /* best-effort */ }
+  }
+
+  // 2) Detect replies for prospects awaiting a response.
+  for (const p of owned) {
+    if (p.status !== "awaiting_reply" && p.status !== "cadence_step_due") continue;
+    if (!p.email) continue;
+    try {
+      const addr = encodeURIComponent(p.email.replace(/'/g, "''"));
+      const { json } = await graphGet(
+        token,
+        `/me/messages?$filter=from/emailAddress/address eq '${addr}'&$top=1&$orderby=receivedDateTime desc&$select=receivedDateTime`,
+      );
+      const latest = json?.value?.[0]?.receivedDateTime;
+      if (!latest) continue;
+      // Only count replies arriving after our most recent touch went out.
+      const touches = await db.select({ at: outreachTouches.generatedAt }).from(outreachTouches).where(eq(outreachTouches.prospectId, p.id));
+      const lastTouchAt = touches.reduce((m, t) => Math.max(m, new Date(t.at).getTime()), 0);
+      if (new Date(latest).getTime() > lastTouchAt) {
+        const next = advanceProspectState(p.status as any, "reply_detected");
+        if (next) {
+          await db.update(prospects).set({ status: next, nextActionAt: null, updatedAt: new Date() }).where(eq(prospects.id, p.id));
+          result.repliesDetected++;
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
+  return result;
+}
+
+/**
+ * One tenant's full cadence pass: advance due steps + reply-floor, then read the
+ * mailbox of each seller with open prospects to auto-detect sends/replies. Used
+ * by the scheduled sweep.
+ */
+export async function runCadenceForTenant(tenantDomain: string): Promise<TickResult & MailboxActivityResult> {
+  const tick = await tickCadence(tenantDomain);
+  const owners = await db
+    .selectDistinct({ ownerUserId: prospects.ownerUserId })
+    .from(prospects)
+    .where(and(eq(prospects.tenantDomain, tenantDomain), inArray(prospects.status, ["awaiting_reply", "cadence_step_due"])));
+
+  let touchesConfirmedSent = 0;
+  let repliesDetected = 0;
+  for (const { ownerUserId } of owners) {
+    if (!ownerUserId) continue;
+    const r = await detectMailboxActivity(ownerUserId, tenantDomain);
+    touchesConfirmedSent += r.touchesConfirmedSent;
+    repliesDetected += r.repliesDetected;
+  }
+  return { ...tick, touchesConfirmedSent, repliesDetected };
 }
