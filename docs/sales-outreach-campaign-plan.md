@@ -10,7 +10,9 @@
 
 > **Locked decisions (from kickoff):**
 > 1. **Send model = draft + human approval.** Orbit generates personalized outreach into the seller's **Outlook Drafts**; a human clicks Send. No silent auto-send in v1. This mirrors the Cowork harness invariant: *"every send goes through Outlook Drafts and waits for a human click."*
-> 2. **Plumbing:** **Outlook** via Orbit's **per-user delegated M365 Graph connection**; **HubSpot** via the **existing tenant HubSpot OAuth client**; **LinkedIn** via a **new server-side MCP client** (the LinkedIn MCP server). LinkedIn is the only net-new integration architecture.
+> 2. **Plumbing:** **Outlook** via Orbit's **per-user delegated M365 Graph connection**; **HubSpot** via the **existing tenant HubSpot OAuth client**; **LinkedIn** via a **flexible provider** (§5.2a) — a **new MCP client** that works *now*, with Orbit's **already-built direct LinkedIn OAuth publisher** (currently gated pending LinkedIn app review) preferred automatically once approved.
+> 5. **Master circuit breakers.** Beyond per-tenant caps, a hard global ceiling that **trips and pauses all outreach** when crossed — with **stricter, LinkedIn-specific limits** (LinkedIn punishes volume with account restrictions). See §5.6.
+> 6. **LinkedIn MCP also serves marketing.** The same LinkedIn provider gives the marketing engine **direct LinkedIn posting** — the *first* direct-publishing channel to come online, ahead of the other social publishers (`bluesky/facebook/instagram/twitter`), which today are stubbed/awaiting approval. See §5.2a.
 > 3. **Two-tier configuration.** A **per-tenant** layer (HubSpot connection, firm brand/messaging, LinkedIn MCP, caps/kill-switches) **and** a **per-user** layer (the seller's own delegated mailbox + their **personal voice profile**, so drafts sound like *that* person). See §3a.
 > 4. **Campaign onboarding = guided interview.** A new campaign is created through a conversational **interview wizard** (goal → message → target ICP → refinements → offering → CTA → optional event/resources), reusing the existing brief/campaign-interview pattern. See §5.0.
 
@@ -154,7 +156,8 @@ Output: an `outreach_campaigns` row (with the brief stored as structured `interv
 - **`prospects`** — the state machine. `id`, `campaignId`, `tenantDomain`, `marketId`, `name`, `title`, `companyName`, `email`, `linkedinUrl`, `hubspotContactId`, `hubspotCompanyId`, `source` (`hubspot|manual|linkedin|import`), `icpScore` (int), `scoreBreakdown` (jsonb — per-signal), `disqualifiedReason`, `researchDossier` (text/markdown), `signals` (jsonb), **`status`** (the enum from §2.1), `ownerUserId`, `nextActionAt`, timestamps.
 - **`cadence_templates`** + **`cadence_steps`** — reusable sequences. Template carries an `archetype` (`meeting_drive|event_invite|nurture`) and an optional `anchor` (`start_date|event_date` — event-invite steps are back-dated from `eventDate`). Step: `stepNumber`, `channel`, `dayOffset` (negative offsets allowed when anchored to an event), `businessHoursOnly`, `templateHint`, `purpose` (`intro|value|case_study|invite|breakup`), `resourceType` (which attached resource to surface).
 - **`outreach_touches`** — generated drafts + history (one row per touch). `id`, `prospectId`, `campaignId`, `channel`, `stepNumber`, `subject`, `body`, **`status`** (`draft_pending_approval|approved|sent|skipped|bounced|replied`), `outlookDraftId` (Graph message id), `linkedinThreadRef`, `complianceFlags` (jsonb), `voiceProfileId`, `generatedAt`, `approvedBy`, `sentAt`.
-- **`outreach_settings`** (per tenant) — kill-switches/caps: `globalPause` (bool), `dailySendCap`, `weeklyPerDomainCap`, `minReplyRateFloor`, `defaultVoiceProfileId`. (Suppression reuses **`email_suppressions`**.)
+- **`outreach_settings`** (per tenant) — circuit breakers + caps (see §5.6): `globalPause` (bool), per-channel daily/weekly caps (with **separate, stricter LinkedIn limits**), `weeklyPerDomainCap`, hard master ceilings, `minReplyRateFloor`, `defaultVoiceProfileId`. (Suppression reuses **`email_suppressions`**.)
+- **`outreach_send_ledger`** — append-only record of every send/draft-approval, per channel + day, so circuit-breaker counting is authoritative across sellers and survives restarts (the caps can't be enforced from in-memory counters alone).
 
 Migrations follow the repo convention: edit `shared/schema.ts` → `npm run db:generate` → `npm run db:push` (see `drizzle.config.ts`, `migrations/`).
 
@@ -173,9 +176,25 @@ Migrations follow the repo convention: edit `shared/schema.ts` → `npm run db:g
 | `server/services/cadence-core.ts` | pure | State-machine transitions, timing-window/business-hours math, due-step computation, cap & kill-switch enforcement. Unit-tested. |
 | `server/services/cadence-service.ts` | side-effecting | Detect sends/replies by reading the seller's Graph **Sent Items + Inbox**; advance states; queue next-step drafts. Runs on a schedule (`scheduled-jobs.ts`). |
 | `server/services/outlook-draft-service.ts` | side-effecting | Extend `entra-graph-service.ts`: create a **draft** in the seller's mailbox, read sent/inbox for cadence detection. **Requires `Mail.ReadWrite` Graph scope (new).** |
-| `server/services/linkedin-mcp-client.ts` | side-effecting | **New** server-side MCP client for the LinkedIn MCP server (prospect research + messaging where permitted). Net-new integration architecture. |
+| `server/services/linkedin/provider.ts` | side-effecting | **The flexible LinkedIn seam** (see §5.2a) — one interface, two interchangeable backends: an MCP client (works now) and the already-built direct-OAuth publisher (pending review). Covers both **posting** (marketing) and **messaging/research** (outreach). |
 
 HubSpot reuse: `hubspot-integration.ts` already does read (contacts/companies/deals) + write (notes/tasks) — log each approved/sent touch as a HubSpot **engagement/task** and import contacts as prospects.
+
+### 5.2a The LinkedIn provider — flexible by design
+
+Orbit **already has** a direct LinkedIn OAuth publisher (`server/services/social-publishers/linkedin.ts`, UGC Posts API, Synozur-owned app) behind a shared `SocialPublisher` interface (`social-publishers/index.ts:80`). It's complete but **gated off** (`isLinkedInDirectPublishEnabled()` → `false`) **pending LinkedIn's app review**. So we don't choose MCP *vs.* OAuth — we abstract over both:
+
+```
+                 ┌────────────── LinkedInProvider (selector) ──────────────┐
+  marketing  →   │  pickBackend():                                          │
+  posting        │    if isLinkedInDirectPublishEnabled() → DirectOAuth     │ → post / message / research
+  outreach   →   │    else → MCP                                            │
+  messaging      └─────────────────────────────────────────────────────────┘
+```
+
+- **Posting** reuses the existing `SocialPublisher` contract; the MCP backend becomes a second implementation alongside `LinkedInPublisher`. The selector prefers direct OAuth when approved, MCP otherwise — **no caller changes** when the app clears review.
+- **Messaging / connection / research** (outreach-only) is an extension the OAuth member API doesn't expose; that stays MCP-backed regardless, subject to ToS and the §5.6 LinkedIn breakers.
+- **Sequencing consequence:** wiring the MCP backend lights up **LinkedIn direct posting for the marketing engine first** — ahead of the other still-stubbed social publishers — satisfying the marketing plan's Pillar 3 ("expand channel coverage as MCP tool sets connect", `cowork-skills-orbit-plan.md` §5).
 
 ### 5.3 Routes (`server/routes/sales-outreach.ts`, registered in `server/routes.ts`)
 
@@ -204,6 +223,19 @@ New pages, wired into `client/src/App.tsx` and `client/src/lib/areaNavigation.ts
 - `campaign-detail.tsx` — prospects table (state badges, ICP score, next action); bulk compose/approve; attached-resources panel; event banner when `conferenceId` set.
 - `prospect-detail.tsx` — dossier, score breakdown, touch timeline, **draft editor with compliance flags** (reuse `components/marketing/AIRewritePanel.tsx`), resource chips, "Approve → Outlook" button.
 - `outreach-settings.tsx` — **per-user**: connect mailbox (incremental Graph consent) + extract/preview personal voice; **per-tenant** (admin): caps/kill-switch (global pause), suppression, LinkedIn MCP, HubSpot.
+
+### 5.6 Master circuit breakers & caps *(safety-critical)*
+
+1:1 outreach that goes too fast is worse than slow outreach — especially on LinkedIn, where volume triggers **account restrictions**. So caps are layered, channel-aware, and fail **closed**. All counting reads the authoritative `outreach_send_ledger` (not in-memory), enforced in `cadence-core.ts` (pure, unit-tested) before any draft is queued or approved.
+
+- **Master breaker (global).** A hard tenant-wide ceiling on total approvals/sends per day. When crossed, it **sets `globalPause` and halts every campaign** until a human clears it — the Cowork `kill-switches` "global pause" with teeth. Failure mode is **stop**, never "send anyway."
+- **Per-channel caps, LinkedIn the strictest.** Separate daily/weekly limits per channel; LinkedIn defaults far below email (e.g. a small daily connection/message cap + a weekly ceiling) and additionally honors **per-recipient cooldowns** and a **new-connection/day** sub-limit. These are *independent* breakers — tripping LinkedIn never raises the email ceiling.
+- **Per-domain weekly cap.** Existing harness rule — no more than N touches into one company's domain per week.
+- **Reply-rate floor.** If a campaign's reply rate falls below `minReplyRateFloor` over a rolling window, it auto-pauses (don't keep burning a list/voice that isn't landing).
+- **Suppression + self-email guard.** Every draft re-checks `email_suppressions` and blocks sending to internal/own domains (compliance-core).
+- **Surfaced in `outreach-settings.tsx`** with live "used / remaining" per channel, the global breaker state, and a one-click **global pause** for admins.
+
+> Defaults ship conservative and are plan-gated; raising them is an explicit admin action, and the master breaker has an absolute hard cap that per-tenant config cannot exceed.
 
 ### 5.5 Feature gating & metering
 
@@ -238,7 +270,8 @@ Add to `FEATURE_REGISTRY` (`server/services/plan-policy.ts`) + plan matrices; re
 - **Graph scope (resolved, smaller than it looked).** Orbit **already stores per-user delegated Graph tokens** (`users.graphAccessToken/...`, used for Planner sync + "mailbox actions"). Outlook drafts + Sent-Items voice extraction ride that rail via **incremental consent** for `Mail.ReadWrite` per seller — no new app-only grant. Confirm the existing consent flow can request the added scope.
 - **Reading the seller's mailbox (privacy).** Cadence reply/send detection and voice-DNA extraction read Sent Items + Inbox. Needs explicit per-seller opt-in and a clear data-use note; scoped to the connected user's own token only.
 - **Seattle conference timing (act now).** The conference is **end of August**; an event-anchored sequence back-dates touches from the event date, so meaningful lead time means **standing up Phases 0–2 (config → interview → prospector → composer/drafts) within roughly the next 6–8 weeks**. Recommendation: prioritize the *meeting-drive* and *event-invite* archetypes first; the full automated cadence engine (Phase 3) can follow, with early sends approved manually from the draft queue.
-- **LinkedIn MCP (Phase 4).** Net-new server-side MCP-client architecture (none exists in `server/` today). Which MCP server, auth model, and **LinkedIn ToS** for automated messaging must be settled before build; until then LinkedIn is **copy-assist** (generate text, seller pastes).
+- **LinkedIn provider (flexible, two backends).** Direct OAuth posting is **already built but gated pending LinkedIn app review** (`social-publishers/linkedin.ts`); the **MCP backend is the path that works now** and also unblocks marketing's first direct-publishing channel. The §5.2a selector prefers OAuth automatically once approved, so we don't bet the design on either. Open items: which LinkedIn MCP server + its auth model, and **LinkedIn ToS** for automated messaging/connections (governed by the §5.6 LinkedIn breakers). Until the MCP backend lands, outreach LinkedIn is **copy-assist** (generate text, seller pastes).
+- **Circuit breakers fail closed.** Caps must be enforced from the durable `outreach_send_ledger`, not memory, and default conservative — a bug that *over*-counts (pauses early) is acceptable; one that *under*-counts (sends too much, esp. on LinkedIn) is not.
 - **Draft-only invariant.** v1 never auto-sends. Auto-send (reusing the SendGrid pipeline) is a deliberate later decision, not in scope.
 - **Voice DNA quality.** Extraction needs enough real sent mail ("20+ replied messages"); readiness check warns when thin and falls back to the messaging-framework tone.
 - **Reuse vs. new.** Suppression reuses `email_suppressions`; voice reuses `social_account_voice_profiles`. Confirm we're not duplicating the marketing campaign tables (`campaigns`, `generatedEmails`) — these are **1:1 sales** objects, intentionally separate.
