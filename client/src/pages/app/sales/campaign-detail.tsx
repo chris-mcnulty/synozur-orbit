@@ -8,6 +8,13 @@ import {
   Loader2,
   CalendarDays,
   UserPlus,
+  PenLine,
+  Mail,
+  Linkedin,
+  ShieldAlert,
+  ShieldCheck,
+  Send,
+  ExternalLink,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -15,11 +22,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -49,7 +58,25 @@ interface Prospect {
   researchDossier: string | null;
 }
 
-// Prospect state machine → badge styling.
+interface ComplianceFlag {
+  kind: "cliche" | "banned_phrase" | "suppression" | "self_email" | "can_spam";
+  detail: string;
+}
+interface Compliance {
+  pass: boolean;
+  flags: ComplianceFlag[];
+  suggestedFixes: string[];
+}
+interface Touch {
+  id: string;
+  channel: "email" | "linkedin";
+  stepNumber: number;
+  subject: string | null;
+  body: string | null;
+  status: string;
+  complianceFlags: Compliance | null;
+}
+
 const STATE_VARIANT: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
   new: "outline",
   researched: "secondary",
@@ -68,6 +95,8 @@ function scoreColor(score: number | null): string {
   return "text-muted-foreground";
 }
 
+const FLAG_HARD = new Set(["suppression", "self_email"]);
+
 export default function OutreachCampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
@@ -75,6 +104,11 @@ export default function OutreachCampaignDetailPage() {
   const [adding, setAdding] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
   const [form, setForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
+
+  // Draft review dialog state.
+  const [draft, setDraft] = useState<Touch | null>(null);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
 
@@ -95,6 +129,12 @@ export default function OutreachCampaignDetailPage() {
       return r.json();
     },
   });
+
+  function openDraft(t: Touch) {
+    setDraft(t);
+    setDraftSubject(t.subject ?? "");
+    setDraftBody(t.body ?? "");
+  }
 
   const addProspect = useMutation({
     mutationFn: async () => {
@@ -125,12 +165,59 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Research failed", description: err?.message, variant: "destructive" }),
   });
 
+  const compose = useMutation({
+    mutationFn: async (prospectId: string) => {
+      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${prospectId}/compose`, {});
+      return res.json();
+    },
+    onSuccess: (data: { touch: Touch }) => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      openDraft(data.touch);
+      toast({ title: "Draft composed", description: "Review and approve to send to Outlook." });
+    },
+    onError: (err: any) => toast({ title: "Compose failed", description: err?.message, variant: "destructive" }),
+  });
+
+  const saveDraft = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/sales-outreach/touches/${draft!.id}`, {
+        subject: draftSubject,
+        body: draftBody,
+      });
+      return res.json();
+    },
+    onSuccess: (data: { touch: Touch }) => {
+      setDraft(data.touch);
+      toast({ title: "Saved", description: "Compliance re-scanned." });
+    },
+    onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
+  });
+
+  const approve = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/approve`, {});
+      return res.json();
+    },
+    onSuccess: (data: { webLink?: string }) => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      setDraft(null);
+      toast({
+        title: "Approved",
+        description: data.webLink ? "Draft created in your Outlook — review and send." : "Draft approved.",
+      });
+    },
+    onError: (err: any) => toast({ title: "Approval blocked", description: err?.message, variant: "destructive" }),
+  });
+
   if (isLoading) {
     return <AppLayout><p className="text-sm text-muted-foreground">Loading…</p></AppLayout>;
   }
   if (!campaign) {
     return <AppLayout><p className="text-sm text-muted-foreground">Campaign not found.</p></AppLayout>;
   }
+
+  const draftFlags = draft?.complianceFlags;
+  const draftHardBlocked = (draftFlags?.flags ?? []).some((f) => FLAG_HARD.has(f.kind));
 
   return (
     <AppLayout>
@@ -211,12 +298,12 @@ export default function OutreachCampaignDetailPage() {
                           {p.status.replace(/_/g, " ")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right space-x-1">
+                      <TableCell className="text-right space-x-1 whitespace-nowrap">
                         {p.researchDossier && (
                           <Button variant="ghost" size="sm" onClick={() => setDossier(p)} data-testid={`view-dossier-${p.id}`}>Dossier</Button>
                         )}
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
                           onClick={() => research.mutate(p.id)}
                           disabled={research.isPending && research.variables === p.id}
@@ -229,6 +316,22 @@ export default function OutreachCampaignDetailPage() {
                           )}
                           {p.researchDossier ? "Re-score" : "Research"}
                         </Button>
+                        {p.status !== "dormant" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => compose.mutate(p.id)}
+                            disabled={compose.isPending && compose.variables === p.id}
+                            data-testid={`compose-${p.id}`}
+                          >
+                            {compose.isPending && compose.variables === p.id ? (
+                              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            ) : (
+                              <PenLine className="w-3.5 h-3.5 mr-1" />
+                            )}
+                            Compose
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -239,6 +342,7 @@ export default function OutreachCampaignDetailPage() {
         </Card>
       </div>
 
+      {/* Dossier dialog */}
       <Dialog open={!!dossier} onOpenChange={(o) => !o && setDossier(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -248,10 +352,65 @@ export default function OutreachCampaignDetailPage() {
               {dossier?.icpScore != null ? ` · ICP ${dossier.icpScore}/100` : ""}
             </DialogDescription>
           </DialogHeader>
-          {dossier?.disqualifiedReason && (
-            <p className="text-sm text-destructive">{dossier.disqualifiedReason}</p>
-          )}
+          {dossier?.disqualifiedReason && <p className="text-sm text-destructive">{dossier.disqualifiedReason}</p>}
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{dossier?.researchDossier}</p>
+        </DialogContent>
+      </Dialog>
+
+      {/* Draft review dialog */}
+      <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {draft?.channel === "linkedin" ? <Linkedin className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+              Review draft — step {draft?.stepNumber}
+            </DialogTitle>
+            <DialogDescription>
+              You approve every send. Approving creates a draft in your Outlook; you click Send there.
+            </DialogDescription>
+          </DialogHeader>
+
+          {draft?.channel === "email" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="d-subject">Subject</Label>
+              <Input id="d-subject" value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} data-testid="input-draft-subject" />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="d-body">Body</Label>
+            <Textarea id="d-body" value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={9} data-testid="input-draft-body" />
+          </div>
+
+          {draftFlags && (
+            <div className={`rounded-md border p-2.5 text-sm ${draftFlags.flags.length === 0 ? "border-emerald-500/40" : draftHardBlocked ? "border-destructive/50" : "border-amber-500/40"}`}>
+              <div className="flex items-center gap-1.5 font-medium mb-1">
+                {draftFlags.flags.length === 0 ? (
+                  <><ShieldCheck className="w-4 h-4 text-emerald-500" /> Compliance clean</>
+                ) : (
+                  <><ShieldAlert className={`w-4 h-4 ${draftHardBlocked ? "text-destructive" : "text-amber-500"}`} /> {draftFlags.flags.length} flag(s)</>
+                )}
+              </div>
+              <ul className="space-y-0.5 text-muted-foreground">
+                {draftFlags.flags.map((f, i) => (
+                  <li key={i}>
+                    <span className="font-mono text-[11px] uppercase mr-1.5">{f.kind.replace("_", " ")}</span>
+                    {f.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending} data-testid="button-save-draft">
+              {saveDraft.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PenLine className="w-4 h-4 mr-1" />}
+              Save & re-scan
+            </Button>
+            <Button onClick={() => approve.mutate()} disabled={approve.isPending || draftHardBlocked} data-testid="button-approve-draft">
+              {approve.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : draft?.channel === "email" ? <Send className="w-4 h-4 mr-1" /> : <ExternalLink className="w-4 h-4 mr-1" />}
+              {draft?.channel === "email" ? "Approve → Outlook" : "Approve"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppLayout>
