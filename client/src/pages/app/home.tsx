@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/userContext";
+import { PositioningScatter, ScoreTrend, type PositioningPoint, type ScorePoint } from "@/components/hub/hub-charts";
 
 /**
  * Global Home — the company at a glance. A pure landing page, not a
@@ -67,9 +68,13 @@ export default function HomePage() {
   const { data: dashboardScores } = useQuery<{
     baseline: {
       name: string;
+      id?: string;
       overallScore: number;
+      innovationScore: number;
+      marketPresenceScore: number;
       trend?: { previousScore: number; delta: number; direction: string } | null;
     } | null;
+    competitors?: { id: string; name: string; innovationScore: number; marketPresenceScore: number }[];
     deltaVsMarket?: { absolute: number; percent: number };
   }>({
     queryKey: ["/api/dashboard/scores"],
@@ -78,6 +83,28 @@ export default function HomePage() {
       if (!r.ok) return null;
       return r.json();
     },
+  });
+
+  const { data: companyProfile } = useQuery<{ id?: string } | null>({
+    queryKey: ["/api/company-profile"],
+    queryFn: async () => {
+      const r = await fetch("/api/company-profile", { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+  });
+
+  const { data: scoreHistory = [] } = useQuery<
+    { period: string; overallScore: number }[]
+  >({
+    queryKey: ["/api/score-history", companyProfile?.id],
+    queryFn: async () => {
+      if (!companyProfile?.id) return [];
+      const r = await fetch(`/api/score-history/baseline/${companyProfile.id}?limit=26`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!companyProfile?.id,
   });
 
   const { data: recommendations = [] } = useQuery<any[]>({
@@ -146,6 +173,27 @@ export default function HomePage() {
   const scoreDelta = baseline?.trend?.delta ?? 0;
   const summary = execSummary?.data;
   const hasSummary = !!(summary?.companySnapshot || summary?.marketPosition);
+
+  // Market-positioning scatter: our baseline plus up to six competitors.
+  const positioningData: PositioningPoint[] = [
+    ...(baseline
+      ? [{ x: baseline.innovationScore, y: baseline.marketPresenceScore, name: baseline.name || "Your company", type: "us" as const, id: "baseline" }]
+      : []),
+    ...(dashboardScores?.competitors ?? []).slice(0, 6).map((c) => ({
+      x: c.innovationScore,
+      y: c.marketPresenceScore,
+      name: c.name,
+      type: "competitor" as const,
+      id: c.id,
+    })),
+  ];
+  const hasPositioning = positioningData.length > 0 && positioningData.some((p) => p.x || p.y);
+
+  // Orbit Score trend (oldest → newest) from score history.
+  const scoreTrend: ScorePoint[] = [...scoreHistory]
+    .reverse()
+    .map((h) => ({ period: h.period, score: h.overallScore }));
+  const hasScoreTrend = scoreTrend.length > 1;
 
   const signalIcon = (item: any) => {
     if (item.type === "website_update") return <Globe className="w-3 h-3" />;
@@ -336,6 +384,53 @@ export default function HomePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Visual analytics — Orbit Score trend + market positioning, the
+            graphical depth the mockups called for, reusing the dashboard's
+            chart configs. Each renders only when it has real data. */}
+        {(hasScoreTrend || hasPositioning) && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {hasScoreTrend && (
+              <Card data-testid="home-score-trend">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-primary" />
+                    Orbit Score trend
+                  </CardTitle>
+                  <Link href="/app/insights/outcomes">
+                    <Button variant="ghost" size="sm" className="text-xs">
+                      Details <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  <ScoreTrend data={scoreTrend} />
+                </CardContent>
+              </Card>
+            )}
+            {hasPositioning && (
+              <Card data-testid="home-positioning">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Telescope className="w-4 h-4 text-primary" />
+                    Market positioning
+                  </CardTitle>
+                  <Link href="/app/positioning-map">
+                    <Button variant="ghost" size="sm" className="text-xs">
+                      Full map <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  <PositioningScatter
+                    data={positioningData}
+                    onSelect={(p) => setLocation(p.type === "us" ? "/app/company-profile" : `/app/competitors/${p.id}`)}
+                  />
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
 
         {/* One glance-card per area */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
