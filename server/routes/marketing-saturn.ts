@@ -24,6 +24,7 @@ import {
   contentAssetCategories,
   contentAssetProductTags,
   contentAssetSolutionAreas,
+  contentBriefs,
   brandAssets,
   brandAssetCategories,
   brandAssetProductTags,
@@ -1752,13 +1753,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
             .from(generatedPosts)
             .where(inArray(generatedPosts.campaignId, ids))
             .groupBy(generatedPosts.campaignId),
-          db.select({ campaignId: contentAssets.campaignId, value: count() })
-            .from(contentAssets)
+          db.select({ campaignId: contentBriefs.campaignId, value: count() })
+            .from(contentBriefs)
             .where(and(
-              inArray(contentAssets.campaignId, ids),
-              ne(contentAssets.status, "removed"),
+              inArray(contentBriefs.campaignId, ids),
+              ne(contentBriefs.status, "removed"),
             ))
-            .groupBy(contentAssets.campaignId),
+            .groupBy(contentBriefs.campaignId),
         ]);
         return {
           childCountMap: new Map(childCountRows.map(r => [r.parentCampaignId!, Number(r.value)])),
