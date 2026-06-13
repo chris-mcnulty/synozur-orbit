@@ -22,6 +22,9 @@ import Dashboard from "@/pages/app/dashboard";
 import HomePage from "@/pages/app/home";
 import ContentPipelinePage from "@/pages/app/marketing/pipeline";
 import SalesHubPage from "@/pages/app/sales";
+import OutreachCampaignsPage from "@/pages/app/sales/outreach-campaigns";
+import OutreachInterviewPage from "@/pages/app/sales/outreach-interview";
+import OutreachCampaignDetailPage from "@/pages/app/sales/campaign-detail";
 import Analysis from "@/pages/app/analysis";
 import Recommendations from "@/pages/app/recommendations";
 import Activity from "@/pages/app/activity";
@@ -168,6 +171,9 @@ function Router() {
       <Route path="/app/about" component={AppAbout} />
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/sales" component={SalesHubPage} />
+      <Route path="/app/sales/outreach" component={OutreachCampaignsPage} />
+      <Route path="/app/sales/outreach/new" component={OutreachInterviewPage} />
+      <Route path="/app/sales/outreach/:id" component={OutreachCampaignDetailPage} />
       <Route path="/app/battlecards">{() => <PageFeatureGate featureKey="battlecards" label="Sales Battlecards" description="Generate competitive battlecards for sales teams. Upgrade to unlock this feature."><BattleCardsPage /></PageFeatureGate>}</Route>
       <Route path="/app/usage" component={UsagePage} />
       <Route path="/app/marketing" component={MarketingLandingPage} />

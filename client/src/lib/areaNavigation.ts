@@ -193,6 +193,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       inHeader: true,
       items: [
         { label: "Sales Home", icon: Handshake, href: "/app/sales" },
+        { label: "Outreach", icon: Send, href: "/app/sales/outreach", description: "Goal-driven outbound campaigns: prospect, score, draft in your voice, and sequence follow-ups — you approve every send." },
         { label: "Battle Cards", icon: Swords, href: "/app/battlecards", description: "Competitive one-pagers for sellers — generated per product in the Product area." },
         { label: "Reports", icon: FileText, href: "/app/reports" },
         { label: "Relationship Plans", icon: Handshake, href: "/app/relationship-reports" },
@@ -249,7 +250,7 @@ const SETTINGS_PREFIXES = [
   "/app/marketing/browser-extension",
 ];
 
-const SALES_PREFIXES = ["/app/sales", "/app/battlecards", "/app/reports", "/app/relationship-reports", "/app/assessments"];
+const SALES_PREFIXES = ["/app/sales", "/app/sales/outreach", "/app/battlecards", "/app/reports", "/app/relationship-reports", "/app/assessments"];
 
 const PRODUCT_PREFIXES = ["/app/products"];
 
