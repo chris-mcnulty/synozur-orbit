@@ -25,6 +25,8 @@ import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence } from "../services/cadence-service";
+import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
+import { getCampaignPerformance } from "../services/outreach-performance-service";
 
 function domainOf(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -415,7 +417,9 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
 
       let outlookDraftId: string | null = null;
+      let linkedinThreadRef: string | null = null;
       let webLink: string | undefined;
+      let deliveryNote: string | undefined;
       if (touch.channel === "email") {
         try {
           const draft = await createOutlookDraft({
@@ -433,11 +437,25 @@ export function registerSalesOutreachRoutes(app: Express) {
           }
           throw err;
         }
+      } else if (touch.channel === "linkedin") {
+        // Send via the LinkedIn MCP backend when available; otherwise this is
+        // copy-assist — the draft is approved and the seller sends it manually.
+        const caps = getLinkedInCapabilities();
+        if (caps.canMessage && prospect?.linkedinUrl) {
+          try {
+            const r = await sendLinkedInMessage(ctx.tenantDomain, { recipientUrl: prospect.linkedinUrl, body: touch.body ?? "" });
+            linkedinThreadRef = r.threadRef;
+          } catch {
+            deliveryNote = "LinkedIn send unavailable — copy the draft and send it manually.";
+          }
+        } else {
+          deliveryNote = caps.reason;
+        }
       }
 
       const [updated] = await db
         .update(outreachTouches)
-        .set({ status: "approved", outlookDraftId })
+        .set({ status: "approved", outlookDraftId, linkedinThreadRef })
         .where(eq(outreachTouches.id, touch.id))
         .returning();
 
@@ -479,10 +497,28 @@ export function registerSalesOutreachRoutes(app: Express) {
         }
       }
 
-      res.json({ touch: updated, webLink });
+      res.json({ touch: updated, webLink, deliveryNote });
     } catch (err: any) {
       console.error("[sales-outreach:approve]", err);
       res.status(500).json({ error: err.message || "Failed to approve draft" });
+    }
+  });
+
+  // LinkedIn capability status (which backend serves posting/messaging).
+  app.get("/api/sales-outreach/linkedin/capabilities", async (_req, res) => {
+    res.json(getLinkedInCapabilities());
+  });
+
+  // Conversion-first performance report for a campaign (feeds ICP targeting).
+  app.get("/api/sales-outreach/campaigns/:id/performance", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const report = await getCampaignPerformance(ctx.tenantDomain, req.params.id);
+      res.json(report);
+    } catch (err: any) {
+      if (/not found/i.test(err?.message || "")) return res.status(404).json({ error: err.message });
+      console.error("[sales-outreach:performance]", err);
+      res.status(500).json({ error: err.message || "Failed to load performance" });
     }
   });
 

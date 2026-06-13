@@ -16,6 +16,7 @@ import {
   Send,
   ExternalLink,
   Download,
+  TrendingUp,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -131,6 +132,21 @@ export default function OutreachCampaignDetailPage() {
     },
   });
 
+  const { data: performance } = useQuery<{
+    contacted: number;
+    replied: number;
+    replyRate: number;
+    signals: { key: string; label: string; matched: number; lift: number | null }[];
+    recommendations: string[];
+  }>({
+    queryKey: ["/api/sales-outreach/campaigns", id, "performance"],
+    queryFn: async () => {
+      const r = await fetch(`/api/sales-outreach/campaigns/${id}/performance`, { credentials: "include" });
+      if (!r.ok) return null as any;
+      return r.json();
+    },
+  });
+
   function openDraft(t: Touch) {
     setDraft(t);
     setDraftSubject(t.subject ?? "");
@@ -240,12 +256,16 @@ export default function OutreachCampaignDetailPage() {
       const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/approve`, {});
       return res.json();
     },
-    onSuccess: (data: { webLink?: string }) => {
+    onSuccess: (data: { webLink?: string; deliveryNote?: string }) => {
       queryClient.invalidateQueries({ queryKey: prospectsKey });
       setDraft(null);
       toast({
         title: "Approved",
-        description: data.webLink ? "Draft created in your Outlook — review and send." : "Draft approved.",
+        description: data.deliveryNote
+          ? data.deliveryNote
+          : data.webLink
+            ? "Draft created in your Outlook — review and send."
+            : "Draft approved.",
       });
     },
     onError: (err: any) => toast({ title: "Approval blocked", description: err?.message, variant: "destructive" }),
@@ -403,6 +423,44 @@ export default function OutreachCampaignDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Performance — conversion-first, feeds ICP targeting */}
+        {performance && performance.contacted > 0 && (
+          <Card data-testid="campaign-performance">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" /> Performance
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-6 text-sm">
+                <div><span className="text-2xl font-bold tabular-nums">{Math.round(performance.replyRate * 100)}%</span><div className="text-xs text-muted-foreground">reply rate</div></div>
+                <div><span className="text-2xl font-bold tabular-nums">{performance.contacted}</span><div className="text-xs text-muted-foreground">contacted</div></div>
+                <div><span className="text-2xl font-bold tabular-nums">{performance.replied}</span><div className="text-xs text-muted-foreground">replied</div></div>
+              </div>
+              {performance.signals.filter((s) => s.lift != null && s.matched >= 3).length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">What's converting</p>
+                  <div className="space-y-1">
+                    {performance.signals.filter((s) => s.lift != null && s.matched >= 3).slice(0, 4).map((s) => (
+                      <div key={s.key} className="flex items-center justify-between text-sm">
+                        <span>{s.label}</span>
+                        <span className={`tabular-nums ${(s.lift ?? 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                          {(s.lift ?? 0) > 0 ? "+" : ""}{Math.round((s.lift ?? 0) * 100)} pts
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {performance.recommendations.length > 0 && (
+                <ul className="space-y-1 text-sm text-muted-foreground border-l-2 pl-3">
+                  {performance.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Dossier dialog */}
