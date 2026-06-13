@@ -21,11 +21,12 @@ import {
   LayoutList,
   Library,
   Image,
-  AtSign,
   Send,
   LayoutGrid,
   TrendingUp,
   Target,
+  ListChecks,
+  AlertTriangle,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
@@ -97,6 +98,61 @@ export default function MarketingLandingPage() {
     },
     enabled: isEnterprise,
   });
+
+  // Pipeline pulse for the hub: same source the Content Pipeline board uses.
+  const { data: pipelinePosts = [] } = useQuery<
+    { id: string; status: string; scheduledDate: string | null; publishedAt: string | null }[]
+  >({
+    queryKey: ["/api/generated-posts/calendar", "marketing-hub"],
+    queryFn: async () => {
+      const from = new Date();
+      from.setDate(from.getDate() - 30);
+      const to = new Date();
+      to.setDate(to.getDate() + 60);
+      const params = new URLSearchParams({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        includeUnscheduled: "true",
+      });
+      const r = await fetch(`/api/generated-posts/calendar?${params}`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: isEnterprise,
+  });
+
+  const now = Date.now();
+  const weekAhead = now + 7 * 24 * 60 * 60 * 1000;
+  const awaitingApproval = pipelinePosts.filter(p => p.status === "draft").length;
+  const approvedUnscheduled = pipelinePosts.filter(p => p.status === "approved" && !p.scheduledDate).length;
+  const failedPublishes = pipelinePosts.filter(p => p.status === "publish_failed").length;
+  const scheduledThisWeek = pipelinePosts.filter(p => {
+    if (!p.scheduledDate || p.publishedAt) return false;
+    const t = new Date(p.scheduledDate).getTime();
+    return t >= now && t <= weekAhead;
+  }).length;
+  const inFlight = pipelinePosts.filter(p => !["published", "exported"].includes(p.status)).length;
+
+  const attentionItems = [
+    awaitingApproval > 0 && {
+      key: "approval",
+      tone: "amber" as const,
+      text: `${awaitingApproval} post${awaitingApproval === 1 ? "" : "s"} awaiting approval`,
+      action: "Review board",
+    },
+    approvedUnscheduled > 0 && {
+      key: "unscheduled",
+      tone: "teal" as const,
+      text: `${approvedUnscheduled} approved post${approvedUnscheduled === 1 ? "" : "s"} not yet scheduled`,
+      action: "Schedule",
+    },
+    failedPublishes > 0 && {
+      key: "failed",
+      tone: "red" as const,
+      text: `${failedPublishes} post${failedPublishes === 1 ? "" : "s"} failed to publish`,
+      action: "Fix",
+    },
+  ].filter(Boolean) as { key: string; tone: "amber" | "teal" | "red"; text: string; action: string }[];
 
   const gtmGenerated = gtmPlan?.status === "generated" && !!gtmPlan?.content;
   const msgGenerated = messagingFramework?.status === "generated" && !!messagingFramework?.content;
@@ -231,15 +287,15 @@ export default function MarketingLandingPage() {
       testId: "card-brand-library",
     },
     {
-      title: "Social Accounts",
-      description: "Connect and manage social media accounts for publishing.",
-      icon: AtSign,
+      title: "Content Pipeline",
+      description: "Every in-flight post, email, and brief on one drag-and-drop board.",
+      icon: ListChecks,
       generated: false,
       loading: false,
       enterprise: true,
-      actionLabel: "Manage Accounts",
-      actionHref: "/app/marketing/social-accounts",
-      testId: "card-social-accounts",
+      actionLabel: "Open Pipeline",
+      actionHref: "/app/marketing/pipeline",
+      testId: "card-content-pipeline",
     },
     {
       title: "Email Sends",
@@ -303,7 +359,53 @@ export default function MarketingLandingPage() {
               <LinkPerformanceTab />
             </TabsContent>
 
-            <TabsContent value="overview">
+            <TabsContent value="overview" className="space-y-4">
+              {isEnterprise && pipelinePosts.length > 0 && (
+                <Card data-testid="card-pipeline-pulse">
+                  <CardContent className="py-4">
+                    <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+                      {[
+                        { label: "In pipeline", value: inFlight },
+                        { label: "Awaiting approval", value: awaitingApproval, highlight: awaitingApproval > 0 },
+                        { label: "Scheduled · next 7 days", value: scheduledThisWeek },
+                      ].map(({ label, value, highlight }) => (
+                        <div key={label}>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+                          <p className={`text-2xl font-bold ${highlight ? "text-amber-600 dark:text-amber-400" : ""}`}>{value}</p>
+                        </div>
+                      ))}
+                      <Button size="sm" className="ml-auto" asChild data-testid="button-pulse-open-pipeline">
+                        <Link href="/app/marketing/pipeline">
+                          <ListChecks className="w-3.5 h-3.5 mr-1.5" /> Open pipeline
+                          <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                        </Link>
+                      </Button>
+                    </div>
+                    {attentionItems.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-border space-y-2">
+                        {attentionItems.map(item => (
+                          <div key={item.key} className="flex items-center gap-2 text-sm" data-testid={`attention-${item.key}`}>
+                            {item.tone === "red" ? (
+                              <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
+                            ) : (
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${item.tone === "amber" ? "bg-amber-500" : "bg-teal-500"}`}
+                              />
+                            )}
+                            <span className={item.tone === "red" ? "text-destructive" : ""}>{item.text}</span>
+                            <Link
+                              href="/app/marketing/pipeline"
+                              className="ml-auto text-xs font-medium text-primary hover:underline"
+                            >
+                              {item.action} →
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {cards.map((card) => {
               const Icon = card.icon;

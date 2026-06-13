@@ -324,6 +324,17 @@ export default function CampaignDetailPage() {
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
   const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
+  // Density: post cards render compact (small thumbnail + clamped text) by
+  // default so a long generation batch fits on a screen; expanding a card
+  // shows the full text, full-size image, and the inline editors.
+  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set());
+  const togglePostExpanded = (id: string) =>
+    setExpandedPosts(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
@@ -2065,6 +2076,20 @@ export default function CampaignDetailPage() {
                     {archivedCount > 0 && <SelectItem value="archived">Archived ({archivedCount})</SelectItem>}
                   </SelectContent>
                 </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-xs text-muted-foreground"
+                  onClick={() =>
+                    setExpandedPosts(prev =>
+                      prev.size > 0 ? new Set() : new Set(posts.map(p => p.id)),
+                    )
+                  }
+                  data-testid="button-toggle-expand-all"
+                >
+                  <ChevronDown className={expandedPosts.size > 0 ? "w-3.5 h-3.5 rotate-180" : "w-3.5 h-3.5"} />
+                  {expandedPosts.size > 0 ? "Collapse all" : "Expand all"}
+                </Button>
                 {unscheduledDraftCount > 0 && (
                   <Button
                     variant="outline"
@@ -2233,6 +2258,12 @@ export default function CampaignDetailPage() {
                   return p.status === postFilter;
                 }).map(post => {
                   const postImage = getPostImage(post);
+                  // Inline editors live in the expanded body, so editing a
+                  // collapsed card implicitly expands it.
+                  const isExpanded =
+                    expandedPosts.has(post.id) ||
+                    editingPostId === post.id ||
+                    editingPostHashtags === post.id;
                   return (
                     <Card key={post.id} data-testid={`card-post-${post.id}`}>
                       <CardHeader className="pb-2">
@@ -2313,6 +2344,65 @@ export default function CampaignDetailPage() {
                         </div>
                       </CardHeader>
                       <CardContent className="pt-0 space-y-3">
+                        {!isExpanded ? (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={false}
+                            className="flex items-start gap-3 cursor-pointer group/compact"
+                            onClick={() => togglePostExpanded(post.id)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                togglePostExpanded(post.id);
+                              }
+                            }}
+                            title="Click to expand"
+                            data-testid={`post-compact-${post.id}`}
+                          >
+                            {postImage && (
+                              <img
+                                src={postImage}
+                                alt=""
+                                loading="lazy"
+                                className="w-14 h-14 rounded object-cover border border-border shrink-0"
+                                onError={e => (e.currentTarget.style.display = "none")}
+                              />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm line-clamp-2">{post.editedContent ?? post.content}</p>
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                {post.scheduledDate ? (
+                                  <Badge variant="secondary" className="text-[10px] gap-1">
+                                    <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, h:mm a")}
+                                  </Badge>
+                                ) : post.status !== "exported" && post.status !== "published" && (
+                                  <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-300">
+                                    <Calendar className="w-2.5 h-2.5" />No date
+                                  </Badge>
+                                )}
+                                {post.publishedAt && (
+                                  <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Published</Badge>
+                                )}
+                                {post.publishError && !post.publishedAt && (
+                                  <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Publish error</Badge>
+                                )}
+                                {post.status === "approved" && (
+                                  <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Approved</Badge>
+                                )}
+                                {post.status === "rejected" && (
+                                  <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200">Rejected</Badge>
+                                )}
+                                {(post.hashtags?.length ?? 0) > 0 && (
+                                  <span className="text-[10px] text-muted-foreground">{post.hashtags.length} hashtag{post.hashtags.length === 1 ? "" : "s"}</span>
+                                )}
+                              </div>
+                            </div>
+                            <ChevronDown className="w-4 h-4 text-muted-foreground/50 group-hover/compact:text-foreground shrink-0 mt-1 transition-colors" />
+                          </div>
+                        ) : (
+                        <>
+                        <div className="flex items-center justify-between gap-2">
                         {post.scheduledDate ? (
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
@@ -2322,6 +2412,24 @@ export default function CampaignDetailPage() {
                             <Calendar className="w-2.5 h-2.5" />No date — excluded from export
                           </Badge>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="ml-auto h-6 px-2 text-xs text-muted-foreground"
+                          onClick={() => {
+                            setExpandedPosts(prev => {
+                              const next = new Set(prev);
+                              next.delete(post.id);
+                              return next;
+                            });
+                            if (editingPostId === post.id) setEditingPostId(null);
+                            if (editingPostHashtags === post.id) setEditingPostHashtags(null);
+                          }}
+                          data-testid={`button-collapse-${post.id}`}
+                        >
+                          Collapse <ChevronDown className="w-3 h-3 ml-1 rotate-180" />
+                        </Button>
+                        </div>
                         {post.publishedAt && (
                           <div className="flex items-center gap-2 text-xs text-green-600" data-testid={`badge-published-${post.id}`}>
                             <CheckCircle className="w-3 h-3" />
@@ -2477,6 +2585,8 @@ export default function CampaignDetailPage() {
                           {post.status === "approved" && <Badge variant="outline" className="text-green-600 border-green-200">Approved</Badge>}
                           {post.status === "rejected" && <Badge variant="outline" className="text-orange-600 border-orange-200">Rejected</Badge>}
                         </div>
+                        </>
+                        )}
                       </CardContent>
                     </Card>
                   );

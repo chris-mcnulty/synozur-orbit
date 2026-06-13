@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas, marketingTasks, marketingPlans } from "@shared/schema";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
@@ -340,6 +340,43 @@ export function registerEditorialCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[editorial-calendars list]", err);
       res.status(500).json({ error: err.message || "Failed to list editorial calendars" });
+    }
+  });
+
+  // Flat brief list across every calendar in the active tenant/market — used
+  // by cross-calendar surfaces (the Content Pipeline board) so they get the
+  // complete set in one request instead of a fetch per calendar.
+  app.get("/api/content-briefs", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+      const rows = await db
+        .select({
+          id: contentBriefs.id,
+          title: contentBriefs.title,
+          format: contentBriefs.format,
+          status: contentBriefs.status,
+          campaignId: contentBriefs.campaignId,
+          calendarId: contentBriefs.calendarId,
+          scheduledAt: contentBriefs.scheduledAt,
+          createdAt: contentBriefs.createdAt,
+        })
+        .from(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            // Same market rule as elsewhere: the default market also owns
+            // legacy rows with no marketId.
+            ctx.isDefaultMarket
+              ? or(eq(contentBriefs.marketId, ctx.marketId), isNull(contentBriefs.marketId))
+              : eq(contentBriefs.marketId, ctx.marketId),
+          ),
+        )
+        .orderBy(desc(contentBriefs.createdAt));
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[content-briefs list]", err);
+      res.status(500).json({ error: err.message || "Failed to list content briefs" });
     }
   });
 

@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1560" height="840" viewBox="0 0 1560 840" font-family="Avenir Next, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="drawerShadow" x="-30%" y="-10%" width="160%" height="120%">
+      <feDropShadow dx="-8" dy="0" stdDeviation="12" flood-color="#221735" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="1560" height="840" fill="#f7f4fb"/>
+  <text x="40" y="52" font-size="26" font-weight="700" fill="#221735">Fixing the endless scroll on transactional lists</text>
+  <text x="40" y="80" font-size="14" fill="#756a8a">Same 12 generated posts, same screen size — full content moves out of the list and into a drawer</text>
+
+  <!-- ================= BEFORE ================= -->
+  <text x="40" y="122" font-size="13" font-weight="700" fill="#b91c1c" letter-spacing="1">BEFORE — FULL TEXT + FULL-SIZE IMAGE INLINE</text>
+  <rect x="40" y="136" width="720" height="624" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+
+  <!-- one giant post card -->
+  <rect x="64" y="158" width="660" height="578" rx="10" fill="#fdfcff" stroke="#e4ddf0"/>
+  <rect x="84" y="176" width="78" height="22" rx="11" fill="#e0f2fe"/>
+  <text x="123" y="191" font-size="11" font-weight="600" fill="#0c4a6e" text-anchor="middle">LinkedIn</text>
+  <rect x="170" y="176" width="52" height="22" rx="11" fill="#f1f0f3"/>
+  <text x="196" y="191" font-size="11" font-weight="600" fill="#6b7280" text-anchor="middle">draft</text>
+  <text x="84" y="226" font-size="16" font-weight="700" fill="#221735">Announcing Orbit 3.0 — the fastest way to track your market</text>
+
+  <!-- full-size image -->
+  <rect x="84" y="244" width="600" height="268" rx="8" fill="#ddd4ec"/>
+  <circle cx="200" cy="320" r="26" fill="#c1b3dd"/>
+  <path d="M 130 488 L 280 360 L 380 440 L 470 350 L 638 488 Z" fill="#b3a2d6"/>
+  <text x="384" y="384" font-size="12" fill="#7c6f97" text-anchor="middle">full-size generated image (1200 × 628)</text>
+
+  <!-- full text -->
+  <g fill="#e8e2f2">
+    <rect x="84" y="532" width="600" height="9" rx="4"/>
+    <rect x="84" y="552" width="572" height="9" rx="4"/>
+    <rect x="84" y="572" width="600" height="9" rx="4"/>
+    <rect x="84" y="592" width="540" height="9" rx="4"/>
+    <rect x="84" y="612" width="600" height="9" rx="4"/>
+    <rect x="84" y="632" width="586" height="9" rx="4"/>
+    <rect x="84" y="652" width="380" height="9" rx="4"/>
+  </g>
+  <rect x="84" y="678" width="92" height="30" rx="8" fill="#f0e7fd"/>
+  <text x="130" y="698" font-size="12" font-weight="600" fill="#5b0bb0" text-anchor="middle">Approve</text>
+  <rect x="188" y="678" width="72" height="30" rx="8" fill="#ffffff" stroke="#d8cfe9"/>
+  <text x="224" y="698" font-size="12" font-weight="600" fill="#756a8a" text-anchor="middle">Edit</text>
+
+  <!-- scrollbar -->
+  <rect x="742" y="148" width="8" height="600" rx="4" fill="#efeaf7"/>
+  <rect x="742" y="148" width="8" height="50" rx="4" fill="#b91c1c"/>
+
+  <text x="40" y="790" font-size="13" fill="#b91c1c" font-weight="600">1 of 12 posts visible · reviewing the campaign ≈ 9 screens of scrolling</text>
+
+  <!-- arrow -->
+  <path d="M 766 440 L 790 440" stroke="#7e0ef5" stroke-width="3"/>
+  <path d="M 786 432 L 798 440 L 786 448 Z" fill="#7e0ef5"/>
+
+  <!-- ================= AFTER ================= -->
+  <text x="800" y="122" font-size="13" font-weight="700" fill="#15803d" letter-spacing="1">AFTER — COMPACT ROWS + DETAIL DRAWER</text>
+  <rect x="800" y="136" width="720" height="624" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+
+  <!-- rows -->
+  <g font-size="12">
+    <!-- row 1 -->
+    <rect x="816" y="150" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="156" width="52" height="52" rx="6" fill="#ddd4ec"/><path d="M 832 204 L 848 184 L 858 192 L 866 182 L 876 204 Z" fill="#b3a2d6"/>
+    <text x="896" y="176" font-weight="600" fill="#221735">Announcing Orbit 3.0 — the fastest way to track…</text>
+    <rect x="896" y="186" width="270" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="168" width="56" height="22" rx="11" fill="#f1f0f3"/><text x="1290" y="183" font-size="10" font-weight="600" fill="#6b7280" text-anchor="middle">draft</text>
+    <text x="1342" y="183" fill="#c4bbd6">›</text>
+    <!-- row 2 (selected) -->
+    <rect x="816" y="222" width="688" height="64" rx="9" fill="#f7f1ff" stroke="#7e0ef5" stroke-width="2"/>
+    <rect x="828" y="228" width="52" height="52" rx="6" fill="#ddd4ec"/><path d="M 832 276 L 848 256 L 858 264 L 866 254 L 876 276 Z" fill="#b3a2d6"/>
+    <text x="896" y="248" font-weight="600" fill="#221735">Customer story: how Acme cut research time by 60%</text>
+    <rect x="896" y="258" width="240" height="7" rx="3" fill="#e2d4f6"/>
+    <rect x="1262" y="240" width="74" height="22" rx="11" fill="#dbeafe"/><text x="1299" y="255" font-size="10" font-weight="600" fill="#1d4ed8" text-anchor="middle">approved</text>
+    <!-- row 3 -->
+    <rect x="816" y="294" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="300" width="52" height="52" rx="6" fill="#ddd4ec"/>
+    <text x="896" y="320" font-weight="600" fill="#221735">Webinar June 24: live demo of the positioning map</text>
+    <rect x="896" y="330" width="300" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="312" width="80" height="22" rx="11" fill="#ccfbf1"/><text x="1302" y="327" font-size="10" font-weight="600" fill="#0f766e" text-anchor="middle">scheduled</text>
+    <!-- row 4 -->
+    <rect x="816" y="366" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="372" width="52" height="52" rx="6" fill="#ddd4ec"/>
+    <text x="896" y="392" font-weight="600" fill="#221735">5 signs your battlecards are out of date</text>
+    <rect x="896" y="402" width="220" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="384" width="56" height="22" rx="11" fill="#f1f0f3"/><text x="1290" y="399" font-size="10" font-weight="600" fill="#6b7280" text-anchor="middle">draft</text>
+    <!-- row 5 -->
+    <rect x="816" y="438" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="444" width="52" height="52" rx="6" fill="#ddd4ec"/>
+    <text x="896" y="464" font-weight="600" fill="#221735">Q3 launch teaser — "Something big is orbiting…"</text>
+    <rect x="896" y="474" width="260" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="456" width="80" height="22" rx="11" fill="#dcfce7"/><text x="1302" y="471" font-size="10" font-weight="600" fill="#15803d" text-anchor="middle">published</text>
+    <!-- row 6 -->
+    <rect x="816" y="510" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="516" width="52" height="52" rx="6" fill="#ddd4ec"/>
+    <text x="896" y="536" font-weight="600" fill="#221735">Meet us at SaaSCon — booth 42</text>
+    <rect x="896" y="546" width="240" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="528" width="74" height="22" rx="11" fill="#dbeafe"/><text x="1299" y="543" font-size="10" font-weight="600" fill="#1d4ed8" text-anchor="middle">approved</text>
+    <!-- row 7 -->
+    <rect x="816" y="582" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="588" width="52" height="52" rx="6" fill="#ddd4ec"/>
+    <text x="896" y="608" font-weight="600" fill="#221735">Why share-of-voice beats vanity metrics</text>
+    <rect x="896" y="618" width="280" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="600" width="56" height="22" rx="11" fill="#f1f0f3"/><text x="1290" y="615" font-size="10" font-weight="600" fill="#6b7280" text-anchor="middle">draft</text>
+    <!-- row 8 -->
+    <rect x="816" y="654" width="688" height="64" rx="9" fill="#fdfcff" stroke="#e4ddf0"/>
+    <rect x="828" y="660" width="52" height="52" rx="6" fill="#ddd4ec"/>
+    <text x="896" y="680" font-weight="600" fill="#221735">June product digest (email)</text>
+    <rect x="896" y="690" width="200" height="7" rx="3" fill="#e8e2f2"/>
+    <rect x="1262" y="672" width="80" height="22" rx="11" fill="#ccfbf1"/><text x="1302" y="687" font-size="10" font-weight="600" fill="#0f766e" text-anchor="middle">scheduled</text>
+    <text x="816" y="744" font-size="11" fill="#756a8a">…virtualized list — 4 more rows below render on scroll</text>
+  </g>
+
+  <!-- detail drawer over right edge -->
+  <g filter="url(#drawerShadow)">
+    <rect x="1252" y="136" width="268" height="624" rx="12" fill="#ffffff" stroke="#e4ddf0"/>
+  </g>
+  <text x="1272" y="170" font-size="14" font-weight="700" fill="#221735">Edit post</text>
+  <text x="1496" y="170" font-size="14" fill="#756a8a" text-anchor="end">✕</text>
+  <rect x="1272" y="184" width="78" height="22" rx="11" fill="#e0f2fe"/>
+  <text x="1311" y="199" font-size="11" font-weight="600" fill="#0c4a6e" text-anchor="middle">LinkedIn</text>
+  <rect x="1272" y="220" width="228" height="128" rx="8" fill="#ddd4ec"/>
+  <path d="M 1290 336 L 1340 282 L 1372 308 L 1402 274 L 1466 336 Z" fill="#b3a2d6"/>
+  <text x="1386" y="262" font-size="10" fill="#7c6f97" text-anchor="middle">full image preview</text>
+  <g fill="#e8e2f2">
+    <rect x="1272" y="366" width="228" height="8" rx="4"/>
+    <rect x="1272" y="384" width="210" height="8" rx="4"/>
+    <rect x="1272" y="402" width="228" height="8" rx="4"/>
+    <rect x="1272" y="420" width="190" height="8" rx="4"/>
+    <rect x="1272" y="438" width="228" height="8" rx="4"/>
+    <rect x="1272" y="456" width="160" height="8" rx="4"/>
+  </g>
+  <text x="1272" y="498" font-size="11" font-weight="600" fill="#756a8a">FULL TEXT, EDITABLE IN PLACE</text>
+  <rect x="1272" y="660" width="106" height="34" rx="9" fill="#7e0ef5"/>
+  <text x="1325" y="682" font-size="12" font-weight="600" fill="#ffffff" text-anchor="middle">Approve</text>
+  <rect x="1390" y="660" width="110" height="34" rx="9" fill="#ffffff" stroke="#d8cfe9"/>
+  <text x="1445" y="682" font-size="12" font-weight="600" fill="#5b0bb0" text-anchor="middle">Schedule…</text>
+
+  <text x="800" y="790" font-size="13" fill="#15803d" font-weight="600">All 12 posts scannable on one screen · full text &amp; image open in a drawer (vaul — already a dependency)</text>
+
+  <text x="40" y="824" font-size="12" fill="#756a8a">Mockup 4 of 4 · see docs/ux-restructuring-plan.md §4 — applies to campaign posts, email newsletters and content briefs</text>
+</svg>
