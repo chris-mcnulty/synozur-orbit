@@ -520,6 +520,99 @@ export function getAvailableModelsByProvider(): Record<string, string[]> {
   return result;
 }
 
+export interface WebSearchCompletionResult extends AICompletionResult {
+  /** How many web searches the model ran (for transparency / cost visibility). */
+  searchCount: number;
+}
+
+/**
+ * Whether web-grounded completion is available. The `web_search` server tool is
+ * an Anthropic-hosted tool, so it requires the Anthropic provider to be
+ * configured — the OpenAI/Azure providers can't serve it.
+ */
+export function isWebSearchAvailable(): boolean {
+  return !!(
+    process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY && process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL
+  );
+}
+
+/**
+ * Run a completion with Anthropic's `web_search` server tool so the model can
+ * ground its answer in live public sources. Handles the server-side tool loop
+ * (`pause_turn`) and returns the concatenated final text plus aggregate usage.
+ *
+ * Used by prospect discovery to find net-new leads from the public web. Throws
+ * a clear error when the Anthropic provider isn't configured so callers can
+ * surface "discovery unavailable" instead of failing opaquely.
+ */
+export async function completeWithWebSearch(
+  userPrompt: string,
+  options?: AICompletionOptions & { maxSearches?: number },
+): Promise<WebSearchCompletionResult> {
+  if (!isWebSearchAvailable()) {
+    throw new Error("Web-grounded discovery requires the Anthropic AI provider, which isn't configured.");
+  }
+
+  const client = new Anthropic({
+    apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  });
+  const model = "claude-sonnet-4-5";
+  const maxUses = Math.max(1, Math.min(options?.maxSearches ?? 5, 10));
+
+  const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }];
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: userPrompt }];
+
+  const startTime = Date.now();
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let searchCount = 0;
+  let text = "";
+
+  // The server runs its own sampling loop; `pause_turn` means "resume me".
+  // Bound the continuations so a misbehaving loop can't run forever.
+  const MAX_TURNS = 6;
+  let completed = false;
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const params: Anthropic.MessageCreateParams = {
+      model,
+      max_tokens: options?.maxTokens ?? 4096,
+      messages,
+      tools: tools as any,
+    };
+    if (options?.systemPrompt) params.system = options.systemPrompt;
+    if (options?.temperature !== undefined) params.temperature = options.temperature;
+
+    const response = await client.messages.create(params);
+    inputTokens += response.usage.input_tokens;
+    outputTokens += response.usage.output_tokens;
+
+    for (const block of response.content) {
+      if (block.type === "text") text += block.text;
+      else if (block.type === "server_tool_use" && (block as any).name === "web_search") searchCount++;
+    }
+
+    if (response.stop_reason === "pause_turn") {
+      messages.push({ role: "assistant", content: response.content });
+      continue;
+    }
+    completed = true;
+    break;
+  }
+  if (!completed) {
+    throw new Error(`Web search completion did not finish after ${MAX_TURNS} turns — response may be truncated.`);
+  }
+
+  return {
+    text: text.trim(),
+    usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+    model,
+    provider: AI_PROVIDERS.REPLIT_ANTHROPIC,
+    durationMs: Date.now() - startTime,
+    searchCount,
+  };
+}
+
 export async function completeForFeature(
   feature: AIFeature,
   userPrompt: string,

@@ -21,13 +21,14 @@ export async function logAiUsage(
   provider: string,
   model: string,
   usage: { input_tokens?: number; output_tokens?: number } | undefined,
-  durationMs?: number
+  durationMs?: number,
+  metadata?: Record<string, unknown>,
 ) {
   try {
     const inputTokens = usage?.input_tokens || 0;
     const outputTokens = usage?.output_tokens || 0;
     const estimatedCost = calculateEstimatedCost(model, inputTokens, outputTokens, provider);
-    
+
     await storage.logAiUsage({
       tenantDomain: ctx.tenantDomain,
       marketId: ctx.marketId,
@@ -40,6 +41,7 @@ export async function logAiUsage(
       totalTokens: inputTokens + outputTokens,
       estimatedCost,
       durationMs: durationMs || null,
+      ...(metadata ? { metadata } : {}),
     });
   } catch (error) {
     console.error("Failed to log AI usage:", error);
