@@ -18,9 +18,14 @@ export class LinkedInProviderError extends Error {
   }
 }
 
-/** Whether a LinkedIn MCP server is configured for this server. */
+// Flip to true only when the MCP client below is actually implemented. Until
+// then capabilities must NOT claim messaging is available (otherwise the approve
+// flow attempts a send that always throws and falls back).
+const MCP_CLIENT_WIRED = false;
+
+/** Whether a LinkedIn MCP server is configured AND its client is wired up. */
 export function isLinkedInMcpConfigured(): boolean {
-  return !!process.env.LINKEDIN_MCP_URL?.trim();
+  return MCP_CLIENT_WIRED && !!process.env.LINKEDIN_MCP_URL?.trim();
 }
 
 /** Current LinkedIn capabilities (which backend serves posting vs messaging). */

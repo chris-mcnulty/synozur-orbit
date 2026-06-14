@@ -215,9 +215,10 @@ export async function composeTouch(
     })
     .returning();
 
-  // Advance the prospect into the draft-review state (from new/researched).
+  // Advance the prospect into the draft-review state. Covers first-touch
+  // (new/researched) and follow-ups composed for a due cadence step.
   let updatedProspect = prospect;
-  if (prospect.status === "new" || prospect.status === "researched") {
+  if (prospect.status === "new" || prospect.status === "researched" || prospect.status === "cadence_step_due") {
     const [u] = await db
       .update(prospects)
       .set({ status: "draft_pending_approval", updatedAt: new Date() })

@@ -119,6 +119,14 @@ async function countProspects(tenantDomain: string, statuses: string[]): Promise
   return r?.c ?? 0;
 }
 
+async function countProspectsInCampaign(campaignId: string, statuses: string[]): Promise<number> {
+  const [r] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(prospects)
+    .where(and(eq(prospects.campaignId, campaignId), inArray(prospects.status, statuses)));
+  return r?.c ?? 0;
+}
+
 export async function getOutreachSummary(tenantDomain: string): Promise<OutreachSummary> {
   const liveCampaigns = await db
     .select({ id: outreachCampaigns.id, createdAt: outreachCampaigns.createdAt })
@@ -187,6 +195,10 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
     .from(outreachCampaigns)
     .where(and(eq(outreachCampaigns.tenantDomain, tenantDomain), eq(outreachCampaigns.status, "active")));
 
+  // Reply-rate floor is tenant-configured but applied per campaign.
+  const [settingsRow] = await db.select().from(outreachSettings).where(eq(outreachSettings.tenantDomain, tenantDomain));
+  const floor = settingsRow?.minReplyRateFloor ?? 0;
+
   for (const campaign of campaigns) {
     const steps: CadenceStepLike[] = campaign.cadenceTemplateId
       ? (await db.select().from(cadenceSteps).where(eq(cadenceSteps.templateId, campaign.cadenceTemplateId))).map((s) => ({
@@ -204,9 +216,23 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
 
     const anchor = anchorFor(campaign);
 
+    // Batch-load every awaiting prospect's touches in one query (avoid N+1).
+    const awaitingIds = awaiting.map((p) => p.id);
+    const touchRows = awaitingIds.length
+      ? await db
+          .select({ prospectId: outreachTouches.prospectId, stepNumber: outreachTouches.stepNumber })
+          .from(outreachTouches)
+          .where(inArray(outreachTouches.prospectId, awaitingIds))
+      : [];
+    const completedByProspect = new Map<string, number[]>();
+    for (const t of touchRows) {
+      const arr = completedByProspect.get(t.prospectId) ?? [];
+      arr.push(t.stepNumber);
+      completedByProspect.set(t.prospectId, arr);
+    }
+
     for (const p of awaiting) {
-      const touches = await db.select().from(outreachTouches).where(eq(outreachTouches.prospectId, p.id));
-      const completed = touches.map((t) => t.stepNumber);
+      const completed = completedByProspect.get(p.id) ?? [];
 
       if (isExhausted(steps, completed)) {
         await db.update(prospects).set({ status: "dormant", nextActionAt: null, updatedAt: now }).where(eq(prospects.id, p.id));
@@ -220,12 +246,11 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
       }
     }
 
-    // Reply-rate floor → auto-pause the campaign.
-    const [settingsRow] = await db.select().from(outreachSettings).where(eq(outreachSettings.tenantDomain, tenantDomain));
-    const floor = settingsRow?.minReplyRateFloor ?? 0;
+    // Reply-rate floor → auto-pause THIS campaign (scoped to the campaign, not
+    // the whole tenant, so one campaign's performance can't pause another).
     if (floor > 0) {
-      const sent = await countProspects(tenantDomain, IN_COMMS);
-      const replied = await countProspects(tenantDomain, ["replied"]);
+      const sent = await countProspectsInCampaign(campaign.id, IN_COMMS);
+      const replied = await countProspectsInCampaign(campaign.id, ["replied"]);
       if (belowReplyFloor(replied, sent, floor)) {
         await db.update(outreachCampaigns).set({ status: "paused", updatedAt: now }).where(eq(outreachCampaigns.id, campaign.id));
         result.campaignsPaused++;

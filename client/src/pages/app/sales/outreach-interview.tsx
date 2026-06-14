@@ -135,10 +135,10 @@ export default function OutreachInterviewPage() {
   const step = STEPS[stepIdx];
   const isLast = stepIdx === STEPS.length - 1;
   const canAdvance =
-    step.key === "goal" ? name.trim() && goal.trim()
-    : step.key === "message" ? message.trim()
-    : step.key === "icp" ? personaIds.length > 0 || targetRoles.trim()
-    : step.key === "cta" ? cta.trim()
+    step.key === "goal" ? Boolean(name.trim() && goal.trim())
+    : step.key === "message" ? Boolean(message.trim())
+    : step.key === "icp" ? personaIds.length > 0 || Boolean(targetRoles.trim())
+    : step.key === "cta" ? Boolean(cta.trim())
     : true;
 
   function toggle<T>(list: T[], value: T, setter: (v: T[]) => void) {
