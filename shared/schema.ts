@@ -4442,7 +4442,7 @@ export const outreachCampaigns = pgTable("outreach_campaigns", {
   conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   eventDate: timestamp("event_date"),
   // The cadence template that drives follow-up sequencing.
-  cadenceTemplateId: varchar("cadence_template_id"),
+  cadenceTemplateId: varchar("cadence_template_id").references((): AnyPgColumn => cadenceTemplates.id, { onDelete: "set null" }),
   // The voice profile drafts are written in — the seller's PERSONAL profile.
   voiceProfileId: varchar("voice_profile_id").references((): AnyPgColumn => socialAccountVoiceProfiles.id, { onDelete: "set null" }),
   status: text("status").notNull().default("draft"), // OutreachCampaignStatus

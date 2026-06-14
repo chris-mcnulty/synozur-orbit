@@ -2616,6 +2616,10 @@ export function stopScheduledJobs(): void {
     clearInterval(hubspotSyncInterval);
     hubspotSyncInterval = null;
   }
+  if (outreachCadenceInterval) {
+    clearInterval(outreachCadenceInterval);
+    outreachCadenceInterval = null;
+  }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }
 

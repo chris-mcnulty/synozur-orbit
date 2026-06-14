@@ -175,6 +175,7 @@ export function registerSalesOutreachRoutes(app: Express) {
 
   app.get("/api/sales-outreach/campaigns", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       const rows = await db
         .select()
@@ -190,6 +191,7 @@ export function registerSalesOutreachRoutes(app: Express) {
 
   app.get("/api/sales-outreach/campaigns/:id", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
@@ -204,6 +206,7 @@ export function registerSalesOutreachRoutes(app: Express) {
 
   app.get("/api/sales-outreach/campaigns/:id/prospects", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
@@ -326,6 +329,7 @@ export function registerSalesOutreachRoutes(app: Express) {
 
   app.get("/api/sales-outreach/prospects/:id/touches", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
@@ -516,6 +520,7 @@ export function registerSalesOutreachRoutes(app: Express) {
   // Conversion-first performance report for a campaign (feeds ICP targeting).
   app.get("/api/sales-outreach/campaigns/:id/performance", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       const report = await getCampaignPerformance(ctx.tenantDomain, req.params.id);
       res.json(report);
@@ -688,6 +693,7 @@ export function registerSalesOutreachRoutes(app: Express) {
   // Active Outreach rollup for the Sales home widget.
   app.get("/api/sales-outreach/summary", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       res.json(await getOutreachSummary(ctx.tenantDomain));
     } catch (err: any) {
@@ -715,6 +721,7 @@ export function registerSalesOutreachRoutes(app: Express) {
   // Mark a prospect as having replied (until Graph reply auto-detection lands).
   app.post("/api/sales-outreach/prospects/:id/mark-replied", async (req, res) => {
     try {
+      if (!(await guardFeature(req, res, "outreachCadence"))) return;
       const ctx = await getRequestContext(req);
       const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {

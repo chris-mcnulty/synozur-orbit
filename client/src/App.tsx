@@ -172,10 +172,10 @@ function Router() {
       <Route path="/app/about" component={AppAbout} />
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/sales" component={SalesHubPage} />
-      <Route path="/app/sales/outreach" component={OutreachCampaignsPage} />
-      <Route path="/app/sales/outreach/new" component={OutreachInterviewPage} />
-      <Route path="/app/sales/outreach/settings" component={OutreachSettingsPage} />
-      <Route path="/app/sales/outreach/:id" component={OutreachCampaignDetailPage} />
+      <Route path="/app/sales/outreach">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachCampaignsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/sales/outreach/new">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachInterviewPage /></PageFeatureGate>}</Route>
+      <Route path="/app/sales/outreach/settings">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachSettingsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/sales/outreach/:id">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachCampaignDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/battlecards">{() => <PageFeatureGate featureKey="battlecards" label="Sales Battlecards" description="Generate competitive battlecards for sales teams. Upgrade to unlock this feature."><BattleCardsPage /></PageFeatureGate>}</Route>
       <Route path="/app/usage" component={UsagePage} />
       <Route path="/app/marketing" component={MarketingLandingPage} />
