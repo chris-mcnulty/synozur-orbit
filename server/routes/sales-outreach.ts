@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { z } from "zod";
 import { db } from "../db";
 import {
   outreachSettings,
@@ -205,6 +206,68 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach-campaigns:get]", err);
       res.status(500).json({ error: err.message || "Failed to load campaign" });
+    }
+  });
+
+  const patchCampaignSchema = z.object({
+    name: z.string().min(1).max(200).optional(),
+    goalType: z.enum(["meeting", "event_invite", "intro", "nurture"]).optional(),
+    salesGoal: z.string().max(1000).nullable().optional(),
+    productId: z.string().uuid().nullable().optional(),
+    targetPersonaIds: z.array(z.string()).nullable().optional(),
+    channels: z.array(z.enum(["email", "linkedin"])).nullable().optional(),
+    targetingFilter: z.object({
+      geographies: z.array(z.string()).optional(),
+      industries: z.array(z.string()).optional(),
+      segments: z.array(z.string()).optional(),
+      namedAccounts: z.array(z.string()).optional(),
+      targetRoles: z.array(z.string()).optional(),
+    }).optional(),
+  });
+
+  // Update editable campaign fields (goal, targeting, name, etc.).
+  // Scoped to the active tenant; only admins or the campaign creator may edit.
+  app.patch("/api/sales-outreach/campaigns/:id", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      // Only the campaign creator or an admin may edit.
+      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
+      if (!isAdmin && campaign.createdBy !== ctx.userId) {
+        return res.status(403).json({ error: "Only the campaign owner or an admin can edit this campaign." });
+      }
+
+      const parsed = patchCampaignSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
+      }
+      const body = parsed.data;
+
+      const update: Record<string, unknown> = { updatedAt: new Date() };
+      if (body.name !== undefined) update.name = body.name.trim();
+      if (body.goalType !== undefined) update.goalType = body.goalType;
+      if (body.salesGoal !== undefined) update.salesGoal = body.salesGoal?.trim() || null;
+      if (body.productId !== undefined) update.productId = body.productId;
+      if (body.targetPersonaIds !== undefined) update.targetPersonaIds = body.targetPersonaIds;
+      if (body.channels !== undefined) {
+        update.channels = body.channels && body.channels.length > 0 ? body.channels : null;
+      }
+      if (body.targetingFilter !== undefined) {
+        update.targetingFilter = body.targetingFilter;
+      }
+
+      const [updated] = await db
+        .update(outreachCampaigns)
+        .set(update)
+        .where(eq(outreachCampaigns.id, campaign.id))
+        .returning();
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[sales-outreach-campaigns:patch]", err);
+      res.status(500).json({ error: err.message || "Failed to update campaign" });
     }
   });
 

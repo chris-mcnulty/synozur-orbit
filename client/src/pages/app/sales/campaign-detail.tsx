@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, KeyboardEvent } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,6 +18,8 @@ import {
   Download,
   TrendingUp,
   Radar,
+  Pencil,
+  X,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -36,8 +38,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useUser } from "@/lib/userContext";
 
 interface OutreachCampaign {
   id: string;
@@ -47,6 +57,95 @@ interface OutreachCampaign {
   status: string;
   channels: string[] | null;
   eventDate: string | null;
+  productId: string | null;
+  targetPersonaIds: string[] | null;
+  targetingFilter: {
+    geographies?: string[];
+    industries?: string[];
+    segments?: string[];
+    namedAccounts?: string[];
+    targetRoles?: string[];
+  } | null;
+  createdBy: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  isBaseline: boolean;
+}
+
+interface Persona {
+  id: string;
+  name: string;
+  role: string | null;
+  isIcp?: boolean;
+}
+
+/** Simple chip/tag input: press Enter or comma to add, X to remove. */
+function TagInput({
+  value,
+  onChange,
+  placeholder,
+  testId,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+  testId?: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function commit() {
+    const trimmed = draft.trim().replace(/,$/, "").trim();
+    if (trimmed && !value.includes(trimmed)) {
+      onChange([...value, trimmed]);
+    }
+    setDraft("");
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      commit();
+    } else if (e.key === "Backspace" && !draft && value.length > 0) {
+      onChange(value.slice(0, -1));
+    }
+  }
+
+  return (
+    <div
+      className="flex flex-wrap gap-1.5 min-h-9 border rounded-md px-2.5 py-1.5 focus-within:ring-1 focus-within:ring-ring cursor-text"
+      onClick={() => inputRef.current?.focus()}
+    >
+      {value.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex items-center gap-1 bg-secondary text-secondary-foreground text-xs rounded px-1.5 py-0.5"
+        >
+          {tag}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onChange(value.filter((t) => t !== tag)); }}
+            className="hover:text-destructive"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={commit}
+        placeholder={value.length === 0 ? placeholder : ""}
+        className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        data-testid={testId}
+      />
+    </div>
+  );
 }
 
 interface Prospect {
@@ -129,13 +228,36 @@ function scoreColor(score: number | null): string {
 
 const FLAG_HARD = new Set(["suppression", "self_email"]);
 
+function initEditForm(c: OutreachCampaign) {
+  return {
+    name: c.name,
+    goalType: c.goalType,
+    salesGoal: c.salesGoal ?? "",
+    productId: c.productId ?? "",
+    targetPersonaIds: c.targetPersonaIds ?? [],
+    channels: c.channels ?? [],
+    geographies: c.targetingFilter?.geographies ?? [],
+    industries: c.targetingFilter?.industries ?? [],
+    segments: c.targetingFilter?.segments ?? [],
+    namedAccounts: c.targetingFilter?.namedAccounts ?? [],
+    targetRoles: c.targetingFilter?.targetRoles ?? [],
+  };
+}
+
+type EditForm = ReturnType<typeof initEditForm>;
+
 export default function OutreachCampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useUser();
   const [adding, setAdding] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
   const [form, setForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
+
+  // Edit campaign dialog state.
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
 
   // Draft review dialog state.
   const [draft, setDraft] = useState<Touch | null>(null);
@@ -148,15 +270,73 @@ export default function OutreachCampaignDetailPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
+  const campaignKey = ["/api/sales-outreach/campaigns", id];
 
   const { data: campaign, isLoading } = useQuery<OutreachCampaign>({
-    queryKey: ["/api/sales-outreach/campaigns", id],
+    queryKey: campaignKey,
     queryFn: async () => {
       const r = await fetch(`/api/sales-outreach/campaigns/${id}`, { credentials: "include" });
       if (!r.ok) throw new Error("Campaign not found");
       return r.json();
     },
   });
+
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products"],
+    queryFn: async () => {
+      const r = await fetch("/api/products", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const { data: personas = [] } = useQuery<Persona[]>({
+    queryKey: ["/api/personas"],
+    queryFn: async () => {
+      const r = await fetch("/api/personas", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const editCampaign = useMutation({
+    mutationFn: async (payload: object) => {
+      const res = await apiRequest("PATCH", `/api/sales-outreach/campaigns/${id}`, payload);
+      return res.json();
+    },
+    onSuccess: (updated: OutreachCampaign) => {
+      queryClient.setQueryData(campaignKey, updated);
+      setEditing(false);
+      setEditForm(null);
+      toast({ title: "Campaign updated" });
+    },
+    onError: (err: any) => toast({ title: "Couldn't save changes", description: err?.message, variant: "destructive" }),
+  });
+
+  function openEdit() {
+    if (!campaign) return;
+    setEditForm(initEditForm(campaign));
+    setEditing(true);
+  }
+
+  function submitEdit() {
+    if (!editForm) return;
+    editCampaign.mutate({
+      name: editForm.name,
+      goalType: editForm.goalType,
+      salesGoal: editForm.salesGoal,
+      productId: editForm.productId || null,
+      targetPersonaIds: editForm.targetPersonaIds,
+      channels: editForm.channels,
+      targetingFilter: {
+        geographies: editForm.geographies,
+        industries: editForm.industries,
+        segments: editForm.segments,
+        namedAccounts: editForm.namedAccounts,
+        targetRoles: editForm.targetRoles,
+      },
+    });
+  }
 
   const { data: prospects = [] } = useQuery<Prospect[]>({
     queryKey: prospectsKey,
@@ -383,6 +563,9 @@ export default function OutreachCampaignDetailPage() {
     return <AppLayout><p className="text-sm text-muted-foreground">Campaign not found.</p></AppLayout>;
   }
 
+  const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+  const canEdit = isAdmin || campaign.createdBy === user?.id;
+
   const draftFlags = draft?.complianceFlags;
   const draftHardBlocked = (draftFlags?.flags ?? []).some((f) => FLAG_HARD.has(f.kind));
 
@@ -408,6 +591,11 @@ export default function OutreachCampaignDetailPage() {
             {campaign.salesGoal && <p className="text-muted-foreground mt-1 max-w-2xl">{campaign.salesGoal}</p>}
           </div>
           <div className="flex items-center gap-2">
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={openEdit} data-testid="button-edit-campaign">
+                <Pencil className="w-4 h-4 mr-1.5" /> Edit campaign
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => tick.mutate()} disabled={tick.isPending} data-testid="button-refresh-cadence">
               {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
               Refresh cadence
@@ -573,6 +761,210 @@ export default function OutreachCampaignDetailPage() {
           </Card>
         )}
       </div>
+
+      {/* Edit campaign dialog */}
+      <Dialog open={editing} onOpenChange={(o) => { if (!o) { setEditing(false); setEditForm(null); } }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit campaign</DialogTitle>
+            <DialogDescription>Update campaign details, goal, targeting, and channels.</DialogDescription>
+          </DialogHeader>
+
+          {editForm && (
+            <div className="space-y-4">
+              {/* Name */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ec-name">Campaign name</Label>
+                <Input
+                  id="ec-name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  data-testid="input-edit-campaign-name"
+                />
+              </div>
+
+              {/* Goal type */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ec-goal-type">Goal type</Label>
+                <Select
+                  value={editForm.goalType}
+                  onValueChange={(v) => setEditForm({ ...editForm, goalType: v })}
+                >
+                  <SelectTrigger id="ec-goal-type" data-testid="select-edit-goal-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="meeting">Meeting</SelectItem>
+                    <SelectItem value="event_invite">Event invite</SelectItem>
+                    <SelectItem value="intro">Intro</SelectItem>
+                    <SelectItem value="nurture">Nurture</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Sales goal */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ec-sales-goal">Sales goal</Label>
+                <Textarea
+                  id="ec-sales-goal"
+                  value={editForm.salesGoal}
+                  onChange={(e) => setEditForm({ ...editForm, salesGoal: e.target.value })}
+                  rows={2}
+                  placeholder="e.g. Book 10 discovery calls for Polaris"
+                  data-testid="input-edit-sales-goal"
+                />
+              </div>
+
+              {/* Product */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ec-product">Product</Label>
+                <Select
+                  value={editForm.productId || "__none__"}
+                  onValueChange={(v) => setEditForm({ ...editForm, productId: v === "__none__" ? "" : v })}
+                >
+                  <SelectTrigger id="ec-product" data-testid="select-edit-product">
+                    <SelectValue placeholder="No product" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No product</SelectItem>
+                    {products.filter((p) => p.isBaseline).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Target personas */}
+              {personas.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Target personas</Label>
+                  <div className="max-h-36 overflow-y-auto border rounded-md divide-y">
+                    {personas.map((p) => (
+                      <label
+                        key={p.id}
+                        className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-accent/40 text-sm"
+                      >
+                        <Checkbox
+                          checked={editForm?.targetPersonaIds.includes(p.id) ?? false}
+                          onCheckedChange={(checked) => {
+                            if (!editForm) return;
+                            const next = checked
+                              ? [...editForm.targetPersonaIds, p.id]
+                              : editForm.targetPersonaIds.filter((pid) => pid !== p.id);
+                            setEditForm({ ...editForm, targetPersonaIds: next });
+                          }}
+                          data-testid={`checkbox-edit-persona-${p.id}`}
+                        />
+                        <span>
+                          {p.name}
+                          {p.role && <span className="text-muted-foreground ml-1">· {p.role}</span>}
+                          {p.isIcp && <span className="ml-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">ICP</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Channels */}
+              <div className="space-y-1.5">
+                <Label>Channels</Label>
+                <div className="flex items-center gap-4">
+                  {(["email", "linkedin"] as const).map((ch) => (
+                    <label key={ch} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={editForm.channels.includes(ch)}
+                        onCheckedChange={(checked) => {
+                          const next = checked
+                            ? [...editForm.channels, ch]
+                            : editForm.channels.filter((c) => c !== ch);
+                          setEditForm({ ...editForm, channels: next });
+                        }}
+                        data-testid={`checkbox-edit-channel-${ch}`}
+                      />
+                      <span className="capitalize">{ch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Targeting filter */}
+              <div className="space-y-3 border rounded-md p-3">
+                <p className="text-sm font-medium">Targeting</p>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Geographies</Label>
+                  <TagInput
+                    value={editForm.geographies}
+                    onChange={(v) => setEditForm({ ...editForm, geographies: v })}
+                    placeholder="e.g. Toronto, New York… (Enter to add)"
+                    testId="tag-input-geographies"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Industries</Label>
+                  <TagInput
+                    value={editForm.industries}
+                    onChange={(v) => setEditForm({ ...editForm, industries: v })}
+                    placeholder="e.g. Financial Services, Healthcare…"
+                    testId="tag-input-industries"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Segments</Label>
+                  <TagInput
+                    value={editForm.segments}
+                    onChange={(v) => setEditForm({ ...editForm, segments: v })}
+                    placeholder="e.g. Mid-market, Enterprise…"
+                    testId="tag-input-segments"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Named accounts</Label>
+                  <TagInput
+                    value={editForm.namedAccounts}
+                    onChange={(v) => setEditForm({ ...editForm, namedAccounts: v })}
+                    placeholder="e.g. Acme Corp, acme.com…"
+                    testId="tag-input-named-accounts"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Target roles</Label>
+                  <TagInput
+                    value={editForm.targetRoles}
+                    onChange={(v) => setEditForm({ ...editForm, targetRoles: v })}
+                    placeholder="e.g. CIO, VP Engineering…"
+                    testId="tag-input-target-roles"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              variant="ghost"
+              onClick={() => { setEditing(false); setEditForm(null); }}
+              disabled={editCampaign.isPending}
+              data-testid="button-edit-campaign-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={submitEdit}
+              disabled={!editForm?.name.trim() || editCampaign.isPending}
+              data-testid="button-edit-campaign-save"
+            >
+              {editCampaign.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dossier dialog */}
       <Dialog open={!!dossier} onOpenChange={(o) => !o && setDossier(null)}>
