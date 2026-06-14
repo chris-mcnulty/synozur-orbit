@@ -760,11 +760,25 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
       const existing = await getPersonalVoiceProfile(ctx.userId);
-      if (!existing) return res.status(404).json({ error: "No personal voice profile found. Extract your voice first." });
       const { soundLikeMeInstructions } = req.body ?? {};
       const value = soundLikeMeInstructions === null ? null
         : typeof soundLikeMeInstructions === "string" ? soundLikeMeInstructions.slice(0, 8000)
-        : existing.soundLikeMeInstructions;
+        : existing?.soundLikeMeInstructions ?? null;
+      if (!existing) {
+        const [created] = await db
+          .insert(socialAccountVoiceProfiles)
+          .values({
+            tenantDomain: ctx.tenantDomain,
+            ownerUserId: ctx.userId,
+            createdBy: ctx.userId,
+            socialAccountId: null,
+            person: "first",
+            authorPerspective: "individual",
+            soundLikeMeInstructions: value,
+          })
+          .returning();
+        return res.json(created);
+      }
       const [updated] = await db
         .update(socialAccountVoiceProfiles)
         .set({ soundLikeMeInstructions: value, updatedAt: new Date() })
