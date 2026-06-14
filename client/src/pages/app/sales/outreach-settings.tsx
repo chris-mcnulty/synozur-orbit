@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Mail, ShieldAlert, Loader2, CheckCircle2, Plug, Mic, Info } from "lucide-react";
+import { ArrowLeft, Mail, ShieldAlert, Loader2, CheckCircle2, Circle, Plug, Mic, Info } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +45,7 @@ interface OutreachSettings {
   linkedinWeeklyCap: number;
   weeklyPerDomainCap: number;
   minReplyRateFloor: number;
+  updatedAt?: string | null;
 }
 
 const CAP_FIELDS: { key: keyof OutreachSettings; label: string; hint: string }[] = [
@@ -149,6 +150,17 @@ export default function OutreachSettingsPage() {
     onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
   });
 
+  const mailboxDone = !!mailbox?.canDraft;
+  const voiceDone = !!voice;
+  const capsDone = !!settings?.updatedAt;
+  const allDone = mailboxDone && voiceDone && capsDone;
+
+  const checklistSteps = [
+    { label: "Connect your Outlook mailbox", done: mailboxDone },
+    { label: "Extract your personal voice from Sent Items", done: voiceDone },
+    { label: "Save your send caps (circuit breakers)", done: capsDone },
+  ];
+
   return (
     <AppLayout>
       <div className="max-w-2xl space-y-6" data-testid="page-outreach-settings">
@@ -160,6 +172,32 @@ export default function OutreachSettingsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Outreach settings</h1>
           <p className="text-muted-foreground mt-1">Connect your mailbox and set the circuit breakers.</p>
         </div>
+
+        {/* Setup checklist — hidden once all steps are complete */}
+        {!allDone && (
+          <Card data-testid="card-setup-checklist" className="border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-950/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Get started</CardTitle>
+              <CardDescription>Complete these three steps before running your first campaign.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {checklistSteps.map((step, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 text-sm"
+                  data-testid={`checklist-step-${i}`}
+                >
+                  {step.done ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" data-testid={`checklist-step-${i}-done`} />
+                  ) : (
+                    <Circle className="w-4 h-4 shrink-0 text-muted-foreground/50" data-testid={`checklist-step-${i}-pending`} />
+                  )}
+                  <span className={step.done ? "line-through text-muted-foreground" : ""}>{step.label}</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Mailbox connection (per-seller) */}
         <Card>
