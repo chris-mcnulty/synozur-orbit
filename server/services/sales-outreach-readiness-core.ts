@@ -134,7 +134,7 @@ export function deriveSalesReadiness(input: SalesReadinessInputs): ReadinessRepo
       ? "HubSpot is connected — contacts and companies can be imported as prospects."
       : "HubSpot not connected — no CRM source for prospects.",
     fixHint: "Connect HubSpot to source and sync prospects.",
-    fixPath: "/app/settings/integrations",
+    fixPath: "/app/settings",
   });
 
   // Mailbox — where approved drafts land for human send.

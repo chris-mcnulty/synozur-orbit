@@ -621,7 +621,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
       const conn = await storage.getHubspotConnection(ctx.tenantDomain);
-      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Integrations.", code: "no_hubspot" });
+      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Settings → Connections.", code: "no_hubspot" });
 
       const query = typeof req.body?.query === "string" ? req.body.query : undefined;
       const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 50;
@@ -672,7 +672,7 @@ export function registerSalesOutreachRoutes(app: Express) {
         return res.status(404).json({ error: "Prospect not found" });
       }
       const conn = await storage.getHubspotConnection(ctx.tenantDomain);
-      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Integrations.", code: "no_hubspot" });
+      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Settings → Connections.", code: "no_hubspot" });
 
       const [first, ...rest] = (prospect.name || "").split(" ");
       const hubspotContactId = await pushProspectToHubspot(ctx.tenantDomain, prospect, first, rest.join(" "));
