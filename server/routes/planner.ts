@@ -37,7 +37,7 @@ import {
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
 
-function getRedirectUri(req: Request): string {
+export function getRedirectUri(req: Request): string {
   if (process.env.PRODUCTION_URL) {
     return `${process.env.PRODUCTION_URL}/api/planner/auth/callback`;
   }

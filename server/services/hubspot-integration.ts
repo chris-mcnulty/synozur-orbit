@@ -39,9 +39,10 @@ import { HUBSPOT_OAUTH_SCOPES, type HubspotConnection } from "@shared/schema";
 import { normalizePlanName } from "./plan-policy";
 
 // HubSpot association type IDs (HUBSPOT_DEFINED).
-// 190 = Note → Company; 192 = Task → Company.
+// 190 = Note → Company; 192 = Task → Company; 202 = Note → Contact.
 const ASSOC_NOTE_TO_COMPANY = 190;
 const ASSOC_TASK_TO_COMPANY = 192;
+const ASSOC_NOTE_TO_CONTACT = 202;
 
 const HUBSPOT_AUTH_HOST = "https://app.hubspot.com";
 const HUBSPOT_API_HOST = "https://api.hubapi.com";
@@ -484,6 +485,116 @@ export async function listSuggestedCompetitors(tenantDomain: string): Promise<Su
     });
   }
   return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sales outreach: two-way contact sync (pull existing contacts, push prospects)
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface HubspotContactLite {
+  hubspotContactId: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  name: string;
+  jobTitle: string | null;
+  company: string | null;
+}
+
+const CONTACT_PROPS = ["firstname", "lastname", "email", "jobtitle", "company"];
+
+function contactName(props: Record<string, string>): string {
+  const n = [props.firstname, props.lastname].filter(Boolean).join(" ").trim();
+  return n || props.email || "Unknown contact";
+}
+
+/**
+ * Pull contacts from the tenant's HubSpot to seed prospects. With `query`,
+ * searches first/last/email/company; otherwise returns the most recently
+ * modified contacts.
+ */
+export async function listContacts(
+  tenantDomain: string,
+  opts: { query?: string; limit?: number } = {},
+): Promise<HubspotContactLite[]> {
+  const { client } = await getTenantClient(tenantDomain);
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
+  const q = (opts.query ?? "").trim();
+
+  const result = await client.crm.contacts.searchApi.doSearch({
+    query: q || undefined,
+    filterGroups: [],
+    properties: CONTACT_PROPS,
+    sorts: ["lastmodifieddate"],
+    limit,
+    after: "0",
+  } as any);
+
+  return result.results.map((c) => {
+    const props = (c.properties as Record<string, string>) || {};
+    return {
+      hubspotContactId: c.id,
+      email: props.email || null,
+      firstName: props.firstname || null,
+      lastName: props.lastname || null,
+      name: contactName(props),
+      jobTitle: props.jobtitle || null,
+      company: props.company || null,
+    };
+  });
+}
+
+/**
+ * Create or update a contact in HubSpot from an outreach prospect. Dedupes by
+ * email when present. Returns the HubSpot contact id.
+ */
+export async function upsertContact(
+  tenantDomain: string,
+  c: { email?: string | null; firstName?: string | null; lastName?: string | null; jobTitle?: string | null; company?: string | null },
+): Promise<string> {
+  const { client } = await getTenantClient(tenantDomain);
+  const properties: Record<string, string> = {};
+  if (c.email) properties.email = c.email;
+  if (c.firstName) properties.firstname = c.firstName;
+  if (c.lastName) properties.lastname = c.lastName;
+  if (c.jobTitle) properties.jobtitle = c.jobTitle;
+  if (c.company) properties.company = c.company;
+
+  // Find existing by email first (avoids duplicate contacts).
+  if (c.email) {
+    const found = await client.crm.contacts.searchApi.doSearch({
+      filterGroups: [{ filters: [{ propertyName: "email", operator: FilterOperatorEnum.Eq, value: c.email }] }],
+      properties: ["email"],
+      limit: 1,
+      after: "0",
+    } as any);
+    if (found.results.length > 0) {
+      const id = found.results[0].id;
+      await client.crm.contacts.basicApi.update(id, { properties });
+      return id;
+    }
+  }
+  const created = await client.crm.contacts.basicApi.create({ properties, associations: [] });
+  return created.id;
+}
+
+/** Log a note against a HubSpot contact (e.g. "outreach approved"). */
+export async function logContactNote(
+  tenantDomain: string,
+  hubspotContactId: string,
+  html: string,
+): Promise<{ noteId: string }> {
+  const { client } = await getTenantClient(tenantDomain);
+  const note = await client.crm.objects.notes.basicApi.create({
+    properties: { hs_note_body: html, hs_timestamp: Date.now().toString() },
+    associations: [
+      {
+        to: { id: hubspotContactId },
+        types: [{ associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined, associationTypeId: ASSOC_NOTE_TO_CONTACT }],
+      },
+    ],
+  });
+  return { noteId: note.id };
 }
 
 // ─────────────────────────────────────────────────────────────────────────

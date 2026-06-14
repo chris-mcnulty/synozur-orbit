@@ -181,6 +181,7 @@ const jobStatus: Record<string, JobStatus> = {
   weeklyDigest: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   seoRefresh: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
   hubspotSync: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
+  outreachCadence: { lastRun: null, isRunning: false, nextRun: null, abortController: null },
 };
 
 function getIntervalMs(frequency: string): number {
@@ -2121,7 +2122,48 @@ export async function triggerSeoRefreshNow(): Promise<void> {
 // ───────────────────────────────────────────────────────────────────────────
 
 let hubspotSyncInterval: NodeJS.Timeout | null = null;
+let outreachCadenceInterval: NodeJS.Timeout | null = null;
 let collabCleanupInterval: NodeJS.Timeout | null = null;
+
+/**
+ * Sales outreach cadence sweep — advances due cadence steps + reply-floor for
+ * every active tenant, then reads each seller's mailbox to auto-detect sends and
+ * replies. Best-effort; tenants without outreach or mailbox consent are no-ops.
+ */
+async function runOutreachCadenceJob(): Promise<void> {
+  if (jobStatus.outreachCadence.isRunning) {
+    console.log("[Outreach Cadence] Already running, skipping...");
+    return;
+  }
+  jobStatus.outreachCadence.isRunning = true;
+  try {
+    const { runCadenceForTenant } = await import("./cadence-service");
+    const tenants = await storage.getAllTenants();
+    let advanced = 0, replies = 0;
+    for (const tenant of tenants) {
+      if (tenant.status !== "active") continue;
+      const planAllows = await checkFeatureAccessAsync(tenant.plan, "outreachCadence");
+      if (!planAllows.allowed) continue;
+      try {
+        const r = await runCadenceForTenant(tenant.domain);
+        advanced += r.prospectsAdvanced;
+        replies += r.repliesDetected;
+      } catch (err) {
+        console.error(`[Outreach Cadence] ${tenant.domain} failed:`, err);
+      }
+    }
+    console.log(`[Outreach Cadence] Sweep complete — stepsAdvanced=${advanced}, repliesDetected=${replies}`);
+  } catch (err) {
+    console.error("[Outreach Cadence] Sweep failed:", err);
+  } finally {
+    jobStatus.outreachCadence.isRunning = false;
+    jobStatus.outreachCadence.lastRun = new Date();
+  }
+}
+
+export async function triggerOutreachCadenceNow(): Promise<void> {
+  runOutreachCadenceJob();
+}
 
 async function runHubspotSyncJob(): Promise<void> {
   if (jobStatus.hubspotSync.isRunning) {
@@ -2298,6 +2340,12 @@ export function startScheduledJobs(): void {
   if (plannerSyncInterval) clearInterval(plannerSyncInterval);
   if (seoRefreshInterval) clearInterval(seoRefreshInterval);
   if (hubspotSyncInterval) clearInterval(hubspotSyncInterval);
+  if (outreachCadenceInterval) clearInterval(outreachCadenceInterval);
+
+  // Sales outreach cadence sweep — hourly (advances due steps + mailbox detection).
+  outreachCadenceInterval = setInterval(() => {
+    runOutreachCadenceJob();
+  }, 60 * 60 * 1000);
 
   jobStatus.scheduledBriefing = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
   jobStatus.plannerSync = { lastRun: null, isRunning: false, nextRun: null, abortController: null };
@@ -2567,6 +2615,10 @@ export function stopScheduledJobs(): void {
   if (hubspotSyncInterval) {
     clearInterval(hubspotSyncInterval);
     hubspotSyncInterval = null;
+  }
+  if (outreachCadenceInterval) {
+    clearInterval(outreachCadenceInterval);
+    outreachCadenceInterval = null;
   }
   console.log("[Scheduled Jobs] All scheduled jobs stopped");
 }
