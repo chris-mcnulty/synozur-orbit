@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Mail, ShieldAlert, Loader2, CheckCircle2, Plug, Mic } from "lucide-react";
+import { ArrowLeft, Mail, ShieldAlert, Loader2, CheckCircle2, Plug, Mic, Info } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,7 +71,7 @@ export default function OutreachSettingsPage() {
     },
   });
 
-  const { data: voice } = useQuery<VoiceProfile | null>({
+  const { data: voice, isLoading: voiceLoading } = useQuery<VoiceProfile | null>({
     queryKey: ["/api/sales-outreach/voice"],
     queryFn: async () => {
       const r = await fetch("/api/sales-outreach/voice", { credentials: "include" });
@@ -216,6 +216,13 @@ export default function OutreachSettingsPage() {
                 {voice ? "Re-extract" : "Extract from Sent Items"}
               </Button>
             </div>
+            {!voiceLoading && !voice && (
+              <div className="flex gap-2.5 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-3 py-2.5 text-sm text-blue-800 dark:text-blue-300" data-testid="banner-no-voice-profile">
+                <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                <p>No voice profile yet — you can add custom writing instructions below, or connect your mailbox and click <strong>Extract from Sent Items</strong> to analyse your sent emails automatically and enrich the profile with your real tone and style.</p>
+              </div>
+            )}
+
             {voice?.styleGuidance && (
               <p className="text-xs text-muted-foreground border-l-2 pl-2 leading-relaxed">{voice.styleGuidance}</p>
             )}
