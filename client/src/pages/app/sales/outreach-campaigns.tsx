@@ -6,6 +6,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useUser } from "@/lib/userContext";
 
 interface OutreachCampaign {
   id: string;
@@ -49,6 +50,9 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
 
 /** Sales outreach campaign list + readiness banner + entry to the wizard. */
 export default function OutreachCampaignsPage() {
+  const { user } = useUser();
+  const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+
   const { data: campaigns = [], isLoading } = useQuery<OutreachCampaign[]>({
     queryKey: ["/api/sales-outreach/campaigns"],
     queryFn: async () => {
@@ -113,9 +117,15 @@ export default function OutreachCampaignsPage() {
                   {blockers.map((b) => (
                     <li key={b.key} className="text-sm flex items-center justify-between gap-3">
                       <span><span className="font-medium">{b.label}:</span> <span className="text-muted-foreground">{b.fixHint}</span></span>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={b.fixPath}>Fix <ArrowRight className="w-3.5 h-3.5 ml-1" /></Link>
-                      </Button>
+                      {b.key === "hubspot" && !isAdmin ? (
+                        <span className="text-xs text-muted-foreground italic shrink-0" data-testid="hubspot-admin-guidance">
+                          Ask your Domain Admin to connect HubSpot
+                        </span>
+                      ) : (
+                        <Button variant="ghost" size="sm" asChild data-testid={`fix-${b.key}`}>
+                          <Link href={b.fixPath}>Fix <ArrowRight className="w-3.5 h-3.5 ml-1" /></Link>
+                        </Button>
+                      )}
                     </li>
                   ))}
                 </ul>
