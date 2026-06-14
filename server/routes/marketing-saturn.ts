@@ -1560,6 +1560,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
       styleGuidance: typeof body.styleGuidance === "string"
         ? body.styleGuidance.slice(0, 4000)
         : (body.styleGuidance === null ? null : (profile?.styleGuidance ?? null)),
+      soundLikeMeInstructions: typeof body.soundLikeMeInstructions === "string"
+        ? body.soundLikeMeInstructions.slice(0, 8000)
+        : (body.soundLikeMeInstructions === null ? null : (profile?.soundLikeMeInstructions ?? null)),
       forbiddenPhrases: body.forbiddenPhrases !== undefined ? cleanStrArray(body.forbiddenPhrases, profile?.forbiddenPhrases) : (profile?.forbiddenPhrases ?? null),
       preferredPhrases: body.preferredPhrases !== undefined ? cleanStrArray(body.preferredPhrases, profile?.preferredPhrases) : (profile?.preferredPhrases ?? null),
       emojiPolicy,

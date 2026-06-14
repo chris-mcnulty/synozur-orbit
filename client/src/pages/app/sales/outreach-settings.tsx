@@ -9,8 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+
+const SOUND_LIKE_ME_STARTER = `Banned words & phrases: leverage, unlock, delve, certainly, it's worth noting,
+game-changer, deep dive, at the end of the day, empower, seamlessly, groundbreaking,
+I'd be happy to, Absolutely!, robust, cutting-edge, in today's fast-paced world.
+
+Style rules:
+- Short sentences. One idea per sentence.
+- No passive voice.
+- Don't open with a rhetorical question.
+- No em dashes — use commas or periods.
+- No hashtags.
+- End on a concrete statement or CTA, never a soft landing.`;
 
 interface MailboxStatus {
   connected: boolean;
@@ -21,6 +34,7 @@ interface VoiceProfile {
   id: string;
   styleGuidance: string | null;
   preferredPhrases: string[] | null;
+  soundLikeMeInstructions: string | null;
 }
 interface OutreachSettings {
   globalPause: boolean;
@@ -46,6 +60,7 @@ export default function OutreachSettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [draftSettings, setDraftSettings] = useState<OutreachSettings | null>(null);
+  const [soundLikeMeText, setSoundLikeMeText] = useState<string>("");
 
   const { data: mailbox } = useQuery<MailboxStatus>({
     queryKey: ["/api/sales-outreach/mailbox/status"],
@@ -65,6 +80,12 @@ export default function OutreachSettingsPage() {
     },
   });
 
+  useEffect(() => {
+    if (voice !== undefined) {
+      setSoundLikeMeText(voice?.soundLikeMeInstructions ?? "");
+    }
+  }, [voice]);
+
   const extractVoice = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/sales-outreach/voice/extract", {});
@@ -76,6 +97,18 @@ export default function OutreachSettingsPage() {
       toast({ title: "Voice extracted", description: `Analyzed ${data.sampleCount} sent emails.` });
     },
     onError: (err: any) => toast({ title: "Couldn't extract voice", description: err?.message, variant: "destructive" }),
+  });
+
+  const saveSoundLikeMe = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", "/api/sales-outreach/voice", { soundLikeMeInstructions: soundLikeMeText || null });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/voice"] });
+      toast({ title: "Writing instructions saved" });
+    },
+    onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
   });
 
   const { data: settings } = useQuery<OutreachSettings>({
@@ -161,7 +194,7 @@ export default function OutreachSettingsPage() {
             <CardTitle className="text-base flex items-center gap-2"><Mic className="w-4 h-4" /> Your voice</CardTitle>
             <CardDescription>Extracted from your Sent Items so drafts sound like you. Refresh anytime.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div className="text-sm">
                 {voice ? (
@@ -186,6 +219,35 @@ export default function OutreachSettingsPage() {
             {voice?.styleGuidance && (
               <p className="text-xs text-muted-foreground border-l-2 pl-2 leading-relaxed">{voice.styleGuidance}</p>
             )}
+
+            {/* "Sound like me" freeform writing instructions */}
+            <div className="space-y-1 pt-2 border-t">
+              <Label className="text-xs">"Sound like me" instructions</Label>
+              <p className="text-[11px] text-muted-foreground">Paste your personal writing rules, style notes, or AI cliché list here. Markdown is fine.</p>
+              <Textarea
+                rows={6}
+                value={soundLikeMeText}
+                onChange={e => setSoundLikeMeText(e.target.value)}
+                placeholder="e.g., Short sentences. Never use 'leverage', 'unlock', or 'delve'. No passive voice. End on a concrete statement."
+                data-testid="voice-textarea-sound-like-me-outreach"
+              />
+              <details className="mt-1">
+                <summary className="text-[11px] text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">Need a starting point?</summary>
+                <pre className="mt-2 text-[11px] bg-muted rounded p-3 whitespace-pre-wrap leading-relaxed select-all">{SOUND_LIKE_ME_STARTER}</pre>
+              </details>
+              <div className="flex justify-end pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => saveSoundLikeMe.mutate()}
+                  disabled={saveSoundLikeMe.isPending}
+                  data-testid="button-save-sound-like-me"
+                >
+                  {saveSoundLikeMe.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                  Save instructions
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

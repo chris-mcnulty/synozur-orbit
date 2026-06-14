@@ -7,10 +7,11 @@ import {
   prospects,
   outreachTouches,
   outreachSendLedger,
+  socialAccountVoiceProfiles,
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -752,6 +753,27 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach:voice-get]", err);
       res.status(500).json({ error: err.message || "Failed to load voice profile" });
+    }
+  });
+
+  app.patch("/api/sales-outreach/voice", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const existing = await getPersonalVoiceProfile(ctx.userId);
+      if (!existing) return res.status(404).json({ error: "No personal voice profile found. Extract your voice first." });
+      const { soundLikeMeInstructions } = req.body ?? {};
+      const value = soundLikeMeInstructions === null ? null
+        : typeof soundLikeMeInstructions === "string" ? soundLikeMeInstructions.slice(0, 8000)
+        : existing.soundLikeMeInstructions;
+      const [updated] = await db
+        .update(socialAccountVoiceProfiles)
+        .set({ soundLikeMeInstructions: value, updatedAt: new Date() })
+        .where(and(eq(socialAccountVoiceProfiles.id, existing.id), isNull(socialAccountVoiceProfiles.socialAccountId)))
+        .returning();
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[sales-outreach:voice-patch]", err);
+      res.status(500).json({ error: err.message || "Failed to update voice profile" });
     }
   });
 

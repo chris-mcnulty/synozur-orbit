@@ -221,6 +221,11 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
     lines.push(`Style notes: ${profile.styleGuidance.trim()}`);
   }
 
+  // "Sound like me" freeform writing instructions
+  if (profile?.soundLikeMeInstructions) {
+    lines.push(`\nWriting instructions (follow exactly):\n${profile.soundLikeMeInstructions.trim()}`);
+  }
+
   // Policies
   if (profile) {
     lines.push(EMOJI_GUIDANCE[profile.emojiPolicy] ?? EMOJI_GUIDANCE.sparing);
@@ -331,6 +336,7 @@ export function snapshotVoiceProfile(
     authorPerspective: (profile.authorPerspective === "brand" ? "brand" : "individual"),
     toneAttributes: profile.toneAttributes ?? null,
     styleGuidance: profile.styleGuidance ?? null,
+    soundLikeMeInstructions: profile.soundLikeMeInstructions ?? null,
     forbiddenPhrases: profile.forbiddenPhrases ?? null,
     preferredPhrases: profile.preferredPhrases ?? null,
     emojiPolicy: (profile.emojiPolicy as VoiceProfileSnapshot["emojiPolicy"]) ?? "sparing",

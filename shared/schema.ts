@@ -2836,6 +2836,7 @@ export interface VoiceProfileSnapshot {
   authorPerspective: VoiceAuthorPerspective;
   toneAttributes?: VoiceToneAttributes | null;
   styleGuidance?: string | null;
+  soundLikeMeInstructions?: string | null;
   forbiddenPhrases?: string[] | null;
   preferredPhrases?: string[] | null;
   emojiPolicy: VoiceEmojiPolicy;
@@ -2862,6 +2863,7 @@ export const socialAccountVoiceProfiles = pgTable("social_account_voice_profiles
   // Tone + style
   toneAttributes: jsonb("tone_attributes").$type<VoiceToneAttributes>(),
   styleGuidance: text("style_guidance"),
+  soundLikeMeInstructions: text("sound_like_me_instructions"),
   forbiddenPhrases: text("forbidden_phrases").array(),
   preferredPhrases: text("preferred_phrases").array(),
   // Policies

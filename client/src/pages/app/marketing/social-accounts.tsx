@@ -235,6 +235,7 @@ interface VoiceProfile {
   authorPerspective: "individual" | "brand";
   toneAttributes?: ToneAttrs | null;
   styleGuidance?: string | null;
+  soundLikeMeInstructions?: string | null;
   forbiddenPhrases?: string[] | null;
   preferredPhrases?: string[] | null;
   emojiPolicy: "none" | "sparing" | "liberal";
@@ -246,6 +247,18 @@ interface VoiceProfile {
   isUnsaved?: boolean;
 }
 interface PersonaRow { id: string; name: string; role?: string | null; isIcp?: boolean }
+
+const SOUND_LIKE_ME_STARTER = `Banned words & phrases: leverage, unlock, delve, certainly, it's worth noting,
+game-changer, deep dive, at the end of the day, empower, seamlessly, groundbreaking,
+I'd be happy to, Absolutely!, robust, cutting-edge, in today's fast-paced world.
+
+Style rules:
+- Short sentences. One idea per sentence.
+- No passive voice.
+- Don't open with a rhetorical question.
+- No em dashes — use commas or periods.
+- No hashtags.
+- End on a concrete statement or CTA, never a soft landing.`;
 
 const TONE_DIMENSIONS: Array<{ key: keyof ToneAttrs; label: string }> = [
   { key: "formal",    label: "Formal" },
@@ -512,6 +525,21 @@ function VoiceProfileDialog({
                   placeholder="e.g., Lead with a sharp insight. Avoid jargon. Always include a concrete example or stat."
                   data-testid="voice-textarea-style"
                 />
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-xs">"Sound like me" instructions</Label>
+                <p className="text-[11px] text-muted-foreground">Paste your personal writing rules, style notes, or AI cliché list here. Markdown is fine.</p>
+                <Textarea
+                  rows={6}
+                  value={draft.soundLikeMeInstructions ?? ""}
+                  onChange={e => setDraft({ ...draft, soundLikeMeInstructions: e.target.value })}
+                  placeholder="e.g., Short sentences. Never use 'leverage', 'unlock', or 'delve'. No passive voice. End on a concrete statement."
+                  data-testid="voice-textarea-sound-like-me"
+                />
+                <details className="mt-1">
+                  <summary className="text-[11px] text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors">Need a starting point?</summary>
+                  <pre className="mt-2 text-[11px] bg-muted rounded p-3 whitespace-pre-wrap leading-relaxed select-all">{SOUND_LIKE_ME_STARTER}</pre>
+                </details>
               </div>
             </div>
           </TabsContent>

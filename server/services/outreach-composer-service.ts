@@ -65,6 +65,9 @@ function formatVoiceBlock(v: SocialAccountVoiceProfile | undefined): { block: st
     (v.sampleSnippets?.length ?? 0) > 0
       ? `Voice samples:\n${v.sampleSnippets!.slice(0, 3).map((s) => `- ${s.content}`).join("\n")}`
       : "",
+    v.soundLikeMeInstructions
+      ? `\nWriting instructions (follow exactly):\n${v.soundLikeMeInstructions.trim()}`
+      : "",
   ].filter(Boolean);
   return { block: lines.join("\n"), forbidden: v.forbiddenPhrases ?? [] };
 }
