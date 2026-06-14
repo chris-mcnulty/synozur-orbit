@@ -7,6 +7,7 @@ import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { generateContentBriefs } from "../services/editorial-calendar-service";
 import { draftFromBrief } from "../services/copywriter-service";
+import { getPersonalVoiceProfile } from "../services/outbound-voice-service";
 import {
   DEFAULT_FUNNEL_TARGETS,
   briefFormatToAssetType,
@@ -622,10 +623,12 @@ export function registerEditorialCalendarRoutes(app: Express) {
 
       const instructions = typeof req.body?.instructions === "string" ? req.body.instructions : undefined;
       const guest = typeof req.body?.guest === "string" ? req.body.guest : undefined;
+      const voiceProfile = await getPersonalVoiceProfile(ctx.userId);
       const draft = await draftFromBrief(brief, {
         isDefaultMarket: ctx.isDefaultMarket,
         instructions,
         guest,
+        soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
       });
 
       if (!draft.body?.trim()) {

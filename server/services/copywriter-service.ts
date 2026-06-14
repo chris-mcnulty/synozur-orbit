@@ -66,7 +66,7 @@ export interface DraftFromBriefResult extends ParsedDraft {
 
 export async function draftFromBrief(
   brief: ContentBrief,
-  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null } = {},
+  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null; soundLikeMeInstructions?: string | null } = {},
 ): Promise<DraftFromBriefResult> {
   const format = coerceFormat(brief.format);
 
@@ -147,9 +147,13 @@ Respond with exactly these three sections and nothing else:
     .filter(Boolean)
     .join("\n\n");
 
+  const systemPrompt = opts.soundLikeMeInstructions?.trim()
+    ? SYSTEM_PROMPT + `\n\nWriting instructions (follow exactly):\n${opts.soundLikeMeInstructions.trim()}`
+    : SYSTEM_PROMPT;
+
   const result = await completeForFeature("marketing_tasks", prompt, {
     tenantDomain: brief.tenantDomain,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt,
     maxTokens: 8192,
   });
 

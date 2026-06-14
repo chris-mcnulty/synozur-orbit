@@ -23,6 +23,7 @@ import { generateInterviewBriefs, generateInterviewSocialPosts } from "../servic
 import { formatPersonaContextForPrompt } from "../services/strategic-context";
 import { scanNewsForSubjects } from "../services/news-service";
 import { draftFromBrief } from "../services/copywriter-service";
+import { getPersonalVoiceProfile } from "../services/outbound-voice-service";
 import {
   DEFAULT_FUNNEL_TARGETS,
   briefFormatToAssetType,
@@ -769,7 +770,11 @@ export function registerBriefInterviewRoutes(app: Express) {
           continue;
         }
         try {
-          const draft = await draftFromBrief(brief, { isDefaultMarket: ctx.isDefaultMarket });
+          const voiceProfile = await getPersonalVoiceProfile(ctx.userId);
+          const draft = await draftFromBrief(brief, {
+            isDefaultMarket: ctx.isDefaultMarket,
+            soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
+          });
           if (!draft.body?.trim()) throw new Error("The AI did not return a usable draft");
 
           const linked = await db.transaction(async (tx) => {
