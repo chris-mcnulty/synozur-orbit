@@ -299,7 +299,9 @@ export default function OutreachCampaignDetailPage() {
 
   const discover = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover`, { limit: 25 });
+      // Prefer Sales Navigator if available; fall back to web.
+      const backend = salesNavBackend?.available ? "salesnav" : "web";
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover`, { limit: 25, backend });
       return res.json();
     },
     onSuccess: (data: DiscoverResult) => {
@@ -410,7 +412,7 @@ export default function OutreachCampaignDetailPage() {
               {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
               Refresh cadence
             </Button>
-            {webBackend?.available && (
+            {discoveryStatus?.backends?.some((b: DiscoveryBackend) => b.available) && (
               <Button variant="outline" onClick={openDiscovery} disabled={discover.isPending} data-testid="button-discover-prospects">
                 {discover.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Radar className="w-4 h-4 mr-1.5" />}
                 Discover prospects

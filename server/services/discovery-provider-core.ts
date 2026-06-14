@@ -99,6 +99,18 @@ function asStringOrNull(v: unknown): string | null {
   return t.length > 0 ? t : null;
 }
 
+/** Accept only http/https URLs; return null for anything else (data:, javascript:, etc.). */
+function safeHttpUrl(v: unknown): string | null {
+  const s = asStringOrNull(v);
+  if (!s) return null;
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:" ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Extract the first top-level JSON array from a model response (tolerant). */
 function extractJsonArray(text: string): string | null {
   const start = text.indexOf("[");
@@ -138,11 +150,11 @@ export function parseDiscoveryCandidates(
       title: asStringOrNull(r.title),
       companyName: asStringOrNull(r.companyName),
       email: asStringOrNull(r.email),
-      linkedinUrl: asStringOrNull(r.linkedinUrl),
+      linkedinUrl: safeHttpUrl(r.linkedinUrl),
       geography: asStringOrNull(r.geography),
       industry: asStringOrNull(r.industry),
       segment: asStringOrNull(r.segment),
-      sourceUrl: asStringOrNull(r.sourceUrl),
+      sourceUrl: safeHttpUrl(r.sourceUrl),
       source,
     });
     if (out.length >= limit) break;

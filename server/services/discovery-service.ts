@@ -78,9 +78,12 @@ async function loadCampaignContext(tenantDomain: string, campaignId: string) {
   let icpPersona: { role?: string | null; industry?: string | null; companySize?: string | null } | undefined;
   const personaIds = campaign.targetPersonaIds ?? [];
   if (personaIds.length > 0) {
-    const rows = await db.select().from(personas).where(eq(personas.tenantDomain, tenantDomain));
+    const rows = await db
+      .select({ id: personas.id, role: personas.role, industry: personas.industry, companySize: personas.companySize, isIcp: personas.isIcp })
+      .from(personas)
+      .where(eq(personas.tenantDomain, tenantDomain));
     const inCampaign = rows.filter((p) => personaIds.includes(p.id));
-    icpPersona = (inCampaign.find((p: any) => p.isIcp) ?? inCampaign[0]) as any;
+    icpPersona = inCampaign.find((p) => p.isIcp) ?? inCampaign[0];
   }
 
   const criteria = buildIcpCriteria(icpPersona, campaign.targetingFilter ?? undefined);

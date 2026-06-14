@@ -302,6 +302,8 @@ export function registerSalesOutreachRoutes(app: Express) {
           result.provider,
           result.model,
           { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens },
+          undefined,
+          { searchCount: result.searchCount, backend: result.backend },
         );
       }
       res.json(result);
@@ -325,6 +327,14 @@ export function registerSalesOutreachRoutes(app: Express) {
         return res.status(400).json({ error: "No candidates to import" });
       }
       // Only accept the candidate fields we control; never trust client status/score.
+      // Sanitize URL fields to http/https only — they are persisted and rendered as links.
+      function safeImportUrl(v: unknown): string | null {
+        if (typeof v !== "string" || !v.trim()) return null;
+        try {
+          const u = new URL(v.trim());
+          return u.protocol === "http:" || u.protocol === "https:" ? v.trim() : null;
+        } catch { return null; }
+      }
       const candidates: DiscoveryCandidate[] = raw
         .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
         .map((c: any) => ({
@@ -332,11 +342,11 @@ export function registerSalesOutreachRoutes(app: Express) {
           title: c.title ?? null,
           companyName: c.companyName ?? null,
           email: c.email ?? null,
-          linkedinUrl: c.linkedinUrl ?? null,
+          linkedinUrl: safeImportUrl(c.linkedinUrl),
           geography: c.geography ?? null,
           industry: c.industry ?? null,
           segment: c.segment ?? null,
-          sourceUrl: c.sourceUrl ?? null,
+          sourceUrl: safeImportUrl(c.sourceUrl),
           source: c.source === "salesnav" ? "salesnav" : "web",
         }));
       if (candidates.length === 0) {

@@ -572,6 +572,7 @@ export async function completeWithWebSearch(
   // The server runs its own sampling loop; `pause_turn` means "resume me".
   // Bound the continuations so a misbehaving loop can't run forever.
   const MAX_TURNS = 6;
+  let completed = false;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const params: Anthropic.MessageCreateParams = {
       model,
@@ -595,7 +596,11 @@ export async function completeWithWebSearch(
       messages.push({ role: "assistant", content: response.content });
       continue;
     }
+    completed = true;
     break;
+  }
+  if (!completed) {
+    throw new Error(`Web search completion did not finish after ${MAX_TURNS} turns — response may be truncated.`);
   }
 
   return {
