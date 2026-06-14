@@ -2876,7 +2876,14 @@ export const socialAccountVoiceProfiles = pgTable("social_account_voice_profiles
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // At most one personal (no social account) voice profile per seller. The
+  // existing UNIQUE(social_account_id) ignores NULLs, so this partial index
+  // enforces the "one personal voice per seller" guarantee.
+  onePersonalVoicePerUser: uniqueIndex("voice_profiles_personal_owner_idx")
+    .on(table.ownerUserId)
+    .where(sql`social_account_id IS NULL AND owner_user_id IS NOT NULL`),
+}));
 
 export const socialAccountVoiceProfilesRelations = relations(socialAccountVoiceProfiles, ({ one }) => ({
   socialAccount: one(socialAccounts, {

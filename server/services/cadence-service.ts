@@ -179,6 +179,9 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
   const caps = await loadCaps(tenantDomain);
   const result: TickResult = { prospectsAdvanced: 0, prospectsExhausted: 0, campaignsPaused: 0 };
 
+  // Global kill switch: when paused, don't advance prospects toward new sends.
+  if (caps.globalPause) return result;
+
   const campaigns = await db
     .select()
     .from(outreachCampaigns)
@@ -287,16 +290,25 @@ export async function detectMailboxActivity(userId: string, tenantDomain: string
     if (p.status !== "awaiting_reply" && p.status !== "cadence_step_due") continue;
     if (!p.email) continue;
     try {
-      const addr = encodeURIComponent(p.email.replace(/'/g, "''"));
+      // OData: escape single quotes by doubling, keep the value un-percent-encoded
+      // inside the quotes, and encode the whole $filter (so spaces become %20).
+      const filter = `from/emailAddress/address eq '${p.email.replace(/'/g, "''")}'`;
       const { json } = await graphGet(
         token,
-        `/me/messages?$filter=from/emailAddress/address eq '${addr}'&$top=1&$orderby=receivedDateTime desc&$select=receivedDateTime`,
+        `/me/messages?$filter=${encodeURIComponent(filter)}&$top=1&$orderby=receivedDateTime%20desc&$select=receivedDateTime`,
       );
       const latest = json?.value?.[0]?.receivedDateTime;
       if (!latest) continue;
-      // Only count replies arriving after our most recent touch went out.
-      const touches = await db.select({ at: outreachTouches.generatedAt }).from(outreachTouches).where(eq(outreachTouches.prospectId, p.id));
-      const lastTouchAt = touches.reduce((m, t) => Math.max(m, new Date(t.at).getTime()), 0);
+      // Only count replies arriving after our most recent touch actually went
+      // out (sentAt), falling back to draft creation time when not yet stamped.
+      const touches = await db
+        .select({ sentAt: outreachTouches.sentAt, generatedAt: outreachTouches.generatedAt })
+        .from(outreachTouches)
+        .where(eq(outreachTouches.prospectId, p.id));
+      const lastTouchAt = touches.reduce(
+        (m, t) => Math.max(m, new Date(t.sentAt ?? t.generatedAt).getTime()),
+        0,
+      );
       if (new Date(latest).getTime() > lastTouchAt) {
         const next = advanceProspectState(p.status as any, "reply_detected");
         if (next) {

@@ -18,7 +18,7 @@ export interface CreateOutlookDraftParams {
   subject: string;
   body: string;
   toEmail?: string | null;
-  /** text (LinkedIn-style) or HTML. Email defaults to text wrapped as HTML. */
+  /** Graph body content type. Defaults to "Text" (plain text). */
   contentType?: "Text" | "HTML";
 }
 

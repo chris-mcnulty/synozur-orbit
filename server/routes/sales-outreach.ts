@@ -455,7 +455,7 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       const [updated] = await db
         .update(outreachTouches)
-        .set({ status: "approved", outlookDraftId, linkedinThreadRef })
+        .set({ status: "approved", outlookDraftId, linkedinThreadRef, approvedBy: ctx.userId })
         .where(eq(outreachTouches.id, touch.id))
         .returning();
 

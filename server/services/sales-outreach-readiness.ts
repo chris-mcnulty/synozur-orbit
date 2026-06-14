@@ -94,7 +94,9 @@ export async function assessSalesOutreachReadiness(
   };
 
   const graphScopes = (user?.graphScopes || "").toLowerCase();
-  const mailboxConnected = Boolean(user?.graphAccessToken);
+  // Use the durable refresh token (consistent with /mailbox/status and
+  // getValidGraphToken) — access tokens expire while the connection stays valid.
+  const mailboxConnected = Boolean(user?.graphRefreshToken);
   const mailboxCanDraft = mailboxConnected && graphScopes.includes("mail.");
 
   return deriveSalesReadiness({
