@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Download,
   TrendingUp,
+  Radar,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -79,6 +81,34 @@ interface Touch {
   complianceFlags: Compliance | null;
 }
 
+interface DiscoveryCandidate {
+  name: string;
+  title: string | null;
+  companyName: string | null;
+  email: string | null;
+  linkedinUrl: string | null;
+  geography: string | null;
+  industry: string | null;
+  segment: string | null;
+  sourceUrl: string | null;
+  source: "web" | "salesnav";
+}
+interface ScoredDiscoveryCandidate {
+  candidate: DiscoveryCandidate;
+  scored: { score: number; qualified: boolean; disqualified: boolean };
+}
+interface DiscoverResult {
+  backend: "web" | "salesnav";
+  candidates: ScoredDiscoveryCandidate[];
+  foundCount: number;
+}
+interface DiscoveryBackend {
+  id: "web" | "salesnav";
+  label: string;
+  available: boolean;
+  reason: string;
+}
+
 const STATE_VARIANT: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
   new: "outline",
   researched: "secondary",
@@ -111,6 +141,11 @@ export default function OutreachCampaignDetailPage() {
   const [draft, setDraft] = useState<Touch | null>(null);
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
+
+  // Discovery dialog state.
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverResult, setDiscoverResult] = useState<DiscoverResult | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
 
@@ -251,6 +286,74 @@ export default function OutreachCampaignDetailPage() {
       }),
   });
 
+  const { data: discoveryStatus } = useQuery<{ backends: DiscoveryBackend[] }>({
+    queryKey: ["/api/sales-outreach/discovery/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/sales-outreach/discovery/status", { credentials: "include" });
+      if (!r.ok) return { backends: [] };
+      return r.json();
+    },
+  });
+  const webBackend = discoveryStatus?.backends.find((b) => b.id === "web");
+  const salesNavBackend = discoveryStatus?.backends.find((b) => b.id === "salesnav");
+
+  const discover = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover`, { limit: 25 });
+      return res.json();
+    },
+    onSuccess: (data: DiscoverResult) => {
+      setDiscoverResult(data);
+      // Pre-select the candidates that clear the ICP threshold.
+      setSelected(new Set(data.candidates.map((c, i) => (c.scored.qualified ? i : -1)).filter((i) => i >= 0)));
+      if (data.candidates.length === 0) {
+        toast({
+          title: "No new prospects found",
+          description: data.foundCount > 0
+            ? "Everyone found is already on this campaign."
+            : "Try widening the campaign's roles, industries, or geographies.",
+        });
+      }
+    },
+    onError: (err: any) => toast({ title: "Discovery failed", description: err?.message, variant: "destructive" }),
+  });
+
+  const importDiscovered = useMutation({
+    mutationFn: async () => {
+      const candidates = (discoverResult?.candidates ?? [])
+        .filter((_, i) => selected.has(i))
+        .map((c) => c.candidate);
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover/import`, { candidates });
+      return res.json();
+    },
+    onSuccess: (data: { imported: number; skipped: number }) => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      setDiscovering(false);
+      setDiscoverResult(null);
+      setSelected(new Set());
+      toast({
+        title: `Imported ${data.imported} prospect(s)`,
+        description: data.skipped ? `${data.skipped} already on this campaign.` : "Ready to research.",
+      });
+    },
+    onError: (err: any) => toast({ title: "Import failed", description: err?.message, variant: "destructive" }),
+  });
+
+  function openDiscovery() {
+    setDiscoverResult(null);
+    setSelected(new Set());
+    setDiscovering(true);
+    discover.mutate();
+  }
+
+  function toggleSelected(i: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }
+
   const approve = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/approve`, {});
@@ -307,6 +410,12 @@ export default function OutreachCampaignDetailPage() {
               {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
               Refresh cadence
             </Button>
+            {webBackend?.available && (
+              <Button variant="outline" onClick={openDiscovery} disabled={discover.isPending} data-testid="button-discover-prospects">
+                {discover.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Radar className="w-4 h-4 mr-1.5" />}
+                Discover prospects
+              </Button>
+            )}
             <Button variant="outline" onClick={() => importHubspot.mutate()} disabled={importHubspot.isPending} data-testid="button-import-hubspot">
               {importHubspot.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
               Import from HubSpot
@@ -475,6 +584,83 @@ export default function OutreachCampaignDetailPage() {
           </DialogHeader>
           {dossier?.disqualifiedReason && <p className="text-sm text-destructive">{dossier.disqualifiedReason}</p>}
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{dossier?.researchDossier}</p>
+        </DialogContent>
+      </Dialog>
+
+      {/* Discovery dialog — review web-discovered candidates, then import selected */}
+      <Dialog open={discovering} onOpenChange={(o) => { if (!o) { setDiscovering(false); setDiscoverResult(null); } }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Radar className="w-4 h-4" /> Discover prospects
+            </DialogTitle>
+            <DialogDescription>
+              Net-new people matching this campaign's ICP, found from public web sources and scored. Pick who to add.
+            </DialogDescription>
+          </DialogHeader>
+
+          {discover.isPending ? (
+            <div className="py-10 flex flex-col items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Searching public sources…
+            </div>
+          ) : discoverResult && discoverResult.candidates.length > 0 ? (
+            <>
+              <div className="max-h-[50vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8"></TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead className="text-center">Score</TableHead>
+                      <TableHead>Source</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {discoverResult.candidates.map((c, i) => (
+                      <TableRow key={i} data-testid={`discovery-candidate-${i}`}>
+                        <TableCell>
+                          <Checkbox checked={selected.has(i)} onCheckedChange={() => toggleSelected(i)} data-testid={`discovery-select-${i}`} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{c.candidate.name}</div>
+                          {c.candidate.title && <div className="text-xs text-muted-foreground">{c.candidate.title}</div>}
+                        </TableCell>
+                        <TableCell className="text-sm">{c.candidate.companyName ?? "—"}</TableCell>
+                        <TableCell className={`text-center font-semibold ${scoreColor(c.scored.score)}`}>
+                          {c.scored.disqualified ? "DQ" : c.scored.score}
+                        </TableCell>
+                        <TableCell>
+                          {c.candidate.sourceUrl ? (
+                            <a href={c.candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs inline-flex items-center gap-1">
+                              source <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <DialogFooter className="gap-2 items-center sm:justify-between">
+                <span className="text-xs text-muted-foreground">{selected.size} of {discoverResult.candidates.length} selected</span>
+                <Button onClick={() => importDiscovered.mutate()} disabled={selected.size === 0 || importDiscovered.isPending} data-testid="button-import-discovered">
+                  {importDiscovered.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+                  Import selected
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No new prospects found. Try widening the campaign's roles, industries, or geographies.
+            </div>
+          )}
+          {salesNavBackend && !salesNavBackend.available && discoverResult && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2">{salesNavBackend.reason}</p>
+          )}
         </DialogContent>
       </Dialog>
 

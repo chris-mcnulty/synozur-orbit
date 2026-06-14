@@ -658,6 +658,7 @@ export type ManualActionKey =
   | "pricingRefresh"
   | "runOutreachInterview"
   | "generateProspectDossier"
+  | "discoverProspects"
   | "generateOutreachDraft";
 
 export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
@@ -676,6 +677,7 @@ export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   pricingRefresh: "Pricing Snapshot Refresh",
   runOutreachInterview: "Outreach Campaign Interview",
   generateProspectDossier: "Prospect Research & Scoring",
+  discoverProspects: "Prospect Discovery (web)",
   generateOutreachDraft: "Outreach Draft Generation",
 };
 
@@ -698,6 +700,7 @@ export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" 
   pricingRefresh: "medium",
   runOutreachInterview: "medium",
   generateProspectDossier: "high",
+  discoverProspects: "high",
   generateOutreachDraft: "medium",
 };
 
@@ -718,6 +721,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     pricingRefresh: 0,
     runOutreachInterview: 0,
     generateProspectDossier: 0,
+    discoverProspects: 0,
     generateOutreachDraft: 0,
   },
   trial: {
@@ -736,6 +740,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     pricingRefresh: 0,
     runOutreachInterview: 0,
     generateProspectDossier: 0,
+    discoverProspects: 0,
     generateOutreachDraft: 0,
   },
   pro: {
@@ -754,6 +759,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     pricingRefresh: 25,
     runOutreachInterview: 0,
     generateProspectDossier: 0,
+    discoverProspects: 0,
     generateOutreachDraft: 0,
   },
   enterprise: {
@@ -772,6 +778,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     pricingRefresh: 100,
     runOutreachInterview: 100,
     generateProspectDossier: 200,
+    discoverProspects: 100,
     generateOutreachDraft: 200,
   },
   unlimited: {
@@ -790,6 +797,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     pricingRefresh: -1,
     runOutreachInterview: -1,
     generateProspectDossier: -1,
+    discoverProspects: -1,
     generateOutreachDraft: -1,
   },
 };

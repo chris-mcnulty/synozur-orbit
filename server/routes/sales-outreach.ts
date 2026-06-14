@@ -17,6 +17,12 @@ import { guardFeature, guardManualAction, logAiUsage } from "./helpers";
 import { assessSalesOutreachReadiness } from "../services/sales-outreach-readiness";
 import { createCampaignFromInterview, getCampaign } from "../services/outreach-interview-service";
 import { researchProspect } from "../services/prospector-service";
+import {
+  discoverProspects,
+  importDiscoveredProspects,
+  getDiscoveryBackends,
+} from "../services/discovery-service";
+import type { DiscoveryCandidate } from "../services/discovery-provider-core";
 import { composeTouch, loadComplianceContext } from "../services/outreach-composer-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
@@ -257,6 +263,94 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach-prospects:create]", err);
       res.status(500).json({ error: err.message || "Failed to add prospect" });
+    }
+  });
+
+  // Which discovery backends are available (web is free; Sales Navigator is
+  // gated on the LinkedIn MCP). Informational — drives the discovery UI.
+  app.get("/api/sales-outreach/discovery/status", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      res.json({ backends: getDiscoveryBackends() });
+    } catch (err: any) {
+      console.error("[sales-outreach-discovery:status]", err);
+      res.status(500).json({ error: err.message || "Failed to read discovery status" });
+    }
+  });
+
+  // Outbound discovery: find net-new ICP-matching prospects from public sources.
+  // Returns scored, deduped candidates for review — nothing is imported here.
+  // Metered (AI web search). The seller imports selected candidates separately.
+  app.post("/api/sales-outreach/campaigns/:id/discover", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      if (!(await guardManualAction(req, res, "discoverProspects"))) return;
+
+      const body = req.body ?? {};
+      const result = await discoverProspects(ctx.tenantDomain, campaign.id, {
+        backend: body.backend === "salesnav" ? "salesnav" : undefined,
+        limit: body.limit,
+      });
+
+      if (result.provider && result.model) {
+        await logAiUsage(
+          { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+          "discoverProspects",
+          result.provider,
+          result.model,
+          { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens },
+        );
+      }
+      res.json(result);
+    } catch (err: any) {
+      console.error("[sales-outreach-discovery:search]", err);
+      res.status(500).json({ error: err.message || "Failed to discover prospects" });
+    }
+  });
+
+  // Import selected discovered candidates as prospects (manual gate — the seller
+  // reviews ICP fit first). Each lands as a `new` prospect for research.
+  app.post("/api/sales-outreach/campaigns/:id/discover/import", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const raw = req.body?.candidates;
+      if (!Array.isArray(raw) || raw.length === 0) {
+        return res.status(400).json({ error: "No candidates to import" });
+      }
+      // Only accept the candidate fields we control; never trust client status/score.
+      const candidates: DiscoveryCandidate[] = raw
+        .filter((c: any) => c && typeof c.name === "string" && c.name.trim())
+        .map((c: any) => ({
+          name: String(c.name).trim(),
+          title: c.title ?? null,
+          companyName: c.companyName ?? null,
+          email: c.email ?? null,
+          linkedinUrl: c.linkedinUrl ?? null,
+          geography: c.geography ?? null,
+          industry: c.industry ?? null,
+          segment: c.segment ?? null,
+          sourceUrl: c.sourceUrl ?? null,
+          source: c.source === "salesnav" ? "salesnav" : "web",
+        }));
+      if (candidates.length === 0) {
+        return res.status(400).json({ error: "No valid candidates to import" });
+      }
+
+      const result = await importDiscoveredProspects(ctx.tenantDomain, campaign.id, candidates, {
+        ownerUserId: ctx.userId,
+        marketId: ctx.marketId || null,
+      });
+      res.status(201).json({ imported: result.imported.length, skipped: result.skipped, prospects: result.imported });
+    } catch (err: any) {
+      console.error("[sales-outreach-discovery:import]", err);
+      res.status(500).json({ error: err.message || "Failed to import prospects" });
     }
   });
 
