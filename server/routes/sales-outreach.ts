@@ -459,7 +459,11 @@ export function registerSalesOutreachRoutes(app: Express) {
         .where(eq(outreachTouches.id, touch.id))
         .returning();
 
-      // Advance the prospect: a touch is now out, awaiting a reply.
+      // Advance the prospect to awaiting_reply on approval. This is the
+      // deliberate v1 "optimistic" model: the seller sends the Outlook draft
+      // themselves, and requiring confirmed-send would stall cadence whenever
+      // mailbox detection is unavailable (no consent, or LinkedIn copy-assist).
+      // Graph send-detection later stamps the touch `sent` for accurate records.
       if (prospect && prospect.status === "draft_pending_approval") {
         await db
           .update(prospects)

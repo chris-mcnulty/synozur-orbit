@@ -304,6 +304,9 @@ export async function detectMailboxActivity(userId: string, tenantDomain: string
       const { status, json } = await graphGet(token, `/me/messages/${t.outlookDraftId}?$select=isDraft`);
       const wasSent = status === 404 || (status === 200 && json?.isDraft === false);
       if (wasSent) {
+        // Stamp the touch as sent (records the real send time for reply timing).
+        // The prospect is already `awaiting_reply` from the optimistic approve
+        // model, so no prospect-state change is needed here.
         await db.update(outreachTouches).set({ status: "sent", sentAt: new Date() }).where(eq(outreachTouches.id, t.id));
         result.touchesConfirmedSent++;
       }
