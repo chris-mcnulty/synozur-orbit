@@ -139,12 +139,15 @@ export async function searchApollo(
     body.q_keywords = keywords.join(" ");
   }
 
-  // Named accounts → organization name filter (best-effort).
+  // Named accounts → organization_names array (Apollo's correct param).
   if (namedAccounts?.length) {
-    body.q_organization_name = namedAccounts[0]; // Apollo supports one name filter
+    body.organization_names = namedAccounts.slice(0, 10);
   }
 
+  console.log("[Apollo] request body:", JSON.stringify(body));
+
   let response: ApolloSearchResponse;
+  let rawText = "";
   try {
     const res = await fetch(APOLLO_API_URL, {
       method: "POST",
@@ -156,18 +159,25 @@ export async function searchApollo(
       body: JSON.stringify(body),
     });
 
-    const text = await res.text();
+    rawText = await res.text();
+    console.log(`[Apollo] response ${res.status}:`, rawText.slice(0, 500));
+
     try {
-      response = JSON.parse(text) as ApolloSearchResponse;
+      response = JSON.parse(rawText) as ApolloSearchResponse;
     } catch {
       throw new ApolloDiscoveryError(
-        `Apollo returned non-JSON: ${res.status} ${text.slice(0, 200)}`,
+        `Apollo returned non-JSON: ${res.status} ${rawText.slice(0, 200)}`,
         "api_error",
       );
     }
 
     if (!res.ok) {
-      const msg = response.message ?? `HTTP ${res.status}`;
+      // Apollo can return errors under .message, .error, or .error_description.
+      const msg =
+        response.message ??
+        (response as any).error ??
+        (response as any).error_description ??
+        `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
       throw new ApolloDiscoveryError(`Apollo API error: ${msg}`, "api_error");
     }
   } catch (err) {
