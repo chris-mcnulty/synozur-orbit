@@ -11,7 +11,7 @@
 
 import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provider-core";
 
-const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/search";
+const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/api_search";
 
 // ---------------------------------------------------------------------------
 // Availability
