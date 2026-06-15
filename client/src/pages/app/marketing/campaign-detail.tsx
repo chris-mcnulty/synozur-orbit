@@ -3449,6 +3449,31 @@ export default function CampaignDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div className="rounded-md border bg-muted/30 p-3 space-y-1">
+              <p className="text-xs font-medium">Generate a branded graphic</p>
+              <p className="text-xs text-muted-foreground">
+                Overlays the post headline and your logo on the currently selected photo (or uses a brand-color gradient if no photo is set).
+              </p>
+              <Button
+                variant="default"
+                size="sm"
+                className="mt-2 gap-1.5"
+                disabled={isGenerating}
+                onClick={async () => {
+                  if (!imagePickerPostId) return;
+                  await generateGraphic(imagePickerPostId);
+                  setImagePickerPostId(null);
+                }}
+                data-testid="button-picker-generate-image"
+              >
+                {isGenerating
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating…</>
+                  : <><Wand2 className="w-3.5 h-3.5" /> Generate branded image</>}
+              </Button>
+            </div>
+            <div className="relative flex items-center gap-2 text-xs text-muted-foreground before:flex-1 before:h-px before:bg-border after:flex-1 after:h-px after:bg-border">
+              or pick a photo
+            </div>
             <Button
               variant="outline"
               className="w-full gap-2"
