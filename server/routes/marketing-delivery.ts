@@ -702,6 +702,94 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     }
   });
 
+  // ───── LinkedIn MCP connect (token-less, API-key-based) ─────
+  // Fetches the list of LinkedIn organizations the MCP service account
+  // can post to. Used by the UI's org-picker so the user can choose which
+  // org (or their personal profile) this social account publishes as.
+  app.get("/api/social-accounts/linkedin/mcp/orgs", async (req, res) => {
+    if (!await guardFeature(req, res, "directPublishing")) return;
+    const { isLinkedInMcpConfigured: mcpOk } = await import("../services/linkedin-provider");
+    if (!mcpOk()) {
+      return res.status(503).json({ error: "LinkedIn MCP is not configured (LINKEDIN_MCP_URL and LINKEDIN_MCP_API_KEY must be set)" });
+    }
+    try {
+      const { callLinkedInTool, extractText } = await import("../services/linkedin-mcp-client");
+      const result = await callLinkedInTool("linkedin_list_managed_orgs", {});
+      const text = extractText(result);
+      let orgs: Array<{ urn: string; name: string; vanityName?: string | null }> = [];
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          orgs = parsed
+            .filter((o: any) => o && typeof o === "object")
+            .map((o: any) => ({
+              urn: String(o.urn ?? o.id ?? ""),
+              name: String(o.name ?? o.localizedName ?? o.vanityName ?? o.urn ?? ""),
+              vanityName: typeof o.vanityName === "string" ? o.vanityName : null,
+            }))
+            .filter(o => o.urn.startsWith("urn:li:"));
+        }
+      } catch {}
+      res.json({ orgs });
+    } catch (err: any) {
+      console.error("[LinkedIn MCP orgs]", err.message);
+      res.status(502).json({ error: err.message || "Failed to fetch LinkedIn orgs via MCP" });
+    }
+  });
+
+  // Activate a LinkedIn social account for MCP-based publishing. The user
+  // may optionally choose an org URN from the /mcp/orgs list; if omitted,
+  // `resolveMcpAuthor()` will discover the author at publish time.
+  app.post("/api/social-accounts/:id/linkedin/mcp/connect", async (req, res) => {
+    if (!await guardFeature(req, res, "directPublishing")) return;
+    const { isLinkedInMcpConfigured: mcpOk } = await import("../services/linkedin-provider");
+    if (!mcpOk()) {
+      return res.status(503).json({ error: "LinkedIn MCP is not configured" });
+    }
+    const ctx = await getRequestContext(req);
+    const [account] = await db.select().from(socialAccounts)
+      .where(and(eq(socialAccounts.id, req.params.id), eq(socialAccounts.tenantDomain, ctx.tenantDomain)));
+    if (!account) return res.status(404).json({ error: "Account not found" });
+    if (account.platform !== "linkedin") {
+      return res.status(400).json({ error: "This route is for LinkedIn accounts only" });
+    }
+
+    const { authorUrn } = req.body ?? {};
+    let urn: string | null = null;
+    let mode: string | null = null;
+    if (typeof authorUrn === "string" && authorUrn.trim()) {
+      const u = authorUrn.trim();
+      if (!u.startsWith("urn:li:")) {
+        return res.status(400).json({ error: "authorUrn must start with urn:li:" });
+      }
+      urn = u;
+      mode = u.startsWith("urn:li:organization:") ? "organization" : "person";
+    }
+
+    await db.update(socialAccounts).set({
+      authorUrn: urn ?? account.authorUrn,
+      authorMode: mode ?? account.authorMode,
+      connectedAt: new Date(),
+      connectedBy: req.session.userId!,
+      lastPublishError: null,
+      status: "active",
+      updatedAt: new Date(),
+    }).where(eq(socialAccounts.id, account.id));
+
+    await db.insert(marketingAuditLog).values({
+      tenantDomain: ctx.tenantDomain,
+      userId: req.session.userId!,
+      action: "social_oauth_connect",
+      entityType: "social_account",
+      entityId: account.id,
+      status: "ok",
+      message: "Connected LinkedIn (MCP)",
+      details: { authorUrn: urn },
+    });
+
+    res.json({ success: true, authorUrn: urn });
+  });
+
   // ───── Tenant-owned platform OAuth credentials ─────
   // Per-tenant client_id / client_secret for the OAuth apps each platform
   // requires. Tenant admins (Domain Admin or Global Admin) manage these;

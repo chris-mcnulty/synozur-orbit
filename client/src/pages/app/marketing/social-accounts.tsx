@@ -212,6 +212,99 @@ function BlueskyConnectDialog({
   );
 }
 
+// ─── LinkedIn MCP connect dialog ─────────────────────────────────────────────
+
+function LinkedInMcpConnectDialog({
+  account, open, onOpenChange,
+}: {
+  account: SocialAccount;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedUrn, setSelectedUrn] = useState<string>("__personal__");
+
+  const { data: orgsData, isLoading: orgsLoading } = useQuery<{ orgs: Array<{ urn: string; name: string; vanityName?: string | null }> }>({
+    queryKey: ["/api/social-accounts/linkedin/mcp/orgs"],
+    queryFn: async () => {
+      const r = await fetch("/api/social-accounts/linkedin/mcp/orgs", { credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to load orgs");
+      return r.json();
+    },
+    enabled: open,
+  });
+  const orgs = orgsData?.orgs ?? [];
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const authorUrn = selectedUrn === "__personal__" ? undefined : selectedUrn;
+      const r = await fetch(`/api/social-accounts/${account.id}/linkedin/mcp/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ authorUrn }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Connect failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({ title: "LinkedIn connected via MCP" });
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast({ title: "Connect failed", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect LinkedIn via MCP — {account.accountName}</DialogTitle>
+          <DialogDescription>
+            Posts will be published through the LinkedIn MCP service. Choose which identity to publish as, or leave as personal and we'll resolve it at publish time.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label className="text-xs">Publish as</Label>
+            {orgsLoading ? (
+              <p className="text-xs text-muted-foreground py-2">Loading org list…</p>
+            ) : (
+              <Select value={selectedUrn} onValueChange={setSelectedUrn}>
+                <SelectTrigger data-testid="linkedin-mcp-select-author">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__personal__">Personal profile (auto-resolved)</SelectItem>
+                  {orgs.map(org => (
+                    <SelectItem key={org.urn} value={org.urn}>
+                      {org.name} (Company page)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} data-testid="linkedin-mcp-cancel">
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending}
+              data-testid="linkedin-mcp-connect-submit"
+            >
+              {connectMutation.isPending ? "Connecting…" : "Connect"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Voice Profile Editor ────────────────────────────────────────────────────
 
 type FrameworkRefKind = "long_form" | "grounding" | "global";
@@ -724,8 +817,9 @@ export default function SocialAccountsPage() {
   const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; accountId: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
   const [voiceAccount, setVoiceAccount] = useState<SocialAccount | null>(null);
   const [blueskyAccount, setBlueskyAccount] = useState<SocialAccount | null>(null);
+  const [linkedinMcpAccount, setLinkedInMcpAccount] = useState<SocialAccount | null>(null);
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean>; linkedinDirectPublishEnabled?: boolean }>({
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean>; linkedinDirectPublishEnabled?: boolean; linkedinMcpEnabled?: boolean }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const r = await fetch("/api/tenant/info", { credentials: "include" });
@@ -734,9 +828,8 @@ export default function SocialAccountsPage() {
   });
 
   const isAllowed = tenantInfo?.features?.socialAccounts === true;
-  // LinkedIn direct posting is pending LinkedIn's app review. Until it's
-  // approved, show a "coming soon" notice instead of a Connect button.
   const linkedinPublishEnabled = tenantInfo?.linkedinDirectPublishEnabled === true;
+  const mcpLinkedInEnabled = tenantInfo?.linkedinMcpEnabled === true;
 
   const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social-accounts"],
@@ -996,78 +1089,96 @@ export default function SocialAccountsPage() {
                     </a>
                   )}
                   {account.notes && <p className="text-xs text-muted-foreground">{account.notes}</p>}
-                  {DIRECT_PUBLISH_PLATFORMS.has(account.platform) && (
-                    <div className="pt-2 border-t mt-2 space-y-2">
-                      {account.encryptedAccessToken ? (
-                        <>
-                          <div className="flex items-center gap-1.5 text-xs text-green-600" data-testid={`status-connected-${account.id}`}>
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Connected for direct publishing
-                          </div>
-                          {account.platform === "linkedin" && (
-                            <LinkedInAuthorPicker account={account} />
-                          )}
-                          {account.lastPublishError && (
-                            <div className="flex items-start gap-1.5 text-xs text-amber-600">
-                              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                              <span>Last error: {account.lastPublishError}</span>
+                  {DIRECT_PUBLISH_PLATFORMS.has(account.platform) && (() => {
+                    const isMcpLinkedin = account.platform === "linkedin" && mcpLinkedInEnabled && !!account.connectedAt && !account.encryptedAccessToken;
+                    const isConnected = !!account.encryptedAccessToken || isMcpLinkedin;
+                    const handleConnect = () => {
+                      if (account.platform === "bluesky") {
+                        setBlueskyAccount(account);
+                      } else if (account.platform === "linkedin" && mcpLinkedInEnabled) {
+                        setLinkedInMcpAccount(account);
+                      } else {
+                        connectMutation.mutate(account.id);
+                      }
+                    };
+                    return (
+                      <div className="pt-2 border-t mt-2 space-y-2">
+                        {isConnected ? (
+                          <>
+                            <div className="flex items-center gap-1.5 text-xs text-green-600" data-testid={`status-connected-${account.id}`}>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isMcpLinkedin ? "Connected via LinkedIn MCP" : "Connected for direct publishing"}
                             </div>
-                          )}
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs h-7"
-                              onClick={() => {
-                                if (NON_OAUTH_PLATFORMS.has(account.platform)) {
-                                  setBlueskyAccount(account);
-                                } else {
-                                  connectMutation.mutate(account.id);
-                                }
-                              }}
-                              disabled={connectMutation.isPending}
-                              data-testid={`button-reconnect-${account.id}`}
-                            >
-                              <LinkIcon className="w-3 h-3 mr-1" /> Reconnect
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs h-7"
-                              onClick={() => disconnectMutation.mutate(account.id)}
-                              disabled={disconnectMutation.isPending}
-                              data-testid={`button-disconnect-${account.id}`}
-                            >
-                              <Unlink className="w-3 h-3 mr-1" /> Disconnect
-                            </Button>
+                            {account.platform === "linkedin" && (
+                              isMcpLinkedin
+                                ? account.authorUrn && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Publishing as: <span className="font-mono">{account.authorUrn}</span>
+                                    </p>
+                                  )
+                                : <LinkedInAuthorPicker account={account} />
+                            )}
+                            {account.lastPublishError && (
+                              <div className="flex items-start gap-1.5 text-xs text-amber-600">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                <span>Last error: {account.lastPublishError}</span>
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7"
+                                onClick={handleConnect}
+                                disabled={connectMutation.isPending}
+                                data-testid={`button-reconnect-${account.id}`}
+                              >
+                                <LinkIcon className="w-3 h-3 mr-1" /> Reconnect
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7"
+                                onClick={() => disconnectMutation.mutate(account.id)}
+                                disabled={disconnectMutation.isPending}
+                                data-testid={`button-disconnect-${account.id}`}
+                              >
+                                <Unlink className="w-3 h-3 mr-1" /> Disconnect
+                              </Button>
+                            </div>
+                          </>
+                        ) : account.platform === "linkedin" && mcpLinkedInEnabled ? (
+                          <Button
+                            size="sm"
+                            className="text-xs h-7 w-full"
+                            onClick={handleConnect}
+                            disabled={connectMutation.isPending}
+                            data-testid={`button-connect-${account.id}`}
+                          >
+                            <LinkIcon className="w-3 h-3 mr-1" /> Connect via LinkedIn MCP
+                          </Button>
+                        ) : account.platform === "linkedin" && !linkedinPublishEnabled ? (
+                          <div
+                            className="flex items-start gap-1.5 text-xs text-muted-foreground rounded-md border border-dashed p-2"
+                            data-testid={`status-linkedin-coming-soon-${account.id}`}
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                            <span>Direct posting to LinkedIn is coming soon — it's pending LinkedIn's app review. One-click Connect will turn on automatically once it's approved.</span>
                           </div>
-                        </>
-                      ) : account.platform === "linkedin" && !linkedinPublishEnabled ? (
-                        <div
-                          className="flex items-start gap-1.5 text-xs text-muted-foreground rounded-md border border-dashed p-2"
-                          data-testid={`status-linkedin-coming-soon-${account.id}`}
-                        >
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
-                          <span>Direct posting to LinkedIn is coming soon — it's pending LinkedIn's app review. One-click Connect will turn on automatically once it's approved.</span>
-                        </div>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="text-xs h-7 w-full"
-                          onClick={() => {
-                            if (NON_OAUTH_PLATFORMS.has(account.platform)) {
-                              setBlueskyAccount(account);
-                            } else {
-                              connectMutation.mutate(account.id);
-                            }
-                          }}
-                          disabled={connectMutation.isPending}
-                          data-testid={`button-connect-${account.id}`}
-                        >
-                          <LinkIcon className="w-3 h-3 mr-1" /> Connect for direct publishing
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="text-xs h-7 w-full"
+                            onClick={handleConnect}
+                            disabled={connectMutation.isPending}
+                            data-testid={`button-connect-${account.id}`}
+                          >
+                            <LinkIcon className="w-3 h-3 mr-1" /> Connect for direct publishing
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             ))}
@@ -1130,6 +1241,14 @@ export default function SocialAccountsPage() {
             account={blueskyAccount}
             open={!!blueskyAccount}
             onOpenChange={(open) => { if (!open) setBlueskyAccount(null); }}
+          />
+        )}
+
+        {linkedinMcpAccount && (
+          <LinkedInMcpConnectDialog
+            account={linkedinMcpAccount}
+            open={!!linkedinMcpAccount}
+            onOpenChange={(open) => { if (!open) setLinkedInMcpAccount(null); }}
           />
         )}
       </div>

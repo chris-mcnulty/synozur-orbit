@@ -8,6 +8,7 @@ import { calculateScores, calculateBaselineScore, getCurrentWeeklyPeriod, type S
 import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMonthlyAnalysisCount, MANUAL_ACTION_KEYS, resolveEffectivePlan, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus } from "../services/manual-action-quota";
 import { isLinkedInDirectPublishEnabled } from "../services/platform-credentials-service";
+import { isLinkedInMcpConfigured } from "../services/linkedin-provider";
 import { normalizeToCanonicalDomain } from "../utils/url-normalization";
 
 export function registerTenantAdminRoutes(app: Express) {
@@ -1005,6 +1006,7 @@ export function registerTenantAdminRoutes(app: Express) {
         // Synozur app; the UI uses this to show "coming soon" instead of a
         // broken Connect button.
         linkedinDirectPublishEnabled: isLinkedInDirectPublishEnabled(),
+        linkedinMcpEnabled: isLinkedInMcpConfigured(),
         usage: {
           competitorCount,
           monthlyAnalysisCount,

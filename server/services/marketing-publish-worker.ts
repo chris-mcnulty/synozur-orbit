@@ -30,6 +30,7 @@ import {
 } from "@shared/schema";
 import { getPublisher } from "./social-publishers";
 import { encryptSecret } from "../utils/encryption";
+import { isLinkedInMcpConfigured } from "./linkedin-provider";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
 
@@ -99,7 +100,15 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
             isNull(generatedPosts.publishNextAttemptAt),
             lte(generatedPosts.publishNextAttemptAt, now),
           ),
-          isNotNull(socialAccounts.encryptedAccessToken),
+          // Allow LinkedIn accounts without a token when the MCP backend is
+          // configured — `connectedAt IS NOT NULL` distinguishes an activated
+          // MCP account from one that was OAuth-connected and then disconnected.
+          isLinkedInMcpConfigured()
+            ? or(
+                isNotNull(socialAccounts.encryptedAccessToken),
+                and(eq(socialAccounts.platform, "linkedin"), isNotNull(socialAccounts.connectedAt)),
+              )
+            : isNotNull(socialAccounts.encryptedAccessToken),
           eq(socialAccounts.status, "active"),
           // Standalone (no campaign) OR a campaign link with autoPublish=true.
           or(
@@ -348,7 +357,8 @@ export async function publishPostNow(
       errorMessage: `Post must be approved before publishing (current status: ${post.status}).`,
     };
   }
-  if (!account.encryptedAccessToken) {
+  const isMcpLinkedin = isLinkedInMcpConfigured() && account.platform === "linkedin" && !!account.connectedAt;
+  if (!account.encryptedAccessToken && !isMcpLinkedin) {
     return { success: false, errorMessage: "Account is not connected" };
   }
   if (!bumpAndCheckDailyCap(post.tenantDomain)) {
