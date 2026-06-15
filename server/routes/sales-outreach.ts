@@ -995,6 +995,22 @@ export function registerSalesOutreachRoutes(app: Express) {
       res.status(500).json({ error: err.message || "Failed to mark replied" });
     }
   });
+
+  // Remove a prospect from a campaign entirely.
+  app.delete("/api/sales-outreach/prospects/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      await db.delete(prospects).where(eq(prospects.id, prospect.id));
+      res.status(204).end();
+    } catch (err: any) {
+      console.error("[sales-outreach:prospect-delete]", err);
+      res.status(500).json({ error: err.message || "Failed to delete prospect" });
+    }
+  });
 }
 
 /** Create/update a prospect's HubSpot contact. Shared by manual sync + approve. */

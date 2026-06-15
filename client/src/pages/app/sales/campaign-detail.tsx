@@ -522,6 +522,21 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "HubSpot sync failed", description: err?.message, variant: "destructive" }),
   });
 
+  const deleteProspect = useMutation({
+    mutationFn: async (prospectId: string) => {
+      const res = await apiRequest("DELETE", `/api/sales-outreach/prospects/${prospectId}`);
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to remove prospect");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      toast({ title: "Prospect removed" });
+    },
+    onError: (err: any) => toast({ title: "Could not remove prospect", description: err?.message, variant: "destructive" }),
+  });
+
   const { data: discoveryStatus } = useQuery<{ backends: DiscoveryBackend[] }>({
     queryKey: ["/api/sales-outreach/discovery/status"],
     queryFn: async () => {
@@ -793,6 +808,23 @@ export default function OutreachCampaignDetailPage() {
                               : <Upload className="w-3.5 h-3.5" />}
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Remove ${p.name} from this campaign?`)) {
+                              deleteProspect.mutate(p.id);
+                            }
+                          }}
+                          disabled={deleteProspect.isPending && deleteProspect.variables === p.id}
+                          data-testid={`delete-prospect-${p.id}`}
+                          title="Remove prospect"
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          {deleteProspect.isPending && deleteProspect.variables === p.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <X className="w-3.5 h-3.5" />}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
