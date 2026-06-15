@@ -297,7 +297,11 @@ export function registerMarketingCalendarRoutes(app: Express) {
       }
 
       for (const b of briefRows) {
-        const date = b.scheduledAt ?? null;
+        // Briefs are specs (a description handed off to create collateral), not
+        // dated deliverables — they never appear as scheduled items on the grid;
+        // they only ever live in the backlog as ideas. Any production due-date
+        // lives on the editorial-calendar / Planner side, not on this calendar.
+        const date = null;
         if (!includeByDate(date)) continue;
         const asset = b.contentAssetId ? briefAssetMap.get(b.contentAssetId) : null;
         items.push({
@@ -557,7 +561,8 @@ export function registerMarketingCalendarRoutes(app: Express) {
           funnelStage: "awareness",
           status: "suggested",
           aiGenerated: false,
-          scheduledAt: when,
+          // Briefs are specs, not dated deliverables — never store a date.
+          scheduledAt: null,
           campaignId: campaignId || null,
           solutionAreaId: solutionAreaId || null,
           conferenceId: conferenceId || null,
@@ -605,7 +610,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       }
       if (type === "content") {
         const u: any = { updatedAt: new Date() };
-        if (hasDate) u.scheduledAt = when;
+        // Briefs are specs, not dated deliverables — ignore any date change.
         if ("campaignId" in body) u.campaignId = body.campaignId || null;
         if ("solutionAreaId" in body) u.solutionAreaId = body.solutionAreaId || null;
         if ("conferenceId" in body) u.conferenceId = body.conferenceId || null;
@@ -1137,10 +1142,10 @@ export function registerMarketingCalendarRoutes(app: Express) {
             .where(and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId), inArray(generatedEmails.id, byType.email))).returning({ id: generatedEmails.id });
           affected += r.length;
         }
+        // Briefs are specs, not dated deliverables — they can't be scheduled.
+        // Create collateral (a post or draft) from the brief, then schedule that.
         if (byType.content.length) {
-          const r = await db.update(contentBriefs).set({ scheduledAt: when, updatedAt: new Date() })
-            .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
-          affected += r.length;
+          skipped.push(`${byType.content.length} content brief(s) skipped — briefs are specs, not scheduled items. Create the collateral first, then schedule that.`);
         }
       } else if (action === "approve") {
         // Blog/content and email support an Approve gate. Social posts rely on

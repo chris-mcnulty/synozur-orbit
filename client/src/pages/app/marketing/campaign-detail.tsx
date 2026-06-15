@@ -566,8 +566,11 @@ export default function CampaignDetailPage() {
   const { data: allCampaigns = [] } = useQuery<Array<{ id: string; name: string; status: string; parentCampaignId?: string | null }>>({
     queryKey: ["/api/campaigns", "all-for-link"],
     queryFn: async () => {
-      const r = await fetch("/api/campaigns", { credentials: "include" });
-      return r.ok ? r.json() : [];
+      // Pickers only offer active campaigns — archived/completed and draft
+      // duplicates ("X (Copy)") are hidden so the list stays clean.
+      const r = await fetch("/api/campaigns?status=active", { credentials: "include" });
+      const data = r.ok ? await r.json() : [];
+      return Array.isArray(data) ? data : data?.items ?? [];
     },
     enabled: linkChildOpen,
   });

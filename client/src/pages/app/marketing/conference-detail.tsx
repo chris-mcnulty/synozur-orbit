@@ -392,7 +392,8 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
   const { data: campaignOptions = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ["/api/campaigns", "for-event-link"],
     queryFn: async () => {
-      const r = await fetch("/api/campaigns?pageSize=100", { credentials: "include" });
+      // Only active campaigns — archived/completed and draft duplicates are hidden.
+      const r = await fetch("/api/campaigns?status=active", { credentials: "include" });
       if (!r.ok) return [];
       const data = await r.json();
       return Array.isArray(data) ? data : data?.items ?? [];
@@ -551,6 +552,12 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Not linked to a campaign</SelectItem>
+                {/* Preserve an existing link to a non-active (e.g. archived)
+                    campaign so the selection doesn't render blank and the link
+                    isn't silently dropped on save. */}
+                {form.campaignId && !campaignOptions.some((c) => c.id === form.campaignId) && (
+                  <SelectItem value={form.campaignId}>Currently linked campaign (inactive)</SelectItem>
+                )}
                 {campaignOptions.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}

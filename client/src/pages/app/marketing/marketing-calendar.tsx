@@ -817,6 +817,20 @@ export default function MarketingCalendarPage() {
     });
   }, [backlogItems, backlogFilters, typeFilter]);
 
+  // The backlog RAIL beside the calendar grid follows the SAME active campaign /
+  // theme / event filter as the grid, so a per-campaign view shows only that
+  // campaign's undated drafts — not every campaign's. (The standalone Backlog
+  // tab keeps its own independent filters above for cross-campaign triage.)
+  const railBacklog = useMemo(
+    () => backlogItems.filter((it) =>
+      matchesTypeFilter(it, typeFilter)
+      && (filters.campaignId === "all" || (it.campaignId ?? "") === filters.campaignId)
+      && (filters.solutionAreaId === "all" || (it.solutionAreaId ?? "") === filters.solutionAreaId)
+      && (filters.conferenceId === "all" || (it.conferenceId ?? "") === filters.conferenceId)
+    ),
+    [backlogItems, filters, typeFilter],
+  );
+
   const itemKey = (it: { type: string; id: string }) => `${it.type}-${it.id}`;
   const toggleSelected = (it: CalendarItem) => {
     setSelected((prev) => {
@@ -1076,7 +1090,7 @@ export default function MarketingCalendarPage() {
   const dragDescriptors = (it: CalendarItem): { type: string; id: string }[] => {
     const k = itemKey(it);
     if (selected.has(k) && selected.size > 1) {
-      return filteredBacklog.filter((b) => selected.has(itemKey(b))).map((b) => ({ type: b.type, id: b.id }));
+      return railBacklog.filter((b) => selected.has(itemKey(b))).map((b) => ({ type: b.type, id: b.id }));
     }
     return [{ type: it.type, id: it.id }];
   };
@@ -1090,19 +1104,26 @@ export default function MarketingCalendarPage() {
   // and let the user confirm; otherwise schedule straight away.
   const handleDropSchedule = async (descriptors: { type: string; id: string }[], dateKey: string) => {
     if (!descriptors.length || dragScheduleMut.isPending) return;
+    // Briefs are specs, not dated deliverables — they can't be dropped onto a
+    // day. Drop them from the batch and tell the user how to schedule instead.
+    const schedulable = descriptors.filter((d) => d.type !== "content");
+    if (schedulable.length < descriptors.length) {
+      toast({ title: "Briefs can't be scheduled", description: "A brief is a spec to hand off for creating content — turn it into a post or draft, then schedule that." });
+    }
+    if (!schedulable.length) return;
     const tz = new Date().getTimezoneOffset();
     try {
       const advice = await qc.fetchQuery<DateAdvice>({
         queryKey: [`/api/marketing-calendar/date-advice?date=${dateKey}&tzOffset=${tz}`],
       });
       if (advice?.busy) {
-        setPendingDrop({ descriptors, dateKey });
+        setPendingDrop({ descriptors: schedulable, dateKey });
         return;
       }
     } catch {
       // If the advice lookup fails, fall back to scheduling without a warning.
     }
-    scheduleDrop(descriptors, dateKey);
+    scheduleDrop(schedulable, dateKey);
   };
 
   // Dragging an already-scheduled pill onto another day reschedules it; dropping
@@ -1303,7 +1324,7 @@ export default function MarketingCalendarPage() {
                   />
                 </div>
                 <BacklogRail
-                  items={filteredBacklog}
+                  items={railBacklog}
                   totalCount={backlogItems.length}
                   isLoading={backlogLoading}
                   selected={selected}
@@ -1780,15 +1801,19 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
             {items.map((it) => {
               const k = itemKey(it);
               const checked = selected.has(k);
+              // Briefs are specs, not dated deliverables — they can't be dragged
+              // onto a day. They still show here as ideas and can be opened.
+              const canSchedule = it.type !== "content";
               return (
                 <div
                   key={k}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, it)}
-                  className={`flex cursor-grab items-center gap-2 rounded border px-2 py-1.5 text-xs active:cursor-grabbing ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
+                  draggable={canSchedule}
+                  onDragStart={canSchedule ? (e) => onDragStart(e, it) : undefined}
+                  className={`flex items-center gap-2 rounded border px-2 py-1.5 text-xs ${canSchedule ? "cursor-grab active:cursor-grabbing" : ""} ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
                   data-testid={`backlog-rail-row-${it.id}`}
+                  title={canSchedule ? undefined : "Briefs are specs — turn into a post or draft to schedule"}
                 >
-                  <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {canSchedule && <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-rail-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
                   <ChannelFormatTag item={it} />
@@ -1932,11 +1957,17 @@ function AddItemDialog({ open, onOpenChange, filterOpts, onCreated }: {
               </Select>
             </div>
           )}
-          <div>
-            <Label className="text-xs">Date (optional — leave blank for unscheduled)</Label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="input-add-date" />
-            <DateCrowdingHint date={date} onPick={setDate} testid="text-add-crowding" />
-          </div>
+          {type !== "content" ? (
+            <div>
+              <Label className="text-xs">Date (optional — leave blank for unscheduled)</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} data-testid="input-add-date" />
+              <DateCrowdingHint date={date} onPick={setDate} testid="text-add-crowding" />
+            </div>
+          ) : (
+            <p className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground" data-testid="text-add-content-note">
+              Briefs aren't scheduled — a brief is a spec for creating content. It'll go to the backlog; create the collateral, then schedule that.
+            </p>
+          )}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <Label className="text-xs">Campaign</Label>
@@ -2213,6 +2244,11 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           );
         })()}
 
+        {item.type === "content" ? (
+          <p className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground" data-testid="text-detail-content-note">
+            Briefs aren't scheduled — a brief is a spec you hand off to create the actual content. Turn it into a post or draft to put that on the calendar.
+          </p>
+        ) : (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label className="text-xs">Date</Label>
@@ -2254,6 +2290,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             )}
           </div>
         </div>
+        )}
 
         {/* Campaign / theme / event assignment for the existing item */}
         <div className="grid grid-cols-3 gap-2">
