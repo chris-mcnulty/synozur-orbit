@@ -894,6 +894,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCompetitor(id: string): Promise<void> {
+    // Null out SEO metric rows that reference this competitor so they no
+    // longer appear in Share-of-Voice / keyword-ranking reports.
+    // Historical data is preserved; the report skips rows where entityId is null.
+    await db
+      .update(seoMetrics)
+      .set({ entityId: null })
+      .where(eq(seoMetrics.entityId, id));
     await db.delete(competitors).where(eq(competitors.id, id));
   }
 
