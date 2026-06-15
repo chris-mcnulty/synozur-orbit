@@ -83,7 +83,7 @@ import { checkFeatureAccessAsync } from "../services/plan-policy";
 import { storage, type ContextFilter } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
-import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt } from "../services/strategic-context";
+import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt, formatFoundingSignalsForPrompt } from "../services/strategic-context";
 import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
@@ -2638,7 +2638,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [campaign] = await db.select().from(campaigns)
         .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel } = req.body;
+      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel, publishedUrl } = req.body;
       if (status === "rejected" || status === "deleted") {
         await db.delete(generatedPosts)
           .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
@@ -2646,7 +2646,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
       const updateFields: any = { updatedAt: new Date() };
       if (editedContent !== undefined) updateFields.editedContent = editedContent;
-      if (status !== undefined) updateFields.status = status;
+      if (status !== undefined) {
+        updateFields.status = status;
+        // Manually marking a post as already posted (e.g. it was published
+        // externally, or before direct posting existed). Stamp the publish time
+        // so it shows as Published and drops out of the pending/export pool.
+        if (status === "published") {
+          const [existing] = await db.select({ publishedAt: generatedPosts.publishedAt }).from(generatedPosts)
+            .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
+          if (existing && !existing.publishedAt) updateFields.publishedAt = new Date();
+        }
+      }
+      if (publishedUrl !== undefined) updateFields.publishedUrl = publishedUrl || null;
       if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
       if (overrideBrandAssetId !== undefined) {
         if (overrideBrandAssetId) {
@@ -4312,6 +4323,40 @@ async function generatePostsAsync(
       }
     }
 
+    // Campaign mission: the specific topic/news/themes this campaign was founded
+    // on. Without this, posts drift into generic industry commentary because the
+    // prompt only sees brand voice. Built from the campaign's objective +
+    // interview answers (themes, news items, product, release) and injected into
+    // every post prompt regardless of thematic vs asset mode.
+    const campaignMissionContext = (() => {
+      const parts: string[] = [];
+      const objective = typeof campaignRow.objective === "string" ? campaignRow.objective.trim() : "";
+      if (objective) parts.push(`Strategic objective (in the team's own words): ${objective}`);
+
+      const interview = campaignRow.interview;
+      if (interview) {
+        if (Array.isArray(interview.themes) && interview.themes.length) {
+          parts.push(`Themes to push:\n${interview.themes.map((t) => `- ${t}`).join("\n")}`);
+        }
+        if (Array.isArray(interview.newsItems) && interview.newsItems.length) {
+          parts.push(`Top news items to announce (the specific things worth talking about this push):\n${interview.newsItems.map((n) => `- ${n}`).join("\n")}`);
+        }
+        if (interview.product?.productName?.trim()) {
+          const feats = Array.isArray(interview.product.features) && interview.product.features.length
+            ? `\n${interview.product.features.slice(0, 12).map((f) => `  - ${f}`).join("\n")}`
+            : "";
+          parts.push(`Product in focus: ${interview.product.productName.trim()}${feats}`);
+        }
+        if (interview.releaseDate) parts.push(`Release date: ${interview.releaseDate}`);
+        if (interview.notes?.trim()) parts.push(`Additional notes from the team: ${interview.notes.trim()}`);
+      }
+
+      if (parts.length === 0) return "";
+      return `## Campaign mission — what every post MUST be about\nThese posts belong to a specific campaign with a specific message. Ground every variant in this mission and the news items below. Do NOT drift into generic industry commentary or unrelated statistics.\n\n${parts.join("\n\n")}`;
+    })();
+
+    const foundingSignalsContext = formatFoundingSignalsForPrompt(campaignRow.foundingSignals ?? null);
+
     let brandImageAssets: { id: string; fileUrl: string | null; url: string | null; name: string }[] = [];
     if (brandImageIds.length > 0) {
       brandImageAssets = await db.select({
@@ -4482,7 +4527,7 @@ GENERAL RULES:
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
+${campaignMissionContext ? `${campaignMissionContext}\n\n` : ""}${foundingSignalsContext ? `${foundingSignalsContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
 
 ## Platform Guidelines
 ${platformGuide}

@@ -347,8 +347,19 @@ export default function EditorialCalendarPage() {
   // These are gated behind their own features; when unavailable the lists are
   // simply empty and the selects show nothing to pick.
   const { data: campaignOptions } = useQuery<NamedRow[]>({
-    queryKey: ["/api/campaigns"],
-    queryFn: async () => (await getJson("/api/campaigns")) ?? [],
+    // Active campaigns only, deduped by name — archived and duplicate-named
+    // campaigns shouldn't clutter the assignment picker.
+    queryKey: ["/api/campaigns", "active-picker"],
+    queryFn: async () => {
+      const rows: NamedRow[] = (await getJson("/api/campaigns?status=active")) ?? [];
+      const seen = new Set<string>();
+      return rows.filter((c) => {
+        const key = (c.name ?? "").trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    },
     enabled: allowed,
   });
   const { data: themeOptions } = useQuery<NamedRow[]>({

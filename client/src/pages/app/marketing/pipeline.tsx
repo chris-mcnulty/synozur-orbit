@@ -386,12 +386,21 @@ export default function ContentPipelinePage() {
   });
 
   const { data: campaigns = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ["/api/campaigns"],
+    // Active campaigns only, deduped by name — keep archived / duplicate-named
+    // campaigns out of the filter picker.
+    queryKey: ["/api/campaigns", "active-picker"],
     queryFn: async () => {
-      const r = await fetch("/api/campaigns", { credentials: "include" });
+      const r = await fetch("/api/campaigns?status=active", { credentials: "include" });
       if (!r.ok) return [];
       const data = await r.json();
-      return Array.isArray(data) ? data : data.campaigns ?? [];
+      const rows: { id: string; name: string }[] = Array.isArray(data) ? data : data.campaigns ?? [];
+      const seen = new Set<string>();
+      return rows.filter((c) => {
+        const key = (c.name ?? "").trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     },
   });
 

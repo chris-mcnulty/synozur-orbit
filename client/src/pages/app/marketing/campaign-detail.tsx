@@ -240,6 +240,7 @@ interface ContentAsset {
   fileUrl?: string;
   leadImageUrl?: string;
   assetType?: string;
+  categoryId?: string | null;
 }
 
 interface SocialAccount {
@@ -351,6 +352,7 @@ export default function CampaignDetailPage() {
   const [pickerPage, setPickerPage] = useState(0);
   const [pickerTab, setPickerTab] = useState<"brand" | "content">("brand");
   const [pickerShowAll, setPickerShowAll] = useState(false);
+  const [pickerContentCategoryFilter, setPickerContentCategoryFilter] = useState<string>("all");
 
   // Hub tab state
   const [hubAttachOpen, setHubAttachOpen] = useState(false);
@@ -429,6 +431,15 @@ export default function CampaignDetailPage() {
     queryKey: ["/api/content-assets"],
     queryFn: async () => {
       const r = await fetch("/api/content-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+  });
+
+  // Content-library categories, for filtering the content tab of the image picker.
+  const { data: contentCategories = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/content-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/content-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
@@ -1201,6 +1212,27 @@ export default function CampaignDetailPage() {
       toast({ title: "Published!", description: data.publishedUrl ? `Live at ${data.publishedUrl}` : "Post published successfully" });
     },
     onError: (err: Error) => toast({ title: "Publish failed", description: err.message, variant: "destructive" }),
+  });
+
+  // Mark a post as already posted externally (e.g. published before direct
+  // posting existed, or posted by hand). Stamps it Published so it drops out of
+  // the pending/export pool without going through the scheduler.
+  const markPostedMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "published" }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to mark as posted");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: "Marked as posted", description: "This post is now logged as published and won't show as pending." });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't mark as posted", description: err.message, variant: "destructive" }),
   });
 
   const [csvFormat, setCsvFormat] = useState<string>("socialpilot");
@@ -2316,6 +2348,19 @@ export default function CampaignDetailPage() {
                                 data-testid={`button-publish-now-${post.id}`}
                               >
                                 <CheckCircle className="w-3.5 h-3.5" />Publish now
+                              </Button>
+                            )}
+                            {!post.publishedAt && post.status !== "rejected" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-green-600"
+                                title="This was already posted somewhere else — log it as posted so it's not pending"
+                                onClick={() => markPostedMutation.mutate(post.id)}
+                                disabled={markPostedMutation.isPending}
+                                data-testid={`button-mark-posted-${post.id}`}
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />Mark as posted
                               </Button>
                             )}
                             {post.status !== "rejected" && (
@@ -3599,10 +3644,16 @@ export default function CampaignDetailPage() {
 
             {/* Content assets tab — campaign assets first, full library below */}
             {pickerTab === "content" && (() => {
-              const contentImageAssets = allAssets.filter(a => a.url || a.fileUrl);
-              if (contentImageAssets.length === 0) {
+              const allContentImageAssets = allAssets.filter(a => a.url || a.fileUrl);
+              if (allContentImageAssets.length === 0) {
                 return <p className="text-sm text-muted-foreground text-center py-4">No content library items found. Add assets with a URL in the Content Library first.</p>;
               }
+              // Only offer categories that actually have assets in this set.
+              const presentCategoryIds = new Set(allContentImageAssets.map(a => a.categoryId).filter(Boolean) as string[]);
+              const availableCategories = contentCategories.filter(c => presentCategoryIds.has(c.id));
+              const contentImageAssets = pickerContentCategoryFilter === "all"
+                ? allContentImageAssets
+                : allContentImageAssets.filter(a => a.categoryId === pickerContentCategoryFilter);
               const campaignAssetIds = new Set((campaign?.assets ?? []).map(ca => ca.assetId));
               const campaignFirst = contentImageAssets.filter(a => campaignAssetIds.has(a.id));
               const restAssets = contentImageAssets.filter(a => !campaignAssetIds.has(a.id));
@@ -3655,6 +3706,19 @@ export default function CampaignDetailPage() {
               };
               return (
                 <div className="space-y-3">
+                  {availableCategories.length > 0 && (
+                    <Select value={pickerContentCategoryFilter} onValueChange={v => { setPickerContentCategoryFilter(v); setPickerPage(0); }}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-picker-content-category">
+                        <SelectValue placeholder="All categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All categories ({allContentImageAssets.length})</SelectItem>
+                        {availableCategories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name} ({allContentImageAssets.filter(a => a.categoryId === cat.id).length})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {!pickerShowAll && campaignFirst.length > 0 && (
                     <>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Campaign assets</p>
