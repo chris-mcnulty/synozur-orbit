@@ -16,7 +16,7 @@
 import type { IcpCriteria, ProspectAttributes } from "./prospector-core";
 
 /** Which discovery backend produced (or should produce) candidates. */
-export type DiscoveryBackendId = "web" | "salesnav";
+export type DiscoveryBackendId = "web" | "salesnav" | "apollo";
 
 /** A net-new candidate found by a discovery backend (never persisted as-is). */
 export interface DiscoveryCandidate {

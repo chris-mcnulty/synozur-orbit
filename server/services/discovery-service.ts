@@ -30,6 +30,12 @@ import {
   salesNavigatorReason,
   SalesNavDiscoveryError,
 } from "./salesnav-discovery-provider";
+import {
+  searchApollo,
+  isApolloAvailable,
+  apolloReason,
+  ApolloDiscoveryError,
+} from "./apollo-discovery-provider";
 
 /** A discovered candidate with its computed ICP fit (preview, not persisted). */
 export interface ScoredDiscoveryCandidate {
@@ -58,6 +64,7 @@ export interface DiscoveryBackendStatus {
 /** Report which discovery backends are available (drives the UI). */
 export function getDiscoveryBackends(): DiscoveryBackendStatus[] {
   return [
+    { id: "apollo", label: "Apollo", available: isApolloAvailable(), reason: apolloReason() },
     { id: "web", label: "Web discovery (free)", available: isWebSearchAvailable(), reason: webDiscoveryReason() },
     { id: "salesnav", label: "Sales Navigator", available: isSalesNavigatorAvailable(), reason: salesNavigatorReason() },
   ];
@@ -109,11 +116,14 @@ export async function discoverProspects(
     limit,
   };
 
-  // Pick a backend. Default to the free web path; honor an explicit request for
-  // Sales Navigator only when it's actually wired.
+  // Pick a backend. Priority: explicit request → Apollo (if available) → web.
+  // Sales Navigator honored only when explicitly requested and provisioned.
   const requested = opts.backend;
   let backend: DiscoveryBackendId;
   if (requested === "salesnav" && isSalesNavigatorAvailable()) backend = "salesnav";
+  else if (requested === "apollo" && isApolloAvailable()) backend = "apollo";
+  else if (requested === "web") backend = "web";
+  else if (isApolloAvailable()) backend = "apollo"; // default to Apollo when key is set
   else backend = "web";
 
   let found: DiscoveryCandidate[] = [];
@@ -127,7 +137,19 @@ export async function discoverProspects(
       found = await searchSalesNavigator(tenantDomain, input);
     } catch (err) {
       if (err instanceof SalesNavDiscoveryError) {
-        // Fall back to the free web backend rather than failing the request.
+        // Fall back to Apollo or web rather than failing the request.
+        backend = isApolloAvailable() ? "apollo" : "web";
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (backend === "apollo") {
+    try {
+      found = await searchApollo(tenantDomain, input);
+    } catch (err) {
+      if (err instanceof ApolloDiscoveryError && err.code === "not_available") {
         backend = "web";
       } else {
         throw err;
