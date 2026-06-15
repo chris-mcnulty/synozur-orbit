@@ -3485,7 +3485,7 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Image Override Picker Dialog — brand assets + content assets */}
-      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); setPickerShowAll(false); } }}>
+      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerContentCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); setPickerShowAll(false); } }}>
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Choose Image</DialogTitle>
@@ -3540,14 +3540,14 @@ export default function CampaignDetailPage() {
             <div className="flex rounded-md border overflow-hidden" data-testid="picker-tab-toggle">
               <button
                 className={`flex-1 py-1.5 text-xs font-medium transition-colors ${pickerTab === "brand" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                onClick={() => { setPickerTab("brand"); setPickerPage(0); setPickerCategoryFilter("all"); }}
+                onClick={() => { setPickerTab("brand"); setPickerPage(0); setPickerCategoryFilter("all"); setPickerContentCategoryFilter("all"); }}
                 data-testid="button-picker-tab-brand"
               >
                 Brand Assets
               </button>
               <button
                 className={`flex-1 py-1.5 text-xs font-medium transition-colors border-l ${pickerTab === "content" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
-                onClick={() => { setPickerTab("content"); setPickerPage(0); setPickerCategoryFilter("all"); }}
+                onClick={() => { setPickerTab("content"); setPickerPage(0); setPickerCategoryFilter("all"); setPickerContentCategoryFilter("all"); }}
                 data-testid="button-picker-tab-content"
               >
                 Content Library
@@ -3651,9 +3651,14 @@ export default function CampaignDetailPage() {
               // Only offer categories that actually have assets in this set.
               const presentCategoryIds = new Set(allContentImageAssets.map(a => a.categoryId).filter(Boolean) as string[]);
               const availableCategories = contentCategories.filter(c => presentCategoryIds.has(c.id));
-              const contentImageAssets = pickerContentCategoryFilter === "all"
+              // Defensive: if the active filter no longer maps to an available
+              // category (e.g. assets changed underneath it), treat it as "all".
+              const activeContentCategory = pickerContentCategoryFilter !== "all" && presentCategoryIds.has(pickerContentCategoryFilter)
+                ? pickerContentCategoryFilter
+                : "all";
+              const contentImageAssets = activeContentCategory === "all"
                 ? allContentImageAssets
-                : allContentImageAssets.filter(a => a.categoryId === pickerContentCategoryFilter);
+                : allContentImageAssets.filter(a => a.categoryId === activeContentCategory);
               const campaignAssetIds = new Set((campaign?.assets ?? []).map(ca => ca.assetId));
               const campaignFirst = contentImageAssets.filter(a => campaignAssetIds.has(a.id));
               const restAssets = contentImageAssets.filter(a => !campaignAssetIds.has(a.id));
@@ -3707,7 +3712,7 @@ export default function CampaignDetailPage() {
               return (
                 <div className="space-y-3">
                   {availableCategories.length > 0 && (
-                    <Select value={pickerContentCategoryFilter} onValueChange={v => { setPickerContentCategoryFilter(v); setPickerPage(0); }}>
+                    <Select value={activeContentCategory} onValueChange={v => { setPickerContentCategoryFilter(v); setPickerPage(0); }}>
                       <SelectTrigger className="h-8 text-xs" data-testid="select-picker-content-category">
                         <SelectValue placeholder="All categories" />
                       </SelectTrigger>
