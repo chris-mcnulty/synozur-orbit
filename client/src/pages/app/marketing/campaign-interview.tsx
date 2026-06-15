@@ -1532,6 +1532,8 @@ export default function CampaignInterviewPage() {
                               src={imgSrc}
                               alt=""
                               className="w-10 h-10 rounded object-cover shrink-0"
+                              loading="lazy"
+                              decoding="async"
                               onError={(e) => (e.currentTarget.style.display = "none")}
                             />
                           )}
