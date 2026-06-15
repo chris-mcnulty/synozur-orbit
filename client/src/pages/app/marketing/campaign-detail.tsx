@@ -272,6 +272,35 @@ interface GeneratedPost {
   linkLabel?: string | null;
 }
 
+// ── Post lifecycle stage (brief → draft → ready → scheduled → posted) ──────────
+// Turns the raw generated-post status into one clear, human-readable stage so the
+// state of every post is obvious at a glance in lists and the review grid.
+function getPostStage(post: { status: string; publishedAt?: string; publishError?: string; scheduledDate?: string }) {
+  if (post.publishedAt || post.status === "published")
+    return { label: "Posted", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
+  if (post.status === "rejected")
+    return { label: "Rejected", cls: "text-orange-600 border-orange-300", Icon: XCircle };
+  if (post.status === "publish_failed" || post.publishError)
+    return { label: "Posting failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
+  if (post.status === "exported")
+    return post.scheduledDate
+      ? { label: "Scheduled", cls: "text-blue-600 border-blue-300", Icon: Calendar }
+      : { label: "Exported", cls: "text-blue-600 border-blue-300", Icon: CheckCircle };
+  if (post.status === "approved")
+    return { label: "Ready to post", cls: "text-emerald-600 border-emerald-300", Icon: CheckCircle };
+  return { label: "Draft", cls: "text-muted-foreground border-muted-foreground/40", Icon: Pencil };
+}
+
+function PostStageBadge({ post, className = "" }: { post: GeneratedPost; className?: string }) {
+  const s = getPostStage(post);
+  const { Icon } = s;
+  return (
+    <Badge variant="outline" className={`text-[10px] gap-1 ${s.cls} ${className}`} data-testid={`badge-stage-${post.id}`}>
+      <Icon className="w-2.5 h-2.5" /> {s.label}
+    </Badge>
+  );
+}
+
 
 interface BrandAsset {
   id: string;
@@ -300,6 +329,7 @@ export default function CampaignDetailPage() {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [assetSearch, setAssetSearch] = useState("");
   const [brandAssetCategoryFilter, setBrandAssetCategoryFilter] = useState("all");
   const [brandAssetSearch, setBrandAssetSearch] = useState("");
@@ -2426,18 +2456,7 @@ export default function CampaignDetailPage() {
                                     <Calendar className="w-2.5 h-2.5" />No date
                                   </Badge>
                                 )}
-                                {post.publishedAt && (
-                                  <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Published</Badge>
-                                )}
-                                {post.publishError && !post.publishedAt && (
-                                  <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Publish error</Badge>
-                                )}
-                                {post.status === "approved" && (
-                                  <Badge variant="outline" className="text-[10px] text-green-600 border-green-200">Approved</Badge>
-                                )}
-                                {post.status === "rejected" && (
-                                  <Badge variant="outline" className="text-[10px] text-orange-600 border-orange-200">Rejected</Badge>
-                                )}
+                                <PostStageBadge post={post} />
                                 {(post.hashtags?.length ?? 0) > 0 && (
                                   <span className="text-[10px] text-muted-foreground">{post.hashtags.length} hashtag{post.hashtags.length === 1 ? "" : "s"}</span>
                                 )}
@@ -2447,7 +2466,8 @@ export default function CampaignDetailPage() {
                           </div>
                         ) : (
                         <>
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                        <PostStageBadge post={post} />
                         {post.scheduledDate ? (
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
@@ -2490,17 +2510,25 @@ export default function CampaignDetailPage() {
                           </div>
                         )}
                         {postImage && (
-                          <OptimizedThumbnail
-                            src={postImage}
-                            containerClassName="max-w-md"
-                            data-testid={`img-post-${post.id}`}
+                          <button
+                            type="button"
+                            className="block max-w-md w-full text-left group/img"
+                            onClick={() => setLightboxImage(postImage)}
+                            title="Click to preview the full-size graphic"
+                            data-testid={`button-preview-image-${post.id}`}
                           >
-                            {post.overrideImageUrl && (
-                              <Badge variant="secondary" className="absolute bottom-1 right-1 text-[10px] z-10">
-                                <ImageIcon className="w-2.5 h-2.5 mr-0.5" /> Override
-                              </Badge>
-                            )}
-                          </OptimizedThumbnail>
+                            <OptimizedThumbnail
+                              src={postImage}
+                              containerClassName="w-full transition-opacity group-hover/img:opacity-90"
+                              data-testid={`img-post-${post.id}`}
+                            >
+                              {post.overrideImageUrl && (
+                                <Badge variant="secondary" className="absolute bottom-1 right-1 text-[10px] z-10">
+                                  <ImageIcon className="w-2.5 h-2.5 mr-0.5" /> Override
+                                </Badge>
+                              )}
+                            </OptimizedThumbnail>
+                          </button>
                         )}
                         {editingPostId === post.id ? (
                           <div className="space-y-2">
@@ -3325,8 +3353,13 @@ export default function CampaignDetailPage() {
                                       <img
                                         src={img}
                                         alt="Post image"
-                                        className="w-full h-full object-cover"
+                                        className={`w-full h-full object-cover ${rvSelectMode ? "" : "cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-primary"}`}
                                         loading="lazy"
+                                        role={rvSelectMode ? undefined : "button"}
+                                        tabIndex={rvSelectMode ? undefined : 0}
+                                        onClick={rvSelectMode ? undefined : (e) => { e.stopPropagation(); setLightboxImage(img); }}
+                                        onKeyDown={rvSelectMode ? undefined : (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setLightboxImage(img); } }}
+                                        title={rvSelectMode ? undefined : "Click to preview the full-size graphic"}
                                         data-testid={`rv-img-${post.id}`}
                                       />
                                     ) : (
@@ -3347,7 +3380,7 @@ export default function CampaignDetailPage() {
                                     {/* Badges row */}
                                     <div className="flex items-center gap-1 flex-wrap">
                                       <Badge className="text-[10px] capitalize px-1.5 py-0" data-testid={`rv-badge-platform-${post.id}`}>{post.platform}</Badge>
-                                      <Badge variant={post.status === "approved" ? "default" : post.status === "rejected" ? "destructive" : "secondary"} className="text-[10px] px-1.5 py-0 capitalize" data-testid={`rv-badge-status-${post.id}`}>{post.status}</Badge>
+                                      <PostStageBadge post={post} className="px-1.5 py-0" />
                                     </div>
 
                                     {/* Copy excerpt */}
@@ -3771,6 +3804,26 @@ export default function CampaignDetailPage() {
               );
             })()}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image preview lightbox — see the full-size logo + headline overlay */}
+      <Dialog open={!!lightboxImage} onOpenChange={(o) => { if (!o) setLightboxImage(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Image preview</DialogTitle>
+            <DialogDescription>
+              Full-size preview of the graphic, including the logo and headline overlay.
+            </DialogDescription>
+          </DialogHeader>
+          {lightboxImage && (
+            <img
+              src={lightboxImage}
+              alt="Full-size preview"
+              className="w-full h-auto rounded-md border"
+              data-testid="img-lightbox-preview"
+            />
+          )}
         </DialogContent>
       </Dialog>
 
