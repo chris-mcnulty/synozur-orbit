@@ -442,10 +442,23 @@ export function registerMarketingPostsRoutes(app: Express) {
         return res.status(422).json({ error: "No text available to build a graphic from." });
       }
 
+      // If the post already has a photo selected (brand asset or manual override),
+      // use it as the background so text/logo are composited on top of that photo.
+      let backgroundUrl: string | null = null;
+      if (post.overrideImageUrl) {
+        backgroundUrl = post.overrideImageUrl;
+      } else if (post.overrideBrandAssetId) {
+        const [ba] = await db.select({ fileUrl: brandAssets.fileUrl, url: brandAssets.url })
+          .from(brandAssets)
+          .where(and(eq(brandAssets.id, post.overrideBrandAssetId), eq(brandAssets.tenantDomain, ctx.tenantDomain)));
+        backgroundUrl = ba?.fileUrl || ba?.url || null;
+      }
+
       const saved = await generateBrandedPostGraphic({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId || null,
         headline,
+        backgroundUrl,
       });
 
       const [row] = await db.update(generatedPosts)

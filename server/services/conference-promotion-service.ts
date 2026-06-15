@@ -724,13 +724,19 @@ export async function generateBrandedPostGraphic(opts: {
   marketId?: string | null;
   headline: string;
   subtitle?: string | null;
+  backgroundUrl?: string | null;
 }): Promise<{ fileUrl: string; fileSize: number }> {
   const { tenantDomain, marketId, headline } = opts;
 
   const { companyLogoBytes, primaryColor, customFont } = await resolveBrandKit(tenantDomain, marketId);
 
+  let backgroundBytes: Buffer | null = null;
+  if (opts.backgroundUrl) {
+    try { backgroundBytes = await loadImageBytes(opts.backgroundUrl); } catch { /* fall back to gradient */ }
+  }
+
   const buffer = await compositeHeroImage({
-    backgroundBytes: null,
+    backgroundBytes,
     eventLogoBytes: null,
     companyLogoBytes,
     conferenceName: headline,
