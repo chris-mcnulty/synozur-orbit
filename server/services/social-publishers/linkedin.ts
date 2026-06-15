@@ -1,15 +1,21 @@
 /**
  * LinkedInPublisher
  *
- * Implements direct publishing to LinkedIn via the UGC Posts API and the
- * standard 3-legged OAuth code flow. LinkedIn uses a single, Synozur-owned
- * OAuth app (the Buffer/Hootsuite pattern): credentials come from the global
- * env vars LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET, resolved via
- * getPlatformCredentials("linkedin"). Tenants never register their own app or
- * enter credentials — they just click "Connect LinkedIn" and consent.
+ * Two posting backends:
  *
- * Required scopes: `openid profile email w_member_social`,
- * plus `w_organization_social rw_organization_admin` for company pages.
+ *  1. MCP (mcpbundles LinkedIn server) — active interim path.
+ *     Available when LINKEDIN_MCP_URL + LINKEDIN_MCP_API_KEY are set.
+ *     Uses linkedin_social_create_post / linkedin_create_image_post / etc.
+ *     Author is resolved from account.authorUrn; falls back to discovering
+ *     the first managed org via linkedin_list_managed_orgs.
+ *
+ *  2. Direct OAuth — preferred once LinkedIn approves the shared app.
+ *     Uses the UGC Posts REST API with a per-user encrypted access token.
+ *     Gated by LINKEDIN_DIRECT_PUBLISH_ENABLED=true.
+ *
+ * LinkedIn uses a single, Synozur-owned OAuth app (Buffer/Hootsuite pattern):
+ * credentials come from LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET env vars.
+ * Tenants never register their own app — they just click "Connect LinkedIn".
  */
 
 import type {
@@ -21,19 +27,100 @@ import type {
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
 import { getPlatformCredentials, isLinkedInDirectPublishEnabled } from "../platform-credentials-service";
+import { isLinkedInMcpConfigured } from "../linkedin-provider";
+import { callLinkedInTool, extractText } from "../linkedin-mcp-client";
 
-const NOT_APPROVED_MESSAGE = "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. We'll turn on one-click Connect as soon as it's approved.";
+const NOT_APPROVED_MESSAGE =
+  "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. " +
+  "We'll turn on one-click Connect as soon as it's approved.";
 
 const AUTH_HOST = "https://www.linkedin.com";
 const API_HOST = "https://api.linkedin.com";
-const DEFAULT_SCOPE = "openid profile email w_member_social w_organization_social rw_organization_admin";
+const DEFAULT_SCOPE =
+  "openid profile email w_member_social w_organization_social rw_organization_admin";
+
+// ---------------------------------------------------------------------------
+// MCP helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the author URN for an MCP post.
+ * 1. Use account.authorUrn when already stored (happy path).
+ * 2. Fall back to the first managed org page (marketing posts almost always
+ *    go out as the org, not the personal profile).
+ * 3. Fall back to the signed-in member profile.
+ */
+async function resolveMcpAuthor(accountAuthorUrn: string | null): Promise<string> {
+  if (accountAuthorUrn) return accountAuthorUrn;
+
+  // Try managed org pages first.
+  try {
+    const orgsResult = await callLinkedInTool("linkedin_list_managed_orgs", {});
+    const text = extractText(orgsResult);
+    // The tool returns structured text; look for a numeric org ID.
+    const orgMatch = text.match(/urn:li:organization:(\d+)/i);
+    if (orgMatch) return `urn:li:organization:${orgMatch[1]}`;
+    // Or a bare numeric ID in the output.
+    const idMatch = text.match(/\bid[:\s]+(\d{6,})/i);
+    if (idMatch) return `urn:li:organization:${idMatch[1]}`;
+  } catch (err) {
+    console.warn("[LinkedIn MCP] list_managed_orgs failed:", (err as Error)?.message);
+  }
+
+  // Fall back to personal profile.
+  try {
+    const profileResult = await callLinkedInTool("linkedin_social_get_profile", {});
+    const text = extractText(profileResult);
+    const personMatch = text.match(/urn:li:person:([A-Za-z0-9_-]+)/i);
+    if (personMatch) return `urn:li:person:${personMatch[1]}`;
+    const idMatch = text.match(/\bid[:\s]+([A-Za-z0-9_-]{6,})/i);
+    if (idMatch) return `urn:li:person:${idMatch[1]}`;
+  } catch (err) {
+    console.warn("[LinkedIn MCP] get_profile failed:", (err as Error)?.message);
+  }
+
+  throw new Error(
+    "Could not resolve a LinkedIn author URN from MCP — run linkedin_list_managed_orgs or linkedin_social_get_profile first.",
+  );
+}
+
+/**
+ * Post text (+ optional article link) via the MCP backend.
+ * Returns the created post URN on success.
+ */
+async function mcpCreatePost(opts: {
+  author: string;
+  commentary: string;
+  articleUrl?: string | null;
+}): Promise<{ urn: string | null; raw: unknown }> {
+  const args: Record<string, unknown> = {
+    author: opts.author,
+    commentary: opts.commentary,
+    visibility: "PUBLIC",
+  };
+  if (opts.articleUrl) {
+    args.article_url = opts.articleUrl;
+  }
+  const result = await callLinkedInTool("linkedin_social_create_post", args);
+  const text = extractText(result);
+  const urnMatch =
+    text.match(/urn:li:share:([A-Za-z0-9_-]+)/i) ??
+    text.match(/urn:li:ugcPost:([A-Za-z0-9_-]+)/i);
+  const urn = urnMatch ? urnMatch[0] : null;
+  return { urn, raw: result };
+}
+
+// ---------------------------------------------------------------------------
+// Publisher implementation
+// ---------------------------------------------------------------------------
 
 export class LinkedInPublisher implements SocialPublisher {
   platform = "linkedin";
   supported = true;
 
   async oauthConfigured(tenantDomain: string): Promise<boolean> {
-    // Direct posting is gated off until LinkedIn approves the shared app.
+    // MCP counts as configured — no per-user OAuth needed.
+    if (isLinkedInMcpConfigured()) return true;
     if (!isLinkedInDirectPublishEnabled()) return false;
     const creds = await getPlatformCredentials(tenantDomain, "linkedin");
     return !!(creds?.clientId && creds.clientSecret);
@@ -45,7 +132,9 @@ export class LinkedInPublisher implements SocialPublisher {
     }
     const creds = await getPlatformCredentials(req.tenantDomain, "linkedin");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("LinkedIn isn't configured on this platform yet — please contact support.");
+      throw new Error(
+        "LinkedIn isn't configured on this platform yet — please contact support.",
+      );
     }
     const params = new URLSearchParams({
       response_type: "code",
@@ -64,7 +153,9 @@ export class LinkedInPublisher implements SocialPublisher {
   ): Promise<OAuthCallbackResult> {
     const creds = await getPlatformCredentials(options.tenantDomain, "linkedin");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("LinkedIn isn't configured on this platform yet — please contact support.");
+      throw new Error(
+        "LinkedIn isn't configured on this platform yet — please contact support.",
+      );
     }
     const tokenResp = await fetch(`${AUTH_HOST}/oauth/v2/accessToken`, {
       method: "POST",
@@ -81,14 +172,13 @@ export class LinkedInPublisher implements SocialPublisher {
       const txt = await tokenResp.text().catch(() => "");
       throw new Error(`LinkedIn token exchange failed: ${tokenResp.status} ${txt}`);
     }
-    const tok = await tokenResp.json() as {
+    const tok = (await tokenResp.json()) as {
       access_token: string;
       expires_in?: number;
       refresh_token?: string;
       scope?: string;
     };
 
-    // Fetch /v2/userinfo (OIDC) to get the member sub (URN id) and display name.
     const userResp = await fetch(`${API_HOST}/v2/userinfo`, {
       headers: { Authorization: `Bearer ${tok.access_token}` },
     });
@@ -96,32 +186,34 @@ export class LinkedInPublisher implements SocialPublisher {
       const txt = await userResp.text().catch(() => "");
       throw new Error(`LinkedIn userinfo failed: ${userResp.status} ${txt}`);
     }
-    const userinfo = await userResp.json() as {
-      sub: string; name?: string; email?: string; picture?: string;
+    const userinfo = (await userResp.json()) as {
+      sub: string;
+      name?: string;
+      email?: string;
+      picture?: string;
     };
 
     const expiresAt = tok.expires_in
       ? new Date(Date.now() + tok.expires_in * 1000)
       : null;
 
-    // Best-effort: fetch organizations the user can administer so we can
-    // surface them as alternate author identities (company-page publishing).
-    // Failure is non-fatal — personal posting still works.
     const availableAuthors: Array<{
       mode: "person" | "organization";
       urn: string;
       name: string;
       vanityName?: string | null;
-    }> = [{
-      mode: "person",
-      urn: `urn:li:person:${userinfo.sub}`,
-      name: userinfo.name ?? "Personal account",
-    }];
+    }> = [
+      {
+        mode: "person",
+        urn: `urn:li:person:${userinfo.sub}`,
+        name: userinfo.name ?? "Personal account",
+      },
+    ];
     try {
       const orgs = await this.fetchAdminOrganizations(tok.access_token);
       for (const o of orgs) availableAuthors.push(o);
-    } catch (err: any) {
-      console.warn("[LinkedIn] organizationAcls fetch failed:", err?.message || err);
+    } catch (err: unknown) {
+      console.warn("[LinkedIn] organizationAcls fetch failed:", (err as Error)?.message ?? err);
     }
 
     return {
@@ -138,17 +230,14 @@ export class LinkedInPublisher implements SocialPublisher {
     };
   }
 
-  /**
-   * Fetch organizations the user has ADMINISTRATOR role on. Returns empty
-   * list if the token lacks rw_organization_admin scope or the request
-   * fails — callers treat orgs as best-effort, personal posting still works.
-   */
-  async fetchAdminOrganizations(accessToken: string): Promise<Array<{
-    mode: "organization";
-    urn: string;
-    name: string;
-    vanityName?: string | null;
-  }>> {
+  async fetchAdminOrganizations(accessToken: string): Promise<
+    Array<{
+      mode: "organization";
+      urn: string;
+      name: string;
+      vanityName?: string | null;
+    }>
+  > {
     const url = `${API_HOST}/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organization~(id,localizedName,vanityName)))`;
     const resp = await fetch(url, {
       headers: {
@@ -157,9 +246,14 @@ export class LinkedInPublisher implements SocialPublisher {
       },
     });
     if (!resp.ok) return [];
-    const json = await resp.json().catch(() => null) as any;
+    const json = (await resp.json().catch(() => null)) as any;
     const elements: any[] = Array.isArray(json?.elements) ? json.elements : [];
-    const out: Array<{ mode: "organization"; urn: string; name: string; vanityName?: string | null }> = [];
+    const out: Array<{
+      mode: "organization";
+      urn: string;
+      name: string;
+      vanityName?: string | null;
+    }> = [];
     for (const el of elements) {
       const org = el?.["organization~"];
       const id = org?.id;
@@ -176,6 +270,43 @@ export class LinkedInPublisher implements SocialPublisher {
 
   async publish(ctx: PublishContext): Promise<PublishResult> {
     const { account, post } = ctx;
+
+    const text = post.editedContent || post.content;
+    const hashtags = (post.hashtags as string[] | null) ?? [];
+    const finalText =
+      hashtags.length > 0
+        ? `${text}\n\n${hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")}`
+        : text;
+
+    // ------------------------------------------------------------------
+    // MCP path (active interim backend)
+    // ------------------------------------------------------------------
+    if (isLinkedInMcpConfigured()) {
+      try {
+        const author = await resolveMcpAuthor(account.authorUrn ?? null);
+        const { urn, raw } = await mcpCreatePost({
+          author,
+          commentary: finalText,
+          articleUrl: (post as any).articleUrl ?? null,
+        });
+        const publishedUrl = urn
+          ? `https://www.linkedin.com/feed/update/${encodeURIComponent(urn)}/`
+          : null;
+        return { success: true, publishedUrl, responsePayload: raw };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[LinkedIn MCP] publish failed:", msg);
+        return {
+          success: false,
+          errorCode: "mcp_error",
+          errorMessage: `LinkedIn MCP publish failed: ${msg}`,
+        };
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Direct OAuth path (gated; preferred once LinkedIn app is approved)
+    // ------------------------------------------------------------------
     if (!isLinkedInDirectPublishEnabled()) {
       return {
         success: false,
@@ -187,24 +318,28 @@ export class LinkedInPublisher implements SocialPublisher {
       return {
         success: false,
         errorCode: "not_connected",
-        errorMessage: "LinkedIn account is not connected — re-authorize before publishing.",
+        errorMessage:
+          "LinkedIn account is not connected — re-authorize before publishing.",
       };
     }
     if (!account.authorUrn) {
       return {
         success: false,
         errorCode: "missing_author",
-        errorMessage: "LinkedIn account is missing author URN — reconnect to refresh identity.",
+        errorMessage:
+          "LinkedIn account is missing author URN — reconnect to refresh identity.",
       };
     }
+
     let accessToken: string;
     try {
       accessToken = decryptSecret(account.encryptedAccessToken);
-    } catch (err) {
+    } catch {
       return {
         success: false,
         errorCode: "token_decrypt_failed",
-        errorMessage: "Stored LinkedIn token could not be decrypted — reconnect the account.",
+        errorMessage:
+          "Stored LinkedIn token could not be decrypted — reconnect the account.",
       };
     }
     if (account.tokenExpiresAt && account.tokenExpiresAt.getTime() < Date.now()) {
@@ -214,12 +349,6 @@ export class LinkedInPublisher implements SocialPublisher {
         errorMessage: "LinkedIn token expired — reconnect the account.",
       };
     }
-
-    const text = post.editedContent || post.content;
-    const hashtags = (post.hashtags as string[] | null) ?? [];
-    const finalText = hashtags.length > 0
-      ? `${text}\n\n${hashtags.map(h => h.startsWith("#") ? h : `#${h}`).join(" ")}`
-      : text;
 
     const body = {
       author: account.authorUrn,
@@ -246,18 +375,22 @@ export class LinkedInPublisher implements SocialPublisher {
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
       let parsed: any;
-      try { parsed = JSON.parse(errText); } catch {}
+      try {
+        parsed = JSON.parse(errText);
+      } catch {}
       return {
         success: false,
-        errorCode: parsed?.serviceErrorCode ? String(parsed.serviceErrorCode) : `http_${resp.status}`,
-        errorMessage: parsed?.message || errText || `LinkedIn UGC post failed: ${resp.status}`,
+        errorCode: parsed?.serviceErrorCode
+          ? String(parsed.serviceErrorCode)
+          : `http_${resp.status}`,
+        errorMessage:
+          parsed?.message ||
+          errText ||
+          `LinkedIn UGC post failed: ${resp.status}`,
         responsePayload: parsed ?? errText,
       };
     }
 
-    // LinkedIn returns the new URN in the `x-restli-id` header (URL-encoded)
-    // or in the response body as { id }. Both are URNs we can convert into a
-    // public feed URL.
     const headerUrn = resp.headers.get("x-restli-id");
     let createdUrn: string | null = null;
     let payload: any = null;

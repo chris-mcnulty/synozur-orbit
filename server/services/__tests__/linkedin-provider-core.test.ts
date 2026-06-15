@@ -22,27 +22,28 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(c.canMessage, false);
   });
 
-  await test("MCP connected → posting + messaging via MCP", () => {
+  await test("MCP connected → posting via MCP, messaging always none", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: false, mcpConfigured: true });
     assert.equal(c.postBackend, "mcp");
-    assert.equal(c.messageBackend, "mcp");
-    assert.equal(c.canMessage, true);
+    assert.equal(c.messageBackend, "none");
+    assert.equal(c.canPost, true);
+    assert.equal(c.canMessage, false);
   });
 
   await test("direct OAuth approved → posting via OAuth, messaging still none", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: true, mcpConfigured: false });
     assert.equal(c.postBackend, "direct_oauth");
     assert.equal(c.canPost, true);
-    assert.equal(c.messageBackend, "none"); // member OAuth can't message
+    assert.equal(c.messageBackend, "none");
     assert.equal(c.canMessage, false);
   });
 
-  await test("both available → OAuth preferred for posting, MCP for messaging", () => {
+  await test("both available → OAuth preferred for posting, messaging still none", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: true, mcpConfigured: true });
     assert.equal(c.postBackend, "direct_oauth");
-    assert.equal(c.messageBackend, "mcp");
+    assert.equal(c.messageBackend, "none");
     assert.equal(c.canPost, true);
-    assert.equal(c.canMessage, true);
+    assert.equal(c.canMessage, false);
   });
 
   if (failures > 0) {
