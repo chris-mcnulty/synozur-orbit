@@ -117,12 +117,13 @@ export async function searchApollo(
     per_page: Math.min(limit, 100),
   };
 
+  // Apollo limits: person_titles ≤ 10 entries, q_keywords ≤ 255 chars.
   if (criteria.roles?.length) {
-    body.person_titles = criteria.roles;
+    body.person_titles = criteria.roles.slice(0, 10);
   }
 
   if (criteria.geographies?.length) {
-    body.person_locations = criteria.geographies;
+    body.person_locations = criteria.geographies.slice(0, 10);
   }
 
   const employeeRanges = segmentsToEmployeeRanges(criteria.segments ?? []);
@@ -130,16 +131,16 @@ export async function searchApollo(
     body.organization_num_employees_ranges = employeeRanges;
   }
 
-  // Combine industries + named accounts into keyword filters.
-  const keywords = [
-    ...(criteria.industries ?? []),
-    ...(namedAccounts ?? []),
-  ].filter(Boolean);
-  if (keywords.length) {
-    body.q_keywords = keywords.join(" ");
+  // Industries → q_keywords (capped at 255 chars to avoid Apollo "value too long").
+  // Named accounts are sent via organization_names (proper array field), NOT joined
+  // into q_keywords, to avoid blowing the length limit.
+  const industryKeywords = (criteria.industries ?? []).filter(Boolean);
+  if (industryKeywords.length) {
+    const kw = industryKeywords.join(" ").slice(0, 255);
+    body.q_keywords = kw;
   }
 
-  // Named accounts → organization_names array (Apollo's correct param).
+  // Named accounts → organization_names (array, max 10 entries).
   if (namedAccounts?.length) {
     body.organization_names = namedAccounts.slice(0, 10);
   }
