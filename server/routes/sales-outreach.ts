@@ -815,8 +815,9 @@ export function registerSalesOutreachRoutes(app: Express) {
 
   // ── HubSpot two-way ─────────────────────────────────────────────────────────
 
-  // Pull existing HubSpot contacts into a campaign as prospects (dedupes).
-  app.post("/api/sales-outreach/campaigns/:id/import-hubspot", async (req, res) => {
+  // Search HubSpot contacts without importing — for the preview dialog.
+  // Returns contacts with a `alreadyOnCampaign` flag so the UI can grey them out.
+  app.post("/api/sales-outreach/campaigns/:id/preview-hubspot", async (req, res) => {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
@@ -829,6 +830,59 @@ export function registerSalesOutreachRoutes(app: Express) {
       const query = typeof req.body?.query === "string" ? req.body.query : undefined;
       const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 50;
       const contacts = await listContacts(ctx.tenantDomain, { query, limit });
+
+      // Flag contacts already on this campaign so the UI can show them greyed out.
+      const existing = await db
+        .select({ hsId: prospects.hubspotContactId, email: prospects.email })
+        .from(prospects)
+        .where(eq(prospects.campaignId, campaign.id));
+      const haveIds = new Set(existing.map((e) => e.hsId).filter(Boolean) as string[]);
+      const haveEmails = new Set(existing.map((e) => (e.email || "").toLowerCase()).filter(Boolean));
+
+      const results = contacts.map((c) => ({
+        ...c,
+        alreadyOnCampaign:
+          haveIds.has(c.hubspotContactId) ||
+          !!(c.email && haveEmails.has(c.email.toLowerCase())),
+      }));
+
+      res.json({ contacts: results });
+    } catch (err: any) {
+      console.error("[sales-outreach:preview-hubspot]", err);
+      res.status(500).json({ error: err.message || "Failed to search HubSpot" });
+    }
+  });
+
+  // Import selected HubSpot contacts into a campaign as prospects (dedupes).
+  // Accepts optional `contactIds` array — only those contacts are imported.
+  // If omitted, falls back to fetching by query (legacy behaviour).
+  app.post("/api/sales-outreach/campaigns/:id/import-hubspot", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Settings → Connections.", code: "no_hubspot" });
+
+      // contactIds = selective import from the preview dialog.
+      // contacts = raw contact objects forwarded from the dialog (avoids a second API call).
+      const contactIds: string[] | undefined = Array.isArray(req.body?.contactIds) ? req.body.contactIds : undefined;
+      const rawContacts: Array<{ hubspotContactId: string; name: string; jobTitle?: string | null; company?: string | null; email?: string | null }> | undefined =
+        Array.isArray(req.body?.contacts) ? req.body.contacts : undefined;
+
+      let contacts;
+      if (rawContacts && rawContacts.length > 0) {
+        // Caller forwarded the preview rows — filter to the selected IDs.
+        const idSet = new Set(contactIds ?? rawContacts.map((c) => c.hubspotContactId));
+        contacts = rawContacts.filter((c) => idSet.has(c.hubspotContactId));
+      } else {
+        const query = typeof req.body?.query === "string" ? req.body.query : undefined;
+        const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 50;
+        contacts = await listContacts(ctx.tenantDomain, { query, limit });
+        if (contactIds) contacts = contacts.filter((c) => contactIds.includes(c.hubspotContactId));
+      }
 
       // Dedupe against prospects already on this campaign.
       const existing = await db
@@ -848,9 +902,9 @@ export function registerSalesOutreachRoutes(app: Express) {
             tenantDomain: ctx.tenantDomain,
             marketId: ctx.marketId || null,
             name: c.name,
-            title: c.jobTitle,
-            companyName: c.company,
-            email: c.email,
+            title: (c as any).jobTitle ?? null,
+            companyName: (c as any).company ?? null,
+            email: c.email ?? null,
             hubspotContactId: c.hubspotContactId,
             source: "hubspot",
             ownerUserId: ctx.userId,
