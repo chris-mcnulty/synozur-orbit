@@ -499,9 +499,10 @@ export interface HubspotContactLite {
   name: string;
   jobTitle: string | null;
   company: string | null;
+  linkedinUrl: string | null;
 }
 
-const CONTACT_PROPS = ["firstname", "lastname", "email", "jobtitle", "company"];
+const CONTACT_PROPS = ["firstname", "lastname", "email", "jobtitle", "company", "hs_linkedin_url"];
 
 function contactName(props: Record<string, string>): string {
   const n = [props.firstname, props.lastname].filter(Boolean).join(" ").trim();
@@ -540,6 +541,7 @@ export async function listContacts(
       name: contactName(props),
       jobTitle: props.jobtitle || null,
       company: props.company || null,
+      linkedinUrl: props.hs_linkedin_url || null,
     };
   });
 }

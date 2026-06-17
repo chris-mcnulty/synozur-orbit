@@ -36,11 +36,16 @@ import {
   type ComposeResource,
 } from "./outreach-composer-core";
 import { scanCompliance, type ComplianceResult } from "./compliance-core";
+import type { LinkedInFormat, OutreachIntent } from "@shared/linkedin-outreach";
 
 export interface ComposeTouchOptions {
   channel?: OutreachChannel;
   stepNumber?: number;
   isDefaultMarket?: boolean;
+  /** LinkedIn message shape (connect note vs DM). Ignored for email. */
+  linkedinFormat?: LinkedInFormat | null;
+  /** Draft intent — outreach (ask) vs engagement (warm, no ask). */
+  intent?: OutreachIntent | null;
 }
 
 export interface ComposeTouchResult {
@@ -136,6 +141,11 @@ export async function composeTouch(
 
   const channel: OutreachChannel = opts.channel ?? ((campaign.channels?.[0] as OutreachChannel) || "email");
   const stepNumber = opts.stepNumber ?? 1;
+  // LinkedIn shape + intent (null/ignored for email). Default to a direct
+  // message; the caller (UI) picks connect-request when appropriate.
+  const linkedinFormat: LinkedInFormat | null =
+    channel === "linkedin" ? opts.linkedinFormat ?? "direct_message" : null;
+  const intent: OutreachIntent = opts.intent ?? "outreach";
 
   // Cadence step purpose (best-effort lookup).
   let purpose = "intro";
@@ -176,6 +186,8 @@ export async function composeTouch(
     strategicBlock,
     voiceBlock,
     resource,
+    linkedinFormat,
+    intent,
   });
 
   const result = await completeForFeature("outreach_composer", prompt, {
@@ -185,7 +197,7 @@ export async function composeTouch(
   });
 
   const parsed = parseComposeResponse(result.text, channel);
-  const body = enforceLength(parsed.body, channel);
+  const body = enforceLength(parsed.body, channel, linkedinFormat);
 
   // Compliance scan: suppression list + own domain + voice forbidden phrases.
   const suppressions = await db
@@ -209,6 +221,8 @@ export async function composeTouch(
       campaignId: campaign.id,
       tenantDomain,
       channel,
+      linkedinFormat,
+      intent,
       stepNumber,
       subject: parsed.subject,
       body,

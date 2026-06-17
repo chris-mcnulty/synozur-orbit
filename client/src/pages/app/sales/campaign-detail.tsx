@@ -22,6 +22,9 @@ import {
   X,
   Search,
   Upload,
+  Copy,
+  ChevronDown,
+  UserSearch,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -47,9 +50,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/userContext";
+import {
+  buildLinkedInDeepLinks,
+  linkedinCharLimit,
+  isValidLinkedInProfileUrl,
+  LINKEDIN_FORMAT_LABELS,
+  type LinkedInFormat,
+  type OutreachIntent,
+} from "@shared/linkedin-outreach";
 
 interface OutreachCampaign {
   id: string;
@@ -186,6 +205,8 @@ interface Compliance {
 interface Touch {
   id: string;
   channel: "email" | "linkedin";
+  linkedinFormat?: LinkedInFormat | null;
+  intent?: OutreachIntent | null;
   stepNumber: number;
   subject: string | null;
   body: string | null;
@@ -274,6 +295,7 @@ export default function OutreachCampaignDetailPage() {
 
   // Draft review dialog state.
   const [draft, setDraft] = useState<Touch | null>(null);
+  const [draftProspect, setDraftProspect] = useState<Prospect | null>(null);
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
 
@@ -382,10 +404,20 @@ export default function OutreachCampaignDetailPage() {
     },
   });
 
-  function openDraft(t: Touch) {
+  function openDraft(t: Touch, p?: Prospect | null) {
     setDraft(t);
+    setDraftProspect(p ?? null);
     setDraftSubject(t.subject ?? "");
     setDraftBody(t.body ?? "");
+  }
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Copied", description: "Paste it into LinkedIn." });
+    } catch {
+      toast({ title: "Couldn't copy", description: "Select the text and copy manually.", variant: "destructive" });
+    }
   }
 
   const addProspect = useMutation({
@@ -418,16 +450,44 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const compose = useMutation({
-    mutationFn: async (prospectId: string) => {
-      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${prospectId}/compose`, {});
+    mutationFn: async (vars: { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent }) => {
+      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${vars.prospect.id}/compose`, {
+        channel: vars.channel,
+        linkedinFormat: vars.linkedinFormat,
+        intent: vars.intent,
+      });
       return res.json();
     },
-    onSuccess: (data: { touch: Touch }) => {
+    onSuccess: (data: { touch: Touch }, vars) => {
       queryClient.invalidateQueries({ queryKey: prospectsKey });
-      openDraft(data.touch);
-      toast({ title: "Draft composed", description: "Review and approve to send to Outlook." });
+      openDraft(data.touch, vars.prospect);
+      toast({
+        title: "Draft composed",
+        description: vars.channel === "linkedin"
+          ? "Review, then copy it into LinkedIn."
+          : "Review and approve to send to Outlook.",
+      });
     },
     onError: (err: any) => toast({ title: "Compose failed", description: err?.message, variant: "destructive" }),
+  });
+
+  // Backfill a prospect's missing LinkedIn URL / email from the public web.
+  const enrich = useMutation({
+    mutationFn: async (prospectId: string) => {
+      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${prospectId}/enrich`, {});
+      return res.json();
+    },
+    onSuccess: (data: { prospect: Prospect; found: { linkedinUrl: boolean; email: boolean } }) => {
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      // Keep the open draft dialog's prospect in sync so deep links light up.
+      if (draftProspect && data.prospect.id === draftProspect.id) setDraftProspect(data.prospect);
+      const found = [data.found.linkedinUrl && "LinkedIn", data.found.email && "email"].filter(Boolean) as string[];
+      toast({
+        title: found.length ? `Found ${found.join(" + ")}` : "No verified details found",
+        description: found.length ? undefined : "Add the LinkedIn URL or email manually.",
+      });
+    },
+    onError: (err: any) => toast({ title: "Enrichment failed", description: err?.message, variant: "destructive" }),
   });
 
   const saveDraft = useMutation({
@@ -637,9 +697,25 @@ export default function OutreachCampaignDetailPage() {
 
   const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
   const canEdit = isAdmin || campaign.createdBy === user?.id;
+  // Channels offered in the compose menu — the campaign's, or both when unset.
+  const composeChannels = campaign.channels?.length ? campaign.channels : ["email", "linkedin"];
 
   const draftFlags = draft?.complianceFlags;
   const draftHardBlocked = (draftFlags?.flags ?? []).some((f) => FLAG_HARD.has(f.kind));
+
+  // LinkedIn paste-assist: char limit for the message shape, deep links into
+  // LinkedIn, and whether we have a verified profile to act on.
+  const isLinkedInDraft = draft?.channel === "linkedin";
+  const draftLimit = isLinkedInDraft ? linkedinCharLimit(draft?.linkedinFormat) : null;
+  const draftOverLimit = draftLimit != null && draftBody.length > draftLimit;
+  const draftHasProfile = isValidLinkedInProfileUrl(draftProspect?.linkedinUrl);
+  const draftDeepLinks = isLinkedInDraft
+    ? buildLinkedInDeepLinks({
+        profileUrl: draftProspect?.linkedinUrl,
+        name: draftProspect?.name,
+        companyName: draftProspect?.companyName,
+      })
+    : null;
 
   return (
     <AppLayout>
@@ -779,19 +855,58 @@ export default function OutreachCampaignDetailPage() {
                           </Button>
                         )}
                         {p.status !== "dormant" && p.status !== "replied" && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={compose.isPending && compose.variables?.prospect.id === p.id}
+                                data-testid={`compose-${p.id}`}
+                              >
+                                {compose.isPending && compose.variables?.prospect.id === p.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                                ) : (
+                                  <PenLine className="w-3.5 h-3.5 mr-1" />
+                                )}
+                                Compose
+                                <ChevronDown className="w-3 h-3 ml-1 opacity-60" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-60">
+                              {composeChannels.includes("email") && (
+                                <>
+                                  <DropdownMenuLabel className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "email", intent: "outreach" })} data-testid={`compose-${p.id}-email-outreach`}>Outreach</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "email", intent: "engagement" })}>Engagement</DropdownMenuItem>
+                                </>
+                              )}
+                              {composeChannels.includes("linkedin") && (
+                                <>
+                                  {composeChannels.includes("email") && <DropdownMenuSeparator />}
+                                  <DropdownMenuLabel className="flex items-center gap-1.5"><Linkedin className="w-3.5 h-3.5" /> Connect request</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "linkedin", linkedinFormat: "connect_request", intent: "outreach" })} data-testid={`compose-${p.id}-connect-outreach`}>Outreach</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "linkedin", linkedinFormat: "connect_request", intent: "engagement" })}>Engagement</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuLabel className="flex items-center gap-1.5"><Linkedin className="w-3.5 h-3.5" /> Direct message</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "linkedin", linkedinFormat: "direct_message", intent: "outreach" })} data-testid={`compose-${p.id}-dm-outreach`}>Outreach</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "linkedin", linkedinFormat: "direct_message", intent: "engagement" })}>Engagement</DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                        {(!p.email || !p.linkedinUrl) && (
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            onClick={() => compose.mutate(p.id)}
-                            disabled={compose.isPending && compose.variables === p.id}
-                            data-testid={`compose-${p.id}`}
+                            onClick={() => enrich.mutate(p.id)}
+                            disabled={enrich.isPending && enrich.variables === p.id}
+                            data-testid={`enrich-${p.id}`}
+                            title="Find LinkedIn profile / email"
                           >
-                            {compose.isPending && compose.variables === p.id ? (
-                              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                            ) : (
-                              <PenLine className="w-3.5 h-3.5 mr-1" />
-                            )}
-                            Compose
+                            {enrich.isPending && enrich.variables === p.id
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <UserSearch className="w-3.5 h-3.5" />}
                           </Button>
                         )}
                         {!p.hubspotContactId && (
@@ -1286,11 +1401,19 @@ export default function OutreachCampaignDetailPage() {
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {draft?.channel === "linkedin" ? <Linkedin className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+              {isLinkedInDraft ? <Linkedin className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
               Review draft — step {draft?.stepNumber}
+              {isLinkedInDraft && draft?.linkedinFormat && (
+                <Badge variant="secondary" className="text-[10px]">{LINKEDIN_FORMAT_LABELS[draft.linkedinFormat]}</Badge>
+              )}
+              {isLinkedInDraft && draft?.intent === "engagement" && (
+                <Badge variant="outline" className="text-[10px]">Engagement</Badge>
+              )}
             </DialogTitle>
             <DialogDescription>
-              You approve every send. Approving creates a draft in your Outlook; you click Send there.
+              {isLinkedInDraft
+                ? "You send LinkedIn messages by hand: review, copy, then paste into LinkedIn. LinkedIn can't pre-fill the message for you."
+                : "You approve every send. Approving creates a draft in your Outlook; you click Send there."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1301,9 +1424,70 @@ export default function OutreachCampaignDetailPage() {
             </div>
           )}
           <div className="space-y-1.5">
-            <Label htmlFor="d-body">Body</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="d-body">Body</Label>
+              {draftLimit != null && (
+                <span className={`text-[11px] tabular-nums ${draftOverLimit ? "text-destructive font-medium" : "text-muted-foreground"}`} data-testid="draft-char-count">
+                  {draftBody.length}/{draftLimit}
+                </span>
+              )}
+            </div>
             <Textarea id="d-body" value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={9} data-testid="input-draft-body" />
+            {draftOverLimit && (
+              <p className="text-[11px] text-destructive">
+                Over LinkedIn's {draftLimit}-character limit for a {draft?.linkedinFormat === "connect_request" ? "connection note" : "message"} — trim before sending.
+              </p>
+            )}
           </div>
+
+          {/* LinkedIn paste-assist: copy + open the right LinkedIn screen. */}
+          {isLinkedInDraft && (
+            <div className="rounded-md border p-2.5 space-y-2">
+              {!draftHasProfile ? (
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-sm">
+                    <p className="font-medium">No LinkedIn profile on file</p>
+                    <p className="text-xs text-muted-foreground">Find it to open the right screen, or add it on the prospect.</p>
+                  </div>
+                  {draftProspect && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => enrich.mutate(draftProspect.id)}
+                      disabled={enrich.isPending && enrich.variables === draftProspect.id}
+                      data-testid="draft-find-linkedin"
+                    >
+                      {enrich.isPending && enrich.variables === draftProspect.id
+                        ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                        : <UserSearch className="w-3.5 h-3.5 mr-1" />}
+                      Find LinkedIn
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="default" onClick={() => copyToClipboard(draftBody)} data-testid="draft-copy">
+                    <Copy className="w-3.5 h-3.5 mr-1" /> Copy message
+                  </Button>
+                  {draft?.linkedinFormat === "direct_message" && draftDeepLinks?.messaging && (
+                    <Button size="sm" variant="outline" asChild data-testid="draft-open-messaging">
+                      <a href={draftDeepLinks.messaging} target="_blank" rel="noreferrer">
+                        <Send className="w-3.5 h-3.5 mr-1" /> Open message <ExternalLink className="w-3 h-3 ml-1" />
+                      </a>
+                    </Button>
+                  )}
+                  {draftDeepLinks?.profile && (
+                    <Button size="sm" variant="outline" asChild data-testid="draft-open-profile">
+                      <a href={draftDeepLinks.profile} target="_blank" rel="noreferrer">
+                        <Linkedin className="w-3.5 h-3.5 mr-1" /> Open profile <ExternalLink className="w-3 h-3 ml-1" />
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {draftFlags && (
             <div className={`rounded-md border p-2.5 text-sm ${draftFlags.flags.length === 0 ? "border-emerald-500/40" : draftHardBlocked ? "border-destructive/50" : "border-amber-500/40"}`}>

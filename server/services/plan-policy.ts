@@ -659,6 +659,7 @@ export type ManualActionKey =
   | "runOutreachInterview"
   | "generateProspectDossier"
   | "discoverProspects"
+  | "enrichProspectContact"
   | "generateOutreachDraft";
 
 export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
@@ -678,6 +679,7 @@ export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   runOutreachInterview: "Outreach Campaign Interview",
   generateProspectDossier: "Prospect Research & Scoring",
   discoverProspects: "Prospect Discovery (web)",
+  enrichProspectContact: "Prospect Contact Enrichment",
   generateOutreachDraft: "Outreach Draft Generation",
 };
 
@@ -701,6 +703,7 @@ export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" 
   runOutreachInterview: "medium",
   generateProspectDossier: "high",
   discoverProspects: "high",
+  enrichProspectContact: "high",
   generateOutreachDraft: "medium",
 };
 
@@ -722,6 +725,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     runOutreachInterview: 0,
     generateProspectDossier: 0,
     discoverProspects: 0,
+    enrichProspectContact: 0,
     generateOutreachDraft: 0,
   },
   trial: {
@@ -741,6 +745,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     runOutreachInterview: 0,
     generateProspectDossier: 0,
     discoverProspects: 0,
+    enrichProspectContact: 0,
     generateOutreachDraft: 0,
   },
   pro: {
@@ -760,6 +765,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     runOutreachInterview: 0,
     generateProspectDossier: 0,
     discoverProspects: 0,
+    enrichProspectContact: 0,
     generateOutreachDraft: 0,
   },
   enterprise: {
@@ -779,6 +785,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     runOutreachInterview: 100,
     generateProspectDossier: 200,
     discoverProspects: 100,
+    enrichProspectContact: 100,
     generateOutreachDraft: 200,
   },
   unlimited: {
@@ -798,6 +805,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     runOutreachInterview: -1,
     generateProspectDossier: -1,
     discoverProspects: -1,
+    enrichProspectContact: -1,
     generateOutreachDraft: -1,
   },
 };

@@ -4570,6 +4570,11 @@ export const outreachTouches = pgTable("outreach_touches", {
   campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   channel: text("channel").notNull().default("email"), // OutreachChannel
+  // LinkedIn message shape (null for email): connect_request | direct_message.
+  // Drives the char limit and which deep link / paste flow the seller gets.
+  linkedinFormat: text("linkedin_format"), // LinkedInFormat | null
+  // Draft intent: outreach (an ask) vs engagement (warm, no hard ask).
+  intent: text("intent"), // OutreachIntent | null
   stepNumber: integer("step_number").notNull().default(1),
   subject: text("subject"),
   body: text("body"),
