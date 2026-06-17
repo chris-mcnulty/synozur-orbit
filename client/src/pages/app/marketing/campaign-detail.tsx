@@ -769,6 +769,7 @@ export default function CampaignDetailPage() {
         }
       );
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
       if (vars.status === "rejected") toast({ title: "Post rejected and removed" });
       else if (vars.status === "approved") toast({ title: "Post approved" });
       setEditingPostId(null);
@@ -1389,6 +1390,7 @@ export default function CampaignDetailPage() {
     onSuccess: (d) => {
       setShowDeliverConfirm(false);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
       toast({ title: `Marked ${d.updated} post${d.updated === 1 ? "" : "s"} as delivered`, description: "They won't appear in future exports unless you choose to include delivered posts." });
     },
     onError: (err: Error) => toast({ title: "Couldn't mark delivered", description: err.message, variant: "destructive" }),
