@@ -121,6 +121,46 @@ function extractJsonArray(text: string): string | null {
   return text.slice(start, end + 1);
 }
 
+/** Corporate-entity suffixes that indicate a company name, not a person. */
+const COMPANY_SUFFIXES = /\b(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|gmbh|plc|llp|l\.p\.|s\.a\.?|b\.v\.?|pty\.?|ag)\b/i;
+
+/**
+ * Common job-title tokens. A name consisting entirely of these words is a role
+ * label (e.g. "VP Sales", "Director Marketing"), not a person.
+ */
+const JOB_TITLE_TOKENS = new Set([
+  "vp", "svp", "evp", "avp",
+  "ceo", "coo", "cfo", "cto", "cmo", "cpo", "ciso", "chro",
+  "president", "chairman", "chairwoman", "chairperson",
+  "director", "managing", "general", "regional", "global",
+  "head", "chief", "officer", "partner", "principal",
+  "manager", "lead", "senior", "junior", "associate", "staff",
+  "executive", "founder", "co-founder", "cofounder",
+  "sales", "marketing", "operations", "engineering", "product",
+  "finance", "legal", "hr", "it", "tech", "growth",
+  "business", "development", "strategy", "account",
+  "solutions", "enterprise", "commercial", "revenue",
+  "success", "enablement", "partnerships", "alliances",
+]);
+
+/**
+ * Return true if `name` looks like a company name, role label, all-caps
+ * placeholder, or other non-person string. Real full names are unaffected.
+ */
+function isBadName(name: string): boolean {
+  // All-caps (2+ words, e.g. "ACME CORP", "VP SALES") — real names use title case
+  if (name === name.toUpperCase() && /[A-Z]{2}/.test(name)) return true;
+
+  // Contains a corporate-entity suffix
+  if (COMPANY_SUFFIXES.test(name)) return true;
+
+  // Every word is a known job-title token → role label, not a person
+  const words = name.toLowerCase().split(/[\s\-\/]+/).filter(Boolean);
+  if (words.length > 0 && words.every((w) => JOB_TITLE_TOKENS.has(w))) return true;
+
+  return false;
+}
+
 /**
  * Parse a model response into discovery candidates. Tolerant of code fences and
  * surrounding prose; drops malformed rows and any without a usable name.
@@ -149,6 +189,10 @@ export function parseDiscoveryCandidates(
     if (!name) continue;
     if (!name.includes(" ")) {
       console.debug(`[discovery] dropped single-token name: "${name}"`);
+      continue;
+    }
+    if (isBadName(name)) {
+      console.debug(`[discovery] dropped non-person name: "${name}"`);
       continue;
     }
     out.push({
