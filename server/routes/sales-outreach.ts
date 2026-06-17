@@ -443,6 +443,26 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
       if (!(await guardManualAction(req, res, "generateProspectDossier"))) return;
 
+      // Best-effort contact enrichment as part of research: backfill a missing
+      // LinkedIn URL / email (Apollo first, then web) so the dossier + scoring
+      // use them. Bundled into the research action — never blocks it on failure.
+      try {
+        const enr = await enrichProspectContact(ctx.tenantDomain, req.params.id);
+        if (enr.provider && enr.model) {
+          await logAiUsage(
+            { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+            "enrichProspectContact",
+            enr.provider,
+            enr.model,
+            { input_tokens: enr.usage?.inputTokens, output_tokens: enr.usage?.outputTokens },
+            undefined,
+            { searchCount: enr.searchCount, found: enr.found, sources: enr.sources, viaResearch: true },
+          );
+        }
+      } catch {
+        // Nothing missing, no source configured, or a provider hiccup — research proceeds.
+      }
+
       const result = await researchProspect(ctx.tenantDomain, req.params.id, {
         isDefaultMarket: ctx.isDefaultMarket,
       });
