@@ -56,6 +56,7 @@ import {
   STAGE_META, STAGE_ORDER,
 } from "./hub-components";
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
+import { CampaignNextActions } from "@/components/marketing/NextActionsByBatch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -1421,6 +1422,31 @@ export default function CampaignDetailPage() {
     { label: campaign?.name || "Loading..." },
   ];
 
+  // Generate a graphic for a single post. Component-scoped so both the Review
+  // tab and the image-picker dialog can call it (the picker is rendered outside
+  // the Review tab's render block).
+  const generateGraphic = async (postId: string) => {
+    setRvGeneratingIds(prev => new Set(prev).add(postId));
+    try {
+      const r = await fetch(`/api/generated-posts/${postId}/generate-image`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        toast({ title: "Image generation failed", description: err.error || "Unknown error", variant: "destructive" });
+      } else {
+        queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      }
+    } catch {
+      toast({ title: "Image generation failed", variant: "destructive" });
+    } finally {
+      setRvGeneratingIds(prev => { const s = new Set(prev); s.delete(postId); return s; });
+    }
+  };
+
   if (isLoading) {
     return (
       <AppLayout breadcrumbs={campaignBreadcrumbs}>
@@ -1624,6 +1650,14 @@ export default function CampaignDetailPage() {
             )}
           </div>
         )}
+
+        <CampaignNextActions
+          campaignId={id}
+          onNavigate={(tab) => {
+            setActiveTab(tab as CampaignTab);
+            window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
+          }}
+        />
 
         <Tabs value={activeTab} onValueChange={(tab) => {
           setActiveTab(tab as CampaignTab);
@@ -3036,29 +3070,6 @@ export default function CampaignDetailPage() {
               });
 
               const allPlatforms = Array.from(new Set(activePosts.map(p => p.platform))).sort();
-
-              // ── generate graphic for a single post ───────────────────────
-              const generateGraphic = async (postId: string) => {
-                setRvGeneratingIds(prev => new Set(prev).add(postId));
-                try {
-                  const r = await fetch(`/api/generated-posts/${postId}/generate-image`, {
-                    method: "POST",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({}),
-                  });
-                  if (!r.ok) {
-                    const err = await r.json().catch(() => ({}));
-                    toast({ title: "Image generation failed", description: err.error || "Unknown error", variant: "destructive" });
-                  } else {
-                    queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
-                  }
-                } catch {
-                  toast({ title: "Image generation failed", variant: "destructive" });
-                } finally {
-                  setRvGeneratingIds(prev => { const s = new Set(prev); s.delete(postId); return s; });
-                }
-              };
 
               // ── bulk generate ─────────────────────────────────────────────
               const bulkGenerateGraphics = async (postIds: string[]) => {

@@ -8,6 +8,11 @@
  */
 
 import type { OutreachChannel, CadenceStepPurpose } from "@shared/schema";
+import {
+  linkedinCharLimit,
+  type LinkedInFormat,
+  type OutreachIntent,
+} from "@shared/linkedin-outreach";
 
 export const COMPOSER_SYSTEM_PROMPT =
   `You write 1:1 B2B sales outreach in the sender's real voice. Short, direct, ` +
@@ -34,13 +39,40 @@ export interface ComposePromptInput {
   strategicBlock?: string;
   voiceBlock?: string;
   resource?: ComposeResource | null;
+  /** LinkedIn message shape — connect-request note vs direct message. */
+  linkedinFormat?: LinkedInFormat | null;
+  /** Draft intent — an ask (outreach) vs warm, no-ask (engagement). */
+  intent?: OutreachIntent | null;
 }
 
-// Per-channel guardrails. LinkedIn messages must be far shorter than email.
+// Per-channel guardrails. LinkedIn messages must be far shorter than email; the
+// exact LinkedIn ceiling depends on the message shape (connect note vs DM).
 export const CHANNEL_LIMITS: Record<OutreachChannel, { maxChars: number; hasSubject: boolean }> = {
   email: { maxChars: 1500, hasSubject: true },
   linkedin: { maxChars: 600, hasSubject: false },
 };
+
+/** Resolve the char ceiling for a touch, honoring the LinkedIn message shape. */
+export function channelLimit(channel: OutreachChannel, linkedinFormat?: LinkedInFormat | null): number {
+  if (channel === "linkedin") return linkedinCharLimit(linkedinFormat);
+  return CHANNEL_LIMITS[channel].maxChars;
+}
+
+/** Guidance the model follows for each LinkedIn message shape. */
+function linkedinFormatGuidance(format: LinkedInFormat | null | undefined): string {
+  if (format === "connect_request") {
+    return "This is a LinkedIn connection-request note (max 300 characters). Be brief and specific about why you want to connect. Do NOT paste a URL — links aren't clickable in a connection note and waste characters; reference any resource by name only.";
+  }
+  return "This is a LinkedIn direct message to an existing connection. Conversational and short.";
+}
+
+/** Guidance the model follows for the draft's intent. */
+function intentGuidance(intent: OutreachIntent | null | undefined): string {
+  if (intent === "engagement") {
+    return "Intent: ENGAGEMENT — warm and specific to their recent work, post, or role. Start a genuine conversation. Do NOT make a hard ask or pitch; no meeting request.";
+  }
+  return "Intent: OUTREACH — earn a reply and land on one concrete next step.";
+}
 
 const PURPOSE_GUIDANCE: Record<string, string> = {
   intro: "First touch — earn a reply. One sharp reason this is relevant to them, one light ask.",
@@ -56,7 +88,8 @@ export function purposeGuidance(purpose: string): string {
 
 /** Build the composition prompt for one touch. */
 export function buildComposePrompt(input: ComposePromptInput): string {
-  const limits = CHANNEL_LIMITS[input.channel];
+  const hasSubject = CHANNEL_LIMITS[input.channel].hasSubject;
+  const maxChars = channelLimit(input.channel, input.linkedinFormat);
 
   const prospectBlock = [
     "## Prospect",
@@ -66,21 +99,30 @@ export function buildComposePrompt(input: ComposePromptInput): string {
     input.dossier ? `\nResearch dossier:\n${input.dossier}` : "",
   ].filter(Boolean).join("\n");
 
+  const isLinkedIn = input.channel === "linkedin";
+  // A connect-request note can't carry a clickable link, so don't ask the model
+  // to embed the resource URL there — name it instead.
+  const resourceLine = input.resource
+    ? isLinkedIn && input.linkedinFormat === "connect_request"
+      ? `Reference this resource by name (no link): ${input.resource.label ?? input.resource.resourceType ?? "resource"}`
+      : `Include this resource naturally: ${input.resource.label ?? input.resource.resourceType ?? "resource"}${input.resource.url ? ` (${input.resource.url})` : ""}`
+    : "";
+
   const stepBlock = [
     "## This touch",
     `Channel: ${input.channel}`,
+    isLinkedIn ? linkedinFormatGuidance(input.linkedinFormat) : "",
+    intentGuidance(input.intent),
     `Step ${input.stepNumber} — purpose: ${input.purpose}`,
     purposeGuidance(String(input.purpose)),
     input.salesGoal ? `Campaign goal: ${input.salesGoal}` : "",
     input.callToAction ? `Call to action: ${input.callToAction}` : "",
-    input.resource
-      ? `Include this resource naturally: ${input.resource.label ?? input.resource.resourceType ?? "resource"}${input.resource.url ? ` (${input.resource.url})` : ""}`
-      : "",
+    resourceLine,
   ].filter(Boolean).join("\n");
 
-  const format = limits.hasSubject
-    ? `## Response format\nRespond with exactly these two sections and nothing else:\n===SUBJECT===\n<a specific, non-deceptive subject line, max 80 chars>\n===BODY===\n<the email body, under ${limits.maxChars} characters, with a sign-off>`
-    : `## Response format\nRespond with exactly this section and nothing else:\n===BODY===\n<the message, under ${limits.maxChars} characters — no subject line>`;
+  const format = hasSubject
+    ? `## Response format\nRespond with exactly these two sections and nothing else:\n===SUBJECT===\n<a specific, non-deceptive subject line, max 80 chars>\n===BODY===\n<the email body, under ${maxChars} characters, with a sign-off>`
+    : `## Response format\nRespond with exactly this section and nothing else:\n===BODY===\n<the message, under ${maxChars} characters — no subject line>`;
 
   return [
     `Write this outreach ${input.channel === "email" ? "email" : "LinkedIn message"}.`,
@@ -111,8 +153,12 @@ export function parseComposeResponse(text: string, channel: OutreachChannel): Pa
 }
 
 /** Hard-trim a body to the channel limit, cutting on a word boundary. */
-export function enforceLength(body: string, channel: OutreachChannel): string {
-  const max = CHANNEL_LIMITS[channel].maxChars;
+export function enforceLength(
+  body: string,
+  channel: OutreachChannel,
+  linkedinFormat?: LinkedInFormat | null,
+): string {
+  const max = channelLimit(channel, linkedinFormat);
   if (body.length <= max) return body;
   const slice = body.slice(0, max);
   const lastSpace = slice.lastIndexOf(" ");

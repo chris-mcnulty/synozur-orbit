@@ -221,3 +221,79 @@ export async function searchApollo(
   // Drop any rows with no usable name.
   return candidates.filter((c) => c.name && c.name !== "Unknown");
 }
+
+// ---------------------------------------------------------------------------
+// People Match (single-person enrichment)
+// ---------------------------------------------------------------------------
+
+const APOLLO_MATCH_URL = "https://api.apollo.io/v1/people/match";
+
+export interface ApolloMatchInput {
+  name?: string | null;
+  title?: string | null;
+  companyName?: string | null;
+  linkedinUrl?: string | null;
+}
+
+export interface ApolloMatchResult {
+  email: string | null;
+  linkedinUrl: string | null;
+}
+
+function normalizeApolloLinkedIn(url?: string | null): string | null {
+  if (!url) return null;
+  return url.startsWith("http") ? url : `https://${url}`;
+}
+
+/** Apollo sometimes returns a masked placeholder instead of a real address. */
+function isUsableApolloEmail(email?: string | null): email is string {
+  if (!email) return false;
+  if (/not_unlocked|email_not_unlocked|^[^@]*@domain\.com$/i.test(email)) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Apollo People Match — enrich one known person (name + company, optionally a
+ * LinkedIn URL) to their work email + LinkedIn profile. A direct Apollo API
+ * call, so it is independent of the active AI provider (works whether the
+ * tenant runs on Azure Foundry or Anthropic). Returns null when Apollo isn't
+ * configured or there's no confident match; never throws.
+ */
+export async function matchApolloPerson(input: ApolloMatchInput): Promise<ApolloMatchResult | null> {
+  const apiKey = process.env.APOLLO_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const [firstName, ...rest] = (input.name ?? "").trim().split(/\s+/).filter(Boolean);
+  const lastName = rest.join(" ");
+
+  const body: Record<string, unknown> = {};
+  if (input.name) body.name = input.name;
+  if (firstName) body.first_name = firstName;
+  if (lastName) body.last_name = lastName;
+  if (input.companyName) body.organization_name = input.companyName;
+  if (input.linkedinUrl) body.linkedin_url = input.linkedinUrl;
+
+  try {
+    const res = await fetch(APOLLO_MATCH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": apiKey, "Cache-Control": "no-cache" },
+      body: JSON.stringify(body),
+    });
+    const rawText = await res.text();
+    if (!res.ok) {
+      console.warn(`[Apollo] match ${res.status}:`, rawText.slice(0, 200));
+      return null;
+    }
+    const data = JSON.parse(rawText) as { person?: ApolloPerson };
+    const p = data.person;
+    if (!p) return null;
+    return {
+      email: isUsableApolloEmail(p.email) ? p.email.toLowerCase() : null,
+      linkedinUrl: normalizeApolloLinkedIn(p.linkedin_url),
+    };
+  } catch (err) {
+    console.warn("[Apollo] match failed:", (err as Error).message);
+    return null;
+  }
+}
+

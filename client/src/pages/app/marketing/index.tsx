@@ -31,6 +31,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
 import { StageBar } from "@/components/hub/hub-charts";
+import { MarketingHubNextActions } from "@/components/marketing/NextActionsByBatch";
 import { useQuery } from "@tanstack/react-query";
 
 type LongFormRecommendation = {
@@ -374,6 +375,7 @@ export default function MarketingLandingPage() {
             </TabsContent>
 
             <TabsContent value="overview" className="space-y-4">
+              {isEnterprise && <MarketingHubNextActions />}
               {isEnterprise && pipelinePosts.length > 0 && (
                 <Card data-testid="card-pipeline-pulse">
                   <CardContent className="py-4">

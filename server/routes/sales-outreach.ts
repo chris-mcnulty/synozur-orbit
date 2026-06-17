@@ -16,9 +16,12 @@ import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
 import { guardFeature, guardManualAction, logAiUsage } from "./helpers";
+import { reserveManualAction } from "../services/manual-action-quota";
 import { assessSalesOutreachReadiness } from "../services/sales-outreach-readiness";
 import { createCampaignFromInterview, getCampaign } from "../services/outreach-interview-service";
 import { researchProspect } from "../services/prospector-service";
+import { enrichProspectContact, EnrichError } from "../services/prospect-enrich-service";
+import { isLinkedInFormat, isOutreachIntent, isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 import {
   discoverProspects,
   importDiscoveredProspects,
@@ -441,6 +444,40 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
       if (!(await guardManualAction(req, res, "generateProspectDossier"))) return;
 
+      // Best-effort contact enrichment as part of research: backfill a missing
+      // LinkedIn URL / email (Apollo first, then web) so the dossier + scoring
+      // use them. It still reserves the metered `enrichProspectContact` slot so
+      // the Apollo/AI cost is gated + tracked against the plan — but when that
+      // quota is exhausted we skip enrichment silently and research proceeds.
+      try {
+        const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+        const plan = tenant?.plan ?? "free";
+        const reservation = await reserveManualAction(ctx.tenantDomain, plan, "enrichProspectContact", ctx.userId);
+        if (reservation.ok) {
+          try {
+            const enr = await enrichProspectContact(ctx.tenantDomain, req.params.id);
+            reservation.commit(true); // external calls ran — count it
+            if (enr.provider && enr.model) {
+              await logAiUsage(
+                { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+                "enrichProspectContact",
+                enr.provider,
+                enr.model,
+                { input_tokens: enr.usage?.inputTokens, output_tokens: enr.usage?.outputTokens },
+                undefined,
+                { searchCount: enr.searchCount, found: enr.found, sources: enr.sources, viaResearch: true },
+              );
+            }
+          } catch {
+            // Nothing missing, no source configured, or a provider hiccup: no
+            // billable work happened — release the reserved slot.
+            reservation.commit(false);
+          }
+        }
+      } catch {
+        // Never block research on enrichment plumbing.
+      }
+
       const result = await researchProspect(ctx.tenantDomain, req.params.id, {
         isDefaultMarket: ctx.isDefaultMarket,
       });
@@ -455,6 +492,47 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach-prospects:research]", err);
       res.status(500).json({ error: err.message || "Failed to research prospect" });
+    }
+  });
+
+  // Enrich a prospect's missing contact details (LinkedIn URL and/or email)
+  // from the public web. Only fills blanks; metered. Returns what was found so
+  // the UI can light up the LinkedIn deep-link / paste flow.
+  app.post("/api/sales-outreach/prospects/:id/enrich", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "prospectResearch"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      if (prospect.linkedinUrl && prospect.email) {
+        return res.status(409).json({ error: "This prospect already has a LinkedIn profile and an email.", code: "nothing_missing" });
+      }
+      if (!(await guardManualAction(req, res, "enrichProspectContact"))) return;
+
+      const result = await enrichProspectContact(ctx.tenantDomain, req.params.id);
+      // Only the web-search path consumes AI tokens; Apollo is a direct API call.
+      if (result.provider && result.model) {
+        await logAiUsage(
+          { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+          "enrichProspectContact",
+          result.provider,
+          result.model,
+          { input_tokens: result.usage?.inputTokens, output_tokens: result.usage?.outputTokens },
+          undefined,
+          { searchCount: result.searchCount, found: result.found, sources: result.sources },
+        );
+      }
+      res.json({ prospect: result.prospect, found: result.found, sources: result.sources, notes: result.notes });
+    } catch (err: any) {
+      if (err instanceof EnrichError) {
+        const status = err.code === "source_unavailable" ? 503 : err.code === "nothing_missing" ? 409 : 404;
+        return res.status(status).json({ error: err.message, code: err.code });
+      }
+      console.error("[sales-outreach:enrich]", err);
+      res.status(500).json({ error: err.message || "Failed to enrich prospect" });
     }
   });
 
@@ -475,10 +553,14 @@ export function registerSalesOutreachRoutes(app: Express) {
       const channel: OutreachChannel | undefined =
         req.body?.channel === "linkedin" || req.body?.channel === "email" ? req.body.channel : undefined;
       const stepNumber = Number.isInteger(req.body?.stepNumber) ? req.body.stepNumber : undefined;
+      const linkedinFormat = isLinkedInFormat(req.body?.linkedinFormat) ? req.body.linkedinFormat : undefined;
+      const intent = isOutreachIntent(req.body?.intent) ? req.body.intent : undefined;
 
       const result = await composeTouch(ctx.tenantDomain, req.params.id, {
         channel,
         stepNumber,
+        linkedinFormat,
+        intent,
         isDefaultMarket: ctx.isDefaultMarket,
       });
       await logAiUsage(
@@ -869,7 +951,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       // contactIds = selective import from the preview dialog.
       // contacts = raw contact objects forwarded from the dialog (avoids a second API call).
       const contactIds: string[] | undefined = Array.isArray(req.body?.contactIds) ? req.body.contactIds : undefined;
-      const rawContacts: Array<{ hubspotContactId: string; name: string; jobTitle?: string | null; company?: string | null; email?: string | null }> | undefined =
+      const rawContacts: Array<{ hubspotContactId: string; name: string; jobTitle?: string | null; company?: string | null; email?: string | null; linkedinUrl?: string | null }> | undefined =
         Array.isArray(req.body?.contacts) ? req.body.contacts : undefined;
 
       let contacts;
@@ -905,6 +987,7 @@ export function registerSalesOutreachRoutes(app: Express) {
             title: (c as any).jobTitle ?? null,
             companyName: (c as any).company ?? null,
             email: c.email ?? null,
+            linkedinUrl: isValidLinkedInProfileUrl((c as any).linkedinUrl) ? (c as any).linkedinUrl : null,
             hubspotContactId: c.hubspotContactId,
             source: "hubspot",
             ownerUserId: ctx.userId,
