@@ -663,6 +663,31 @@ export default function CampaignDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteBriefMutation = useMutation({
+    mutationFn: async (briefId: string) => {
+      const r = await fetch(`/api/content-briefs/${briefId}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to delete brief");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/content-plan`] });
+      toast({ title: "Brief removed" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const wipeDraftPostsMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to wipe posts");
+      return r.json() as Promise<{ deleted: number }>;
+    },
+    onSuccess: (d: { deleted: number }) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      toast({ title: `${d.deleted} draft post${d.deleted !== 1 ? "s" : ""} cleared`, description: "Ready to generate fresh on-mission posts." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const { data: jobStatus } = useQuery<{ status: string }>({
     queryKey: [`/api/campaigns/${id}/generate-posts-status`],
     queryFn: async () => {
@@ -1894,17 +1919,30 @@ export default function CampaignDetailPage() {
                             </div>
                           )}
                         </div>
-                        {contentPlan?.calendar && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {contentPlan?.calendar && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={() => navigate(`/app/marketing/editorial-calendar?calendar=${contentPlan.calendar!.id}`)}
+                              data-testid={`button-open-brief-${b.id}`}
+                            >
+                              Open in calendar <ExternalLink className="w-3 h-3" />
+                            </Button>
+                          )}
                           <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1.5"
-                            onClick={() => navigate(`/app/marketing/editorial-calendar?calendar=${contentPlan.calendar!.id}`)}
-                            data-testid={`button-open-brief-${b.id}`}
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteBriefMutation.mutate(b.id)}
+                            disabled={deleteBriefMutation.isPending && (deleteBriefMutation.variables as string) === b.id}
+                            title="Remove this brief from the campaign plan"
+                            data-testid={`button-delete-brief-${b.id}`}
                           >
-                            Open in calendar <ExternalLink className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
-                        )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -2106,6 +2144,25 @@ export default function CampaignDetailPage() {
                     <Download className="w-4 h-4" />Export CSV
                   </Button>
                 </div>
+              )}
+              {posts.filter(p => !["exported", "published", "posted", "delivered"].includes(p.status)).length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground hover:text-destructive"
+                  onClick={() => {
+                    const count = posts.filter(p => !["exported", "published", "posted", "delivered"].includes(p.status)).length;
+                    if (window.confirm(`Delete all ${count} draft post${count !== 1 ? "s" : ""}? This cannot be undone — but you can regenerate them.`)) {
+                      wipeDraftPostsMutation.mutate();
+                    }
+                  }}
+                  disabled={wipeDraftPostsMutation.isPending}
+                  title="Delete all drafts so you can regenerate on-mission posts"
+                  data-testid="button-wipe-draft-posts"
+                >
+                  {wipeDraftPostsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Clear drafts
+                </Button>
               )}
               {jobStatus?.status === "completed" && posts.length > 0 && (
                 <Button variant="ghost" size="sm" onClick={() => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] })} data-testid="button-refresh-posts">

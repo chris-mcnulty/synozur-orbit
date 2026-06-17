@@ -2686,6 +2686,28 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Bulk-wipe all non-published posts for a campaign so the team can regenerate
+  // from scratch. Preserves anything already exported, published, or delivered.
+  app.delete("/api/campaigns/:id/generated-posts", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const deleted = await db.delete(generatedPosts)
+        .where(and(
+          eq(generatedPosts.campaignId, campaign.id),
+          inArray(generatedPosts.status, ["draft", "approved", "scheduled", "failed", "deleted", "rejected"]),
+        ))
+        .returning({ id: generatedPosts.id });
+      res.json({ deleted: deleted.length });
+    } catch (err: any) {
+      console.error("[Wipe Posts Error]", err.message);
+      res.status(500).json({ error: "Failed to wipe posts" });
+    }
+  });
+
   app.delete("/api/campaigns/:campaignId/generated-posts/:postId", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {
@@ -4323,6 +4345,36 @@ async function generatePostsAsync(
       }
     }
 
+    // Approved/suggested content briefs anchor posts to the campaign's specific topics.
+    // Without this the AI drifts into generic content from the founding-signals action
+    // items (e.g. "develop thought leadership" → generic marketing posts).
+    const campaignBriefs = await db.select({
+      title: contentBriefs.title,
+      format: contentBriefs.format,
+      differentiationAngle: contentBriefs.differentiationAngle,
+      targetReader: contentBriefs.targetReader,
+      demandSignal: contentBriefs.demandSignal,
+    }).from(contentBriefs)
+      .where(and(
+        eq(contentBriefs.campaignId, campaignId),
+        inArray(contentBriefs.status, ["suggested", "approved"]),
+      ))
+      .limit(15);
+
+    const briefsContext = campaignBriefs.length > 0
+      ? `## Campaign content briefs — every post MUST be grounded in one of these specific topics\n` +
+        `The campaign has ${campaignBriefs.length} approved brief${campaignBriefs.length !== 1 ? "s" : ""}. ` +
+        `Pick ONE brief per variant and write a post anchored to that exact topic and angle. ` +
+        `Do NOT write generic marketing commentary — each post must be traceable to a brief below.\n\n` +
+        campaignBriefs.map((b, i) => {
+          const lines = [`${i + 1}. ${b.title} (${(b.format ?? "").replace(/_/g, " ")})`];
+          if (b.differentiationAngle) lines.push(`   Angle: ${b.differentiationAngle}`);
+          if (b.targetReader) lines.push(`   For: ${b.targetReader}`);
+          if (b.demandSignal) lines.push(`   Signal: ${b.demandSignal}`);
+          return lines.join("\n");
+        }).join("\n\n")
+      : "";
+
     // Campaign mission: the specific topic/news/themes this campaign was founded
     // on. Without this, posts drift into generic industry commentary because the
     // prompt only sees brand voice. Built from the campaign's objective +
@@ -4527,7 +4579,7 @@ GENERAL RULES:
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 
-${campaignMissionContext ? `${campaignMissionContext}\n\n` : ""}${foundingSignalsContext ? `${foundingSignalsContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
+${campaignMissionContext ? `${campaignMissionContext}\n\n` : ""}${briefsContext ? `${briefsContext}\n\n` : ""}${foundingSignalsContext ? `${foundingSignalsContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
 
 ## Platform Guidelines
 ${platformGuide}
