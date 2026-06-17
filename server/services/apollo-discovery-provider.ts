@@ -34,11 +34,17 @@ export function apolloReason(): string {
 /**
  * Map free-text segment labels to Apollo employee-count ranges.
  * Apollo accepts ranges like "1,200" (1–200 employees).
+ *
+ * Returns an empty array when the segment looks like an AUM/revenue
+ * descriptor (e.g. "$1B+ AUM", "$500M revenue") rather than a headcount
+ * descriptor — those don't translate to employee counts.
  */
 function segmentsToEmployeeRanges(segments: string[]): string[] {
   const ranges: string[] = [];
   for (const seg of segments) {
     const s = seg.toLowerCase();
+    // Skip financial-size descriptors — AUM/revenue ≠ headcount.
+    if (/\$[\d.]+[mb]|\baum\b|\brevenue\b|\bfund\b/i.test(s)) continue;
     if (s.includes("startup") || s.includes("very small")) {
       ranges.push("1,10", "11,50");
     } else if (s.includes("smb") || s.includes("small")) {
@@ -50,6 +56,38 @@ function segmentsToEmployeeRanges(segments: string[]): string[] {
     }
   }
   return [...new Set(ranges)];
+}
+
+/**
+ * Apollo's person_titles filter expects individual, atomic job-title keywords
+ * (e.g. "CTO", "Chief Investment Officer"). ICP persona role fields are often
+ * written as combined English sentences ("CTO, COO, or CFO at a PE firm") —
+ * split them into clean, individual titles before sending to the API.
+ */
+function normalizePersonTitles(roles: string[]): string[] {
+  const out: string[] = [];
+  for (const role of roles) {
+    // Split on common list separators: ", " / " or " / " / " / " | "
+    const parts = role.split(/,\s+|\s+or\s+|\s*[\/|]\s*/i);
+    for (const part of parts) {
+      // Strip context qualifiers that follow the title: "at a ...", "for ...",
+      // "in ...", "managing ...", "with ...", "overseeing ...", etc.
+      const clean = part
+        .replace(/\s+(at|for|in|of|with|managing|overseeing|within|across|reporting)\s+.*/i, "")
+        .trim();
+      if (clean.length > 1 && clean.length < 80) {
+        out.push(clean);
+      }
+    }
+  }
+  // Dedupe case-insensitively; cap at 10 (Apollo API limit).
+  const seen = new Set<string>();
+  return out.filter((t) => {
+    const key = t.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,17 +156,25 @@ export async function searchApollo(
   };
 
   // Apollo limits: person_titles ≤ 10 entries, q_keywords ≤ 255 chars.
+  // normalizePersonTitles splits combined role strings ("CTO, COO, or CFO at a PE firm")
+  // into individual atomic title keywords that Apollo can actually match against.
   if (criteria.roles?.length) {
-    body.person_titles = criteria.roles.slice(0, 10);
+    const titles = normalizePersonTitles(criteria.roles);
+    if (titles.length) body.person_titles = titles;
   }
 
   if (criteria.geographies?.length) {
     body.person_locations = criteria.geographies.slice(0, 10);
   }
 
-  const employeeRanges = segmentsToEmployeeRanges(criteria.segments ?? []);
-  if (employeeRanges.length) {
-    body.organization_num_employees_ranges = employeeRanges;
+  // Skip headcount ranges when named accounts are specified — the firm list
+  // already scopes the search and employee ranges based on AUM/revenue don't
+  // translate to Apollo's headcount field (a $1B AUM PE firm may have <100 staff).
+  if (!namedAccounts?.length) {
+    const employeeRanges = segmentsToEmployeeRanges(criteria.segments ?? []);
+    if (employeeRanges.length) {
+      body.organization_num_employees_ranges = employeeRanges;
+    }
   }
 
   // Industries → q_keywords (capped at 255 chars to avoid Apollo "value too long").

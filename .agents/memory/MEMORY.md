@@ -33,3 +33,4 @@
 - [Blog post extra fields](blog-post-draft-fields.md) — blog_post drafts get SUBTITLE/OVERVIEW/TAGS sections (6-section response format); other formats keep 3-section TITLE/BODY/META; parseDraftResponse + ParsedDraft extended; columns subtitle/overview/post_tags on content_assets.
 - [Interview Plan step expand legs](interview-plan-expand-legs.md) — Plan step = 2 non-idempotent calls (expand-plan docs + expand-social real generatedPosts); track per-leg success client-side or retries duplicate briefs; surface failedConceptIds.
 - [Post generation context injection](post-generation-context.md) — generatePostsAsync must inject campaignBriefs (direct eq(contentBriefs.campaignId)) + briefsContext before foundingSignals or posts drift generic from actionItem bleed.
+- [Apollo person_titles must be atomic](apollo-title-normalization.md) — ICP persona.role is a combined sentence; normalizePersonTitles() splits it; AUM segments must not map to headcount ranges.
