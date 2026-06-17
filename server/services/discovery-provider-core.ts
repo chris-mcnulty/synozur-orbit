@@ -87,6 +87,8 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
     "",
     `Return at most ${limit} candidates. Use web search to ground every candidate in a real, current public source (company team/leadership page, a press release, a conference speaker list, or a public professional profile). Do not invent people, titles, companies, or emails. Only include an email or LinkedIn URL if you actually found it on a source — otherwise leave it null. Prefer decision-makers who fit the role and seniority over volume.`,
     "",
+    "Every candidate MUST have a full name (first name AND last name). If you can only find a first name for someone — for example because a source only lists a first name — skip that person entirely and do not include them in the results.",
+    "",
     'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null}. If you find no one, return [].',
   ]
     .filter(Boolean)
@@ -145,6 +147,10 @@ export function parseDiscoveryCandidates(
     const r = row as Record<string, unknown>;
     const name = asStringOrNull(r.name);
     if (!name) continue;
+    if (!name.includes(" ")) {
+      console.debug(`[discovery] dropped single-token name: "${name}"`);
+      continue;
+    }
     out.push({
       name,
       title: asStringOrNull(r.title),
