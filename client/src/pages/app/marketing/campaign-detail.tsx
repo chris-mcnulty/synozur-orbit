@@ -3345,14 +3345,14 @@ export default function CampaignDetailPage() {
                       {(["channel", "concept", "date"] as const).map(g => (
                         <button
                           key={g}
-                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors capitalize ${rvGroupBy === g ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${rvGroupBy === g ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                           onClick={() => setRvGroupBy(g)}
                           data-testid={`button-rv-group-${g}`}
                         >
                           {g === "channel" && <LayoutGrid className="w-3 h-3" />}
                           {g === "concept" && <Layers className="w-3 h-3" />}
                           {g === "date" && <CalendarDays className="w-3 h-3" />}
-                          {g}
+                          {g === "channel" ? "Channel" : g === "concept" ? "Theme" : "Date"}
                         </button>
                       ))}
                     </div>
@@ -3420,6 +3420,26 @@ export default function CampaignDetailPage() {
                       {rvSelectMode ? <SquareCheck className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                       {rvSelectMode ? "Cancel" : "Select"}
                     </Button>
+
+                    {/* CSV export — same flow as Social Posts tab */}
+                    {posts.filter(p => p.status === "approved").length > 0 && (
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <Select value={csvFormat} onValueChange={setCsvFormat}>
+                          <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-rv-csv-format">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="generic">Generic</SelectItem>
+                            <SelectItem value="socialpilot">SocialPilot</SelectItem>
+                            <SelectItem value="hootsuite">Hootsuite</SelectItem>
+                            <SelectItem value="sproutsocial">Sprout Social</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={handleExportClick} disabled={exportCsvMutation.isPending} data-testid="button-rv-export-csv">
+                          <Download className="w-3.5 h-3.5" />Export CSV
+                        </Button>
+                      </div>
+                    )}
 
                     <span className="text-xs text-muted-foreground ml-auto">
                       {rvFiltered.length} post{rvFiltered.length !== 1 ? "s" : ""}
