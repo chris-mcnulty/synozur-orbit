@@ -45,6 +45,7 @@ import {
   Square,
   SquareCheck,
   Users,
+  ImageOff,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -2247,6 +2248,7 @@ export default function CampaignDetailPage() {
                       else if (isBatched) return false;
                       if (postFilter === "all") return p.status !== "deleted";
                       if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
+                      if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
                       return p.status === postFilter;
                     }).map(p => p.id);
                     setPostSelectedIds(new Set(visibleIds));
@@ -2329,6 +2331,7 @@ export default function CampaignDetailPage() {
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="approved">Approved</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>
+                    <SelectItem value="missing_image">Missing image</SelectItem>
                     {archivedCount > 0 && <SelectItem value="archived">Archived ({archivedCount})</SelectItem>}
                   </SelectContent>
                 </Select>
@@ -2511,6 +2514,7 @@ export default function CampaignDetailPage() {
                   else if (isBatched) return false;
                   if (postFilter === "all") return p.status !== "deleted";
                   if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
+                  if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
                   return p.status === postFilter;
                 }).map(post => {
                   const postImage = getPostImage(post);
@@ -2543,6 +2547,16 @@ export default function CampaignDetailPage() {
                               />
                             )}
                             <Badge>{post.platform}</Badge>
+                            {!post.overrideImageUrl && !post.overrideBrandAssetId && (
+                              <Badge
+                                variant="outline"
+                                className="gap-1 text-[10px] text-muted-foreground border-muted-foreground/30"
+                                data-testid={`badge-no-image-${post.id}`}
+                                title="No branded graphic assigned"
+                              >
+                                <ImageOff className="w-2.5 h-2.5" />No image
+                              </Badge>
+                            )}
                             {post.variantGroup && <span className="text-[10px] text-muted-foreground">variant</span>}
                           </div>
                           <div className="flex gap-1">
