@@ -1474,7 +1474,7 @@ export default function EditorialCalendarPage() {
             <DialogHeader>
               <DialogTitle>Generate new briefs</DialogTitle>
               <DialogDescription>
-                Creates a fresh batch of AI-generated briefs — these are added alongside any you already have. Briefs are grounded in your messaging framework, competitive gaps, personas, and tracked SEO keywords. To schedule existing briefs, close this and use "Schedule briefs" instead.
+                Creates a fresh batch of AI-generated briefs — these are added alongside any you already have. Briefs are planning documents, not calendar items. To get content onto the calendar, draft or repurpose a brief into an actual output (social post, email, etc.) — those outputs are what appear in the Content Calendar.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
