@@ -3,23 +3,27 @@
  *
  * Backfills the contact details a 1:1 touch needs — a LinkedIn profile URL and
  * an email — when a prospect arrives bare (manual entry, or a HubSpot contact
- * without them). Uses the same grounded web-search backend as discovery; it
- * only keeps a value it actually found on a real public source and cites it.
- * It never guesses an email from a name+domain pattern, and only fills blanks
- * (existing values are never overwritten). The enriched email still flows
- * through the normal compliance + suppression scan at compose/approve time.
- *
- * Pure prompt/parse/validate helpers are exported for clarity and reuse.
+ * without them). Resolution order, per field:
+ *   1. Apollo People Match — a direct Apollo API call (independent of the active
+ *      AI provider, so it works on Azure Foundry or Anthropic), highest-fidelity
+ *      for verified work emails + LinkedIn.
+ *   2. Grounded AI web search — only when the Anthropic web_search tool is
+ *      available; keeps a value only when found on a real cited source (never
+ *      guesses an email from a name+domain pattern).
+ * Only blanks are filled (existing values are never overwritten). Enriched
+ * emails still flow through the normal compliance + suppression scan at
+ * compose/approve time. Pure prompt/parse/validate helpers are exported.
  */
 
 import { db } from "../db";
 import { prospects, type Prospect, type ProspectSignals } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { completeWithWebSearch, isWebSearchAvailable } from "./ai-provider";
+import { isApolloAvailable, matchApolloPerson } from "./apollo-discovery-provider";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 
 export class EnrichError extends Error {
-  constructor(message: string, readonly code: "web_search_unavailable" | "not_found" | "nothing_missing") {
+  constructor(message: string, readonly code: "source_unavailable" | "not_found" | "nothing_missing") {
     super(message);
     this.name = "EnrichError";
   }
@@ -140,17 +144,21 @@ export function parseEnrichLookup(raw: string, targets: EnrichTargets): EnrichLo
 export interface EnrichResult {
   prospect: Prospect;
   found: { linkedinUrl: boolean; email: boolean };
-  lookup: EnrichLookup;
-  usage: { inputTokens: number; outputTokens: number };
-  searchCount: number;
-  model: string;
-  provider: string;
+  /** Which backends contributed a value, e.g. ["apollo"] or ["apollo","web"]. */
+  sources: string[];
+  notes?: string;
+  // AI usage is present only when the web-search path actually ran.
+  usage?: { inputTokens: number; outputTokens: number };
+  searchCount?: number;
+  model?: string;
+  provider?: string;
 }
 
 /**
- * Enrich one prospect's missing contact details from the public web. Only
- * resolves fields that are currently blank, persists what was confidently found
- * (with evidence appended to `signals.sources`), and returns the result.
+ * Enrich one prospect's missing contact details. Tries Apollo first (verified
+ * data, provider-independent), then AI web search for whatever is still
+ * missing. Only fills blanks, persists what was confidently found (with
+ * evidence appended to `signals.sources`), and returns the result.
  */
 export async function enrichProspectContact(
   tenantDomain: string,
@@ -159,46 +167,86 @@ export async function enrichProspectContact(
   const [prospect] = await db.select().from(prospects).where(eq(prospects.id, prospectId));
   if (!prospect || prospect.tenantDomain !== tenantDomain) throw new Error("Prospect not found");
 
-  const targets: EnrichTargets = {
-    linkedin: !prospect.linkedinUrl,
-    email: !prospect.email,
-  };
-  if (!targets.linkedin && !targets.email) {
+  const needLinkedin = !prospect.linkedinUrl;
+  const needEmail = !prospect.email;
+  if (!needLinkedin && !needEmail) {
     throw new EnrichError("This prospect already has a LinkedIn profile and an email.", "nothing_missing");
   }
-  if (!isWebSearchAvailable()) {
+  if (!isApolloAvailable() && !isWebSearchAvailable()) {
     throw new EnrichError(
-      "Contact enrichment needs the AI web-search provider, which isn't configured. Add the LinkedIn URL or email manually.",
-      "web_search_unavailable",
+      "Enrichment needs Apollo or AI web search — neither is configured. Add the LinkedIn URL or email manually.",
+      "source_unavailable",
     );
   }
 
-  const prompt = buildEnrichPrompt(prospect, targets);
-  const result = await completeWithWebSearch(prompt, {
-    systemPrompt: SYSTEM_PROMPT,
-    maxTokens: 1024,
-    maxSearches: 4,
-  });
-  const lookup = parseEnrichLookup(result.text, targets);
+  let linkedinUrl: string | null = null;
+  let email: string | null = null;
+  const evidence: string[] = [];
+  const sources: string[] = [];
+  let notes: string | undefined;
+  let ai: { usage: { inputTokens: number; outputTokens: number }; searchCount: number; model: string; provider: string } | undefined;
+
+  // 1) Apollo People Match — verified, provider-independent.
+  if (isApolloAvailable()) {
+    const m = await matchApolloPerson({
+      name: prospect.name,
+      title: prospect.title,
+      companyName: prospect.companyName,
+      linkedinUrl: prospect.linkedinUrl,
+    });
+    if (m) {
+      let contributed = false;
+      if (needLinkedin && !linkedinUrl && isValidLinkedInProfileUrl(m.linkedinUrl)) {
+        linkedinUrl = m.linkedinUrl;
+        contributed = true;
+      }
+      if (needEmail && !email && m.email) {
+        email = m.email;
+        contributed = true;
+      }
+      if (contributed) {
+        sources.push("apollo");
+        evidence.push("apollo:people/match");
+      }
+    }
+  }
+
+  // 2) Web-search fallback for whatever Apollo didn't resolve.
+  const stillNeedLinkedin = needLinkedin && !linkedinUrl;
+  const stillNeedEmail = needEmail && !email;
+  if ((stillNeedLinkedin || stillNeedEmail) && isWebSearchAvailable()) {
+    const targets: EnrichTargets = { linkedin: stillNeedLinkedin, email: stillNeedEmail };
+    const prompt = buildEnrichPrompt(prospect, targets);
+    const result = await completeWithWebSearch(prompt, { systemPrompt: SYSTEM_PROMPT, maxTokens: 1024, maxSearches: 4 });
+    const lookup = parseEnrichLookup(result.text, targets);
+    notes = lookup.notes;
+    ai = { usage: result.usage, searchCount: result.searchCount, model: result.model, provider: result.provider };
+
+    let contributed = false;
+    if (stillNeedLinkedin && lookup.linkedinUrl) {
+      linkedinUrl = lookup.linkedinUrl;
+      if (lookup.linkedinEvidenceUrl) evidence.push(lookup.linkedinEvidenceUrl);
+      contributed = true;
+    }
+    if (stillNeedEmail && lookup.email) {
+      email = lookup.email;
+      if (lookup.emailEvidenceUrl) evidence.push(lookup.emailEvidenceUrl);
+      contributed = true;
+    }
+    if (contributed) sources.push("web");
+  }
 
   // Only fill blanks; build the persisted patch + evidence trail.
   const patch: Partial<typeof prospects.$inferInsert> = {};
-  const evidence: string[] = [];
-  if (targets.linkedin && lookup.linkedinUrl) {
-    patch.linkedinUrl = lookup.linkedinUrl;
-    if (lookup.linkedinEvidenceUrl) evidence.push(lookup.linkedinEvidenceUrl);
-  }
-  if (targets.email && lookup.email) {
-    patch.email = lookup.email;
-    if (lookup.emailEvidenceUrl) evidence.push(lookup.emailEvidenceUrl);
-  }
+  if (needLinkedin && linkedinUrl) patch.linkedinUrl = linkedinUrl;
+  if (needEmail && email) patch.email = email;
 
   let updated = prospect;
   if (Object.keys(patch).length > 0) {
     const signals: ProspectSignals = { ...(prospect.signals ?? {}) };
     if (evidence.length > 0) {
-      const sources = Array.isArray(signals.sources) ? signals.sources : [];
-      signals.sources = Array.from(new Set([...sources, ...evidence]));
+      const existing = Array.isArray(signals.sources) ? signals.sources : [];
+      signals.sources = Array.from(new Set([...existing, ...evidence]));
     }
     const [row] = await db
       .update(prospects)
@@ -211,10 +259,11 @@ export async function enrichProspectContact(
   return {
     prospect: updated,
     found: { linkedinUrl: !!patch.linkedinUrl, email: !!patch.email },
-    lookup,
-    usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
-    searchCount: result.searchCount,
-    model: result.model,
-    provider: result.provider,
+    sources,
+    notes,
+    usage: ai ? { inputTokens: ai.usage.inputTokens, outputTokens: ai.usage.outputTokens } : undefined,
+    searchCount: ai?.searchCount,
+    model: ai?.model,
+    provider: ai?.provider,
   };
 }

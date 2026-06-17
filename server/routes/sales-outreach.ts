@@ -478,19 +478,22 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!(await guardManualAction(req, res, "enrichProspectContact"))) return;
 
       const result = await enrichProspectContact(ctx.tenantDomain, req.params.id);
-      await logAiUsage(
-        { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
-        "enrichProspectContact",
-        result.provider,
-        result.model,
-        { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens },
-        undefined,
-        { searchCount: result.searchCount, found: result.found },
-      );
-      res.json({ prospect: result.prospect, found: result.found, notes: result.lookup.notes });
+      // Only the web-search path consumes AI tokens; Apollo is a direct API call.
+      if (result.provider && result.model) {
+        await logAiUsage(
+          { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+          "enrichProspectContact",
+          result.provider,
+          result.model,
+          { input_tokens: result.usage?.inputTokens, output_tokens: result.usage?.outputTokens },
+          undefined,
+          { searchCount: result.searchCount, found: result.found, sources: result.sources },
+        );
+      }
+      res.json({ prospect: result.prospect, found: result.found, sources: result.sources, notes: result.notes });
     } catch (err: any) {
       if (err instanceof EnrichError) {
-        const status = err.code === "web_search_unavailable" ? 503 : err.code === "nothing_missing" ? 409 : 404;
+        const status = err.code === "source_unavailable" ? 503 : err.code === "nothing_missing" ? 409 : 404;
         return res.status(status).json({ error: err.message, code: err.code });
       }
       console.error("[sales-outreach:enrich]", err);
