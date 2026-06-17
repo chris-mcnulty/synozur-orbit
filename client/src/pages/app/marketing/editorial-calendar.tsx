@@ -931,7 +931,7 @@ export default function EditorialCalendarPage() {
             </div>
             <Button onClick={() => setGenerateOpen(true)} data-testid="button-generate-calendar">
               <Sparkles className="mr-2 h-4 w-4" />
-              Generate calendar
+              Generate new briefs
             </Button>
           </div>
 
@@ -1023,7 +1023,7 @@ export default function EditorialCalendarPage() {
                 </div>
                 <Button onClick={() => setGenerateOpen(true)}>
                   <Sparkles className="mr-2 h-4 w-4" />
-                  Generate calendar
+                  Generate new briefs
                 </Button>
               </CardContent>
             </Card>
@@ -1472,9 +1472,9 @@ export default function EditorialCalendarPage() {
         <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Generate editorial calendar</DialogTitle>
+              <DialogTitle>Generate new briefs</DialogTitle>
               <DialogDescription>
-                Briefs are grounded in your messaging framework, competitive gaps, personas, and tracked SEO keywords.
+                Creates a fresh batch of AI-generated briefs — these are added alongside any you already have. Briefs are grounded in your messaging framework, competitive gaps, personas, and tracked SEO keywords. To schedule existing briefs, close this and use "Schedule briefs" instead.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
