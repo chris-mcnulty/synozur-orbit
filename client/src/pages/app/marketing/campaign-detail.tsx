@@ -750,13 +750,26 @@ export default function CampaignDetailPage() {
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (returnedPost, vars) => {
+      queryClient.setQueryData(
+        [`/api/campaigns/${id}/generated-posts`],
+        (old: GeneratedPost[] | undefined) => {
+          if (!old) return old;
+          if (vars.status === "rejected" || vars.status === "deleted") {
+            return old.filter(p => p.id !== vars.postId);
+          }
+          return old.map(p => p.id === vars.postId ? { ...p, ...returnedPost } : p);
+        }
+      );
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      if (vars.status === "rejected") toast({ title: "Post rejected and removed" });
+      else if (vars.status === "approved") toast({ title: "Post approved" });
       setEditingPostId(null);
       setEditingPostHashtags(null);
       setImagePickerPostId(null);
       setLinkPopoverPostId(null);
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const bulkLinkMutation = useMutation({
