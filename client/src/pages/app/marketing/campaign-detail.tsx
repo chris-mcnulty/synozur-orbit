@@ -2294,6 +2294,21 @@ export default function CampaignDetailPage() {
                     )}
                   </Button>
                 )}
+                {postSelectedIds.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => {
+                      const firstId = Array.from(postSelectedIds)[0];
+                      setImagePickerPostId(firstId);
+                      setPickerTab("brand");
+                    }}
+                    data-testid="button-posts-bulk-replace-image"
+                  >
+                    <ImageLucide className="w-3.5 h-3.5" />Replace image
+                  </Button>
+                )}
               </div>
             )}
 
@@ -3866,7 +3881,9 @@ export default function CampaignDetailPage() {
                           if (imagePickerPostId) {
                             const targets = rvSelectMode && rvSelectedIds.size > 0
                               ? Array.from(rvSelectedIds)
-                              : [imagePickerPostId];
+                              : postSelectMode && postSelectedIds.size > 0
+                                ? Array.from(postSelectedIds)
+                                : [imagePickerPostId];
                             targets.forEach(pid => updatePostMutation.mutate({
                               postId: pid,
                               overrideImageUrl: ba.fileUrl || ba.url || "",
@@ -3877,6 +3894,8 @@ export default function CampaignDetailPage() {
                               setPickerTab("brand");
                               setRvSelectMode(false);
                               setRvSelectedIds(new Set());
+                              setPostSelectMode(false);
+                              setPostSelectedIds(new Set());
                             }
                           }
                         }}
@@ -3937,7 +3956,9 @@ export default function CampaignDetailPage() {
                       if (imagePickerPostId) {
                         const targets = rvSelectMode && rvSelectedIds.size > 0
                           ? Array.from(rvSelectedIds)
-                          : [imagePickerPostId];
+                          : postSelectMode && postSelectedIds.size > 0
+                            ? Array.from(postSelectedIds)
+                            : [imagePickerPostId];
                         targets.forEach(pid => updatePostMutation.mutate({
                           postId: pid,
                           overrideImageUrl: overrideUrl,
@@ -3949,6 +3970,8 @@ export default function CampaignDetailPage() {
                           setPickerShowAll(false);
                           setRvSelectMode(false);
                           setRvSelectedIds(new Set());
+                          setPostSelectMode(false);
+                          setPostSelectedIds(new Set());
                         }
                       }
                     }}
