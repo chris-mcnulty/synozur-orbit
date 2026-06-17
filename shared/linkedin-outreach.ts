@@ -41,13 +41,18 @@ export function linkedinCharLimit(format: LinkedInFormat | null | undefined): nu
   return format ? LINKEDIN_FORMAT_LIMITS[format] : LINKEDIN_FORMAT_LIMITS.direct_message;
 }
 
-/** Whether a URL looks like a real LinkedIn profile / company page. */
+/**
+ * Whether a URL looks like a real LinkedIn *person* profile (`/in/` or `/pub/`).
+ * Company pages (`/company/...`) are intentionally rejected: this gates prospect
+ * profile URLs and the connect-request / DM deep links, which need a person (the
+ * messaging slug is extracted from `/in/<slug>`).
+ */
 export function isValidLinkedInProfileUrl(url: string | null | undefined): boolean {
   if (!url) return false;
   try {
     const u = new URL(url.trim());
     if (u.protocol !== "https:" && u.protocol !== "http:") return false;
-    return /(^|\.)linkedin\.com$/i.test(u.hostname) && /\/(in|pub|company)\//i.test(u.pathname);
+    return /(^|\.)linkedin\.com$/i.test(u.hostname) && /\/(in|pub)\//i.test(u.pathname);
   } catch {
     return false;
   }

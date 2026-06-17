@@ -115,21 +115,41 @@ async function loadConferenceNames(tenantDomain: string): Promise<Map<string, st
   return new Map(rows.map((r) => [r.id, r.name]));
 }
 
-async function loadCampaignContent(campaignIds: string[]): Promise<Map<string, CampaignContent>> {
+async function loadCampaignContent(
+  tenantDomain: string,
+  campaignIds: string[],
+): Promise<Map<string, CampaignContent>> {
   const byCampaign = new Map<string, CampaignContent>();
   for (const id of campaignIds) byCampaign.set(id, { posts: [], briefs: [], emails: [] });
   if (campaignIds.length === 0) return byCampaign;
 
+  // Scope every read to the tenant as well as the campaign ids — defense in
+  // depth, so this helper can't leak cross-tenant rows if reused without an
+  // upstream campaign-ownership check.
   const [posts, briefs, emails] = await Promise.all([
     db
       .select()
       .from(generatedPosts)
-      .where(and(inArray(generatedPosts.campaignId, campaignIds), notInArray(generatedPosts.status, HIDDEN_POST_STATUSES))),
+      .where(and(
+        eq(generatedPosts.tenantDomain, tenantDomain),
+        inArray(generatedPosts.campaignId, campaignIds),
+        notInArray(generatedPosts.status, HIDDEN_POST_STATUSES),
+      )),
     db
       .select()
       .from(contentBriefs)
-      .where(and(inArray(contentBriefs.campaignId, campaignIds), notInArray(contentBriefs.status, ["removed"]))),
-    db.select().from(generatedEmails).where(inArray(generatedEmails.campaignId, campaignIds)),
+      .where(and(
+        eq(contentBriefs.tenantDomain, tenantDomain),
+        inArray(contentBriefs.campaignId, campaignIds),
+        notInArray(contentBriefs.status, ["removed"]),
+      )),
+    db
+      .select()
+      .from(generatedEmails)
+      .where(and(
+        eq(generatedEmails.tenantDomain, tenantDomain),
+        inArray(generatedEmails.campaignId, campaignIds),
+      )),
   ]);
 
   for (const p of posts) if (p.campaignId) byCampaign.get(p.campaignId)?.posts.push(p);
@@ -144,7 +164,7 @@ export async function getCampaignNextActions(
   campaignId: string,
 ): Promise<ActionGroup[]> {
   const [content, conferenceNames] = await Promise.all([
-    loadCampaignContent([campaignId]),
+    loadCampaignContent(tenantDomain, [campaignId]),
     loadConferenceNames(tenantDomain),
   ]);
   const items = toActionItems(content.get(campaignId)!, conferenceNames, null, null);
@@ -174,7 +194,7 @@ export async function getCrossCampaignNextActions(
   if (active.length === 0) return [];
 
   const [content, conferenceNames] = await Promise.all([
-    loadCampaignContent(active.map((c) => c.id)),
+    loadCampaignContent(tenantDomain, active.map((c) => c.id)),
     loadConferenceNames(tenantDomain),
   ]);
 

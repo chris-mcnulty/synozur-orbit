@@ -903,6 +903,7 @@ export default function OutreachCampaignDetailPage() {
                             disabled={enrich.isPending && enrich.variables === p.id}
                             data-testid={`enrich-${p.id}`}
                             title="Find LinkedIn profile / email"
+                            aria-label={`Find LinkedIn profile or email for ${p.name}`}
                           >
                             {enrich.isPending && enrich.variables === p.id
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />

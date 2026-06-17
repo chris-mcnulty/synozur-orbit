@@ -16,6 +16,7 @@ import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
 import { guardFeature, guardManualAction, logAiUsage } from "./helpers";
+import { reserveManualAction } from "../services/manual-action-quota";
 import { assessSalesOutreachReadiness } from "../services/sales-outreach-readiness";
 import { createCampaignFromInterview, getCampaign } from "../services/outreach-interview-service";
 import { researchProspect } from "../services/prospector-service";
@@ -445,22 +446,36 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       // Best-effort contact enrichment as part of research: backfill a missing
       // LinkedIn URL / email (Apollo first, then web) so the dossier + scoring
-      // use them. Bundled into the research action — never blocks it on failure.
+      // use them. It still reserves the metered `enrichProspectContact` slot so
+      // the Apollo/AI cost is gated + tracked against the plan — but when that
+      // quota is exhausted we skip enrichment silently and research proceeds.
       try {
-        const enr = await enrichProspectContact(ctx.tenantDomain, req.params.id);
-        if (enr.provider && enr.model) {
-          await logAiUsage(
-            { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
-            "enrichProspectContact",
-            enr.provider,
-            enr.model,
-            { input_tokens: enr.usage?.inputTokens, output_tokens: enr.usage?.outputTokens },
-            undefined,
-            { searchCount: enr.searchCount, found: enr.found, sources: enr.sources, viaResearch: true },
-          );
+        const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+        const plan = tenant?.plan ?? "free";
+        const reservation = await reserveManualAction(ctx.tenantDomain, plan, "enrichProspectContact", ctx.userId);
+        if (reservation.ok) {
+          try {
+            const enr = await enrichProspectContact(ctx.tenantDomain, req.params.id);
+            reservation.commit(true); // external calls ran — count it
+            if (enr.provider && enr.model) {
+              await logAiUsage(
+                { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+                "enrichProspectContact",
+                enr.provider,
+                enr.model,
+                { input_tokens: enr.usage?.inputTokens, output_tokens: enr.usage?.outputTokens },
+                undefined,
+                { searchCount: enr.searchCount, found: enr.found, sources: enr.sources, viaResearch: true },
+              );
+            }
+          } catch {
+            // Nothing missing, no source configured, or a provider hiccup: no
+            // billable work happened — release the reserved slot.
+            reservation.commit(false);
+          }
         }
       } catch {
-        // Nothing missing, no source configured, or a provider hiccup — research proceeds.
+        // Never block research on enrichment plumbing.
       }
 
       const result = await researchProspect(ctx.tenantDomain, req.params.id, {
