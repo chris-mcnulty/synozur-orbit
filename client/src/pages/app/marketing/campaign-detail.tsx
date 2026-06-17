@@ -3381,6 +3381,20 @@ export default function CampaignDetailPage() {
                           Reject selected
                         </Button>
                       )}
+                      {rvSelectedIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5 text-purple-700 border-purple-300 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-700 dark:hover:bg-purple-950"
+                          disabled={rvGeneratingIds.size > 0 || rvBulkApproving || rvBulkRejecting}
+                          onClick={() => Array.from(rvSelectedIds).forEach(pid => generateGraphic(pid))}
+                          title="Composite a text + logo graphic onto each selected post. Posts that already have a background image use it; others get one generated from the post text."
+                          data-testid="button-rv-bulk-generate-graphics"
+                        >
+                          {rvGeneratingIds.size > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          Generate graphics{rvGeneratingIds.size > 0 ? ` (${rvGeneratingIds.size} left…)` : ""}
+                        </Button>
+                      )}
                     </div>
                   )}
 
