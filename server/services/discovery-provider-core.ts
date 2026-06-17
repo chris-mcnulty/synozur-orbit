@@ -154,9 +154,28 @@ function isBadName(name: string): boolean {
   // Contains a corporate-entity suffix
   if (COMPANY_SUFFIXES.test(name)) return true;
 
-  // Every word is a known job-title token → role label, not a person
   const words = name.toLowerCase().split(/[\s\-\/]+/).filter(Boolean);
+
+  // Every word is a known job-title token → role label, not a person
   if (words.length > 0 && words.every((w) => JOB_TITLE_TOKENS.has(w))) return true;
+
+  // Any token is purely numeric (e.g. "123 Test", "John 4") → placeholder
+  if (words.some((w) => /^\d+$/.test(w))) {
+    console.debug(`[discovery] dropped numeric-token name: "${name}"`);
+    return true;
+  }
+
+  // Every token is a single character (initials-only, e.g. "J K") → not a full name
+  if (words.length > 0 && words.every((w) => w.length === 1)) {
+    console.debug(`[discovery] dropped initials-only name: "${name}"`);
+    return true;
+  }
+
+  // All tokens are identical (e.g. "Test Test") → obvious placeholder
+  if (words.length > 1 && words.every((w) => w === words[0])) {
+    console.debug(`[discovery] dropped repeated-word name: "${name}"`);
+    return true;
+  }
 
   return false;
 }
