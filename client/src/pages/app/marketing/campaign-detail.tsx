@@ -409,6 +409,12 @@ export default function CampaignDetailPage() {
   const [rvBulkApproving, setRvBulkApproving] = useState(false);
   const [rvBulkRejecting, setRvBulkRejecting] = useState(false);
 
+  // Social Posts tab selection mode
+  const [postSelectMode, setPostSelectMode] = useState(false);
+  const [postSelectedIds, setPostSelectedIds] = useState<Set<string>>(new Set());
+  const [postBulkProgress, setPostBulkProgress] = useState(0);
+  const [postBulkTotal, setPostBulkTotal] = useState(0);
+
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
     queryFn: async () => {
@@ -2134,6 +2140,21 @@ export default function CampaignDetailPage() {
               >
                 <Pencil className="w-4 h-4" />Create Post
               </Button>
+              {posts.length > 0 && (
+                <Button
+                  variant={postSelectMode ? "secondary" : "outline"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    setPostSelectMode(v => !v);
+                    setPostSelectedIds(new Set());
+                  }}
+                  data-testid="button-posts-select-mode"
+                >
+                  {postSelectMode ? <SquareCheck className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                  {postSelectMode ? "Cancel" : "Select"}
+                </Button>
+              )}
               {strategicContext?.available && (
                 <Badge variant="secondary" className="text-[10px] gap-1" data-testid="strategic-context-badge">
                   <Sparkles className="w-3 h-3" />
@@ -2207,6 +2228,72 @@ export default function CampaignDetailPage() {
                 );
               })()}
             </div>
+
+            {/* Bulk action bar — shown when Select mode is active in Social Posts tab */}
+            {postSelectMode && (
+              <div className="flex items-center gap-2 flex-wrap rounded-md border bg-muted/40 px-3 py-2" data-testid="posts-bulk-bar">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {postSelectedIds.size} selected
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={() => {
+                    const visibleIds = posts.filter(p => {
+                      const src = batchSourceOf(p);
+                      const isBatched = src != null && batchKeySet.has(src);
+                      if (batchFilter) { if (src !== batchFilter) return false; }
+                      else if (isBatched) return false;
+                      if (postFilter === "all") return p.status !== "deleted";
+                      if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
+                      return p.status === postFilter;
+                    }).map(p => p.id);
+                    setPostSelectedIds(new Set(visibleIds));
+                  }}
+                  data-testid="button-posts-select-all"
+                >
+                  Select all visible
+                </Button>
+                {postSelectedIds.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => setPostSelectedIds(new Set())}
+                    data-testid="button-posts-clear-selection"
+                  >
+                    Clear
+                  </Button>
+                )}
+                {postSelectedIds.size > 0 && (
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={postBulkTotal > 0}
+                    onClick={async () => {
+                      const ids = Array.from(postSelectedIds);
+                      setPostBulkTotal(ids.length);
+                      setPostBulkProgress(0);
+                      for (let i = 0; i < ids.length; i++) {
+                        await generateGraphic(ids[i]);
+                        setPostBulkProgress(i + 1);
+                      }
+                      setPostBulkTotal(0);
+                      setPostBulkProgress(0);
+                      toast({ title: "Graphics generated", description: `Generated images for ${ids.length} post(s).` });
+                    }}
+                    data-testid="button-posts-bulk-generate"
+                  >
+                    {postBulkTotal > 0 ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" />{postBulkProgress}/{postBulkTotal}</>
+                    ) : (
+                      <><Wand2 className="w-3.5 h-3.5" />Generate graphics</>
+                    )}
+                  </Button>
+                )}
+              </div>
+            )}
 
             {isGenerating && (
               <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-primary/30 bg-primary/5" data-testid="status-generating-posts">
@@ -2434,14 +2521,43 @@ export default function CampaignDetailPage() {
                     editingPostId === post.id ||
                     editingPostHashtags === post.id;
                   return (
-                    <Card key={post.id} data-testid={`card-post-${post.id}`}>
+                    <Card
+                      key={post.id}
+                      data-testid={`card-post-${post.id}`}
+                      className={postSelectMode && postSelectedIds.has(post.id) ? "ring-2 ring-primary" : ""}
+                    >
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
+                            {postSelectMode && (
+                              <Checkbox
+                                checked={postSelectedIds.has(post.id)}
+                                onCheckedChange={() => {
+                                  setPostSelectedIds(prev => {
+                                    const s = new Set(prev);
+                                    if (s.has(post.id)) s.delete(post.id); else s.add(post.id);
+                                    return s;
+                                  });
+                                }}
+                                data-testid={`checkbox-post-${post.id}`}
+                              />
+                            )}
                             <Badge>{post.platform}</Badge>
                             {post.variantGroup && <span className="text-[10px] text-muted-foreground">variant</span>}
                           </div>
                           <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Generate branded graphic"
+                              disabled={rvGeneratingIds.has(post.id)}
+                              onClick={() => generateGraphic(post.id)}
+                              data-testid={`button-generate-graphic-${post.id}`}
+                            >
+                              {rvGeneratingIds.has(post.id)
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : <Wand2 className="w-3.5 h-3.5" />}
+                            </Button>
                             {post.status !== "approved" && (
                               <Button
                                 variant="ghost"
