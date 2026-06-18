@@ -364,6 +364,7 @@ export default function CampaignDetailPage() {
   const [brandAssetCategoryFilter, setBrandAssetCategoryFilter] = useState("all");
   const [brandAssetSearch, setBrandAssetSearch] = useState("");
   const [postFilter, setPostFilter] = useState<string>("active");
+  const [postAccountFilter, setPostAccountFilter] = useState<string>("all");
   // WS4: when drilling into one collapsed social batch (its generation run,
   // repurpose group, or event); null shows the batch overview.
   const [batchFilter, setBatchFilter] = useState<string | null>(null);
@@ -2374,6 +2375,7 @@ export default function CampaignDetailPage() {
                       const isBatched = src != null && batchKeySet.has(src);
                       if (batchFilter) { if (src !== batchFilter) return false; }
                       else if (isBatched) return false;
+                      if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
                       if (postFilter === "all") return p.status !== "deleted";
                       if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
                       if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
@@ -2478,6 +2480,28 @@ export default function CampaignDetailPage() {
                     {archivedCount > 0 && <SelectItem value="archived">Archived ({archivedCount})</SelectItem>}
                   </SelectContent>
                 </Select>
+                {(() => {
+                  const accountIdsWithPosts = [...new Set(posts.filter(p => p.socialAccountId).map(p => p.socialAccountId!))];
+                  if (accountIdsWithPosts.length < 2) return null;
+                  return (
+                    <Select value={postAccountFilter} onValueChange={setPostAccountFilter}>
+                      <SelectTrigger className="w-44" data-testid="select-post-account-filter">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All accounts</SelectItem>
+                        {accountIdsWithPosts.map(aid => {
+                          const acct = allSocialAccounts.find(a => a.id === aid);
+                          return (
+                            <SelectItem key={aid} value={aid}>
+                              {acct?.accountName ?? aid}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  );
+                })()}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -2655,6 +2679,7 @@ export default function CampaignDetailPage() {
                   const isBatched = src != null && batchKeySet.has(src);
                   if (batchFilter) { if (src !== batchFilter) return false; }
                   else if (isBatched) return false;
+                  if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
                   if (postFilter === "all") return p.status !== "deleted";
                   if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
                   if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
