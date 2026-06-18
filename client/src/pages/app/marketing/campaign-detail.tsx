@@ -3761,7 +3761,7 @@ export default function CampaignDetailPage() {
                                     ) : null}
                                     {img ? (
                                       <img
-                                        src={img}
+                                        src={thumbnailUrl(img, 480)}
                                         alt="Post image"
                                         className={`w-full h-full object-cover ${rvSelectMode ? "" : "cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-primary"}`}
                                         loading="lazy"
