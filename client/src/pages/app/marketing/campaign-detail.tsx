@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { rollupPosts, batchSourceOf } from "@shared/social-rollup";
-import { OptimizedThumbnail, thumbnailUrl } from "@/components/ui/optimized-thumbnail";
+import { OptimizedThumbnail, thumbnailUrl, buildSrcSet } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -3815,6 +3815,8 @@ export default function CampaignDetailPage() {
                                     {img ? (
                                       <img
                                         src={thumbnailUrl(img, 480)}
+                                        srcSet={buildSrcSet(img, [320, 480, 640])}
+                                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                                         alt="Post image"
                                         className={`w-full h-full object-cover ${rvSelectMode ? "" : "cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-primary"}`}
                                         loading="lazy"

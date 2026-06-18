@@ -32,7 +32,7 @@ export function thumbnailUrl(src: string, width: number): string {
 }
 
 /** Build srcSet for responsive images (works for both object-storage and external URLs) */
-function buildSrcSet(src: string, widths: number[]): string | undefined {
+export function buildSrcSet(src: string, widths: number[]): string | undefined {
   if (!src.startsWith("/objects/") && !src.startsWith("http://") && !src.startsWith("https://")) {
     return undefined;
   }
