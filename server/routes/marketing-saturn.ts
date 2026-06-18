@@ -3024,6 +3024,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
       const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
       const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
+      const accountIds: string[] = Array.isArray(req.body?.accountIds) ? req.body.accountIds : [];
       let thematicBriefText: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
       const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
 
@@ -3123,7 +3124,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           personaIds,
           useThematicMode ? thematicBrief : "",
           useThematicMode ? thematicUrl : "",
-          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined },
+          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined, accountIds: accountIds.length > 0 ? accountIds : undefined },
           reportProgress,
         ),
         { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
@@ -4326,7 +4327,7 @@ async function generatePostsAsync(
   personaIds: string[] = [],
   thematicBrief: string = "",
   thematicUrl: string = "",
-  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string; sourceBriefContentAsset?: typeof contentAssets.$inferSelect } = {},
+  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string; sourceBriefContentAsset?: typeof contentAssets.$inferSelect; accountIds?: string[] } = {},
   reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
 ): Promise<void> {
   // Default ON: lead images from source content assets are folded into the
@@ -4361,7 +4362,7 @@ async function generatePostsAsync(
     const camSocial = await db.select().from(campaignSocialAccounts)
       .where(eq(campaignSocialAccounts.campaignId, campaignId));
     const socialIds = camSocial.map(cs => cs.socialAccountId);
-    const linkedAccounts = socialIds.length
+    const allLinkedAccounts = socialIds.length
       ? await db.select().from(socialAccounts).where(
           and(
             eq(socialAccounts.tenantDomain, tenantDomain),
@@ -4370,6 +4371,11 @@ async function generatePostsAsync(
           ),
         )
       : [];
+    // If the caller specified a subset of account IDs to target, filter to only those.
+    const requestedAccountIds = wrapOpts.accountIds;
+    const linkedAccounts = requestedAccountIds && requestedAccountIds.length > 0
+      ? allLinkedAccounts.filter(a => requestedAccountIds.includes(a.id))
+      : allLinkedAccounts;
 
     const [groundingContext, strategicCtx] = await Promise.all([
       loadGroundingContext(tenantDomain, marketId),

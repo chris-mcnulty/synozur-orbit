@@ -371,6 +371,10 @@ export default function CampaignDetailPage() {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
+  // null = all campaign accounts (no explicit selection / no pre-selection from brief)
+  // []   = explicitly none selected (blocks Generate; user must pick at least one)
+  // [id] = a specific subset the user / brief has targeted
+  const [generateDialogAccountIds, setGenerateDialogAccountIds] = useState<string[] | null>(null);
   const [brandCategoryFilter, setBrandCategoryFilter] = useState<string>("all");
   const [brandPage, setBrandPage] = useState(0);
   const [generateMode, setGenerateMode] = useState<"asset" | "thematic">("asset");
@@ -720,12 +724,12 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [] }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -737,6 +741,7 @@ export default function CampaignDetailPage() {
       setGenerateDialogOpen(false);
       setSelectedBrandImageIds([]);
       setSelectedPersonaIds([]);
+      setGenerateDialogAccountIds(null);
       setThematicBrief("");
       setThematicUrl("");
       setGenerateMode("asset");
@@ -1450,6 +1455,14 @@ export default function CampaignDetailPage() {
 
   // Pre-populate the generate dialog from a content brief row and open it in
   // thematic mode so the user lands with the brief context already loaded.
+  const briefChannelMatchesPlatform = (channel: string, platform: string): boolean => {
+    const ch = channel.toLowerCase().replace(/_post$/, "");
+    const pl = platform.toLowerCase();
+    if (ch === pl) return true;
+    if ((ch === "x" || ch === "twitter") && (pl === "x" || pl === "twitter")) return true;
+    return false;
+  };
+
   const openGenerateFromBrief = (brief: ContentBrief) => {
     const parts: string[] = [`Brief: ${brief.title}`];
     if (brief.summary) parts.push(`Summary: ${brief.summary}`);
@@ -1466,6 +1479,24 @@ export default function CampaignDetailPage() {
     setBrandPage(0);
     setVariantsPerPlatform(null);
     setWrapPostLinks(false);
+    // Pre-select social accounts whose platform matches the brief's channels.
+    //   matched accounts found  → pre-select exactly those accounts
+    //   channels set, no match  → [] (no pre-selection; Generate disabled until user picks)
+    //   no channels on brief    → null (all accounts; generate for everything)
+    if (brief.channels && brief.channels.length > 0) {
+      const matched = (campaign?.socialAccounts ?? [])
+        .filter(csa => {
+          const account = allSocialAccounts.find(a => a.id === csa.socialAccountId);
+          if (!account) return false;
+          return brief.channels!.some(ch => briefChannelMatchesPlatform(ch, account.platform ?? ""));
+        })
+        .map(csa => csa.socialAccountId);
+      // If no accounts matched, leave as [] so the user is prompted to pick rather
+      // than silently generating for all accounts on an unintended platform.
+      setGenerateDialogAccountIds(matched);
+    } else {
+      setGenerateDialogAccountIds(null);
+    }
     setGenerateDialogOpen(true);
   };
 
@@ -4669,7 +4700,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -4720,6 +4751,58 @@ export default function CampaignDetailPage() {
                 </div>
               );
             })()}
+
+            {/* Social Account Targeting */}
+            {campaign && campaign.socialAccounts.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium">Target accounts</Label>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-2">Posts will be generated for the selected accounts. Deselect any you want to skip.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {campaign.socialAccounts.map(csa => {
+                    const account = allSocialAccounts.find(a => a.id === csa.socialAccountId);
+                    if (!account) return null;
+                    // null = all selected; explicit array = check membership
+                    const selected = generateDialogAccountIds === null || generateDialogAccountIds.includes(account.id);
+                    return (
+                      <Badge
+                        key={account.id}
+                        variant={selected ? "default" : "outline"}
+                        className="cursor-pointer gap-1"
+                        onClick={() => {
+                          if (generateDialogAccountIds === null) {
+                            // Currently "all" — deselecting one switches to all-except-this
+                            setGenerateDialogAccountIds(
+                              campaign.socialAccounts
+                                .map(c => c.socialAccountId)
+                                .filter(sid => sid !== account.id)
+                            );
+                          } else if (selected) {
+                            setGenerateDialogAccountIds(prev => (prev as string[]).filter(x => x !== account.id));
+                          } else {
+                            setGenerateDialogAccountIds(prev => [...(prev as string[]), account.id]);
+                          }
+                        }}
+                        data-testid={`badge-gen-account-${account.id}`}
+                      >
+                        {account.platform} — {account.accountName}
+                      </Badge>
+                    );
+                  })}
+                </div>
+                {generateDialogAccountIds !== null && generateDialogAccountIds.length < campaign.socialAccounts.length && (
+                  <button
+                    className="text-xs text-primary mt-1.5 hover:underline"
+                    onClick={() => setGenerateDialogAccountIds(null)}
+                    data-testid="button-gen-select-all-accounts"
+                  >
+                    Select all accounts
+                  </button>
+                )}
+                {generateDialogAccountIds !== null && generateDialogAccountIds.length === 0 && (
+                  <p className="text-xs text-destructive mt-1">Select at least one account to generate posts.</p>
+                )}
+              </div>
+            )}
 
             {/* Mode Toggle */}
             <div className="grid grid-cols-2 gap-2">
@@ -4937,7 +5020,7 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
@@ -4947,8 +5030,10 @@ export default function CampaignDetailPage() {
                 wrapLinks: wrapPostLinks,
                 variantsPerPlatform,
                 sourceBriefId: selectedBriefId,
+                // null = all accounts; non-null array = specific subset (may be empty, but Generate is disabled then)
+                accountIds: generateDialogAccountIds,
               })}
-              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim())}
+              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim()) || (generateDialogAccountIds !== null && generateDialogAccountIds.length === 0)}
               className="gap-2"
               data-testid="button-confirm-generate"
             >
