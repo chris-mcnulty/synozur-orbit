@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   buildDiscoveryPrompt,
   parseDiscoveryCandidates,
@@ -9,20 +10,9 @@ import {
   type DiscoveryCandidate,
 } from "../discovery-provider-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
-(async () => {
-  await test("normalizeLimit clamps and defaults", () => {
+describe("discovery-provider-core", () => {
+  it("normalizeLimit clamps and defaults", () => {
     assert.equal(normalizeLimit(undefined), 25);
     assert.equal(normalizeLimit(0), 25);
     assert.equal(normalizeLimit(-5), 25);
@@ -31,7 +21,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(normalizeLimit("12"), 12);
   });
 
-  await test("buildDiscoveryPrompt includes targeting facets and exclusions", () => {
+  it("buildDiscoveryPrompt includes targeting facets and exclusions", () => {
     const prompt = buildDiscoveryPrompt({
       criteria: {
         roles: ["CIO", "IT director"],
@@ -53,7 +43,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(prompt.toUpperCase().includes("JSON"));
   });
 
-  await test("parseDiscoveryCandidates parses a clean JSON array", () => {
+  it("parseDiscoveryCandidates parses a clean JSON array", () => {
     const text = JSON.stringify([
       { name: "Jane Doe", title: "CIO", companyName: "Acme", email: "jane@acme.com", linkedinUrl: null, sourceUrl: "https://acme.com/team" },
       { name: "John Roe", title: "IT Director", companyName: "Globex" },
@@ -67,14 +57,14 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(droppedCount, 0);
   });
 
-  await test("parseDiscoveryCandidates tolerates prose/code-fence wrapping", () => {
+  it("parseDiscoveryCandidates tolerates prose/code-fence wrapping", () => {
     const text = 'Here are the people I found:\n```json\n[{"name":"Amy Lin","companyName":"Initech"}]\n```\nLet me know!';
     const { candidates } = parseDiscoveryCandidates(text, "web", 25);
     assert.equal(candidates.length, 1);
     assert.equal(candidates[0].name, "Amy Lin");
   });
 
-  await test("parseDiscoveryCandidates drops rows without a name and respects limit", () => {
+  it("parseDiscoveryCandidates drops rows without a name and respects limit", () => {
     const text = JSON.stringify([
       { title: "no name" },
       { name: "  " },
@@ -85,13 +75,13 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(parseDiscoveryCandidates(text, "web", 1).candidates.length, 1); // limit honored
   });
 
-  await test("parseDiscoveryCandidates returns [] for non-JSON / empty", () => {
+  it("parseDiscoveryCandidates returns [] for non-JSON / empty", () => {
     assert.deepEqual(parseDiscoveryCandidates("no json here", "web", 25).candidates, []);
     assert.deepEqual(parseDiscoveryCandidates("", "web", 25).candidates, []);
     assert.deepEqual(parseDiscoveryCandidates("{}", "web", 25).candidates, []);
   });
 
-  await test("parseDiscoveryCandidates counts dropped rows in droppedCount", () => {
+  it("parseDiscoveryCandidates counts dropped rows in droppedCount", () => {
     const text = JSON.stringify([
       { title: "no name here" },
       { name: "SingleToken" },
@@ -105,7 +95,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(droppedCount, 4);
   });
 
-  await test("parseDiscoveryCandidates nulls unsafe linkedinUrl schemes", () => {
+  it("parseDiscoveryCandidates nulls unsafe linkedinUrl schemes", () => {
     const text = JSON.stringify([
       { name: "Alice Smith", companyName: "Acme", linkedinUrl: "javascript:alert(1)" },
       { name: "Bob Jones", companyName: "Acme", linkedinUrl: "data:text/html,<h1>hi</h1>" },
@@ -120,7 +110,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(candidates[3].linkedinUrl, null, "ftp: must be nulled");
   });
 
-  await test("parseDiscoveryCandidates passes through valid http/https linkedinUrl", () => {
+  it("parseDiscoveryCandidates passes through valid http/https linkedinUrl", () => {
     const text = JSON.stringify([
       { name: "Alice Smith", companyName: "Acme", linkedinUrl: "https://www.linkedin.com/in/alice-smith" },
       { name: "Bob Jones", companyName: "Acme", linkedinUrl: "http://linkedin.com/in/bob-jones" },
@@ -130,7 +120,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(candidates[1].linkedinUrl, "http://linkedin.com/in/bob-jones");
   });
 
-  await test("parseDiscoveryCandidates nulls unsafe sourceUrl schemes", () => {
+  it("parseDiscoveryCandidates nulls unsafe sourceUrl schemes", () => {
     const text = JSON.stringify([
       { name: "Alice Smith", companyName: "Acme", sourceUrl: "javascript:void(0)" },
       { name: "Bob Jones", companyName: "Acme", sourceUrl: "data:application/json,{}" },
@@ -142,7 +132,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(candidates[2].sourceUrl, null, "file: must be nulled");
   });
 
-  await test("parseDiscoveryCandidates passes through valid http/https sourceUrl", () => {
+  it("parseDiscoveryCandidates passes through valid http/https sourceUrl", () => {
     const text = JSON.stringify([
       { name: "Alice Smith", companyName: "Acme", sourceUrl: "https://acme.com/team/alice" },
       { name: "Bob Jones", companyName: "Acme", sourceUrl: "http://acme.com/about" },
@@ -152,7 +142,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(candidates[1].sourceUrl, "http://acme.com/about");
   });
 
-  await test("parseDiscoveryCandidates nulls malformed or relative URLs", () => {
+  it("parseDiscoveryCandidates nulls malformed or relative URLs", () => {
     const text = JSON.stringify([
       { name: "Alice Smith", companyName: "Acme", linkedinUrl: "not-a-url" },
       { name: "Bob Jones", companyName: "Acme", sourceUrl: "/relative/path" },
@@ -164,7 +154,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(candidates[2].linkedinUrl, null, "empty string must be nulled");
   });
 
-  await test("dedupeKeys derives email/linkedin/name+company keys", () => {
+  it("dedupeKeys derives email/linkedin/name+company keys", () => {
     assert.deepEqual(
       dedupeKeys({ email: "A@B.com", linkedinUrl: "https://li/in/x/", name: "Jo", companyName: "Co" }),
       ["email:a@b.com", "li:https://li/in/x", "nc:jo|co"],
@@ -172,7 +162,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.deepEqual(dedupeKeys({ name: "Jo" }), []); // name alone is not an identity
   });
 
-  await test("dedupeCandidates removes matches against existing prospects", () => {
+  it("dedupeCandidates removes matches against existing prospects", () => {
     const candidates: DiscoveryCandidate[] = [
       { name: "Jane", companyName: "Acme", email: "jane@acme.com", source: "web" },
       { name: "John", companyName: "Globex", linkedinUrl: "https://li/in/john", source: "web" },
@@ -187,7 +177,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(out[0].name, "New Person");
   });
 
-  await test("dedupeCandidates removes intra-list duplicates", () => {
+  it("dedupeCandidates removes intra-list duplicates", () => {
     const candidates: DiscoveryCandidate[] = [
       { name: "Dup", companyName: "Co", email: "dup@co.com", source: "web" },
       { name: "Dup", companyName: "Co", email: "dup@co.com", source: "web" },
@@ -195,7 +185,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(dedupeCandidates(candidates, []).length, 1);
   });
 
-  await test("candidateToAttributes maps to scorer shape", () => {
+  it("candidateToAttributes maps to scorer shape", () => {
     const attrs = candidateToAttributes({
       name: "Jane", title: "CIO", companyName: "Acme", industry: "PE", geography: "Seattle", segment: "mid-market", email: "j@a.com", linkedinUrl: "x", source: "web",
     });
@@ -205,9 +195,4 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(attrs.email, "j@a.com");
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll discovery-provider-core tests passed");
-})();
+});

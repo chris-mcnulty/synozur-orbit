@@ -45,47 +45,47 @@ describe("parseDiscoveryCandidates — name filtering", () => {
   it("passes a valid multi-token name", () => {
     const text = jsonText([jsonRow("Jane Smith")]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("Jane Smith");
+    expect(results.candidates).toHaveLength(1);
+    expect(results.candidates[0].name).toBe("Jane Smith");
   });
 
   it("passes a three-token name", () => {
     const text = jsonText([jsonRow("Mary Anne Johnson")]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(1);
-    expect(results[0].name).toBe("Mary Anne Johnson");
+    expect(results.candidates).toHaveLength(1);
+    expect(results.candidates[0].name).toBe("Mary Anne Johnson");
   });
 
   it("drops a single-token name (first name only)", () => {
     const text = jsonText([jsonRow("Alice")]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(0);
+    expect(results.candidates).toHaveLength(0);
   });
 
   it("drops an empty name string", () => {
     const text = jsonText([jsonRow("")]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(0);
+    expect(results.candidates).toHaveLength(0);
   });
 
   it("drops a whitespace-only name", () => {
     const text = jsonText([jsonRow("   ")]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(0);
+    expect(results.candidates).toHaveLength(0);
   });
 
   it("drops a null name", () => {
     const row = { ...jsonRow("placeholder"), name: null };
     const text = jsonText([row]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(0);
+    expect(results.candidates).toHaveLength(0);
   });
 
   it("drops rows missing the name key entirely", () => {
     const row: Record<string, unknown> = { title: "CEO", companyName: "Acme" };
     const text = jsonText([row]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(0);
+    expect(results.candidates).toHaveLength(0);
   });
 
   it("filters invalid rows while keeping valid ones in the same response", () => {
@@ -96,8 +96,8 @@ describe("parseDiscoveryCandidates — name filtering", () => {
       jsonRow("Bob Brown"),
     ]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(2);
-    expect(results.map((r) => r.name)).toEqual(["Jane Smith", "Bob Brown"]);
+    expect(results.candidates).toHaveLength(2);
+    expect(results.candidates.map((r) => r.name)).toEqual(["Jane Smith", "Bob Brown"]);
   });
 
   it("respects the limit even when more valid rows are present", () => {
@@ -105,7 +105,7 @@ describe("parseDiscoveryCandidates — name filtering", () => {
     const rows = names.map((n) => jsonRow(n));
     const text = jsonText(rows);
     const results = parseDiscoveryCandidates(text, "web", 3);
-    expect(results).toHaveLength(3);
+    expect(results.candidates).toHaveLength(3);
   });
 });
 
@@ -115,33 +115,33 @@ describe("parseDiscoveryCandidates — name filtering", () => {
 
 describe("parseDiscoveryCandidates — tolerance", () => {
   it("returns [] for empty input", () => {
-    expect(parseDiscoveryCandidates("", "web", 10)).toEqual([]);
+    expect(parseDiscoveryCandidates("", "web", 10).candidates).toEqual([]);
   });
 
   it("returns [] for non-JSON prose", () => {
-    expect(parseDiscoveryCandidates("No candidates found.", "web", 10)).toEqual([]);
+    expect(parseDiscoveryCandidates("No candidates found.", "web", 10).candidates).toEqual([]);
   });
 
   it("returns [] for malformed JSON", () => {
-    expect(parseDiscoveryCandidates("[{broken", "web", 10)).toEqual([]);
+    expect(parseDiscoveryCandidates("[{broken", "web", 10).candidates).toEqual([]);
   });
 
   it("extracts the array even when wrapped in markdown fences", () => {
     const text = "```json\n" + jsonText([jsonRow("Jane Smith")]) + "\n```";
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(1);
+    expect(results.candidates).toHaveLength(1);
   });
 
   it("extracts the array even when preceded by prose", () => {
     const text = "Here are the results:\n" + jsonText([jsonRow("Jane Smith")]);
     const results = parseDiscoveryCandidates(text, "web", 10);
-    expect(results).toHaveLength(1);
+    expect(results.candidates).toHaveLength(1);
   });
 
   it("stamps the correct source on every candidate", () => {
     const text = jsonText([jsonRow("Jane Smith"), jsonRow("Bob Brown")]);
     const results = parseDiscoveryCandidates(text, "salesnav", 10);
-    expect(results.every((r) => r.source === "salesnav")).toBe(true);
+    expect(results.candidates.every((r) => r.source === "salesnav")).toBe(true);
   });
 });
 

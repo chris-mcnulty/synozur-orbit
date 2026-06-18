@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   clampToLength,
   normalizeSlug,
@@ -16,21 +17,10 @@ import {
   longformFormatToAssetType,
 } from "../repurpose-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
-(async () => {
+describe("content-production-core", () => {
   // ── SEO/AEO core ──────────────────────────────────────────────────────────
-  await test("clampToLength trims at a word boundary, no mid-word cut", () => {
+  it("clampToLength trims at a word boundary, no mid-word cut", () => {
     assert.equal(clampToLength("short title", 60), "short title");
     const long = "This is a fairly long marketing title that definitely exceeds sixty characters in total";
     const clamped = clampToLength(long, SEO_TITLE_MAX)!;
@@ -40,13 +30,13 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(clampToLength("   ", 60), null);
   });
 
-  await test("normalizeSlug lowercases and hyphenates", () => {
+  it("normalizeSlug lowercases and hyphenates", () => {
     assert.equal(normalizeSlug("How To X: A Guide!"), "how-to-x-a-guide");
     assert.equal(normalizeSlug("  --Already-Slugged--  "), "already-slugged");
     assert.equal(normalizeSlug(""), null);
   });
 
-  await test("validateInternalLinks drops hallucinated and self links, dedupes, uses canonical title", () => {
+  it("validateInternalLinks drops hallucinated and self links, dedupes, uses canonical title", () => {
     const inventory = [
       { id: "a1", title: "Real Asset One" },
       { id: "a2", title: "Real Asset Two" },
@@ -65,7 +55,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(out[1].anchorText, "Real Asset Two"); // anchor fallback
   });
 
-  await test("parseOptimizationResponse applies guardrails + link validation", () => {
+  it("parseOptimizationResponse applies guardrails + link validation", () => {
     const inventory = [{ id: "k1", title: "Pillar Page" }];
     const json = JSON.stringify({
       seoTitle: "A".repeat(120),
@@ -92,13 +82,13 @@ async function test(name: string, fn: () => void | Promise<void>) {
   });
 
   // ── Repurpose core ────────────────────────────────────────────────────────
-  await test("coercePlatform maps x -> twitter and falls back to linkedin", () => {
+  it("coercePlatform maps x -> twitter and falls back to linkedin", () => {
     assert.equal(coercePlatform("X"), "twitter");
     assert.equal(coercePlatform("Twitter"), "twitter");
     assert.equal(coercePlatform("mastodon"), "linkedin");
   });
 
-  await test("clampForPlatform enforces twitter 280 at word boundary", () => {
+  it("clampForPlatform enforces twitter 280 at word boundary", () => {
     const long = "word ".repeat(100).trim();
     const clamped = clampForPlatform(long, "twitter");
     assert.ok(clamped.length <= 280);
@@ -107,7 +97,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(clampForPlatform(long, "linkedin"), long);
   });
 
-  await test("parseVariants normalizes hashtags, platforms, clamps, and reads imagePrompt", () => {
+  it("parseVariants normalizes hashtags, platforms, clamps, and reads imagePrompt", () => {
     const arr = JSON.stringify([
       { platform: "x", content: "Hello world", hashtags: ["#Growth", "demand gen"], angle: "stat", imagePrompt: "A bold chart on dark bg" },
       { platform: "linkedin", content: "  ", hashtags: [], angle: "" }, // empty content -> dropped
@@ -124,13 +114,13 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(variants[1].imagePrompt, null); // absent -> null
   });
 
-  await test("video_shot_list is a valid long-form format mapped to a video asset", () => {
+  it("video_shot_list is a valid long-form format mapped to a video asset", () => {
     assert.equal(isLongformRepurposeFormat("video_shot_list"), true);
     assert.equal(longformFormatToAssetType("video_shot_list"), "video");
     assert.equal(isLongformRepurposeFormat("not_a_format"), false);
   });
 
-  await test("extractCarouselSlides parses ### Slide headings with body lines", () => {
+  it("extractCarouselSlides parses ### Slide headings with body lines", () => {
     const body = [
       "### Slide 1: Hook the reader",
       "A punchy opener that grabs attention.",
@@ -152,7 +142,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(slides[2].headline, "The fix");
   });
 
-  await test("extractCarouselSlides handles headings without the Slide N prefix", () => {
+  it("extractCarouselSlides handles headings without the Slide N prefix", () => {
     const body = ["## Big idea", "Supporting detail.", "", "## Next idea", "More detail."].join("\n");
     const slides = extractCarouselSlides(body);
     assert.equal(slides.length, 2);
@@ -161,7 +151,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(slides[1].headline, "Next idea");
   });
 
-  await test("extractCarouselSlides falls back to blank-line blocks with no headings", () => {
+  it("extractCarouselSlides falls back to blank-line blocks with no headings", () => {
     const body = ["First slide headline", "first body", "", "Second slide headline", "second body"].join("\n");
     const slides = extractCarouselSlides(body);
     assert.equal(slides.length, 2);
@@ -170,7 +160,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(slides[1].headline, "Second slide headline");
   });
 
-  await test("extractCarouselSlides strips markdown emphasis and returns [] for empty", () => {
+  it("extractCarouselSlides strips markdown emphasis and returns [] for empty", () => {
     assert.deepEqual(extractCarouselSlides(""), []);
     assert.deepEqual(extractCarouselSlides("   \n  "), []);
     const slides = extractCarouselSlides("### Slide 1\n**Bold headline**\n_subtitle_");
@@ -178,9 +168,4 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(slides[0].headline, "Bold headline");
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll content-production-core tests passed");
-})();
+});

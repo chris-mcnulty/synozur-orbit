@@ -1,17 +1,7 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import { analyzeOutreachPerformance, type PerfProspect } from "../outreach-performance-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 // Build a prospect with a role-signal match flag and a status.
 function p(status: string, roleMatched: boolean): PerfProspect {
@@ -29,8 +19,8 @@ function p(status: string, roleMatched: boolean): PerfProspect {
   };
 }
 
-(async () => {
-  await test("funnel + reply rate over contacted", () => {
+describe("outreach-performance-core", () => {
+  it("funnel + reply rate over contacted", () => {
     const r = analyzeOutreachPerformance([
       p("new", true),
       p("researched", true),
@@ -44,7 +34,7 @@ function p(status: string, roleMatched: boolean): PerfProspect {
     assert.equal(r.funnel["new"], 1);
   });
 
-  await test("signal lift: role-matched prospects reply more → positive lift, recommendation", () => {
+  it("signal lift: role-matched prospects reply more → positive lift, recommendation", () => {
     const prospects: PerfProspect[] = [
       // role matched: 3 of 4 replied
       p("replied", true), p("replied", true), p("replied", true), p("awaiting_reply", true),
@@ -61,21 +51,16 @@ function p(status: string, roleMatched: boolean): PerfProspect {
     assert.ok(r.recommendations.some((x) => /Role/.test(x)));
   });
 
-  await test("small sample → cautious recommendation, no false signal claims", () => {
+  it("small sample → cautious recommendation, no false signal claims", () => {
     const r = analyzeOutreachPerformance([p("researched", true), p("awaiting_reply", true)]);
     assert.ok(r.recommendations.some((x) => /Too few/i.test(x)));
   });
 
-  await test("empty input is safe", () => {
+  it("empty input is safe", () => {
     const r = analyzeOutreachPerformance([]);
     assert.equal(r.total, 0);
     assert.equal(r.replyRate, 0);
     assert.equal(r.signals.length, 0);
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll outreach-performance-core tests passed");
-})();
+});

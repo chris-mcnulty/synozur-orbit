@@ -1,20 +1,10 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import { selectLinkedInCapabilities } from "../linkedin-provider-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
-(async () => {
-  await test("nothing connected → copy-assist only", () => {
+describe("linkedin-provider-core", () => {
+  it("nothing connected → copy-assist only", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: false, mcpConfigured: false });
     assert.equal(c.postBackend, "none");
     assert.equal(c.messageBackend, "none");
@@ -22,7 +12,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(c.canMessage, false);
   });
 
-  await test("MCP connected → posting via MCP, messaging always none", () => {
+  it("MCP connected → posting via MCP, messaging always none", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: false, mcpConfigured: true });
     assert.equal(c.postBackend, "mcp");
     assert.equal(c.messageBackend, "none");
@@ -30,7 +20,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(c.canMessage, false);
   });
 
-  await test("direct OAuth approved → posting via OAuth, messaging still none", () => {
+  it("direct OAuth approved → posting via OAuth, messaging still none", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: true, mcpConfigured: false });
     assert.equal(c.postBackend, "direct_oauth");
     assert.equal(c.canPost, true);
@@ -38,7 +28,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(c.canMessage, false);
   });
 
-  await test("both available → OAuth preferred for posting, messaging still none", () => {
+  it("both available → OAuth preferred for posting, messaging still none", () => {
     const c = selectLinkedInCapabilities({ directPublishEnabled: true, mcpConfigured: true });
     assert.equal(c.postBackend, "direct_oauth");
     assert.equal(c.messageBackend, "none");
@@ -46,9 +36,4 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(c.canMessage, false);
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll linkedin-provider-core tests passed");
-})();
+});

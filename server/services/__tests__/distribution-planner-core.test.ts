@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   formatToChannel,
   bestHourForChannel,
@@ -7,24 +8,13 @@ import {
   type PlanItemInput,
 } from "../distribution-planner-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 function items(n: number, format = "blog_post"): PlanItemInput[] {
   return Array.from({ length: n }, (_, i) => ({ id: `b${i}`, title: `Brief ${i}`, format }));
 }
 
-(async () => {
-  await test("formatToChannel maps formats", () => {
+describe("distribution-planner-core", () => {
+  it("formatToChannel maps formats", () => {
     assert.equal(formatToChannel("linkedin_post"), "linkedin");
     assert.equal(formatToChannel("x_post"), "twitter");
     assert.equal(formatToChannel("newsletter"), "email");
@@ -33,18 +23,18 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(formatToChannel("mystery"), "linkedin");
   });
 
-  await test("dateToTimeframe maps calendar quarters", () => {
+  it("dateToTimeframe maps calendar quarters", () => {
     assert.equal(dateToTimeframe(new Date(Date.UTC(2026, 0, 15))), "Q1");
     assert.equal(dateToTimeframe(new Date(Date.UTC(2026, 4, 1))), "Q2");
     assert.equal(dateToTimeframe(new Date(Date.UTC(2026, 7, 30))), "Q3");
     assert.equal(dateToTimeframe(new Date(Date.UTC(2026, 11, 31))), "Q4");
   });
 
-  await test("buildSchedule: empty in, empty out", () => {
+  it("buildSchedule: empty in, empty out", () => {
     assert.deepEqual(buildSchedule([], { periodStart: new Date(), periodEnd: new Date() }), []);
   });
 
-  await test("buildSchedule spreads items in order within the window", () => {
+  it("buildSchedule spreads items in order within the window", () => {
     const start = new Date(Date.UTC(2026, 0, 5)); // Mon
     const end = new Date(Date.UTC(2026, 0, 30)); // Fri
     const sched = buildSchedule(items(5), { periodStart: start, periodEnd: end, skipWeekends: true });
@@ -62,7 +52,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     }
   });
 
-  await test("buildSchedule single item lands at start, best hour for channel", () => {
+  it("buildSchedule single item lands at start, best hour for channel", () => {
     const start = new Date(Date.UTC(2026, 2, 2)); // Mon
     const sched = buildSchedule([{ id: "x", title: "T", format: "linkedin_post" }], {
       periodStart: start,
@@ -75,7 +65,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(new Date(sched[0].scheduledAt).getUTCDate(), 2);
   });
 
-  await test("buildSchedule places best-hour in the user's local timezone", () => {
+  it("buildSchedule places best-hour in the user's local timezone", () => {
     // UTC-5 -> getTimezoneOffset() = +300. LinkedIn best hour = 9 local.
     const sched = buildSchedule([{ id: "x", title: "T", format: "linkedin_post" }], {
       periodStart: new Date(Date.UTC(2026, 2, 2)),
@@ -90,7 +80,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(sched[0].timeframe, "Q1");
   });
 
-  await test("buildSchedule lets a brief's format win over its promo channels", () => {
+  it("buildSchedule lets a brief's format win over its promo channels", () => {
     // A blog_post's `channels` are amplification channels (where we promote it),
     // not where the deliverable publishes. The blog must schedule on "blog".
     const sched = buildSchedule(
@@ -100,7 +90,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(sched[0].channel, "blog");
   });
 
-  await test("buildSchedule falls back to preferredChannels for a generic format", () => {
+  it("buildSchedule falls back to preferredChannels for a generic format", () => {
     const sched = buildSchedule(
       [{ id: "x", title: "T", format: "other", preferredChannels: ["X"] }],
       { periodStart: new Date(Date.UTC(2026, 5, 1)), periodEnd: new Date(Date.UTC(2026, 5, 10)) },
@@ -108,7 +98,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(sched[0].channel, "twitter");
   });
 
-  await test("buildSchedule falls back to preferredChannels for an unmapped format (podcast_outline)", () => {
+  it("buildSchedule falls back to preferredChannels for an unmapped format (podcast_outline)", () => {
     const sched = buildSchedule(
       [{ id: "x", title: "T", format: "podcast_outline", preferredChannels: ["email"] }],
       { periodStart: new Date(Date.UTC(2026, 5, 1)), periodEnd: new Date(Date.UTC(2026, 5, 10)) },
@@ -116,7 +106,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(sched[0].channel, "email");
   });
 
-  await test("buildSchedule steers a single item off an already-busy day", () => {
+  it("buildSchedule steers a single item off an already-busy day", () => {
     // Ideal lands on Mon Mar 2 but it's already crowded → nudges to an open day.
     const sched = buildSchedule([{ id: "x", title: "T", format: "blog_post" }], {
       periodStart: new Date(Date.UTC(2026, 2, 2)), // Mon
@@ -131,7 +121,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.ok(day !== 0 && day !== 6, "weekday only");
   });
 
-  await test("buildSchedule does not cluster many items on the same busy day", () => {
+  it("buildSchedule does not cluster many items on the same busy day", () => {
     const sched = buildSchedule(items(4, "blog_post"), {
       periodStart: new Date(Date.UTC(2026, 2, 2)),
       periodEnd: new Date(Date.UTC(2026, 2, 27)),
@@ -141,7 +131,7 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.equal(new Set(dayKeys).size, dayKeys.length, "each item on a distinct day");
   });
 
-  await test("buildSchedule with empty existing load matches plain spread", () => {
+  it("buildSchedule with empty existing load matches plain spread", () => {
     const opts = {
       periodStart: new Date(Date.UTC(2026, 0, 5)),
       periodEnd: new Date(Date.UTC(2026, 0, 30)),
@@ -152,9 +142,4 @@ function items(n: number, format = "blog_post"): PlanItemInput[] {
     assert.deepEqual(a.map((s) => s.scheduledAt), b.map((s) => s.scheduledAt));
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll distribution-planner-core tests passed");
-})();
+});

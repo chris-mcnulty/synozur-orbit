@@ -1,24 +1,14 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   buildIdeationPrompt,
   parseCampaignIdeas,
   formatNewsForPrompt,
 } from "../campaign-ideation-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
-(async () => {
-  await test("formatNewsForPrompt skips empty subjects and lists headlines", () => {
+describe("campaign-ideation-core", () => {
+  it("formatNewsForPrompt skips empty subjects and lists headlines", () => {
     const block = formatNewsForPrompt([
       { subject: "Acme AI", headlines: [{ title: "Acme raises $50M", source: "techcrunch.com", snippet: "Funding round" }] },
       { subject: "Quiet Co", headlines: [] },
@@ -29,11 +19,11 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(!block.includes("Quiet Co"), "subjects with no headlines are omitted");
   });
 
-  await test("formatNewsForPrompt returns empty string when no headlines anywhere", () => {
+  it("formatNewsForPrompt returns empty string when no headlines anywhere", () => {
     assert.equal(formatNewsForPrompt([{ subject: "X", headlines: [] }]), "");
   });
 
-  await test("buildIdeationPrompt weaves message, grounding, intel, news, and count", () => {
+  it("buildIdeationPrompt weaves message, grounding, intel, news, and count", () => {
     const prompt = buildIdeationPrompt({
       message: "Push our zero-trust angle",
       strategicBlock: "## Messaging & Positioning Framework\nWe lead on trust.",
@@ -49,13 +39,13 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(prompt.includes("theme | event | offering"));
   });
 
-  await test("buildIdeationPrompt omits the message block when none given", () => {
+  it("buildIdeationPrompt omits the message block when none given", () => {
     const prompt = buildIdeationPrompt({ strategicBlock: "S", intelBlock: "", news: [], count: 4 });
     assert.ok(!prompt.includes("intended message"));
     assert.ok(prompt.includes("Propose 4 distinct"));
   });
 
-  await test("parseCampaignIdeas parses {ideas:[...]}, coerces type, drops invalid", () => {
+  it("parseCampaignIdeas parses {ideas:[...]}, coerces type, drops invalid", () => {
     const text = "```json\n" + JSON.stringify({
       ideas: [
         { title: "Trust Launch", campaignType: "Offering", objective: "Promote the trust suite", suggestedAudience: ["CISO at mid-market SaaS"], rationale: "ZT surge", signals: ["ZT adoption surges"] },
@@ -72,7 +62,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.deepEqual(ideas[1].suggestedAudience, ["Security leaders"]); // string -> array
   });
 
-  await test("parseCampaignIdeas falls back to bare array and unknown type -> theme", () => {
+  it("parseCampaignIdeas falls back to bare array and unknown type -> theme", () => {
     const ideas = parseCampaignIdeas(JSON.stringify([
       { title: "Idea", campaignType: "newsletter", objective: "Do a thing" },
     ]));
@@ -80,9 +70,4 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(ideas[0].campaignType, "theme");
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll campaign-ideation-core tests passed");
-})();
+});

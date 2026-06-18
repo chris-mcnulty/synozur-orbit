@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   suggestReleaseWindows,
   clampAmplificationEnd,
@@ -20,29 +21,18 @@ import {
   type BriefInterviewInput,
 } from "../brief-interview-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-(async () => {
-  await test("suggestReleaseWindows: ramp-up 6 weeks before, amplification 45 days after", () => {
+describe("brief-interview-core", () => {
+  it("suggestReleaseWindows: ramp-up 6 weeks before, amplification 45 days after", () => {
     const release = new Date("2026-09-01T00:00:00Z");
     const w = suggestReleaseWindows(release);
     assert.equal((release.getTime() - w.rampUpStart.getTime()) / DAY_MS, DEFAULT_RAMP_UP_DAYS);
     assert.equal((w.amplificationEnd.getTime() - release.getTime()) / DAY_MS, DEFAULT_AMPLIFICATION_DAYS);
   });
 
-  await test("clampAmplificationEnd: enforces the 30-day floor", () => {
+  it("clampAmplificationEnd: enforces the 30-day floor", () => {
     const release = new Date("2026-09-01T00:00:00Z");
     const tooSoon = addDays(release, 10);
     const clamped = clampAmplificationEnd(release, tooSoon);
@@ -57,7 +47,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     );
   });
 
-  await test("suggestReleaseTempo covers ramp-up, launch week, amplification", () => {
+  it("suggestReleaseTempo covers ramp-up, launch week, amplification", () => {
     const phases = suggestReleaseTempo();
     assert.deepEqual(phases.map((p) => p.phase), ["ramp_up", "launch_week", "amplification"]);
     const text = formatTempoForDisplay(phases);
@@ -65,7 +55,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(text.split("\n").length, 3);
   });
 
-  await test("clampBriefCount clamps to 5-10 and defaults to 8", () => {
+  it("clampBriefCount clamps to 5-10 and defaults to 8", () => {
     assert.equal(clampBriefCount(undefined), 8);
     assert.equal(clampBriefCount(1), 5);
     assert.equal(clampBriefCount(25), 10);
@@ -73,7 +63,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(clampBriefCount("nope" as any), 8);
   });
 
-  await test("formatInterviewForPrompt includes release windows, product, and news", () => {
+  it("formatInterviewForPrompt includes release windows, product, and news", () => {
     const input: BriefInterviewInput = {
       campaignType: "product_release",
       themes: ["Theme A", "Theme B"],
@@ -98,7 +88,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.ok(block.includes("Keep it technical"));
   });
 
-  await test("formatInterviewForPrompt omits release lines for a theme campaign", () => {
+  it("formatInterviewForPrompt omits release lines for a theme campaign", () => {
     const block = formatInterviewForPrompt({
       campaignType: "theme",
       themes: ["POV"],
@@ -109,7 +99,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.ok(block.includes("Campaign timeframe: 2026-07-01 to 2026-08-01"));
   });
 
-  await test("coerceFitAssessment defaults recommendation from weak fits", () => {
+  it("coerceFitAssessment defaults recommendation from weak fits", () => {
     const weak = coerceFitAssessment({ voiceFit: "weak", topicFit: "strong" });
     assert.equal(weak.recommendation, "reject");
     const strong = coerceFitAssessment({ voiceFit: "strong", topicFit: "strong" });
@@ -121,7 +111,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(garbage.voiceFit, "moderate");
   });
 
-  await test("coerceFormCategories normalizes and dedupes", () => {
+  it("coerceFormCategories normalizes and dedupes", () => {
     assert.deepEqual(coerceFormCategories(["short_form", "Short-Form", "mid form", "bogus"]), [
       "short_form",
       "mid_form",
@@ -133,7 +123,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.deepEqual(coerceFormCategories(undefined), []);
   });
 
-  await test("normalizeInterviewBrief falls back to the anchor format's category", () => {
+  it("normalizeInterviewBrief falls back to the anchor format's category", () => {
     const b = normalizeInterviewBrief({
       title: "Concept",
       format: "webinar",
@@ -146,17 +136,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(b!.fitAssessment.recommendation, "keep");
   });
 
-  await test("normalizeInterviewBrief leaves categories empty for an unmapped anchor format", () => {
+  it("normalizeInterviewBrief leaves categories empty for an unmapped anchor format", () => {
     const b = normalizeInterviewBrief({ title: "Concept", format: "other" });
     assert.ok(b);
     assert.deepEqual(b!.formCategories, []);
   });
 
-  await test("normalizeInterviewBrief returns null without a title", () => {
+  it("normalizeInterviewBrief returns null without a title", () => {
     assert.equal(normalizeInterviewBrief({ summary: "no title" }), null);
   });
 
-  await test("distributeDates: single date lands on window start", () => {
+  it("distributeDates: single date lands on window start", () => {
     const start = new Date("2026-09-01T00:00:00Z");
     const end = new Date("2026-09-30T00:00:00Z");
     const dates = distributeDates(start, end, 1);
@@ -164,7 +154,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(dates[0].getTime(), start.getTime());
   });
 
-  await test("distributeDates: spreads evenly from start to end", () => {
+  it("distributeDates: spreads evenly from start to end", () => {
     const start = new Date("2026-09-01T00:00:00Z");
     const end = new Date("2026-09-29T00:00:00Z");
     const dates = distributeDates(start, end, 3);
@@ -174,7 +164,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal((dates[1].getTime() - start.getTime()) / DAY_MS, 14);
   });
 
-  await test("distributeDates: clamps count and inverted windows", () => {
+  it("distributeDates: clamps count and inverted windows", () => {
     const start = new Date("2026-09-10T00:00:00Z");
     const end = new Date("2026-09-01T00:00:00Z");
     const dates = distributeDates(start, end, 0);
@@ -183,7 +173,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(distributeDates(start, start, 99).length, 10);
   });
 
-  await test("scheduleAtLocalHour pins the UTC day to a local wall-clock hour", () => {
+  it("scheduleAtLocalHour pins the UTC day to a local wall-clock hour", () => {
     // A mid-window distributed instant (12:00 UTC on Sep 15) for a UTC user.
     const d = new Date("2026-09-15T12:00:00Z");
     assert.equal(scheduleAtLocalHour(d, 9, 0).toISOString(), "2026-09-15T09:00:00.000Z");
@@ -193,20 +183,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
     assert.equal(scheduleAtLocalHour(d, 9, -600).toISOString(), "2026-09-14T23:00:00.000Z");
   });
 
-  await test("deliverableTitle numbers multi-piece items only", () => {
+  it("deliverableTitle numbers multi-piece items only", () => {
     assert.equal(deliverableTitle("Concept", "press_release", 0, 1), "Concept — Press release");
     assert.equal(deliverableTitle("Concept", "linkedin_post", 1, 3), "Concept — LinkedIn post 2 of 3");
   });
 
-  await test("categoriesForFormat maps new formats", () => {
+  it("categoriesForFormat maps new formats", () => {
     assert.deepEqual(categoriesForFormat("webinar"), ["digital_interactive"]);
     assert.deepEqual(categoriesForFormat("press_release"), ["mid_form"]);
     assert.deepEqual(categoriesForFormat("other"), []);
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll brief-interview-core tests passed");
-})();
+});

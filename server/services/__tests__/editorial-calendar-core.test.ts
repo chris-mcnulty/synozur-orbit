@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   coerceFormat,
   coerceFunnelStage,
@@ -13,17 +14,6 @@ import {
   type DraftBrief,
 } from "../editorial-calendar-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 function brief(over: Partial<DraftBrief> = {}): DraftBrief {
   return {
@@ -41,20 +31,20 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
   };
 }
 
-(async () => {
-  await test("coerceFormat normalizes and falls back to other", () => {
+describe("editorial-calendar-core", () => {
+  it("coerceFormat normalizes and falls back to other", () => {
     assert.equal(coerceFormat("Blog Post"), "blog_post");
     assert.equal(coerceFormat("linkedin-post"), "linkedin_post");
     assert.equal(coerceFormat("tweet"), "other");
     assert.equal(coerceFormat(undefined), "other");
   });
 
-  await test("coerceFunnelStage falls back to awareness", () => {
+  it("coerceFunnelStage falls back to awareness", () => {
     assert.equal(coerceFunnelStage("Decision"), "decision");
     assert.equal(coerceFunnelStage("middle"), "awareness");
   });
 
-  await test("normalizeBrief maps snake_case and rejects empty titles", () => {
+  it("normalizeBrief maps snake_case and rejects empty titles", () => {
     assert.equal(normalizeBrief({ title: "  " }), null);
     const b = normalizeBrief({
       title: "How to X",
@@ -76,7 +66,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.equal(b!.estimatedHours, 3);
   });
 
-  await test("computeFunnelBreakdown counts and percentages", () => {
+  it("computeFunnelBreakdown counts and percentages", () => {
     const briefs = [
       brief({ funnelStage: "awareness" }),
       brief({ funnelStage: "awareness" }),
@@ -90,7 +80,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.equal(r.percentages.decision, 25);
   });
 
-  await test("warnings flag too-few briefs, concentration, and missing fields", () => {
+  it("warnings flag too-few briefs, concentration, and missing fields", () => {
     const briefs = [
       brief({ funnelStage: "awareness", demandSignal: null }),
       brief({ funnelStage: "awareness" }),
@@ -103,7 +93,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.ok(w.some((x) => x.includes("differentiation")), "expected differentiation warning");
   });
 
-  await test("a healthy 15-brief calendar produces no warnings", () => {
+  it("a healthy 15-brief calendar produces no warnings", () => {
     const briefs: DraftBrief[] = [];
     // 6 awareness (40%), 5 consideration (~33%), 4 decision (~27%)
     for (let i = 0; i < 6; i++) briefs.push(brief({ funnelStage: "awareness" }));
@@ -112,7 +102,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.deepEqual(assessCalendarWarnings(briefs), []);
   });
 
-  await test("briefFormatToAssetType maps to contentAssets enum", () => {
+  it("briefFormatToAssetType maps to contentAssets enum", () => {
     assert.equal(briefFormatToAssetType("blog_post"), "blog_post");
     assert.equal(briefFormatToAssetType("whitepaper"), "whitepaper");
     assert.equal(briefFormatToAssetType("ebook"), "whitepaper");
@@ -122,7 +112,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.equal(briefFormatToAssetType("linkedin_post"), "other");
   });
 
-  await test("parseDraftResponse splits title/body/meta and strips fences", () => {
+  it("parseDraftResponse splits title/body/meta and strips fences", () => {
     const text = "```markdown\n===TITLE===\nHow to X\n===BODY===\n# How to X\n\nSome **body** text.\n===META===\nA short summary.\n```";
     const p = parseDraftResponse(text);
     assert.equal(p.title, "How to X");
@@ -132,14 +122,14 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.equal(p.meta, "A short summary.");
   });
 
-  await test("parseDraftResponse falls back to whole text as body", () => {
+  it("parseDraftResponse falls back to whole text as body", () => {
     const p = parseDraftResponse("Just a plain draft with no markers.");
     assert.equal(p.title, null);
     assert.equal(p.meta, null);
     assert.equal(p.body, "Just a plain draft with no markers.");
   });
 
-  await test("recommendedBriefCount sums the asset mix per type", () => {
+  it("recommendedBriefCount sums the asset mix per type", () => {
     for (const type of ["theme", "event", "offering"] as const) {
       const expected = RECOMMENDED_ASSET_MIX[type].reduce((s, m) => s + m.count, 0);
       assert.equal(recommendedBriefCount(type), expected);
@@ -147,7 +137,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     }
   });
 
-  await test("formatCampaignContextForPrompt includes intent, audience, and mix", () => {
+  it("formatCampaignContextForPrompt includes intent, audience, and mix", () => {
     const block = formatCampaignContextForPrompt({
       type: "event",
       name: "June Security Webinar",
@@ -165,7 +155,7 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.ok(/newsletter/.test(block), "includes the recommended asset mix");
   });
 
-  await test("formatCampaignContextForPrompt omits empty optional fields", () => {
+  it("formatCampaignContextForPrompt omits empty optional fields", () => {
     const block = formatCampaignContextForPrompt({
       type: "theme",
       name: "Always-On Thought Leadership",
@@ -180,9 +170,4 @@ function brief(over: Partial<DraftBrief> = {}): DraftBrief {
     assert.ok(!block.includes("Target audience"), "no audience block when empty");
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll editorial-calendar-core tests passed");
-})();
+});

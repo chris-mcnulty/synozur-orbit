@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   buildComposePrompt,
   parseComposeResponse,
@@ -7,20 +8,9 @@ import {
   CHANNEL_LIMITS,
 } from "../outreach-composer-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
-(async () => {
-  await test("email prompt asks for subject + body and includes dossier", () => {
+describe("outreach-composer-core", () => {
+  it("email prompt asks for subject + body and includes dossier", () => {
     const p = buildComposePrompt({
       channel: "email",
       stepNumber: 1,
@@ -37,7 +27,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(p.includes("Book a discovery call"));
   });
 
-  await test("linkedin prompt omits subject and uses the shorter limit", () => {
+  it("linkedin prompt omits subject and uses the shorter limit", () => {
     const p = buildComposePrompt({
       channel: "linkedin",
       stepNumber: 2,
@@ -49,7 +39,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(p.includes(String(CHANNEL_LIMITS.linkedin.maxChars)));
   });
 
-  await test("resource is woven into the prompt when present", () => {
+  it("resource is woven into the prompt when present", () => {
     const p = buildComposePrompt({
       channel: "email",
       stepNumber: 1,
@@ -61,41 +51,36 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(p.includes("https://x.co/rsvp"));
   });
 
-  await test("parseComposeResponse splits subject/body for email", () => {
+  it("parseComposeResponse splits subject/body for email", () => {
     const r = parseComposeResponse("===SUBJECT===\nQuick question\n===BODY===\nHi Jane — worth a call?", "email");
     assert.equal(r.subject, "Quick question");
     assert.equal(r.body, "Hi Jane — worth a call?");
   });
 
-  await test("parseComposeResponse forces null subject for linkedin", () => {
+  it("parseComposeResponse forces null subject for linkedin", () => {
     const r = parseComposeResponse("===BODY===\nHey Sam, saw your post.", "linkedin");
     assert.equal(r.subject, null);
     assert.equal(r.body, "Hey Sam, saw your post.");
   });
 
-  await test("parse falls back to whole text as body when unformatted", () => {
+  it("parse falls back to whole text as body when unformatted", () => {
     const r = parseComposeResponse("Just a plain draft.", "email");
     assert.equal(r.body, "Just a plain draft.");
   });
 
-  await test("enforceLength trims linkedin body to the cap on a word boundary", () => {
+  it("enforceLength trims linkedin body to the cap on a word boundary", () => {
     const long = "word ".repeat(300); // 1500 chars
     const out = enforceLength(long, "linkedin");
     assert.ok(out.length <= CHANNEL_LIMITS.linkedin.maxChars + 1);
     assert.ok(out.endsWith("…"));
   });
 
-  await test("enforceLength leaves short bodies untouched", () => {
+  it("enforceLength leaves short bodies untouched", () => {
     assert.equal(enforceLength("short", "email"), "short");
   });
 
-  await test("purposeGuidance returns intro guidance for unknown purpose", () => {
+  it("purposeGuidance returns intro guidance for unknown purpose", () => {
     assert.equal(purposeGuidance("mystery"), purposeGuidance("intro"));
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll outreach-composer-core tests passed");
-})();
+});

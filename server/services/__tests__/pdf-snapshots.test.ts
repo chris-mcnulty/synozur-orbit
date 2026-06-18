@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { strict as assert } from "node:assert";
 import { fileURLToPath } from "node:url";
+import { describe, it } from "vitest";
 import {
   markdownToHtml,
   renderFrameworkContent,
@@ -144,43 +145,13 @@ Plan reviewed quarterly. Source data at [orbit.example.com/gtm](https://orbit.ex
   },
 ];
 
-let failures = 0;
-for (const c of cases) {
-  const fixturePath = path.join(FIXTURE_DIR, c.fixture);
-  const actual = c.render();
-  if (UPDATE || !fs.existsSync(fixturePath)) {
-    fs.writeFileSync(fixturePath, actual, "utf-8");
-    console.log(`[snapshot] wrote ${c.fixture} (${actual.length} bytes)`);
-    continue;
-  }
-  const expected = fs.readFileSync(fixturePath, "utf-8");
-  try {
-    assert.equal(actual, expected, `Snapshot drift for ${c.name}`);
-    console.log(`[snapshot] OK  ${c.fixture}`);
-  } catch (err) {
-    failures += 1;
-    console.error(`[snapshot] FAIL ${c.fixture}`);
-    const aLines = actual.split("\n");
-    const eLines = expected.split("\n");
-    const max = Math.min(aLines.length, eLines.length);
-    for (let i = 0; i < max; i++) {
-      if (aLines[i] !== eLines[i]) {
-        console.error(`  line ${i + 1}:`);
-        console.error(`    expected: ${eLines[i]}`);
-        console.error(`    actual:   ${aLines[i]}`);
-        break;
-      }
-    }
-    if (aLines.length !== eLines.length) {
-      console.error(`  expected ${eLines.length} lines, got ${aLines.length}`);
-    }
-  }
-}
+const dangerousUnescaped = [
+  /<script\b/i,
+  /<img\b[^>]*onerror=/i,
+  /<iframe\b/i,
+  /<svg\b[^>]*onload=/i,
+];
 
-// Security checks: ensure user/AI-authored markdown cannot inject live HTML
-// into the rendered PDF. We look for *unescaped* dangerous tokens — escaped
-// forms like `&lt;script&gt;` are safe because the browser/renderer will not
-// execute them.
 const securityCases: Array<{ name: string; input: string }> = [
   {
     name: "table cells escape HTML",
@@ -201,33 +172,27 @@ const securityCases: Array<{ name: string; input: string }> = [
     input: `Hello <img src=x onerror=alert(1)> world`,
   },
 ];
-const dangerousUnescaped = [
-  /<script\b/i,
-  /<img\b[^>]*onerror=/i,
-  /<iframe\b/i,
-  /<svg\b[^>]*onload=/i,
-];
-for (const sc of securityCases) {
-  const out = markdownToHtml(sc.input);
-  let bad: RegExp | null = null;
-  for (const re of dangerousUnescaped) {
-    if (re.test(out)) {
-      bad = re;
-      break;
-    }
-  }
-  if (bad) {
-    failures += 1;
-    console.error(`[security] FAIL ${sc.name}: output matched ${bad}`);
-    console.error(out);
-  } else {
-    console.log(`[security] OK  ${sc.name}`);
-  }
-}
 
-if (failures > 0) {
-  console.error(`\n${failures} snapshot/security check(s) failed.`);
-  console.error(`Run with UPDATE_SNAPSHOTS=1 to refresh fixtures after intentional changes.`);
-  process.exit(1);
-}
-console.log(`\nAll ${cases.length + securityCases.length} checks passed.`);
+describe("pdf-snapshots", () => {
+  for (const c of cases) {
+    it(`snapshot: ${c.name}`, () => {
+      const fixturePath = path.join(FIXTURE_DIR, c.fixture);
+      const actual = c.render();
+      if (UPDATE || !fs.existsSync(fixturePath)) {
+        fs.writeFileSync(fixturePath, actual, "utf-8");
+        return;
+      }
+      const expected = fs.readFileSync(fixturePath, "utf-8");
+      assert.equal(actual, expected, `Snapshot drift for ${c.name}. Run with UPDATE_SNAPSHOTS=1 to refresh.`);
+    });
+  }
+
+  for (const sc of securityCases) {
+    it(`security: ${sc.name}`, () => {
+      const out = markdownToHtml(sc.input);
+      for (const re of dangerousUnescaped) {
+        assert.ok(!re.test(out), `Output matched dangerous pattern ${re} for case: ${sc.name}\n${out}`);
+      }
+    });
+  }
+});

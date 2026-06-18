@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   runWithConcurrency,
   runLanesInParallel,
@@ -6,25 +7,14 @@ import {
   AI_CONCURRENCY,
 } from "../promise-pool";
 
-let failures = 0;
-async function test(name: string, fn: () => Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-async function main() {
+describe("promise-pool", () => {
   // ---------------------------------------------------------------
   // runWithConcurrency
   // ---------------------------------------------------------------
-  await test("runWithConcurrency: empty input is a no-op", async () => {
+  it("runWithConcurrency: empty input is a no-op", async () => {
     let called = 0;
     await runWithConcurrency<number>([], 4, async () => {
       called++;
@@ -32,7 +22,7 @@ async function main() {
     assert.equal(called, 0);
   });
 
-  await test("runWithConcurrency: visits every item exactly once", async () => {
+  it("runWithConcurrency: visits every item exactly once", async () => {
     const items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const seen: number[] = [];
     await runWithConcurrency(items, 3, async (item) => {
@@ -42,7 +32,7 @@ async function main() {
     assert.deepEqual([...seen].sort((a, b) => a - b), items);
   });
 
-  await test("runWithConcurrency: never exceeds the concurrency cap", async () => {
+  it("runWithConcurrency: never exceeds the concurrency cap", async () => {
     const items = Array.from({ length: 20 }, (_, i) => i);
     let inFlight = 0;
     let peak = 0;
@@ -57,7 +47,7 @@ async function main() {
     assert.equal(peak >= 2, true, `peak=${peak} suggests no real parallelism`);
   });
 
-  await test("runWithConcurrency: results written by worker index preserve input order", async () => {
+  it("runWithConcurrency: results written by worker index preserve input order", async () => {
     // Even though items run concurrently with non-deterministic completion
     // order, writing into a pre-sized array by `index` must yield a result
     // array equal to a 1:1 transform of the input.
@@ -71,7 +61,7 @@ async function main() {
     assert.deepEqual(results, items.map((s) => s.toUpperCase()));
   });
 
-  await test("runWithConcurrency: a worker error propagates (worker is responsible for catching)", async () => {
+  it("runWithConcurrency: a worker error propagates (worker is responsible for catching)", async () => {
     let err: unknown = null;
     try {
       await runWithConcurrency([1, 2, 3], 2, async (n) => {
@@ -87,7 +77,7 @@ async function main() {
   // ---------------------------------------------------------------
   // aiLimiter (Semaphore)
   // ---------------------------------------------------------------
-  await test("aiLimiter.anthropic: caps in-flight calls at AI_CONCURRENCY.anthropic (3)", async () => {
+  it("aiLimiter.anthropic: caps in-flight calls at AI_CONCURRENCY.anthropic (3)", async () => {
     let inFlight = 0;
     let peak = 0;
     const tasks: Promise<void>[] = [];
@@ -110,7 +100,7 @@ async function main() {
     assert.equal(peak >= 2, true, `peak=${peak} suggests no real parallelism`);
   });
 
-  await test("aiLimiter: a rejecting task releases its slot for waiters", async () => {
+  it("aiLimiter: a rejecting task releases its slot for waiters", async () => {
     // Saturate the limiter, then enqueue a rejecting task and a successful
     // one. The successful one must still run.
     const blockers: Array<{ resolve: () => void }> = [];
@@ -160,7 +150,7 @@ async function main() {
   // through this helper and we assert the invariants the pipeline
   // depends on.
   // ---------------------------------------------------------------
-  await test("runLanesInParallel: all four lanes run, counter advances 3 -> 6", async () => {
+  it("runLanesInParallel: all four lanes run, counter advances 3 -> 6", async () => {
     const progress = { stepsCompleted: 3 };
     const ran: string[] = [];
     const settled: string[] = [];
@@ -214,7 +204,7 @@ async function main() {
     assert.equal(progress.stepsCompleted, 6, "counter must land on baseStep + stepSpan");
   });
 
-  await test("runLanesInParallel: a thrown lane does NOT abort the others", async () => {
+  it("runLanesInParallel: a thrown lane does NOT abort the others", async () => {
     const progress = { stepsCompleted: 3 };
     const ran: string[] = [];
     const settled: Array<{ label: string; ok: boolean }> = [];
@@ -275,7 +265,7 @@ async function main() {
     assert.equal(progress.stepsCompleted, 6);
   });
 
-  await test("runLanesInParallel: lanes execute concurrently, not serially", async () => {
+  it("runLanesInParallel: lanes execute concurrently, not serially", async () => {
     const progress = { stepsCompleted: 3 };
     const PER_LANE_MS = 30;
     const start = Date.now();
@@ -299,7 +289,7 @@ async function main() {
     assert.equal(progress.stepsCompleted, 6);
   });
 
-  await test("runLanesInParallel: matches pipeline progression — 3 baseline + 3 lanes + post-lane bump = 7", async () => {
+  it("runLanesInParallel: matches pipeline progression — 3 baseline + 3 lanes + post-lane bump = 7", async () => {
     // This mirrors the regeneration pipeline: stepsCompleted starts at 3
     // before the parallel phase, lanes advance it to 6, and post-lane
     // bookkeeping bumps it to 7. We simulate the post-lane bump after the
@@ -321,23 +311,10 @@ async function main() {
     assert.equal(progress.stepsCompleted, 7);
   });
 
-  await test("runLanesInParallel: empty lane list is a no-op", async () => {
+  it("runLanesInParallel: empty lane list is a no-op", async () => {
     const progress = { stepsCompleted: 3 };
     await runLanesInParallel([], progress, { baseStep: 3, stepSpan: 3 });
     assert.equal(progress.stepsCompleted, 3);
   });
 
-  // ---------------------------------------------------------------
-  // Done
-  // ---------------------------------------------------------------
-  if (failures > 0) {
-    console.error(`\n${failures} check(s) failed.`);
-    process.exit(1);
-  }
-  console.log(`\nAll checks passed.`);
-}
-
-main().catch((err) => {
-  console.error("Test harness crashed:", err);
-  process.exit(1);
 });

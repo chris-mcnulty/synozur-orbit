@@ -1,20 +1,10 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   deriveSalesReadiness,
   type SalesReadinessInputs,
 } from "../sales-outreach-readiness-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 // A fully-ready tenant + seller.
 function ready(): SalesReadinessInputs {
@@ -36,8 +26,8 @@ function status(report: ReturnType<typeof deriveSalesReadiness>, key: string) {
   return report.items.find((i) => i.key === key)?.status;
 }
 
-(async () => {
-  await test("all signals present → ready, score 100", () => {
+describe("sales-outreach-readiness-core", () => {
+  it("all signals present → ready, score 100", () => {
     const r = deriveSalesReadiness(ready());
     assert.equal(r.overall, "ready");
     assert.equal(r.score, 100);
@@ -45,7 +35,7 @@ function status(report: ReturnType<typeof deriveSalesReadiness>, key: string) {
     assert.equal(r.thinCount, 0);
   });
 
-  await test("empty tenant → incomplete, key fields missing", () => {
+  it("empty tenant → incomplete, key fields missing", () => {
     const r = deriveSalesReadiness({
       personaCount: 0,
       icpPersonaCount: 0,
@@ -67,30 +57,25 @@ function status(report: ReturnType<typeof deriveSalesReadiness>, key: string) {
     assert.equal(status(r, "objections"), "thin");
   });
 
-  await test("personas without ICP flag → thin", () => {
+  it("personas without ICP flag → thin", () => {
     const r = deriveSalesReadiness({ ...ready(), icpPersonaCount: 0 });
     assert.equal(status(r, "icp"), "thin");
   });
 
-  await test("firm voice but no personal voice → thin", () => {
+  it("firm voice but no personal voice → thin", () => {
     const r = deriveSalesReadiness({ ...ready(), hasPersonalVoiceProfile: false });
     assert.equal(status(r, "voiceProfile"), "thin");
   });
 
-  await test("mailbox connected without mail scope → thin", () => {
+  it("mailbox connected without mail scope → thin", () => {
     const r = deriveSalesReadiness({ ...ready(), mailboxCanDraft: false });
     assert.equal(status(r, "mailbox"), "thin");
   });
 
-  await test("counts and score stay consistent", () => {
+  it("counts and score stay consistent", () => {
     const r = deriveSalesReadiness(ready());
     assert.equal(r.readyCount + r.thinCount + r.missingCount, r.totalCount);
     assert.ok(r.score >= 0 && r.score <= 100);
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll sales-outreach-readiness-core tests passed");
-})();
+});

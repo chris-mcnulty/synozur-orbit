@@ -1,24 +1,14 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import { scanCompliance } from "../compliance-core";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
 function kinds(r: ReturnType<typeof scanCompliance>) {
   return r.flags.map((f) => f.kind);
 }
 
-(async () => {
-  await test("clean email passes with no flags", () => {
+describe("compliance-core", () => {
+  it("clean email passes with no flags", () => {
     const r = scanCompliance({
       channel: "email",
       subject: "Quick question on your AI rollout",
@@ -30,7 +20,7 @@ function kinds(r: ReturnType<typeof scanCompliance>) {
     assert.equal(r.flags.length, 0);
   });
 
-  await test("clichés are flagged (advisory, still passes)", () => {
+  it("clichés are flagged (advisory, still passes)", () => {
     const r = scanCompliance({
       channel: "email",
       subject: "Touching base",
@@ -44,12 +34,12 @@ function kinds(r: ReturnType<typeof scanCompliance>) {
     assert.ok(r.suggestedFixes.length > 0);
   });
 
-  await test("'leverage' as a noun is NOT flagged", () => {
+  it("'leverage' as a noun is NOT flagged", () => {
     const r = scanCompliance({ channel: "linkedin", body: "You have real leverage in that negotiation." });
     assert.equal(r.flags.some((f) => /leverage/i.test(f.detail)), false);
   });
 
-  await test("suppression is a hard block", () => {
+  it("suppression is a hard block", () => {
     const r = scanCompliance({
       channel: "email",
       subject: "Hello",
@@ -61,7 +51,7 @@ function kinds(r: ReturnType<typeof scanCompliance>) {
     assert.ok(kinds(r).includes("suppression"));
   });
 
-  await test("self-email (own domain) is a hard block", () => {
+  it("self-email (own domain) is a hard block", () => {
     const r = scanCompliance({
       channel: "email",
       subject: "Hello",
@@ -73,7 +63,7 @@ function kinds(r: ReturnType<typeof scanCompliance>) {
     assert.ok(kinds(r).includes("self_email"));
   });
 
-  await test("voice-profile forbidden phrases flagged as banned_phrase", () => {
+  it("voice-profile forbidden phrases flagged as banned_phrase", () => {
     const r = scanCompliance({
       channel: "email",
       subject: "Hi",
@@ -83,19 +73,14 @@ function kinds(r: ReturnType<typeof scanCompliance>) {
     assert.ok(kinds(r).includes("banned_phrase"));
   });
 
-  await test("email with no subject flags can_spam", () => {
+  it("email with no subject flags can_spam", () => {
     const r = scanCompliance({ channel: "email", subject: "", body: "Hi there." });
     assert.ok(kinds(r).includes("can_spam"));
   });
 
-  await test("linkedin without subject does NOT flag can_spam", () => {
+  it("linkedin without subject does NOT flag can_spam", () => {
     const r = scanCompliance({ channel: "linkedin", body: "Hi there." });
     assert.equal(kinds(r).includes("can_spam"), false);
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll compliance-core tests passed");
-})();
+});

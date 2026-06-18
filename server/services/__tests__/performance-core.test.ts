@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { describe, it } from "vitest";
 import {
   indexVsBaseline,
   rankContent,
@@ -9,20 +10,9 @@ import {
 } from "../performance-core";
 import type { MarketingPerformanceMetrics } from "@shared/schema";
 
-let failures = 0;
-async function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    await fn();
-    console.log(`[ok]   ${name}`);
-  } catch (err) {
-    failures++;
-    console.error(`[FAIL] ${name}`);
-    console.error(err);
-  }
-}
 
-(async () => {
-  await test("indexVsBaseline normalizes per-day rates", () => {
+describe("performance-core", () => {
+  it("indexVsBaseline normalizes per-day rates", () => {
     // current 100 over 10 days = 10/day; baseline 50 over 10 days = 5/day -> 200
     assert.equal(indexVsBaseline(100, 10, 50, 10), 200);
     assert.equal(indexVsBaseline(50, 10, 50, 10), 100);
@@ -30,7 +20,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(indexVsBaseline(10, 0, 5, 5), null); // no current days
   });
 
-  await test("rankContent sorts by clicks then posts; underperformers flags zero-click", () => {
+  it("rankContent sorts by clicks then posts; underperformers flags zero-click", () => {
     const items: ContentPerf[] = [
       { assetId: "a", title: "A", postsPublished: 2, clicks: 1, campaigns: [] },
       { assetId: "b", title: "B", postsPublished: 5, clicks: 0, campaigns: [] },
@@ -41,7 +31,7 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.deepEqual(underperformers(items).map((r) => r.assetId), ["b"]);
   });
 
-  await test("parsePerformanceResponse parses summary + recs and coerces impact", () => {
+  it("parsePerformanceResponse parses summary + recs and coerces impact", () => {
     const json = JSON.stringify({
       summary: "Clicks up, conversions flat.",
       recommendations: [
@@ -57,13 +47,13 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(p.recommendations[1].impact, "Medium"); // "weird" -> default
   });
 
-  await test("parsePerformanceResponse tolerates junk", () => {
+  it("parsePerformanceResponse tolerates junk", () => {
     const p = parsePerformanceResponse("not json at all");
     assert.equal(p.summary, null);
     assert.deepEqual(p.recommendations, []);
   });
 
-  await test("formatMetricsForPrompt includes totals, benchmark, campaigns, content", () => {
+  it("formatMetricsForPrompt includes totals, benchmark, campaigns, content", () => {
     const m: MarketingPerformanceMetrics = {
       totals: { posts: 3, clicks: 40, conversions: 2, revenue: 5000, sessions: 120 },
       benchmark: { hasBaseline: true, clicksIndex: 150, conversionsIndex: 90 },
@@ -77,9 +67,4 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.ok(s.includes("Pillar"));
   });
 
-  if (failures > 0) {
-    console.error(`\n${failures} test(s) failed`);
-    process.exit(1);
-  }
-  console.log("\nAll performance-core tests passed");
-})();
+});
