@@ -2662,6 +2662,14 @@ export default function CampaignDetailPage() {
                               />
                             )}
                             <Badge>{post.platform}</Badge>
+                            {post.socialAccountId && (() => {
+                              const acct = allSocialAccounts.find(a => a.id === post.socialAccountId);
+                              return acct ? (
+                                <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-account-${post.id}`}>
+                                  <AtSign className="w-2.5 h-2.5" />{acct.accountName}
+                                </Badge>
+                              ) : null;
+                            })()}
                             {!post.overrideImageUrl && !post.overrideBrandAssetId && (
                               <Badge
                                 variant="outline"
@@ -2799,6 +2807,14 @@ export default function CampaignDetailPage() {
                             <div className="flex-1 min-w-0">
                               <p className="text-sm line-clamp-2">{post.editedContent ?? post.content}</p>
                               <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                {post.socialAccountId && (() => {
+                                  const acct = allSocialAccounts.find(a => a.id === post.socialAccountId);
+                                  return acct ? (
+                                    <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-compact-account-${post.id}`}>
+                                      <AtSign className="w-2.5 h-2.5" />{acct.accountName}
+                                    </Badge>
+                                  ) : null;
+                                })()}
                                 {post.scheduledDate ? (
                                   <Badge variant="secondary" className="text-[10px] gap-1">
                                     <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, h:mm a")}
@@ -3775,6 +3791,14 @@ export default function CampaignDetailPage() {
                                     <div className="flex items-center gap-1 flex-wrap">
                                       <Badge className="text-[10px] capitalize px-1.5 py-0" data-testid={`rv-badge-platform-${post.id}`}>{post.platform}</Badge>
                                       <PostStageBadge post={post} className="px-1.5 py-0" />
+                                      {post.socialAccountId && (() => {
+                                        const acct = allSocialAccounts.find(a => a.id === post.socialAccountId);
+                                        return acct ? (
+                                          <Badge variant="secondary" className="text-[10px] gap-1 px-1.5 py-0 max-w-[80px] truncate" data-testid={`rv-badge-account-${post.id}`} title={acct.accountName}>
+                                            <AtSign className="w-2 h-2 shrink-0" /><span className="truncate">{acct.accountName}</span>
+                                          </Badge>
+                                        ) : null;
+                                      })()}
                                     </div>
 
                                     {/* Copy excerpt */}
