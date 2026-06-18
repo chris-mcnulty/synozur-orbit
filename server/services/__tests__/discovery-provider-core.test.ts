@@ -105,6 +105,65 @@ async function test(name: string, fn: () => void | Promise<void>) {
     assert.equal(droppedCount, 4);
   });
 
+  await test("parseDiscoveryCandidates nulls unsafe linkedinUrl schemes", () => {
+    const text = JSON.stringify([
+      { name: "Alice Smith", companyName: "Acme", linkedinUrl: "javascript:alert(1)" },
+      { name: "Bob Jones", companyName: "Acme", linkedinUrl: "data:text/html,<h1>hi</h1>" },
+      { name: "Carol White", companyName: "Acme", linkedinUrl: "vbscript:msgbox(1)" },
+      { name: "Dave Brown", companyName: "Acme", linkedinUrl: "ftp://files.acme.com/profile" },
+    ]);
+    const { candidates } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates.length, 4);
+    assert.equal(candidates[0].linkedinUrl, null, "javascript: must be nulled");
+    assert.equal(candidates[1].linkedinUrl, null, "data: must be nulled");
+    assert.equal(candidates[2].linkedinUrl, null, "vbscript: must be nulled");
+    assert.equal(candidates[3].linkedinUrl, null, "ftp: must be nulled");
+  });
+
+  await test("parseDiscoveryCandidates passes through valid http/https linkedinUrl", () => {
+    const text = JSON.stringify([
+      { name: "Alice Smith", companyName: "Acme", linkedinUrl: "https://www.linkedin.com/in/alice-smith" },
+      { name: "Bob Jones", companyName: "Acme", linkedinUrl: "http://linkedin.com/in/bob-jones" },
+    ]);
+    const { candidates } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates[0].linkedinUrl, "https://www.linkedin.com/in/alice-smith");
+    assert.equal(candidates[1].linkedinUrl, "http://linkedin.com/in/bob-jones");
+  });
+
+  await test("parseDiscoveryCandidates nulls unsafe sourceUrl schemes", () => {
+    const text = JSON.stringify([
+      { name: "Alice Smith", companyName: "Acme", sourceUrl: "javascript:void(0)" },
+      { name: "Bob Jones", companyName: "Acme", sourceUrl: "data:application/json,{}" },
+      { name: "Carol White", companyName: "Acme", sourceUrl: "file:///etc/passwd" },
+    ]);
+    const { candidates } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates[0].sourceUrl, null, "javascript: must be nulled");
+    assert.equal(candidates[1].sourceUrl, null, "data: must be nulled");
+    assert.equal(candidates[2].sourceUrl, null, "file: must be nulled");
+  });
+
+  await test("parseDiscoveryCandidates passes through valid http/https sourceUrl", () => {
+    const text = JSON.stringify([
+      { name: "Alice Smith", companyName: "Acme", sourceUrl: "https://acme.com/team/alice" },
+      { name: "Bob Jones", companyName: "Acme", sourceUrl: "http://acme.com/about" },
+    ]);
+    const { candidates } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates[0].sourceUrl, "https://acme.com/team/alice");
+    assert.equal(candidates[1].sourceUrl, "http://acme.com/about");
+  });
+
+  await test("parseDiscoveryCandidates nulls malformed or relative URLs", () => {
+    const text = JSON.stringify([
+      { name: "Alice Smith", companyName: "Acme", linkedinUrl: "not-a-url" },
+      { name: "Bob Jones", companyName: "Acme", sourceUrl: "/relative/path" },
+      { name: "Carol White", companyName: "Acme", linkedinUrl: "" },
+    ]);
+    const { candidates } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates[0].linkedinUrl, null, "bare string must be nulled");
+    assert.equal(candidates[1].sourceUrl, null, "relative path must be nulled");
+    assert.equal(candidates[2].linkedinUrl, null, "empty string must be nulled");
+  });
+
   await test("dedupeKeys derives email/linkedin/name+company keys", () => {
     assert.deepEqual(
       dedupeKeys({ email: "A@B.com", linkedinUrl: "https://li/in/x/", name: "Jo", companyName: "Co" }),
