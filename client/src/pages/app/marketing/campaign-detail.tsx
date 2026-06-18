@@ -1410,6 +1410,7 @@ export default function CampaignDetailPage() {
   const postsGenLabel = jobStatusLabel(postsGenJobStatus, "Generating…");
 
   const prevJobStatus = useRef(jobStatus?.status);
+  const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onHashChange = () => setActiveTab(getTabFromHash());
     window.addEventListener("hashchange", onHashChange);
@@ -1703,9 +1704,11 @@ export default function CampaignDetailPage() {
           onNavigate={(tab) => {
             setActiveTab(tab as CampaignTab);
             window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
+            setTimeout(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
           }}
         />
 
+        <div ref={tabsRef} />
         <Tabs value={activeTab} onValueChange={(tab) => {
           setActiveTab(tab as CampaignTab);
           window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);

@@ -11,9 +11,9 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
-    "test": "vitest run --config vitest.config.ts",
-    "test:watch": "vitest --config vitest.config.ts",
-    "test:coverage": "vitest run --config vitest.config.ts --coverage"
+    "test": "node_modules/.bin/vitest run --config vitest.config.ts",
+    "test:watch": "node_modules/.bin/vitest --config vitest.config.ts",
+    "test:coverage": "node_modules/.bin/vitest run --config vitest.config.ts --coverage"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
@@ -68,6 +68,7 @@
     "@uppy/core": "^5.2.0",
     "@uppy/dashboard": "^5.1.0",
     "@uppy/react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.1.9",
     "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "cheerio": "^1.2.0",
