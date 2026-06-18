@@ -1515,7 +1515,7 @@ export default function CampaignDetailPage() {
     // Pre-select social accounts whose platform matches the brief's channels.
     //   matched accounts found  → pre-select exactly those accounts
     //   channels set, no match  → [] (no pre-selection; Generate disabled until user picks)
-    //   no channels on brief    → null (all accounts; generate for everything)
+    //   no channels on brief    → saved preference (falls back to null if none saved)
     if (brief.channels && brief.channels.length > 0) {
       const matched = (campaign?.socialAccounts ?? [])
         .filter(csa => {
@@ -1528,7 +1528,7 @@ export default function CampaignDetailPage() {
       // than silently generating for all accounts on an unintended platform.
       setGenerateDialogAccountIds(matched);
     } else {
-      setGenerateDialogAccountIds(null);
+      setGenerateDialogAccountIds(loadSavedAccountIds(id));
     }
     setGenerateDialogOpen(true);
   };
