@@ -272,6 +272,7 @@ interface GeneratedPost {
   publishAttemptCount?: number;
   linkUrl?: string | null;
   linkLabel?: string | null;
+  sourceBriefId?: string | null;
 }
 
 // ── Post lifecycle stage (brief → draft → ready → scheduled → posted) ──────────
@@ -422,6 +423,9 @@ export default function CampaignDetailPage() {
   const [postSelectedIds, setPostSelectedIds] = useState<Set<string>>(new Set());
   const [postBulkProgress, setPostBulkProgress] = useState(0);
   const [postBulkTotal, setPostBulkTotal] = useState(0);
+
+  // Brief source navigation — highlights the source brief in the Content Plan tab
+  const [highlightedBriefId, setHighlightedBriefId] = useState<string | null>(null);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -1500,6 +1504,15 @@ export default function CampaignDetailPage() {
     setGenerateDialogOpen(true);
   };
 
+  // Navigate to the Content Plan tab and briefly highlight the source brief.
+  const navigateToBrief = (briefId: string) => {
+    setActiveTab("plan");
+    window.history.replaceState(null, "", window.location.pathname + window.location.search + "#plan");
+    setTimeout(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    setHighlightedBriefId(briefId);
+    setTimeout(() => setHighlightedBriefId(null), 2500);
+  };
+
   const getPostImage = (post: GeneratedPost): string | null => {
     if (post.overrideImageUrl) return post.overrideImageUrl;
     if (post.overrideBrandAssetId) {
@@ -1965,7 +1978,11 @@ export default function CampaignDetailPage() {
             ) : (
               <div className="space-y-2">
                 {briefs.map((b) => (
-                  <Card key={b.id} data-testid={`brief-${b.id}`}>
+                  <Card
+                    key={b.id}
+                    data-testid={`brief-${b.id}`}
+                    className={highlightedBriefId === b.id ? "ring-2 ring-primary transition-shadow" : ""}
+                  >
                     <CardContent className="py-3">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="min-w-0">
@@ -2792,6 +2809,21 @@ export default function CampaignDetailPage() {
                                   </Badge>
                                 )}
                                 <PostStageBadge post={post} />
+                                {post.sourceBriefId && (() => {
+                                  const srcBrief = briefs.find(b => b.id === post.sourceBriefId);
+                                  return srcBrief ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); navigateToBrief(post.sourceBriefId!); }}
+                                      data-testid={`badge-source-brief-${post.id}`}
+                                      className="inline-flex items-center gap-1 text-[10px] rounded-md border border-primary/30 bg-primary/5 text-primary px-1.5 py-0.5 hover:bg-primary/10 transition-colors cursor-pointer shrink-0"
+                                      title={`Go to source brief: ${srcBrief.title}`}
+                                    >
+                                      <Zap className="w-2.5 h-2.5" />
+                                      {srcBrief.title.length > 30 ? srcBrief.title.slice(0, 30) + "…" : srcBrief.title}
+                                    </button>
+                                  ) : null;
+                                })()}
                                 {(post.hashtags?.length ?? 0) > 0 && (
                                   <span className="text-[10px] text-muted-foreground">{post.hashtags.length} hashtag{post.hashtags.length === 1 ? "" : "s"}</span>
                                 )}
@@ -2803,6 +2835,21 @@ export default function CampaignDetailPage() {
                         <>
                         <div className="flex items-center gap-2 flex-wrap">
                         <PostStageBadge post={post} />
+                        {post.sourceBriefId && (() => {
+                          const srcBrief = briefs.find(b => b.id === post.sourceBriefId);
+                          return srcBrief ? (
+                            <button
+                              type="button"
+                              onClick={() => navigateToBrief(post.sourceBriefId!)}
+                              data-testid={`badge-source-brief-expanded-${post.id}`}
+                              className="inline-flex items-center gap-1 text-[10px] rounded-md border border-primary/30 bg-primary/5 text-primary px-1.5 py-0.5 hover:bg-primary/10 transition-colors cursor-pointer shrink-0"
+                              title={`Go to source brief: ${srcBrief.title}`}
+                            >
+                              <Zap className="w-2.5 h-2.5" />
+                              {srcBrief.title.length > 40 ? srcBrief.title.slice(0, 40) + "…" : srcBrief.title}
+                            </button>
+                          ) : null;
+                        })()}
                         {post.scheduledDate ? (
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
