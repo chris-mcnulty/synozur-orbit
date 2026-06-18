@@ -214,6 +214,14 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     return platformAccountFallback.get(post.platform) || "";
   };
 
+  const getAccountName = (post: any): string => {
+    if (post.socialAccountId) {
+      const acct = accountMap.get(post.socialAccountId);
+      if (acct?.accountName) return acct.accountName;
+    }
+    return "";
+  };
+
   const isTwitterPost = (post: any) => (post.platform || "").toLowerCase() === "twitter";
   const TWITTER_CHAR_LIMIT = 280;
 
@@ -310,6 +318,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const imageUrl = getPostImageUrl(post);
         const dateStr = fmtSocialPilotDate(sd);
         const platformAccountId = getAccountId(post);
+        const accountName = getAccountName(post);
         const tags = buildTagsSemicolon(post.hashtags as string[]);
 
         const linkUrlValue = post.linkUrl || "";
@@ -317,7 +326,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
           ? (post.linkLabel ? `${post.linkLabel} | ${linkUrlValue}` : linkUrlValue)
           : "";
 
-        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},"",${escCsv(tags)},${escCsv(linkCsvValue)}`);
+        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},${escCsv(accountName)},"",${escCsv(tags)},${escCsv(linkCsvValue)}`);
       }
       break;
     }
