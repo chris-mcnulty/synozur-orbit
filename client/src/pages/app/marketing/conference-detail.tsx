@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { thumbnailUrl } from "@/components/ui/optimized-thumbnail";
 import { useParams, Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1153,7 +1154,7 @@ function GraphicsTab({
             <div className="flex flex-wrap gap-2">
               {backgrounds.map((bg) => (
                 <div key={bg.id} className="relative group rounded border overflow-hidden bg-muted/40 w-28 h-16 flex items-center justify-center">
-                  <img src={bg.fileUrl} alt={bg.name || "background"} className="w-full h-full object-cover" />
+                  <img src={thumbnailUrl(bg.fileUrl, 320)} alt={bg.name || "background"} className="w-full h-full object-cover" loading="lazy" />
                   <button
                     className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded-full p-0.5 text-destructive"
                     onClick={() => deleteBackground(bg.id)}
@@ -1365,7 +1366,7 @@ function ImageSlot({
     <div className="grid gap-3 md:grid-cols-[160px,1fr] items-start">
       <div className="aspect-video rounded-md border bg-muted/40 flex items-center justify-center overflow-hidden">
         {image?.fileUrl ? (
-          <img src={image.fileUrl} alt={image.name || "graphic"} className="w-full h-full object-cover" />
+          <img src={thumbnailUrl(image.fileUrl, 320)} alt={image.name || "graphic"} className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <ImageIcon className="w-6 h-6 text-muted-foreground" />
         )}

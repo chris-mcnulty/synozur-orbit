@@ -15,21 +15,27 @@ interface OptimizedThumbnailProps {
 }
 
 /**
- * Converts an /objects/... path to a /api/thumbnails/... path at the given width.
- * External URLs (https://) are returned as-is since we can't resize them server-side.
+ * Converts an image URL to a server-resized thumbnail URL at the given width.
+ * - /objects/... paths → /api/thumbnails/<path>?w=<width>
+ * - http/https external URLs → /api/thumbnails/ext?url=<encoded>&w=<width>
+ * - anything else → unchanged
  */
-function thumbnailUrl(src: string, width: number): string {
+export function thumbnailUrl(src: string, width: number): string {
   if (src.startsWith("/objects/")) {
     const objectPath = src.slice("/objects/".length);
     return `/api/thumbnails/${objectPath}?w=${width}`;
   }
-  // External URLs — return unchanged
+  if (src.startsWith("http://") || src.startsWith("https://")) {
+    return `/api/thumbnails/ext?url=${encodeURIComponent(src)}&w=${width}`;
+  }
   return src;
 }
 
-/** Build srcSet for responsive images */
+/** Build srcSet for responsive images (works for both object-storage and external URLs) */
 function buildSrcSet(src: string, widths: number[]): string | undefined {
-  if (!src.startsWith("/objects/")) return undefined;
+  if (!src.startsWith("/objects/") && !src.startsWith("http://") && !src.startsWith("https://")) {
+    return undefined;
+  }
   return widths.map((w) => `${thumbnailUrl(src, w)} ${w}w`).join(", ");
 }
 
@@ -62,12 +68,12 @@ export function OptimizedThumbnail({
     setStatus("error");
   }, []);
 
-  const isLocalObject = src?.startsWith("/objects/");
+  const isProxiable = src?.startsWith("/objects/") || src?.startsWith("http://") || src?.startsWith("https://");
 
   // Use the smallest thumbnail as the default src for browsers that don't support srcSet
   const imgSrc = useMemo(
-    () => (isLocalObject ? thumbnailUrl(src, widths[0]) : src),
-    [src, isLocalObject, widths],
+    () => (isProxiable ? thumbnailUrl(src, widths[0]) : src),
+    [src, isProxiable, widths],
   );
 
   const srcSet = useMemo(

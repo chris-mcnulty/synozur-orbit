@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
+import { OptimizedThumbnail, thumbnailUrl } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1691,7 +1691,7 @@ export default function ContentLibraryPage() {
                     <td className="py-2.5 px-4">
                       <div className="flex items-center gap-3">
                         {asset.leadImageUrl ? (
-                          <img src={asset.leadImageUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                          <img src={thumbnailUrl(asset.leadImageUrl, 160)} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" loading="lazy" />
                         ) : (
                           <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
                             <FileText className="w-4 h-4 text-muted-foreground" />
@@ -1891,7 +1891,7 @@ export default function ContentLibraryPage() {
                                   }}
                                   data-testid={`button-brand-image-${ba.id}`}
                                 >
-                                  <img src={imgUrl} alt={ba.name} className="w-full h-full object-cover" onError={e => (e.currentTarget.style.display = "none")} />
+                                  <img src={thumbnailUrl(imgUrl, 320)} alt={ba.name} className="w-full h-full object-cover" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
                                   <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
                                     <p className="text-[9px] text-white truncate">{ba.name}</p>
                                   </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { rollupPosts, batchSourceOf } from "@shared/social-rollup";
-import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
+import { OptimizedThumbnail, thumbnailUrl } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -3066,9 +3066,10 @@ export default function CampaignDetailPage() {
                         <CardContent className="py-3 flex items-center gap-3">
                           {asset?.leadImageUrl && (
                             <img
-                              src={asset.leadImageUrl}
+                              src={thumbnailUrl(asset.leadImageUrl, 160)}
                               alt=""
                               className="w-10 h-10 rounded object-cover shrink-0"
+                              loading="lazy"
                               onError={e => (e.currentTarget.style.display = "none")}
                             />
                           )}
@@ -3198,7 +3199,7 @@ export default function CampaignDetailPage() {
                               data-testid={`row-brand-asset-${ba.id}`}
                             >
                               {thumb ? (
-                                <img src={thumb} alt="" className="w-8 h-8 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                                <img src={thumbnailUrl(thumb, 160)} alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
                               ) : (
                                 <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
                                   <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
@@ -3260,7 +3261,7 @@ export default function CampaignDetailPage() {
                           data-testid={`row-available-asset-${asset.id}`}
                         >
                           {asset.leadImageUrl ? (
-                            <img src={asset.leadImageUrl} alt="" className="w-8 h-8 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                            <img src={thumbnailUrl(asset.leadImageUrl, 160)} alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
                           ) : (
                             <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
                               <Library className="w-3.5 h-3.5 text-muted-foreground" />
@@ -4994,7 +4995,7 @@ export default function CampaignDetailPage() {
                             className={`relative rounded-lg overflow-hidden border-2 transition-all ${isSelected ? "border-primary ring-2 ring-primary/30" : atLimit ? "border-muted opacity-50 cursor-not-allowed" : "border-transparent hover:border-muted-foreground/30"}`}
                             data-testid={`brand-image-option-${ba.id}`}
                           >
-                            <img src={imgUrl} alt={ba.name} className="w-full h-20 object-cover" />
+                            <img src={thumbnailUrl(imgUrl, 320)} alt={ba.name} className="w-full h-20 object-cover" loading="lazy" />
                             <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
                               <span className="text-[10px] text-white truncate block">{ba.name}</span>
                             </div>

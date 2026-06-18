@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { thumbnailUrl } from "@/components/ui/optimized-thumbnail";
 import { z } from "zod";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -866,7 +867,7 @@ export default function CampaignsPage() {
                             className="shrink-0"
                           />
                           {asset.leadImageUrl && (
-                            <img src={asset.leadImageUrl} alt="" className="w-12 h-8 rounded object-cover shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                            <img src={thumbnailUrl(asset.leadImageUrl, 160)} alt="" className="w-12 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium leading-tight truncate">{asset.title}</p>
