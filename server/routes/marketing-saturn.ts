@@ -3024,8 +3024,51 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
       const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
       const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
-      const thematicBrief: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
+      let thematicBriefText: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
       const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
+
+      // When the caller supplies a sourceBriefId (brief-row "Generate posts"
+      // button), load the brief from DB and prepend its structured fields to
+      // whatever thematic text was sent. This ensures the AI grounding is as
+      // specific as the brief's full metadata — channels, format guidance, idea
+      // signals — even when the client only sent a subset.
+      const sourceBriefId: string | null = typeof req.body?.sourceBriefId === "string" && req.body.sourceBriefId ? req.body.sourceBriefId : null;
+      // The content asset (draft) that was produced from the brief, if any.
+      // Loaded below when the brief has a contentAssetId so it can be injected
+      // into the generation context pool and provide sourceAssetId on every post.
+      let sourceBriefContentAsset: typeof contentAssets.$inferSelect | null = null;
+      if (sourceBriefId) {
+        const [sourceBrief] = await db.select().from(contentBriefs)
+          .where(and(
+            eq(contentBriefs.id, sourceBriefId),
+            eq(contentBriefs.campaignId, campaign.id),
+          ));
+        if (sourceBrief) {
+          const briefParts: string[] = [`FOCUS BRIEF — generate posts specifically for this brief, not general campaign posts:`];
+          briefParts.push(`Title: ${sourceBrief.title}`);
+          if (sourceBrief.format) briefParts.push(`Format: ${sourceBrief.format.replace(/_/g, " ")}`);
+          if (sourceBrief.differentiationAngle) briefParts.push(`Differentiation angle: ${sourceBrief.differentiationAngle}`);
+          if (sourceBrief.targetReader) briefParts.push(`Target reader: ${sourceBrief.targetReader}`);
+          if (sourceBrief.demandSignal) briefParts.push(`Why it matters now: ${sourceBrief.demandSignal}`);
+          if (sourceBrief.cta) briefParts.push(`Call to action: ${sourceBrief.cta}`);
+          const channels = Array.isArray(sourceBrief.channels) ? sourceBrief.channels : [];
+          if (channels.length) briefParts.push(`Intended channels: ${channels.join(", ")}`);
+          // Merge server-loaded brief context with any client-supplied text.
+          const serverBriefContext = briefParts.join("\n");
+          thematicBriefText = thematicBriefText
+            ? `${serverBriefContext}\n\nAdditional context:\n${thematicBriefText}`
+            : serverBriefContext;
+          // Load the brief's drafted content asset (if one exists) so generation
+          // can attach sourceAssetId and serve as a richer context anchor.
+          if (sourceBrief.contentAssetId) {
+            const [asset] = await db.select().from(contentAssets)
+              .where(eq(contentAssets.id, sourceBrief.contentAssetId));
+            if (asset) sourceBriefContentAsset = asset;
+          }
+        }
+      }
+
+      const thematicBrief: string = thematicBriefText;
       const useThematicMode: boolean = !!(thematicBrief);
       // Default on: each source content asset's lead image becomes one of
       // the image variants for posts drafted from that asset. Callers can
@@ -3080,7 +3123,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           personaIds,
           useThematicMode ? thematicBrief : "",
           useThematicMode ? thematicUrl : "",
-          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform },
+          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined },
           reportProgress,
         ),
         { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
@@ -4283,7 +4326,7 @@ async function generatePostsAsync(
   personaIds: string[] = [],
   thematicBrief: string = "",
   thematicUrl: string = "",
-  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null } = {},
+  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string; sourceBriefContentAsset?: typeof contentAssets.$inferSelect } = {},
   reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
 ): Promise<void> {
   // Default ON: lead images from source content assets are folded into the
@@ -4473,14 +4516,18 @@ async function generatePostsAsync(
       assetId: string | null;
       leadImageUrl: string | null;
     };
+    // If generation was triggered from a brief that has a drafted content asset,
+    // surface that asset's lead image and FK in the thematic pool so posts are
+    // traceable back to the source asset — mirrors what asset-mode posts get.
+    const briefAsset = wrapOpts.sourceBriefContentAsset ?? null;
     const contextPools: ContextPool[] = isThematic
       ? [{
-          context: `## Campaign Theme\n${thematicBrief}${thematicUrl ? `\n\nReference URL: ${thematicUrl}` : ""}${supportingAssetContext}`,
-          sourceUrl: thematicUrl || null,
+          context: `## Campaign Theme\n${thematicBrief}${thematicUrl ? `\n\nReference URL: ${thematicUrl}` : ""}${briefAsset ? `\n\n## Drafted content asset (source)\n${buildAssetContext(briefAsset)}` : ""}${supportingAssetContext}`,
+          sourceUrl: thematicUrl || briefAsset?.url || null,
           thematic: true,
           label: "campaign theme",
-          assetId: null,
-          leadImageUrl: null,
+          assetId: briefAsset?.id ?? null,
+          leadImageUrl: briefAsset ? assetBaseVisual(briefAsset) : null,
         }]
       : selectedAssets.length > 0
         ? selectedAssets.map(a => ({
@@ -4690,6 +4737,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
         sourceAssetId: v.sourceAssetId,
         variantGroup: variantGroupId,
         generationJobId: jobId,
+        sourceBriefId: wrapOpts.sourceBriefId ?? null,
       } as InsertGeneratedPost);
 
       if (includeAssetLeadImages) {

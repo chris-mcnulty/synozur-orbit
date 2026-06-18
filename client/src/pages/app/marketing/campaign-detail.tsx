@@ -377,6 +377,9 @@ export default function CampaignDetailPage() {
   const [thematicBrief, setThematicBrief] = useState("");
   const [thematicUrl, setThematicUrl] = useState("");
   const [selectedBriefId, setSelectedBriefId] = useState<string | null>(null);
+  // Tracks which brief row triggered the current generation job so we can show
+  // an inline spinner on that row while the job is running.
+  const [generatingForBriefId, setGeneratingForBriefId] = useState<string | null>(null);
   const [wrapPostLinks, setWrapPostLinks] = useState(false);
   const [variantsPerPlatform, setVariantsPerPlatform] = useState<number | null>(null);
   const BRAND_PAGE_SIZE = 12;
@@ -717,17 +720,20 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      // If the generation was triggered from a brief row, keep track of which
+      // brief so we can show an inline spinner until the job completes.
+      setGeneratingForBriefId(vars.sourceBriefId ?? null);
       setGenerateDialogOpen(false);
       setSelectedBrandImageIds([]);
       setSelectedPersonaIds([]);
@@ -1425,6 +1431,8 @@ export default function CampaignDetailPage() {
     const prev = prevJobStatus.current;
     const curr = jobStatus?.status;
     if ((prev === "running" || prev === "pending") && (curr === "completed" || curr === "failed")) {
+      // Clear the brief-row spinner now that the job has finished.
+      setGeneratingForBriefId(null);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
       if (curr === "completed") {
         toast({ title: "Posts generated", description: "Your AI-generated posts are ready for review." });
@@ -1439,6 +1447,27 @@ export default function CampaignDetailPage() {
     }
     prevJobStatus.current = curr;
   }, [jobStatus?.status, id, queryClient, toast, posts]);
+
+  // Pre-populate the generate dialog from a content brief row and open it in
+  // thematic mode so the user lands with the brief context already loaded.
+  const openGenerateFromBrief = (brief: ContentBrief) => {
+    const parts: string[] = [`Brief: ${brief.title}`];
+    if (brief.summary) parts.push(`Summary: ${brief.summary}`);
+    if (brief.demandSignal) parts.push(`Why this matters: ${brief.demandSignal}`);
+    if (brief.differentiationAngle) parts.push(`Our angle: ${brief.differentiationAngle}`);
+    if (brief.targetReader) parts.push(`Audience: ${brief.targetReader}`);
+    if (brief.cta) parts.push(`Call to action: ${brief.cta}`);
+    if (brief.ideaSignals?.length) parts.push(`News hooks / signals:\n${brief.ideaSignals.map(s => `- ${s}`).join("\n")}`);
+    setThematicBrief(parts.join("\n\n"));
+    setSelectedBriefId(brief.id);
+    setGenerateMode("thematic");
+    setSelectedBrandImageIds([]);
+    setBrandCategoryFilter("all");
+    setBrandPage(0);
+    setVariantsPerPlatform(null);
+    setWrapPostLinks(false);
+    setGenerateDialogOpen(true);
+  };
 
   const getPostImage = (post: GeneratedPost): string | null => {
     if (post.overrideImageUrl) return post.overrideImageUrl;
@@ -1944,7 +1973,25 @@ export default function CampaignDetailPage() {
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                          {/* Generate social posts directly from this brief — opens the
+                              generate dialog pre-populated with the brief's context so the
+                              user never has to leave the campaign page. */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => openGenerateFromBrief(b)}
+                            disabled={isGenerating}
+                            title="Generate social posts grounded in this brief"
+                            data-testid={`button-gen-posts-brief-${b.id}`}
+                          >
+                            {isGenerating && generatingForBriefId === b.id ? (
+                              <><Loader2 className="w-3 h-3 animate-spin" />Generating…</>
+                            ) : (
+                              <><Share2 className="w-3 h-3" />Generate posts</>
+                            )}
+                          </Button>
                           {contentPlan?.calendar && (
                             <Button
                               variant="outline"
@@ -4899,6 +4946,7 @@ export default function CampaignDetailPage() {
                 thematicUrl: generateMode === "thematic" ? thematicUrl : undefined,
                 wrapLinks: wrapPostLinks,
                 variantsPerPlatform,
+                sourceBriefId: selectedBriefId,
               })}
               disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim())}
               className="gap-2"

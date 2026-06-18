@@ -3167,6 +3167,8 @@ export const generatedPosts = pgTable("generated_posts", {
   // Post-level link URL + label editors can attach for Facebook, LinkedIn, X.
   linkUrl: text("link_url"),
   linkLabel: text("link_label"),
+  // Brief-origin traceability: the content brief that triggered this post run.
+  sourceBriefId: varchar("source_brief_id").references((): AnyPgColumn => contentBriefs.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
