@@ -3136,6 +3136,8 @@ export default function CampaignDetailPage() {
                           {asset?.leadImageUrl && (
                             <img
                               src={thumbnailUrl(asset.leadImageUrl, 160)}
+                              srcSet={buildSrcSet(asset.leadImageUrl, [120, 160, 240])}
+                              sizes="(max-width: 640px) 64px, 48px"
                               alt=""
                               className="w-10 h-10 rounded object-cover shrink-0"
                               loading="lazy"
@@ -3268,7 +3270,7 @@ export default function CampaignDetailPage() {
                               data-testid={`row-brand-asset-${ba.id}`}
                             >
                               {thumb ? (
-                                <img src={thumbnailUrl(thumb, 160)} alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
+                                <img src={thumbnailUrl(thumb, 160)} srcSet={buildSrcSet(thumb, [120, 160, 240])} sizes="48px" alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
                               ) : (
                                 <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
                                   <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
@@ -3330,7 +3332,7 @@ export default function CampaignDetailPage() {
                           data-testid={`row-available-asset-${asset.id}`}
                         >
                           {asset.leadImageUrl ? (
-                            <img src={thumbnailUrl(asset.leadImageUrl, 160)} alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
+                            <img src={thumbnailUrl(asset.leadImageUrl, 160)} srcSet={buildSrcSet(asset.leadImageUrl, [120, 160, 240])} sizes="(max-width: 640px) 64px, 48px" alt="" className="w-8 h-8 rounded object-cover shrink-0" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
                           ) : (
                             <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
                               <Library className="w-3.5 h-3.5 text-muted-foreground" />
