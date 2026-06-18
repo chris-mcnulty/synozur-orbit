@@ -322,6 +322,33 @@ function getTabFromHash(): CampaignTab {
   return (CAMPAIGN_TABS as readonly string[]).includes(hash) ? (hash as CampaignTab) : "plan";
 }
 
+function generateAccountsKey(campaignId: string) {
+  return `generate-dialog-accounts-${campaignId}`;
+}
+
+function loadSavedAccountIds(campaignId: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(generateAccountsKey(campaignId));
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAccountIds(campaignId: string, ids: string[] | null): void {
+  try {
+    if (ids === null) {
+      localStorage.removeItem(generateAccountsKey(campaignId));
+    } else {
+      localStorage.setItem(generateAccountsKey(campaignId), JSON.stringify(ids));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
@@ -742,6 +769,7 @@ export default function CampaignDetailPage() {
       // If the generation was triggered from a brief row, keep track of which
       // brief so we can show an inline spinner until the job completes.
       setGeneratingForBriefId(vars.sourceBriefId ?? null);
+      saveAccountIds(id, generateDialogAccountIds);
       setGenerateDialogOpen(false);
       setSelectedBrandImageIds([]);
       setSelectedPersonaIds([]);
@@ -2221,7 +2249,7 @@ export default function CampaignDetailPage() {
           <TabsContent value="posts" className="space-y-4">
             <div className="flex items-center gap-3">
               <Button
-                onClick={() => setGenerateDialogOpen(true)}
+                onClick={() => { setGenerateDialogAccountIds(loadSavedAccountIds(id)); setGenerateDialogOpen(true); }}
                 disabled={isGenerating || generatePostsMutation.isPending}
                 className="gap-2"
                 data-testid="button-generate-posts"
@@ -4772,7 +4800,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -5092,7 +5120,7 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
