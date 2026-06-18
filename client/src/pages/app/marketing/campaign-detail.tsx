@@ -5076,7 +5076,7 @@ export default function CampaignDetailPage() {
                             className={`relative rounded-lg overflow-hidden border-2 transition-all ${isSelected ? "border-primary ring-2 ring-primary/30" : atLimit ? "border-muted opacity-50 cursor-not-allowed" : "border-transparent hover:border-muted-foreground/30"}`}
                             data-testid={`brand-image-option-${ba.id}`}
                           >
-                            <img src={thumbnailUrl(imgUrl, 320)} alt={ba.name} className="w-full h-20 object-cover" loading="lazy" />
+                            <img src={thumbnailUrl(imgUrl, 320)} srcSet={buildSrcSet(imgUrl, [240, 320, 480])} sizes="(max-width: 640px) 50vw, 160px" alt={ba.name} className="w-full h-20 object-cover" loading="lazy" />
                             <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
                               <span className="text-[10px] text-white truncate block">{ba.name}</span>
                             </div>
