@@ -58,19 +58,20 @@ async function test(name: string, fn: () => void | Promise<void>) {
       { name: "Jane Doe", title: "CIO", companyName: "Acme", email: "jane@acme.com", linkedinUrl: null, sourceUrl: "https://acme.com/team" },
       { name: "John Roe", title: "IT Director", companyName: "Globex" },
     ]);
-    const out = parseDiscoveryCandidates(text, "web", 25);
-    assert.equal(out.length, 2);
-    assert.equal(out[0].name, "Jane Doe");
-    assert.equal(out[0].email, "jane@acme.com");
-    assert.equal(out[0].source, "web");
-    assert.equal(out[1].email, null);
+    const { candidates, droppedCount } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates.length, 2);
+    assert.equal(candidates[0].name, "Jane Doe");
+    assert.equal(candidates[0].email, "jane@acme.com");
+    assert.equal(candidates[0].source, "web");
+    assert.equal(candidates[1].email, null);
+    assert.equal(droppedCount, 0);
   });
 
   await test("parseDiscoveryCandidates tolerates prose/code-fence wrapping", () => {
     const text = 'Here are the people I found:\n```json\n[{"name":"Amy Lin","companyName":"Initech"}]\n```\nLet me know!';
-    const out = parseDiscoveryCandidates(text, "web", 25);
-    assert.equal(out.length, 1);
-    assert.equal(out[0].name, "Amy Lin");
+    const { candidates } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].name, "Amy Lin");
   });
 
   await test("parseDiscoveryCandidates drops rows without a name and respects limit", () => {
@@ -80,14 +81,28 @@ async function test(name: string, fn: () => void | Promise<void>) {
       { name: "Real Person", companyName: "Co" },
       { name: "Second Person", companyName: "Co2" },
     ]);
-    assert.equal(parseDiscoveryCandidates(text, "web", 25).length, 2); // two valid-named rows
-    assert.equal(parseDiscoveryCandidates(text, "web", 1).length, 1); // limit honored
+    assert.equal(parseDiscoveryCandidates(text, "web", 25).candidates.length, 2); // two valid-named rows
+    assert.equal(parseDiscoveryCandidates(text, "web", 1).candidates.length, 1); // limit honored
   });
 
   await test("parseDiscoveryCandidates returns [] for non-JSON / empty", () => {
-    assert.deepEqual(parseDiscoveryCandidates("no json here", "web", 25), []);
-    assert.deepEqual(parseDiscoveryCandidates("", "web", 25), []);
-    assert.deepEqual(parseDiscoveryCandidates("{}", "web", 25), []);
+    assert.deepEqual(parseDiscoveryCandidates("no json here", "web", 25).candidates, []);
+    assert.deepEqual(parseDiscoveryCandidates("", "web", 25).candidates, []);
+    assert.deepEqual(parseDiscoveryCandidates("{}", "web", 25).candidates, []);
+  });
+
+  await test("parseDiscoveryCandidates counts dropped rows in droppedCount", () => {
+    const text = JSON.stringify([
+      { title: "no name here" },
+      { name: "SingleToken" },
+      { name: "VP Sales" },
+      { name: "Acme Inc" },
+      { name: "Valid Person", companyName: "Co" },
+    ]);
+    const { candidates, droppedCount } = parseDiscoveryCandidates(text, "web", 25);
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].name, "Valid Person");
+    assert.equal(droppedCount, 4);
   });
 
   await test("dedupeKeys derives email/linkedin/name+company keys", () => {

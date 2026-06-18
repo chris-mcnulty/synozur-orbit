@@ -180,38 +180,48 @@ function isBadName(name: string): boolean {
   return false;
 }
 
+export interface ParseDiscoveryCandidatesResult {
+  candidates: DiscoveryCandidate[];
+  /** How many rows were silently dropped (single-token names, bad names, malformed). */
+  droppedCount: number;
+}
+
 /**
  * Parse a model response into discovery candidates. Tolerant of code fences and
  * surrounding prose; drops malformed rows and any without a usable name.
+ * Returns both the accepted candidates and a count of silently-dropped rows.
  */
 export function parseDiscoveryCandidates(
   text: string,
   source: DiscoveryBackendId,
   limit: number,
-): DiscoveryCandidate[] {
+): ParseDiscoveryCandidatesResult {
   const json = extractJsonArray(text ?? "");
-  if (!json) return [];
+  if (!json) return { candidates: [], droppedCount: 0 };
 
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch {
-    return [];
+    return { candidates: [], droppedCount: 0 };
   }
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) return { candidates: [], droppedCount: 0 };
 
   const out: DiscoveryCandidate[] = [];
+  let dropped = 0;
   for (const row of raw) {
-    if (!row || typeof row !== "object") continue;
+    if (!row || typeof row !== "object") { dropped++; continue; }
     const r = row as Record<string, unknown>;
     const name = asStringOrNull(r.name);
-    if (!name) continue;
+    if (!name) { dropped++; continue; }
     if (!name.includes(" ")) {
       console.debug(`[discovery] dropped single-token name: "${name}"`);
+      dropped++;
       continue;
     }
     if (isBadName(name)) {
       console.debug(`[discovery] dropped non-person name: "${name}"`);
+      dropped++;
       continue;
     }
     out.push({
@@ -228,7 +238,7 @@ export function parseDiscoveryCandidates(
     });
     if (out.length >= limit) break;
   }
-  return out;
+  return { candidates: out, droppedCount: dropped };
 }
 
 /** Normalize a candidate into the attributes the ICP scorer expects. */

@@ -48,6 +48,8 @@ export interface DiscoverResult {
   candidates: ScoredDiscoveryCandidate[];
   /** Raw count found before dedup/scoring — lets the UI explain "0 new". */
   foundCount: number;
+  /** Candidates silently dropped by name heuristics (single-token, company names, role labels). */
+  droppedCount: number;
   usage: { inputTokens: number; outputTokens: number };
   searchCount: number;
   model: string | null;
@@ -127,6 +129,7 @@ export async function discoverProspects(
   else backend = "web";
 
   let found: DiscoveryCandidate[] = [];
+  let droppedCount = 0;
   let usage = { inputTokens: 0, outputTokens: 0 };
   let searchCount = 0;
   let model: string | null = null;
@@ -163,6 +166,7 @@ export async function discoverProspects(
     }
     const web = await searchWeb(tenantDomain, input);
     found = web.candidates;
+    droppedCount = web.droppedCount;
     usage = web.usage;
     searchCount = web.searchCount;
     model = web.model;
@@ -191,7 +195,7 @@ export async function discoverProspects(
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 
-  return { backend, candidates: scored, foundCount, usage, searchCount, model, provider };
+  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider };
 }
 
 /**

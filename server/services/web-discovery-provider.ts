@@ -16,11 +16,14 @@ import {
   type DiscoveryCandidate,
   type DiscoverySearchInput,
 } from "./discovery-provider-core";
+export type { DiscoveryCandidate };
 
 const SYSTEM_PROMPT = `You are a B2B prospecting researcher. You find real, currently-employed decision-makers who match an Ideal Customer Profile, grounded in live public web sources. You never fabricate people, titles, companies, or contact details — if you cannot verify someone from a real source, you leave them out. You only return contact details (email, LinkedIn) you actually found on a source. You respond with strict JSON only.`;
 
 export interface WebDiscoveryResult {
   candidates: DiscoveryCandidate[];
+  /** Candidates silently dropped by the name heuristic during parsing. */
+  droppedCount: number;
   usage: { inputTokens: number; outputTokens: number };
   searchCount: number;
   model: string;
@@ -53,9 +56,10 @@ export async function searchWeb(
     maxSearches: Math.min(8, Math.max(3, Math.ceil(input.limit / 5))),
   });
 
-  const candidates = parseDiscoveryCandidates(result.text, "web", input.limit);
+  const parsed = parseDiscoveryCandidates(result.text, "web", input.limit);
   return {
-    candidates,
+    candidates: parsed.candidates,
+    droppedCount: parsed.droppedCount,
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
     searchCount: result.searchCount,
     model: result.model,

@@ -234,6 +234,7 @@ interface DiscoverResult {
   backend: "web" | "salesnav" | "apollo";
   candidates: ScoredDiscoveryCandidate[];
   foundCount: number;
+  droppedCount: number;
 }
 interface DiscoveryBackend {
   id: "web" | "salesnav" | "apollo";
@@ -1390,6 +1391,11 @@ export default function OutreachCampaignDetailPage() {
             <div className="py-10 text-center text-sm text-muted-foreground">
               No new prospects found. Try widening the campaign's roles, industries, or geographies.
             </div>
+          )}
+          {discoverResult && discoverResult.droppedCount > 0 && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-dropped-notice">
+              {discoverResult.droppedCount} candidate{discoverResult.droppedCount === 1 ? " was" : "s were"} filtered out — they appeared to be company names, role labels, or incomplete names rather than real people.
+            </p>
           )}
           {salesNavBackend && !salesNavBackend.available && discoverResult && (
             <p className="text-[11px] text-muted-foreground border-t pt-2">{salesNavBackend.reason}</p>
