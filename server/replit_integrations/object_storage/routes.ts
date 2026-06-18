@@ -3,6 +3,10 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { generateThumbnail, snapWidth, isResizableContentType } from "../../services/thumbnail-service";
 import { Readable } from "stream";
 import dns from "dns";
+import { createHash } from "crypto";
+
+/** 7-day TTL for persisted external thumbnail cache entries */
+const THUMB_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // ─── SSRF helpers ─────────────────────────────────────────────────────────────
 
@@ -238,6 +242,27 @@ export function registerObjectStorageRoutes(app: Express): void {
       }
       const width = snapWidth(requestedWidth);
 
+      // ── Object-storage persistent cache lookup ──────────────────────────────
+      // Key is a deterministic hash of (url, width) stored under .private/thumb-cache/
+      const urlHash = createHash("sha256").update(`${rawUrl}:${width}`).digest("hex");
+      const storageKey = `thumb-cache/${urlHash.slice(0, 2)}/${urlHash}.webp`;
+
+      try {
+        const persisted = await objectStorageService.getThumbCacheBuffer(storageKey);
+        if (persisted && Date.now() - persisted.createdAt.getTime() < THUMB_CACHE_TTL_MS) {
+          res.set({
+            "Content-Type": "image/webp",
+            "Content-Length": String(persisted.buffer.length),
+            "Cache-Control": "public, max-age=86400",
+            Vary: "Accept",
+          });
+          return res.send(persisted.buffer);
+        }
+      } catch {
+        // Object storage unavailable or not configured — fall through to live fetch
+      }
+
+      // ── Cache miss: fetch from origin ───────────────────────────────────────
       // Manually follow redirects so we can re-validate every hop's resolved IP.
       // This prevents redirect-based SSRF where the first URL is public but a
       // subsequent Location: header points to an internal address.
@@ -307,6 +332,11 @@ export function registerObjectStorageRoutes(app: Express): void {
       if (!result) {
         return res.status(415).json({ error: "Unable to resize remote image" });
       }
+
+      // Persist to object storage in the background (fire-and-forget)
+      objectStorageService.saveThumbCacheBuffer(storageKey, result.buffer).catch((err) => {
+        console.warn("thumbnail-cache: failed to persist to object storage:", err?.message ?? err);
+      });
 
       res.set({
         "Content-Type": result.contentType,

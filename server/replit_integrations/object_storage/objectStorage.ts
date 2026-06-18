@@ -206,6 +206,35 @@ export class ObjectStorageService {
     return `/objects/${entityId}`;
   }
 
+  /**
+   * Read a thumbnail from the thumb-cache sub-directory inside the private object dir.
+   * Returns null when the object doesn't exist or PRIVATE_OBJECT_DIR is not configured.
+   */
+  async getThumbCacheBuffer(storageKey: string): Promise<{ buffer: Buffer; createdAt: Date } | null> {
+    const privateDir = this.getPrivateObjectDir();
+    const fullPath = `${privateDir.replace(/\/$/, "")}/${storageKey}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const file = objectStorageClient.bucket(bucketName).file(objectName);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+    const [metadata] = await file.getMetadata();
+    const createdAt = new Date((metadata.timeCreated ?? metadata.updated) as string);
+    const [contents] = await file.download();
+    return { buffer: contents as Buffer, createdAt };
+  }
+
+  /**
+   * Write a thumbnail WebP buffer to the thumb-cache sub-directory inside the private object dir.
+   * Silently no-ops when PRIVATE_OBJECT_DIR is not configured.
+   */
+  async saveThumbCacheBuffer(storageKey: string, buffer: Buffer): Promise<void> {
+    const privateDir = this.getPrivateObjectDir();
+    const fullPath = `${privateDir.replace(/\/$/, "")}/${storageKey}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    const file = objectStorageClient.bucket(bucketName).file(objectName);
+    await file.save(buffer, { contentType: "image/webp", resumable: false });
+  }
+
   // Tries to set the ACL policy for the object entity and return the normalized path.
   async trySetObjectEntityAclPolicy(
     rawPath: string,
