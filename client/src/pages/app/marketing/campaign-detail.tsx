@@ -860,6 +860,7 @@ export default function CampaignDetailPage() {
     },
     onSuccess: (data, status) => {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
       toast({ title: `${data.updated} post${data.updated !== 1 ? "s" : ""} ${status === "approved" ? "approved" : "rejected"}` });
     },
   });
@@ -1055,7 +1056,9 @@ export default function CampaignDetailPage() {
 
   const schedulePostsMutation = useMutation({
     mutationFn: async ({ time, perDay, daysBetween, spacingMinutes, platforms, archiveLeftover }: { time: string; perDay: number; daysBetween: number; spacingMinutes: number; platforms: string[]; archiveLeftover: boolean }) => {
-      if (!campaign?.startDate || !campaign?.numberOfDays) throw new Error("Campaign has no schedule configured");
+      if (!campaign?.startDate) throw new Error("Campaign has no start date configured");
+      const effectiveDays = campaign.numberOfDays ?? (campaign.endDate ? Math.max(1, Math.round((new Date(campaign.endDate).getTime() - new Date(campaign.startDate).getTime()) / 86400000) + 1) : null);
+      if (!effectiveDays) throw new Error("Campaign has no duration configured — set an end date or number of days");
       const platformSet = new Set(platforms);
       // Only the chosen platforms get distributed; everything else is left as-is
       // (and optionally archived afterward as "leftovers").
@@ -1097,8 +1100,8 @@ export default function CampaignDetailPage() {
       const campaignStart = new Date(campaign.startDate);
       campaignStart.setHours(0, 0, 0, 0);
       const start = campaignStart < localToday ? localToday : campaignStart;
-      const origEnd = addDays(campaignStart, campaign.numberOfDays - 1);
-      const effectiveEnd = origEnd < localToday ? addDays(localToday, campaign.numberOfDays - 1) : origEnd;
+      const origEnd = addDays(campaignStart, effectiveDays - 1);
+      const effectiveEnd = origEnd < localToday ? addDays(localToday, effectiveDays - 1) : origEnd;
 
       const eligibleSlots: string[] = [];
       let current = pushToNextWeekday(new Date(start));
@@ -2333,7 +2336,7 @@ export default function CampaignDetailPage() {
                   <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
               )}
-              {posts.length > 0 && campaign?.startDate && campaign?.numberOfDays && (() => {
+              {posts.length > 0 && campaign?.startDate && (campaign?.numberOfDays || campaign?.endDate) && (() => {
                 const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected");
                 const unscheduledCount = activePosts.filter(p => !p.scheduledDate).length;
                 const needsScheduling = unscheduledCount > 0 && jobStatus?.status === "completed";
@@ -4666,7 +4669,7 @@ export default function CampaignDetailPage() {
           <DialogHeader>
             <DialogTitle>Schedule Posts</DialogTitle>
             <DialogDescription>
-              Distribute active posts evenly across the campaign date range ({campaign?.startDate ? format(new Date(campaign.startDate), "MMM d") : "?"} — {campaign?.numberOfDays} days).
+              Distribute active posts evenly across the campaign date range ({campaign?.startDate ? format(new Date(campaign.startDate), "MMM d") : "?"}{campaign?.endDate ? ` — ${format(new Date(campaign.endDate), "MMM d")}` : campaign?.numberOfDays ? ` — ${campaign.numberOfDays} days` : ""}).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -4781,15 +4784,16 @@ export default function CampaignDetailPage() {
                 const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected" && schedulePlatforms.includes(p.platform)).length;
                 const interval = parseInt(daysBetweenPosts);
                 const perDay = parseInt(postsPerDay);
-                if (!campaign?.startDate || !campaign?.numberOfDays) {
+                const previewDays = campaign?.numberOfDays ?? (campaign?.startDate && campaign?.endDate ? Math.max(1, Math.round((new Date(campaign.endDate).getTime() - new Date(campaign.startDate).getTime()) / 86400000) + 1) : null);
+                if (!campaign?.startDate || !previewDays) {
                   return `${active} active post${active !== 1 ? "s" : ""} will be distributed across eligible days.`;
                 }
                 const campaignStart = new Date(campaign.startDate);
                 const todayPreview = new Date();
                 todayPreview.setHours(0, 0, 0, 0);
                 const start = campaignStart < todayPreview ? todayPreview : campaignStart;
-                const origEnd = addDays(new Date(campaign.startDate), campaign.numberOfDays - 1);
-                const endDate = origEnd < todayPreview ? addDays(todayPreview, campaign.numberOfDays - 1) : origEnd;
+                const origEnd = addDays(new Date(campaign.startDate), previewDays - 1);
+                const endDate = origEnd < todayPreview ? addDays(todayPreview, previewDays - 1) : origEnd;
                 const isWeekendExcluded = (date: Date) => {
                   const dow = date.getDay();
                   return (dow === 0 && !campaign.includeSunday) || (dow === 6 && !campaign.includeSaturday);
