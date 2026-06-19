@@ -3027,7 +3027,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       const personaIds: string[] = Array.isArray(req.body?.personaIds) ? req.body.personaIds : [];
       const accountIds: string[] = Array.isArray(req.body?.accountIds) ? req.body.accountIds : [];
       let thematicBriefText: string = typeof req.body?.thematicBrief === "string" ? req.body.thematicBrief.trim() : "";
-      const thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
+      let thematicUrl: string = typeof req.body?.thematicUrl === "string" ? req.body.thematicUrl.trim() : "";
 
       // When the caller supplies a sourceBriefId (brief-row "Generate posts"
       // button), load the brief from DB and prepend its structured fields to
