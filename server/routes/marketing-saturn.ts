@@ -86,6 +86,7 @@ import { extractContentFromUrl, generateContentSummary, loadGroundingContext } f
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt, formatFoundingSignalsForPrompt } from "../services/strategic-context";
 import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
+import { crawlPricingPage } from "../services/web-crawler";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
@@ -3069,6 +3070,44 @@ Return ONLY a valid JSON object (no markdown fences) with:
         }
       }
 
+      // Blog post promotion mode — crawl the supplied URL and build a rich
+      // thematic brief from the article content. Forces exactly 5 variants per
+      // platform (one per distinct promotional angle) and auto-links every post
+      // back to the blog URL.
+      const rawBlogUrl: string = typeof req.body?.blogUrl === "string" ? req.body.blogUrl.trim() : "";
+      const rawBlogSummary: string = typeof req.body?.blogSummary === "string" ? req.body.blogSummary.trim() : "";
+      if (rawBlogUrl) {
+        try {
+          const crawled = await Promise.race([
+            crawlPricingPage(rawBlogUrl, { useHeadless: true }),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000)),
+          ]);
+          if (crawled && crawled.content && crawled.content.length > 100) {
+            // Trim the article body to ~4 000 chars so the AI prompt stays focused
+            const articleBody = crawled.content.slice(0, 4000);
+            const blogParts: string[] = [];
+            blogParts.push(`BLOG POST PROMOTION — generate posts that drive traffic back to this article.`);
+            if (crawled.title) blogParts.push(`Title: ${crawled.title}`);
+            blogParts.push(`URL: ${rawBlogUrl}`);
+            blogParts.push(`\n## Article content (use key insights, quotes, and data points from this):\n${articleBody}`);
+            if (rawBlogSummary) blogParts.push(`\n## Additional guidance from the marketer:\n${rawBlogSummary}`);
+            blogParts.push(`\nIMPORTANT: Every post MUST include the article URL (${rawBlogUrl}) with a clear CTA ("Read more:", "Full post:", "Link in bio:", etc.). Posts are promotional — they tease the best insight from the article, not summarise it completely.`);
+            thematicBriefText = blogParts.join("\n");
+          } else if (rawBlogSummary) {
+            // Crawl returned nothing useful — fall back to the user's summary + URL
+            thematicBriefText = `BLOG POST PROMOTION\nURL: ${rawBlogUrl}\n\n${rawBlogSummary}`;
+          } else {
+            thematicBriefText = `BLOG POST PROMOTION — write 5 social posts driving traffic to: ${rawBlogUrl}`;
+          }
+        } catch (err: any) {
+          console.warn(`[Saturn] Blog crawl failed for ${rawBlogUrl}:`, err.message);
+          // Degrade gracefully — use whatever context the user provided
+          thematicBriefText = rawBlogSummary
+            ? `BLOG POST PROMOTION\nURL: ${rawBlogUrl}\n\n${rawBlogSummary}`
+            : `BLOG POST PROMOTION — write 5 social posts driving traffic to: ${rawBlogUrl}`;
+        }
+      }
+
       const thematicBrief: string = thematicBriefText;
       const useThematicMode: boolean = !!(thematicBrief);
       // Default on: each source content asset's lead image becomes one of
@@ -3078,7 +3117,8 @@ Return ONLY a valid JSON object (no markdown fences) with:
 
       // Optional user-chosen volume: how many unique text variants to draft per
       // platform. Clamp to the supported range; null = auto-size to posting days.
-      const rawVariants = req.body?.variantsPerPlatform;
+      // Blog mode always produces exactly 5 variants (one per promotional angle).
+      const rawVariants = rawBlogUrl ? 5 : req.body?.variantsPerPlatform;
       const variantsPerPlatform: number | null =
         (typeof rawVariants === "number" && Number.isFinite(rawVariants))
           ? Math.min(Math.max(Math.round(rawVariants), MIN_VARIANTS_PER_PLATFORM), MAX_VARIANTS_PER_PLATFORM)
@@ -3123,7 +3163,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           brandImageIds,
           personaIds,
           useThematicMode ? thematicBrief : "",
-          useThematicMode ? thematicUrl : "",
+          useThematicMode ? (rawBlogUrl || thematicUrl) : "",
           { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined, accountIds: accountIds.length > 0 ? accountIds : undefined },
           reportProgress,
         ),

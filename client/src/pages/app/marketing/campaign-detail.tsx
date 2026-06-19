@@ -406,9 +406,11 @@ export default function CampaignDetailPage() {
   const [generateDialogAccountIds, setGenerateDialogAccountIds] = useState<string[] | null>(null);
   const [brandCategoryFilter, setBrandCategoryFilter] = useState<string>("all");
   const [brandPage, setBrandPage] = useState(0);
-  const [generateMode, setGenerateMode] = useState<"asset" | "thematic">("asset");
+  const [generateMode, setGenerateMode] = useState<"asset" | "thematic" | "blog">("asset");
   const [thematicBrief, setThematicBrief] = useState("");
   const [thematicUrl, setThematicUrl] = useState("");
+  const [blogUrl, setBlogUrl] = useState("");
+  const [blogSummary, setBlogSummary] = useState("");
   const [selectedBriefId, setSelectedBriefId] = useState<string | null>(null);
   // Tracks which brief row triggered the current generation job so we can show
   // an inline spinner on that row while the job is running.
@@ -756,12 +758,12 @@ export default function CampaignDetailPage() {
 
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds, blogUrl: bUrl, blogSummary: bSummary }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null; blogUrl?: string; blogSummary?: string }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [] }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [], blogUrl: bUrl || "", blogSummary: bSummary || "" }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -777,6 +779,8 @@ export default function CampaignDetailPage() {
       setGenerateDialogAccountIds(null);
       setThematicBrief("");
       setThematicUrl("");
+      setBlogUrl("");
+      setBlogSummary("");
       setGenerateMode("asset");
       setSelectedBriefId(null);
       setVariantsPerPlatform(null);
@@ -4833,7 +4837,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogUrl(""); setBlogSummary(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -4938,14 +4942,14 @@ export default function CampaignDetailPage() {
             )}
 
             {/* Mode Toggle */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={() => setGenerateMode("asset")}
                 className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "asset" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
                 data-testid="button-mode-asset"
               >
                 <span className="text-sm font-semibold">From Digital Assets</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Each pinned content asset <em>drives</em> the post content — posts are written about the asset itself</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Each pinned asset drives the post — posts are written about the asset itself</span>
               </button>
               <button
                 onClick={() => setGenerateMode("thematic")}
@@ -4953,7 +4957,15 @@ export default function CampaignDetailPage() {
                 data-testid="button-mode-thematic"
               >
                 <span className="text-sm font-semibold">From Brief / Theme</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Posts come from your brief text — pinned links and images are applied <em>after</em> generation</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Posts come from your brief text — pinned links and images applied after</span>
+              </button>
+              <button
+                onClick={() => setGenerateMode("blog")}
+                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "blog" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
+                data-testid="button-mode-blog"
+              >
+                <span className="text-sm font-semibold">Promote a Blog Post</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Paste a blog URL — AI reads it and generates 5 promotion-ready posts with visual variants</span>
               </button>
             </div>
 
@@ -5028,6 +5040,39 @@ export default function CampaignDetailPage() {
                     data-testid="input-thematic-url"
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Blog Post Promotion Fields */}
+            {generateMode === "blog" && (
+              <div className="space-y-3 p-3 rounded-lg bg-muted/40 border">
+                <div>
+                  <Label className="text-sm font-medium">Blog Post URL <span className="text-destructive">*</span></Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">The AI will read this page and write 5 social posts promoting the article — each from a different angle.</p>
+                  <input
+                    type="url"
+                    value={blogUrl}
+                    onChange={e => setBlogUrl(e.target.value)}
+                    placeholder="https://yourblog.com/your-post"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    data-testid="input-blog-url"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Additional context (optional)</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Add any extra guidance — target audience, key takeaway, campaign angle — to sharpen the generated posts.</p>
+                  <textarea
+                    value={blogSummary}
+                    onChange={e => setBlogSummary(e.target.value)}
+                    placeholder="e.g. Focus on mid-market CFOs. Emphasise the ROI angle. Lead with the 3× efficiency stat."
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[80px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 mt-1"
+                    data-testid="input-blog-summary"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-primary" />
+                  Generates exactly <strong>5 posts</strong> per account — one per promotional angle (insight, question, story, tip, CTA). Each gets a visual graphic from your brand library.
+                </p>
               </div>
             )}
 
@@ -5153,20 +5198,21 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogUrl(""); setBlogSummary(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
                 personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
                 thematicBrief: generateMode === "thematic" ? thematicBrief : undefined,
                 thematicUrl: generateMode === "thematic" ? thematicUrl : undefined,
+                blogUrl: generateMode === "blog" ? blogUrl : undefined,
+                blogSummary: generateMode === "blog" ? blogSummary : undefined,
                 wrapLinks: wrapPostLinks,
-                variantsPerPlatform,
+                variantsPerPlatform: generateMode === "blog" ? 5 : variantsPerPlatform,
                 sourceBriefId: selectedBriefId,
-                // null = all accounts; non-null array = specific subset (may be empty, but Generate is disabled then)
                 accountIds: generateDialogAccountIds,
               })}
-              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim()) || (generateDialogAccountIds !== null && generateDialogAccountIds.length === 0)}
+              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim()) || (generateMode === "blog" && !blogUrl.trim()) || (generateDialogAccountIds !== null && generateDialogAccountIds.length === 0)}
               className="gap-2"
               data-testid="button-confirm-generate"
             >
