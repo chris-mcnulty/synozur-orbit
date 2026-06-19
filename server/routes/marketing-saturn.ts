@@ -3070,41 +3070,28 @@ Return ONLY a valid JSON object (no markdown fences) with:
         }
       }
 
-      // Blog post promotion mode — crawl the supplied URL and build a rich
-      // thematic brief from the article content. Forces exactly 5 variants per
-      // platform (one per distinct promotional angle) and auto-links every post
-      // back to the blog URL.
-      const rawBlogUrl: string = typeof req.body?.blogUrl === "string" ? req.body.blogUrl.trim() : "";
-      const rawBlogSummary: string = typeof req.body?.blogSummary === "string" ? req.body.blogSummary.trim() : "";
-      if (rawBlogUrl) {
-        try {
-          const crawled = await Promise.race([
-            crawlPricingPage(rawBlogUrl, { useHeadless: true }),
-            new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000)),
-          ]);
-          if (crawled && crawled.content && crawled.content.length > 100) {
-            // Trim the article body to ~4 000 chars so the AI prompt stays focused
-            const articleBody = crawled.content.slice(0, 4000);
-            const blogParts: string[] = [];
-            blogParts.push(`BLOG POST PROMOTION — generate posts that drive traffic back to this article.`);
-            if (crawled.title) blogParts.push(`Title: ${crawled.title}`);
-            blogParts.push(`URL: ${rawBlogUrl}`);
-            blogParts.push(`\n## Article content (use key insights, quotes, and data points from this):\n${articleBody}`);
-            if (rawBlogSummary) blogParts.push(`\n## Additional guidance from the marketer:\n${rawBlogSummary}`);
-            blogParts.push(`\nIMPORTANT: Every post MUST include the article URL (${rawBlogUrl}) with a clear CTA ("Read more:", "Full post:", "Link in bio:", etc.). Posts are promotional — they tease the best insight from the article, not summarise it completely.`);
-            thematicBriefText = blogParts.join("\n");
-          } else if (rawBlogSummary) {
-            // Crawl returned nothing useful — fall back to the user's summary + URL
-            thematicBriefText = `BLOG POST PROMOTION\nURL: ${rawBlogUrl}\n\n${rawBlogSummary}`;
-          } else {
-            thematicBriefText = `BLOG POST PROMOTION — write 5 social posts driving traffic to: ${rawBlogUrl}`;
+      // Blog post promotion mode — load a content library asset and build a rich
+      // thematic brief from it. Forces exactly 5 variants per platform (one per
+      // distinct promotional angle) and auto-links every post back to the asset URL.
+      const rawBlogAssetId: string = typeof req.body?.blogAssetId === "string" ? req.body.blogAssetId.trim() : "";
+      if (rawBlogAssetId) {
+        const [blogAsset] = await db.select().from(contentAssets)
+          .where(and(
+            eq(contentAssets.id, rawBlogAssetId),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          ));
+        if (blogAsset) {
+          const articleContent = (blogAsset.content || blogAsset.aiSummary || "").slice(0, 4000);
+          const blogParts: string[] = [];
+          blogParts.push(`BLOG POST PROMOTION — generate posts that drive traffic back to this article.`);
+          blogParts.push(`Title: ${blogAsset.title}`);
+          if (blogAsset.url) blogParts.push(`URL: ${blogAsset.url}`);
+          if (articleContent) blogParts.push(`\n## Article content (use key insights, quotes, and data points from this):\n${articleContent}`);
+          if (blogAsset.url) {
+            blogParts.push(`\nIMPORTANT: Every post MUST include the article URL (${blogAsset.url}) with a clear CTA ("Read more:", "Full post:", "Link in bio:", etc.). Posts are promotional — they tease the best insight from the article, not summarise it completely.`);
+            if (!thematicUrl) thematicUrl = blogAsset.url;
           }
-        } catch (err: any) {
-          console.warn(`[Saturn] Blog crawl failed for ${rawBlogUrl}:`, err.message);
-          // Degrade gracefully — use whatever context the user provided
-          thematicBriefText = rawBlogSummary
-            ? `BLOG POST PROMOTION\nURL: ${rawBlogUrl}\n\n${rawBlogSummary}`
-            : `BLOG POST PROMOTION — write 5 social posts driving traffic to: ${rawBlogUrl}`;
+          thematicBriefText = blogParts.join("\n");
         }
       }
 
@@ -3118,7 +3105,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       // Optional user-chosen volume: how many unique text variants to draft per
       // platform. Clamp to the supported range; null = auto-size to posting days.
       // Blog mode always produces exactly 5 variants (one per promotional angle).
-      const rawVariants = rawBlogUrl ? 5 : req.body?.variantsPerPlatform;
+      const rawVariants = rawBlogAssetId ? 5 : req.body?.variantsPerPlatform;
       const variantsPerPlatform: number | null =
         (typeof rawVariants === "number" && Number.isFinite(rawVariants))
           ? Math.min(Math.max(Math.round(rawVariants), MIN_VARIANTS_PER_PLATFORM), MAX_VARIANTS_PER_PLATFORM)
@@ -3163,7 +3150,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           brandImageIds,
           personaIds,
           useThematicMode ? thematicBrief : "",
-          useThematicMode ? (rawBlogUrl || thematicUrl) : "",
+          useThematicMode ? thematicUrl : "",
           { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined, accountIds: accountIds.length > 0 ? accountIds : undefined },
           reportProgress,
         ),

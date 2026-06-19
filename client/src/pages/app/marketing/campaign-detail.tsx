@@ -409,8 +409,11 @@ export default function CampaignDetailPage() {
   const [generateMode, setGenerateMode] = useState<"asset" | "thematic" | "blog">("asset");
   const [thematicBrief, setThematicBrief] = useState("");
   const [thematicUrl, setThematicUrl] = useState("");
-  const [blogUrl, setBlogUrl] = useState("");
-  const [blogSummary, setBlogSummary] = useState("");
+  const [blogAssetId, setBlogAssetId] = useState<string | null>(null);
+  const [blogSearch, setBlogSearch] = useState("");
+  const [blogImportUrl, setBlogImportUrl] = useState("");
+  const [blogImportStatus, setBlogImportStatus] = useState<"idle" | "fetching" | "done" | "error">("idle");
+  const [blogImportError, setBlogImportError] = useState("");
   const [selectedBriefId, setSelectedBriefId] = useState<string | null>(null);
   // Tracks which brief row triggered the current generation job so we can show
   // an inline spinner on that row while the job is running.
@@ -757,13 +760,60 @@ export default function CampaignDetailPage() {
   const maxVariants = genConfig?.maxVariantsPerPlatform ?? 10;
 
 
+  const importBlogMutation = useMutation({
+    mutationFn: async (url: string) => {
+      setBlogImportStatus("fetching");
+      const extractRes = await fetch("/api/content-assets/extract", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!extractRes.ok) {
+        const err = await extractRes.json().catch(() => ({}));
+        throw new Error((err as any).error || "Could not extract content from this URL");
+      }
+      const extracted = await extractRes.json();
+      const createRes = await fetch("/api/content-assets", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: extracted.title || url,
+          description: extracted.description || "",
+          url,
+          content: extracted.content || "",
+          aiSummary: extracted.aiSummary || null,
+          leadImageUrl: extracted.leadImageUrl || null,
+          extractionStatus: "extracted",
+          assetType: "blog_post",
+        }),
+      });
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error((err as any).error || "Could not save asset");
+      }
+      return createRes.json() as Promise<ContentAsset>;
+    },
+    onSuccess: (asset: ContentAsset) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      setBlogAssetId(asset.id);
+      setBlogImportStatus("done");
+      setBlogImportUrl("");
+    },
+    onError: (err: Error) => {
+      setBlogImportStatus("error");
+      setBlogImportError(err.message);
+    },
+  });
+
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds, blogUrl: bUrl, blogSummary: bSummary }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null; blogUrl?: string; blogSummary?: string }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds, blogAssetId: bAssetId }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null; blogAssetId?: string }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [], blogUrl: bUrl || "", blogSummary: bSummary || "" }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [], blogAssetId: bAssetId || "" }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -779,8 +829,11 @@ export default function CampaignDetailPage() {
       setGenerateDialogAccountIds(null);
       setThematicBrief("");
       setThematicUrl("");
-      setBlogUrl("");
-      setBlogSummary("");
+      setBlogAssetId(null);
+      setBlogSearch("");
+      setBlogImportUrl("");
+      setBlogImportStatus("idle");
+      setBlogImportError("");
       setGenerateMode("asset");
       setSelectedBriefId(null);
       setVariantsPerPlatform(null);
@@ -4837,7 +4890,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogUrl(""); setBlogSummary(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogAssetId(null); setBlogSearch(""); setBlogImportUrl(""); setBlogImportStatus("idle"); setBlogImportError(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -5043,36 +5096,91 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
-            {/* Blog Post Promotion Fields */}
+            {/* Blog Post Promotion — asset picker + import from URL */}
             {generateMode === "blog" && (
               <div className="space-y-3 p-3 rounded-lg bg-muted/40 border">
+                {/* Existing asset picker */}
                 <div>
-                  <Label className="text-sm font-medium">Blog Post URL <span className="text-destructive">*</span></Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">The AI will read this page and write 5 social posts promoting the article — each from a different angle.</p>
+                  <Label className="text-sm font-medium">Pick a blog post from your content library</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Select an existing post, or import one from a URL below to save it and use it here.</p>
                   <input
-                    type="url"
-                    value={blogUrl}
-                    onChange={e => setBlogUrl(e.target.value)}
-                    placeholder="https://yourblog.com/your-post"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    data-testid="input-blog-url"
+                    type="text"
+                    value={blogSearch}
+                    onChange={e => setBlogSearch(e.target.value)}
+                    placeholder="Search posts…"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 mb-2"
+                    data-testid="input-blog-search"
                   />
+                  {(() => {
+                    const blogAssets = allAssets.filter(a => a.url && (a as any).status !== "archived");
+                    const q = blogSearch.trim().toLowerCase();
+                    const filtered = q
+                      ? blogAssets.filter(a => a.title.toLowerCase().includes(q) || (a.url || "").toLowerCase().includes(q))
+                      : blogAssets;
+                    if (filtered.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground text-center py-3 border rounded-md bg-background">
+                          {q ? `No posts matching "${blogSearch}"` : "No web-linked posts in your library yet — import one below."}
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="max-h-[150px] overflow-y-auto border rounded-md bg-background divide-y">
+                        {filtered.map(asset => (
+                          <button
+                            key={asset.id}
+                            onClick={() => setBlogAssetId(blogAssetId === asset.id ? null : asset.id)}
+                            className={`w-full flex flex-col items-start px-3 py-2 text-left transition-colors ${blogAssetId === asset.id ? "bg-primary/10" : "hover:bg-muted/50"}`}
+                            data-testid={`button-blog-asset-${asset.id}`}
+                          >
+                            <span className={`text-sm font-medium line-clamp-1 ${blogAssetId === asset.id ? "text-primary" : ""}`}>{asset.title}</span>
+                            <span className="text-xs text-muted-foreground truncate w-full">
+                              {(() => { try { return new URL(asset.url!).hostname; } catch { return asset.url; } })()}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
-                <div>
-                  <Label className="text-sm font-medium">Additional context (optional)</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Add any extra guidance — target audience, key takeaway, campaign angle — to sharpen the generated posts.</p>
-                  <textarea
-                    value={blogSummary}
-                    onChange={e => setBlogSummary(e.target.value)}
-                    placeholder="e.g. Focus on mid-market CFOs. Emphasise the ROI angle. Lead with the 3× efficiency stat."
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[80px] resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 mt-1"
-                    data-testid="input-blog-summary"
-                  />
+
+                {/* Import from URL */}
+                <div className="border-t pt-3 space-y-2">
+                  <Label className="text-sm font-medium">Import from URL</Label>
+                  <p className="text-xs text-muted-foreground">Paste a blog post URL — it'll be fetched, saved to your library, and selected automatically.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={blogImportUrl}
+                      onChange={e => { setBlogImportUrl(e.target.value); setBlogImportStatus("idle"); setBlogImportError(""); }}
+                      placeholder="https://yourblog.com/your-post"
+                      className="flex-1 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      data-testid="input-blog-import-url"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!blogImportUrl.trim() || blogImportStatus === "fetching"}
+                      onClick={() => importBlogMutation.mutate(blogImportUrl.trim())}
+                      data-testid="button-blog-import"
+                    >
+                      {blogImportStatus === "fetching" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Fetch & Use"}
+                    </Button>
+                  </div>
+                  {blogImportStatus === "error" && (
+                    <p className="text-xs text-destructive">{blogImportError || "Could not fetch this URL."}</p>
+                  )}
+                  {blogImportStatus === "done" && (
+                    <p className="text-xs text-green-600">Imported and selected — ready to generate.</p>
+                  )}
                 </div>
-                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-primary" />
-                  Generates exactly <strong>5 posts</strong> per account — one per promotional angle (insight, question, story, tip, CTA). Each gets a visual graphic from your brand library.
-                </p>
+
+                {blogAssetId && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 border-t pt-2">
+                    <Sparkles className="w-3 h-3 text-primary flex-shrink-0" />
+                    Generates exactly <strong>5 posts</strong> per account — one per promotional angle (insight, question, story, tip, CTA).
+                  </p>
+                )}
               </div>
             )}
 
@@ -5198,21 +5306,20 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogUrl(""); setBlogSummary(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogAssetId(null); setBlogSearch(""); setBlogImportUrl(""); setBlogImportStatus("idle"); setBlogImportError(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
                 personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
                 thematicBrief: generateMode === "thematic" ? thematicBrief : undefined,
                 thematicUrl: generateMode === "thematic" ? thematicUrl : undefined,
-                blogUrl: generateMode === "blog" ? blogUrl : undefined,
-                blogSummary: generateMode === "blog" ? blogSummary : undefined,
+                blogAssetId: generateMode === "blog" ? (blogAssetId ?? undefined) : undefined,
                 wrapLinks: wrapPostLinks,
                 variantsPerPlatform: generateMode === "blog" ? 5 : variantsPerPlatform,
                 sourceBriefId: selectedBriefId,
                 accountIds: generateDialogAccountIds,
               })}
-              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim()) || (generateMode === "blog" && !blogUrl.trim()) || (generateDialogAccountIds !== null && generateDialogAccountIds.length === 0)}
+              disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim()) || (generateMode === "blog" && !blogAssetId) || (generateDialogAccountIds !== null && generateDialogAccountIds.length === 0)}
               className="gap-2"
               data-testid="button-confirm-generate"
             >
