@@ -3299,9 +3299,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
     // By default, skip posts already marked delivered (exported/published) so the
     // same posts aren't re-exported every time. Caller can opt back in.
     const includeExported = req.query.includeExported === "true";
+    // publish_failed posts are on the Orbit direct-posting path (being retried)
+    // and should not appear in SocialPilot CSV exports.
     const excludedStatuses = includeExported
       ? ["deleted", "rejected"]
-      : ["deleted", "rejected", "exported", "published"];
+      : ["deleted", "rejected", "exported", "published", "publish_failed"];
 
     const allPosts = await db.select().from(generatedPosts)
       .where(and(

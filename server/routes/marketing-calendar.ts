@@ -759,9 +759,12 @@ export function registerMarketingCalendarRoutes(app: Express) {
         ne(generatedPosts.status, "archived"),
       ];
       // Skip already-delivered posts by default so they don't get re-exported.
+      // publish_failed posts are on the Orbit direct-posting path and must not
+      // appear in SocialPilot CSV exports.
       if (!includeExported) {
         conds.push(ne(generatedPosts.status, "exported"));
         conds.push(ne(generatedPosts.status, "published"));
+        conds.push(ne(generatedPosts.status, "publish_failed"));
       }
       if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
       if (toDate) conds.push(lte(generatedPosts.scheduledDate, toDate));

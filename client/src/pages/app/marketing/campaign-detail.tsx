@@ -251,6 +251,7 @@ interface SocialAccount {
   id: string;
   platform: string;
   accountName: string;
+  isConnected?: boolean;
 }
 
 interface GeneratedPost {
@@ -282,15 +283,15 @@ interface GeneratedPost {
 // state of every post is obvious at a glance in lists and the review grid.
 function getPostStage(post: { status: string; publishedAt?: string; publishError?: string; scheduledDate?: string }) {
   if (post.publishedAt || post.status === "published")
-    return { label: "Posted", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
+    return { label: "Posted via Orbit", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
   if (post.status === "rejected")
     return { label: "Rejected", cls: "text-orange-600 border-orange-300", Icon: XCircle };
   if (post.status === "publish_failed" || post.publishError)
-    return { label: "Posting failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
+    return { label: "Orbit: post failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
   if (post.status === "exported")
     return post.scheduledDate
-      ? { label: "Scheduled", cls: "text-blue-600 border-blue-300", Icon: Calendar }
-      : { label: "Exported", cls: "text-blue-600 border-blue-300", Icon: CheckCircle };
+      ? { label: "SocialPilot: scheduled", cls: "text-blue-600 border-blue-300", Icon: Calendar }
+      : { label: "Via SocialPilot", cls: "text-blue-600 border-blue-300", Icon: CheckCircle };
   if (post.status === "approved")
     return { label: "Ready to post", cls: "text-emerald-600 border-emerald-300", Icon: CheckCircle };
   return { label: "Draft", cls: "text-muted-foreground border-muted-foreground/40", Icon: Pencil };
@@ -2938,19 +2939,23 @@ export default function CampaignDetailPage() {
                             >
                               <ImageLucide className="w-3.5 h-3.5" />
                             </Button>
-                            {post.status === "approved" && !post.publishedAt && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="gap-1 text-blue-600"
-                                title="Publish now to the linked social account"
-                                onClick={() => publishNowMutation.mutate(post.id)}
-                                disabled={publishNowMutation.isPending}
-                                data-testid={`button-publish-now-${post.id}`}
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" />Publish now
-                              </Button>
-                            )}
+                            {post.status === "approved" && !post.publishedAt && (() => {
+                              const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
+                              const connected = acct?.isConnected !== false;
+                              return (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="gap-1 text-blue-600"
+                                  title={connected ? "Publish now via Orbit to the linked social account" : "Account not connected — reconnect it in Social Accounts settings before publishing directly"}
+                                  onClick={() => publishNowMutation.mutate(post.id)}
+                                  disabled={publishNowMutation.isPending || !connected}
+                                  data-testid={`button-publish-now-${post.id}`}
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />Publish now
+                                </Button>
+                              );
+                            })()}
                             {!post.publishedAt && post.status !== "rejected" && (
                               <Button
                                 variant="ghost"
