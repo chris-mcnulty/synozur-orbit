@@ -8,16 +8,18 @@ This document compares the marketing capabilities of **HubSpot Marketing Hub** a
 
 ### Scope boundary (important)
 
-Orbit does **not** own the public website. Synozur's public marketing site (`synozur.com`), its API server, and the Galaxy client portal live in a separate repo, **`chris-mcnulty/synozur-webbase`**. Per direction, capabilities that the website layer already provides are **not** counted as Orbit gaps. We therefore treat the following as **owned by `synozur-webbase`** and out of scope for Orbit:
+Orbit does **not** own the public website. Synozur's public marketing site (`synozur.com`), its API server, and the Galaxy client portal live in a separate repo, **`chris-mcnulty/synozur-webbase`**. Per direction, capabilities the website layer already provides are **not** counted as Orbit gaps.
 
-- Public landing page **building/hosting** (Orbit already generates landing-page _copy_ as branded Word docs for handoff).
-- On-site **forms / lead-capture** rendering, contact/newsletter signup widgets, and on-page **CTAs**.
-- **Blog / CMS publishing** (Orbit generates blog content as branded Word docs; replit.md notes the plan to post directly via the website API once it ships).
-- On-site cookie/consent banners and on-page SEO meta rendering.
+Confirmed from `synozur-webbase` documentation (`docs/no-code-page-authoring-plan.md`, `docs/content-types.md`, `docs/integrations.md`, `docs/seo-env.md`), the following are **owned by `synozur-webbase`** and out of scope for Orbit:
 
-> Note: `synozur-webbase` is outside this session's repo scope, so its exact feature set could not be enumerated directly. The boundary above is based on its README (public marketing site + api-server + Galaxy portal). **Open question for confirmation in §7.**
+- **Landing pages & page building** — no-code drag-and-drop block builder (hero, prose, CTA cards, FAQs, logo strips, testimonials, video, etc.), in-place editing, templates, scheduled publishing.
+- **On-page CTAs** — first-class CTA-card blocks in the page builder.
+- **Forms & lead capture** — contact forms, subscription signups, and "get started" submissions (hand-coded interactive flows).
+- **Blog / CMS publishing** — a `collateral` library covering blog posts, case studies, white papers, videos, podcasts, and events, each with public detail routes and an admin editor. (Orbit generates this content as branded Word docs today; the website is the publishing target.)
+- **On-page SEO** — SEO titles/descriptions, OG images, sitemap generation.
+- **Microsoft Bookings** scheduling and **Entra SSO**.
 
-The interesting gaps, then, are not the website widgets themselves but the **connective tissue** between website lead capture and marketing execution — the contact lifecycle, segmentation, scoring, automation, and attribution that HubSpot bundles and that neither Orbit nor (presumably) the website currently owns.
+**Critical finding — the website already runs a HubSpot lead pipeline.** Per `synozur-webbase/docs/integrations.md`, the site **captures leads from contact forms, subscriptions, and "get started" submissions and syncs them to HubSpot as contacts with custom timeline events**, toggleable per form type. **HubSpot is therefore already the system of record for inbound contacts and their engagement timeline.** This reframes the gap analysis: the question is not "should Orbit rebuild a contact/automation spine?" but "how should Orbit interoperate with the HubSpot contact graph the website already feeds?" (see §5 and §7).
 
 ## 2. HubSpot Marketing Hub — Capability Map
 
@@ -79,9 +81,11 @@ Source: codebase audit of `client/src/pages/app/marketing/*`, `server/routes/mar
 | Content & brand asset library | ✅ | ✅ | Parity |
 | SEO keyword/SERP + content optimization | ✅ | ✅ | Parity |
 | UTM / link tracking | ✅ | ✅ | Parity |
-| Landing page builder/hosting | 🌐 | ✅ | Website-owned |
-| Forms / lead-capture widgets / on-site CTAs | 🌐 | ✅ | Website-owned |
-| Blog / CMS publishing | 🌐 | ✅ | Website-owned |
+| Landing page builder/hosting | 🌐 ✓confirmed | ✅ | Website-owned |
+| Forms / lead-capture widgets / on-site CTAs | 🌐 ✓confirmed | ✅ | Website-owned |
+| Blog / CMS publishing | 🌐 ✓confirmed | ✅ | Website-owned |
+| On-page SEO (titles/meta/OG/sitemap) | 🌐 ✓confirmed | ✅ | Website-owned |
+| Inbound lead → contact sync w/ timeline | 🌐→HubSpot ✓confirmed | ✅ | Website-owned (into HubSpot) |
 | **Marketing automation / workflows** | ❌ | ✅ | **Gap (high)** |
 | **Email nurture / drip sequences** | ❌ | ✅ | **Gap (high)** |
 | **Dynamic / behavioral segmentation** | ❌ (static lists only) | ✅ | **Gap (high)** |
@@ -96,50 +100,49 @@ Source: codebase audit of `client/src/pages/app/marketing/*`, `server/routes/mar
 | Custom report builder / dashboards | ⚠️ | ✅ | **Gap (low-med)** |
 | SMS / WhatsApp | ❌ | ✅ (add-on) | Out of scope |
 
-## 5. Gap Analysis (prioritized, website items excluded)
+## 5. Gap Analysis (prioritized, website + existing-HubSpot items excluded)
 
-The unifying theme: **Orbit creates and distributes content brilliantly but cannot yet orchestrate a contact's journey.** It has no behavioral contact model, no automation engine, and no way to nurture or score the leads the website captures. Closing this turns Orbit from a content/intel platform into a closed-loop GTM engine.
+The unifying theme: **Orbit creates and distributes content brilliantly but is blind to the contact journey that HubSpot already holds.** The website feeds leads + engagement into HubSpot; Orbit can read companies/deals but not the contact-level marketing timeline, and it can't act on it (segment, nurture, score, attribute). Closing this turns Orbit into a closed-loop GTM engine — **without rebuilding the contact spine HubSpot already owns.**
 
-**Tier 1 — Foundational (unlocks everything else)**
-1. **Unified Marketing Contact model + activity timeline.** Today contacts exist only as `email_recipients` and read-only HubSpot mirrors. A first-class `marketing_contacts` table with an event timeline (email opens/clicks already exist via `marketing_link_clicks`/SendGrid webhooks; add form-submit, page-view, post-engagement events) is the substrate for segmentation, scoring, and automation.
-2. **Dynamic segmentation engine.** Rule-based "active lists" that recompute from contact properties + timeline events (vs. today's static `email_recipient_lists`). Reuse for email targeting, automation enrollment, and ad audiences later.
+> **Build-vs-integrate stance:** Because HubSpot is already the contact system of record (website → HubSpot lead sync is live), the recommended default is to **integrate with the HubSpot contact graph, not duplicate it.** Where a gap could be solved either by building natively or by pushing/pulling to HubSpot, the plan favors the HubSpot path unless Orbit needs the capability for prospects HubSpot never sees (e.g., competitive-intel-sourced audiences). The native-build alternative is noted for each item. Decision §7.2 picks the overall posture.
 
-**Tier 2 — Automation (highest user-visible value)**
-3. **Marketing workflow / automation engine.** Visual sequence builder with enrollment triggers (segment membership, form submit, link click), steps (send email, wait/delay, branch if/then, set property, internal notification, create task), and re-enrollment rules. Orbit already has the adjacent primitives: the **sales-outreach cadence engine** (`cadence-service.ts`, `cadence-core.ts`) and the **job queue / scheduled-jobs** infra — extend rather than build from zero.
-4. **Email nurture / drip sequences.** The first concrete workflow action type, layered on the existing `email-campaign-sender` send path.
+**Tier 1 — Contact visibility (unlocks everything else)**
+1. **Two-way HubSpot contact sync (read marketing timeline).** Extend `hubspot-integration.ts` beyond company/deal read to pull **contact-level** properties, lifecycle stage, and engagement timeline (opens, clicks, form submits, page views the website logged). This gives Orbit the journey view it lacks. _Native alternative: a `marketing_contacts` + `marketing_contact_events` spine fed by website webhooks — only worthwhile if we decide HubSpot should not be the SoR._
+2. **Dynamic segmentation usable by Orbit.** Either **push Orbit-derived audiences to HubSpot lists** (persona/solution-area/competitive-intel segments → HubSpot active lists) or evaluate rule-based segments locally over synced contacts. Today Orbit has only static `email_recipient_lists`.
 
-**Tier 3 — Intelligence & optimization**
-5. **Lead scoring / grading.** Property + behavior weighted scoring; AI-assisted score suggestions are a natural Orbit differentiator. Feeds lifecycle stage + sales handoff.
-6. **Multi-touch attribution & customer journey.** Upgrade `marketing-performance.ts` from single-touch click→conversion to first/last/linear/position-based models over the new contact timeline.
-7. **Email A/B testing + smart content / personalization tokens.** Variant sends with winner selection; merge tokens resolved from contact properties.
+**Tier 2 — Activation (highest user-visible value)**
+3. **Nurture / automation — decide owner.** Multi-step nurture is squarely HubSpot's strength and the website already routes leads there. **Recommended: orchestrate nurture in HubSpot, with Orbit contributing AI-generated content + audiences**, rather than building a parallel engine. _Native alternative (only if Orbit must own sends end-to-end): a workflow engine extending the existing **sales-outreach cadence engine** (`cadence-service.ts`, `cadence-core.ts`) + job queue, with action types send-email / wait / branch / set-property / notify._
+4. **Close the email loop with HubSpot.** Orbit's SendGrid sends/opens/clicks (`email-campaign-sender.ts`) currently don't reach HubSpot. Log them as HubSpot timeline events so the contact record is complete regardless of which tool sent the email.
+
+**Tier 3 — Intelligence & optimization (Orbit's differentiated lane)**
+5. **AI lead scoring that writes back to HubSpot.** Orbit's competitive-intel + engagement signals → an AI-assisted score pushed to a HubSpot contact property. This is a genuine Orbit differentiator HubSpot can't replicate, and it lands where sales already works.
+6. **Multi-touch attribution & customer journey.** Upgrade `marketing-performance.ts` from single-touch click→conversion to first/last/linear/position models over the synced timeline + Orbit's own link clicks.
+7. **Email A/B testing + smart content / personalization tokens** for Orbit-sent email (variant sends + winner selection; merge tokens from synced contact properties).
 
 **Tier 4 — Strategic / optional**
-8. **Subscription types & preference center** (granular consent beyond single unsubscribe — also a GDPR upgrade).
-9. **ABM target-account scoring** (extend personas/ICP + HubSpot company sync into account scoring & dashboards).
-10. **Paid ads management & audience sync** (Google/Meta/LinkedIn). Largest build, least aligned with Orbit's AI/intel core — recommend deferring or partnering.
+8. **Subscription types & preference center** (granular consent beyond single unsubscribe — GDPR upgrade; coordinate with website + HubSpot subscription types).
+9. **ABM target-account scoring** (extend personas/ICP + existing HubSpot company sync into account scoring & dashboards — strong fit with Orbit's intel core).
+10. **Paid ads management & audience sync** (Google/Meta/LinkedIn). Largest build, least aligned; if pursued, do it as **audience push to HubSpot Ads** rather than native ad management. Recommend deferring.
 11. **Custom report builder / dashboards** (generalize existing performance reports).
 
 ## 6. Proposed Implementation Plan
 
 Phased to deliver value early and reuse existing infrastructure. Each phase notes concrete touchpoints.
 
-### Phase 0 — Confirm boundaries & design (1–2 weeks)
-- Confirm `synozur-webbase` ownership of forms/landing pages/blog and define the **lead-handoff contract**: how website form submissions and page-view events reach Orbit (webhook into Orbit, shared API, or pull). This contract gates Tier 1.
-- Decide build-vs-extend on the cadence engine for automation.
-- Decide the HubSpot relationship: **Orbit-native automation** vs. **deepen HubSpot sync** and let HubSpot run automation. (See §7.)
+### Phase 0 — Decide posture & design (1–2 weeks)
+- Lock the **build-vs-integrate** decision (§7.2). The website→HubSpot lead sync is live, so the default recommendation is **HubSpot as contact system of record; Orbit integrates**.
+- Confirm what the website can expose to Orbit beyond HubSpot (e.g., does Orbit read the timeline _from HubSpot_, or does the website also emit events to Orbit directly?).
 
-### Phase 1 — Contact spine & segmentation (Tier 1)
-- **Schema** (`shared/schema.ts`): `marketing_contacts`, `marketing_contact_events` (timeline), `marketing_segments` (rule JSON), `marketing_segment_members` (materialized). Generate migration (`npm run db:generate`).
-- **Ingestion**: webhook endpoint to receive website form submits / page views; backfill existing `email_recipients` and SendGrid/link-click events into the timeline.
-- **Segment evaluation**: scheduled job in `scheduled-jobs.ts` (or job-queue task) to recompute active segments; reuse for email recipient selection in `marketing-delivery.ts`.
-- **UI**: new `client/src/pages/app/marketing/contacts.tsx` and `segments.tsx`; surface contact timeline.
-- **Plan gating**: register features in `server/services/plan-policy.ts` / `FEATURE_REGISTRY`.
+### Phase 1 — Contact visibility via HubSpot (Tier 1, integrate-first)
+- **Extend** `hubspot-integration.ts` / `hubspot-service.ts` to read **contacts**, lifecycle stage, and engagement timeline (not just companies/deals).
+- **Schema** (`shared/schema.ts`): lightweight `hubspot_contact_mirror` + `marketing_segments` (rule JSON). Avoid a full parallel contact DB unless §7.2 chooses native. Generate migration (`npm run db:generate`).
+- **Segments**: evaluate Orbit segments over synced contacts, and/or **push** Orbit audiences to HubSpot active lists. Reuse for email recipient selection in `marketing-delivery.ts`.
+- **UI**: surface a contact timeline + segment builder under `client/src/pages/app/marketing/`; register features in `server/services/plan-policy.ts` / `FEATURE_REGISTRY`.
+- _Native fallback (only if §7.2 = build): `marketing_contacts` + `marketing_contact_events` fed by a website webhook endpoint; backfill `email_recipients` + SendGrid/link-click events._
 
-### Phase 2 — Automation & nurture (Tier 2)
-- **Schema**: `marketing_workflows`, `marketing_workflow_steps`, `marketing_workflow_enrollments`, `marketing_workflow_step_runs`.
-- **Engine**: new `marketing-workflow-service.ts` modeled on `cadence-service.ts`; driven by the job queue for delays/scheduling; enrollment triggers off segment membership + events.
-- **Action types v1**: send email (reuse `email-campaign-sender`), wait/delay, if/then branch, set contact property, create task (reuse Planner/Outlook integrations), internal notification (`notification-service.ts`).
-- **UI**: visual builder under `client/src/pages/app/marketing/workflows.tsx`; nurture templates seeded from personas/solution areas.
+### Phase 2 — Activation & email loop (Tier 2)
+- **Close the email loop**: write Orbit SendGrid send/open/click events into HubSpot as timeline events (`email-campaign-sender.ts` → HubSpot engagement API).
+- **Nurture**: if HubSpot-owned (recommended) — provide an Orbit "send to HubSpot workflow / enroll segment" handoff + AI content contribution. If native — build `marketing-workflow-service.ts` modeled on `cadence-service.ts` (job-queue-driven; action types send-email / wait / branch / set-property / create-task / notify) with a builder UI at `client/src/pages/app/marketing/workflows.tsx`.
 
 ### Phase 3 — Scoring & attribution (Tier 3)
 - **Lead scoring**: `marketing_scoring_rules` + `score` on `marketing_contacts`; recompute on event ingest; **AI-assisted rule/score suggestions** via `ai-provider.ts`. Lifecycle stage transitions trigger workflows.
@@ -157,7 +160,7 @@ Phased to deliver value early and reuse existing infrastructure. Each phase note
 
 ## 7. Open Questions / Decisions Needed
 
-1. **Website boundary:** Please confirm that `synozur-webbase` owns forms, landing-page hosting, blog/CMS, and on-site CTAs — and tell me whether it can emit **form-submit and page-view events** to Orbit (this is the linchpin for Phase 1). If those events can't flow to Orbit, the contact spine is much weaker.
-2. **HubSpot strategy:** Should Orbit **build native marketing automation/scoring**, or **lean on HubSpot** (deepen the existing sync, push segments/scores to HubSpot, let HubSpot run workflows)? This is the single biggest fork in the plan — it changes Phases 1–3 substantially.
-3. **Ads (Tier 4):** In or out? It's the largest, least-aligned build.
+1. **Website boundary (now confirmed from docs):** `synozur-webbase` owns landing pages, CTAs, forms/lead capture, blog/CMS, and on-page SEO, and **already syncs leads to HubSpot with timeline events**. Please confirm this is current/accurate so these stay excluded from Orbit's gaps.
+2. **HubSpot strategy (biggest fork):** Given HubSpot is already the contact SoR via the website, should Orbit **integrate** (read the HubSpot timeline, push segments/scores/content, let HubSpot run nurture) — the recommended default — or **build native** marketing automation/scoring/contact DB? This changes Phases 1–3 substantially.
+3. **Ads (Tier 4):** In or out? Largest, least-aligned build; if in, recommend audience-push to HubSpot Ads over native ad management.
 4. **Doc destination:** Should I convert the prioritized gaps into `backlog.md` entries (matching the existing format) so they enter the normal prioritization flow?
