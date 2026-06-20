@@ -443,16 +443,19 @@ export function registerMarketingPostsRoutes(app: Express) {
         return res.status(422).json({ error: "No text available to build a graphic from." });
       }
 
-      // If the post already has a photo selected (brand asset or manual override),
-      // use it as the background so text/logo are composited on top of that photo.
-      let backgroundUrl: string | null = null;
-      if (post.overrideImageUrl) {
-        backgroundUrl = post.overrideImageUrl;
-      } else if (post.overrideBrandAssetId) {
-        const [ba] = await db.select({ fileUrl: brandAssets.fileUrl, url: brandAssets.url })
-          .from(brandAssets)
-          .where(and(eq(brandAssets.id, post.overrideBrandAssetId), eq(brandAssets.tenantDomain, ctx.tenantDomain)));
-        backgroundUrl = ba?.fileUrl || ba?.url || null;
+      // Caller may supply backgroundUrl in the request body to explicitly use a
+      // specific photo (e.g. an article hero image) as the background for the
+      // composite. If not provided, fall back to whatever the post already has stored.
+      let backgroundUrl: string | null = (req.body?.backgroundUrl as string) || null;
+      if (!backgroundUrl) {
+        if (post.overrideImageUrl) {
+          backgroundUrl = post.overrideImageUrl;
+        } else if (post.overrideBrandAssetId) {
+          const [ba] = await db.select({ fileUrl: brandAssets.fileUrl, url: brandAssets.url })
+            .from(brandAssets)
+            .where(and(eq(brandAssets.id, post.overrideBrandAssetId), eq(brandAssets.tenantDomain, ctx.tenantDomain)));
+          backgroundUrl = ba?.fileUrl || ba?.url || null;
+        }
       }
 
       const saved = await generateBrandedPostGraphic({

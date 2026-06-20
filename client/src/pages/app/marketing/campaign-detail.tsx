@@ -1653,8 +1653,9 @@ export default function CampaignDetailPage() {
     return null;
   })();
 
-  // Sequentially set overrideImageUrl to imageUrl for every post in postIds,
-  // updating the shared progress counters as it goes.
+  // Sequentially generates a photo + overlay composite (option 3) for every
+  // post in postIds by calling generate-image with the article photo as the
+  // background. Updates the shared progress counters as it goes.
   const applyArticleImageBatch = async (
     postIds: string[],
     imageUrl: string,
@@ -1664,18 +1665,12 @@ export default function CampaignDetailPage() {
     setTotal(postIds.length);
     setProgress(0);
     for (let i = 0; i < postIds.length; i++) {
-      await fetch(`/api/campaigns/${id}/generated-posts/${postIds[i]}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ overrideImageUrl: imageUrl }),
-      });
+      await generateGraphic(postIds[i], imageUrl);
       setProgress(i + 1);
     }
-    queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
     setTotal(0);
     setProgress(0);
-    toast({ title: `Article image applied to ${postIds.length} post${postIds.length === 1 ? "" : "s"}` });
+    toast({ title: `Photo + overlay applied to ${postIds.length} post${postIds.length === 1 ? "" : "s"}` });
   };
 
 
@@ -1688,14 +1683,17 @@ export default function CampaignDetailPage() {
   // Generate a graphic for a single post. Component-scoped so both the Review
   // tab and the image-picker dialog can call it (the picker is rendered outside
   // the Review tab's render block).
-  const generateGraphic = async (postId: string) => {
+  // backgroundUrl — when provided, the server uses this photo as the background
+  // and composites the text + logo on top (option 3: photo + overlay).
+  // When omitted the server generates a chromatic background (option 4).
+  const generateGraphic = async (postId: string, backgroundUrl?: string) => {
     setRvGeneratingIds(prev => new Set(prev).add(postId));
     try {
       const r = await fetch(`/api/generated-posts/${postId}/generate-image`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(backgroundUrl ? { backgroundUrl } : {}),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -2884,12 +2882,12 @@ export default function CampaignDetailPage() {
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
-                                      <DropdownMenuItem onClick={() => generateGraphic(post.id)}>
-                                        <Wand2 className="w-3 h-3 mr-2" />Generate branded graphic
+                                      <DropdownMenuItem onClick={() => generateGraphic(post.id, articleImg)}>
+                                        <ImageLucide className="w-3 h-3 mr-2" />Photo + overlay
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuItem onClick={() => updatePostMutation.mutate({ postId: post.id, overrideImageUrl: articleImg })}>
-                                        <ImageLucide className="w-3 h-3 mr-2" />Use article image
+                                      <DropdownMenuItem onClick={() => generateGraphic(post.id)}>
+                                        <Wand2 className="w-3 h-3 mr-2" />Chromatic graphic
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
@@ -4079,12 +4077,12 @@ export default function CampaignDetailPage() {
                                                       </Button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end">
-                                                      <DropdownMenuItem onSelect={() => generateGraphic(post.id)}>
-                                                        <Wand2 className="w-3 h-3 mr-2" />Branded graphic
+                                                      <DropdownMenuItem onSelect={() => generateGraphic(post.id, articleImg)}>
+                                                        <ImageLucide className="w-3 h-3 mr-2" />Photo + overlay
                                                       </DropdownMenuItem>
                                                       <DropdownMenuSeparator />
-                                                      <DropdownMenuItem onSelect={() => updatePostMutation.mutate({ postId: post.id, overrideImageUrl: articleImg })}>
-                                                        <ImageLucide className="w-3 h-3 mr-2" />Use article image
+                                                      <DropdownMenuItem onSelect={() => generateGraphic(post.id)}>
+                                                        <Wand2 className="w-3 h-3 mr-2" />Chromatic graphic
                                                       </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                   </DropdownMenu>
