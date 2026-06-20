@@ -89,6 +89,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { format, addDays } from "date-fns";
 
@@ -1626,6 +1628,21 @@ export default function CampaignDetailPage() {
     return null;
   };
 
+  // Returns the featured/lead image URL for the article that sourced a post,
+  // if one is available in the content library. Used to offer "Use article image"
+  // as an alternative to generating a branded graphic.
+  const getArticleLeadImage = (post: GeneratedPost): string | null => {
+    if (post.sourceUrl) {
+      const matched = allAssets.find(a => a.url === post.sourceUrl && a.leadImageUrl);
+      if (matched?.leadImageUrl) return matched.leadImageUrl;
+    }
+    for (const ca of campaign?.assets || []) {
+      const asset = allAssets.find(a => a.id === ca.assetId && a.leadImageUrl);
+      if (asset?.leadImageUrl) return asset.leadImageUrl;
+    }
+    return null;
+  };
+
 
   const campaignBreadcrumbs = [
     { label: "Marketing", href: "/app/marketing" },
@@ -2805,18 +2822,41 @@ export default function CampaignDetailPage() {
                             {post.variantGroup && <span className="text-[10px] text-muted-foreground">variant</span>}
                           </div>
                           <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Generate branded graphic"
-                              disabled={rvGeneratingIds.has(post.id)}
-                              onClick={() => generateGraphic(post.id)}
-                              data-testid={`button-generate-graphic-${post.id}`}
-                            >
-                              {rvGeneratingIds.has(post.id)
-                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                : <Wand2 className="w-3.5 h-3.5" />}
-                            </Button>
+                            {(() => {
+                              const articleImg = getArticleLeadImage(post);
+                              if (articleImg) {
+                                return (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm" disabled={rvGeneratingIds.has(post.id)} data-testid={`button-generate-graphic-${post.id}`}>
+                                        {rvGeneratingIds.has(post.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => generateGraphic(post.id)}>
+                                        <Wand2 className="w-3 h-3 mr-2" />Generate branded graphic
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => updatePostMutation.mutate({ postId: post.id, overrideImageUrl: articleImg })}>
+                                        <ImageLucide className="w-3 h-3 mr-2" />Use article image
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                );
+                              }
+                              return (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="Generate branded graphic"
+                                  disabled={rvGeneratingIds.has(post.id)}
+                                  onClick={() => generateGraphic(post.id)}
+                                  data-testid={`button-generate-graphic-${post.id}`}
+                                >
+                                  {rvGeneratingIds.has(post.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                                </Button>
+                              );
+                            })()}
                             {post.status !== "approved" && (
                               <Button
                                 variant="ghost"

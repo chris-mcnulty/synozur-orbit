@@ -67,6 +67,7 @@ import {
   longFormRecommendations,
   groundingDocuments,
   globalGroundingDocuments,
+  marketingLinks,
   MESSAGING_FRAMEWORK_GLOBAL_CATEGORIES,
   VOICE_PERSON_OPTIONS,
   VOICE_AUTHOR_PERSPECTIVES,
@@ -2557,7 +2558,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
         const condition = scopedIds.length
           ? and(baseCondition, inArray(generatedPosts.id, scopedIds))
           : baseCondition;
+        // Capture content before deletion so we can find orphaned link slugs
+        const postsToDelete = await db.select({ content: generatedPosts.content }).from(generatedPosts).where(condition);
         const rows = await db.delete(generatedPosts).where(condition).returning();
+        // Archive any post-wrap marketing links whose slugs appear only in deleted posts
+        const slugSet = new Set<string>();
+        for (const p of postsToDelete) {
+          if (!p.content) continue;
+          for (const m of p.content.matchAll(/\/r\/([a-z0-9]+)/gi)) slugSet.add(m[1]);
+        }
+        if (slugSet.size > 0) {
+          await db.update(marketingLinks).set({ status: "archived", updatedAt: new Date() }).where(
+            and(eq(marketingLinks.campaignId, campaign.id), eq(marketingLinks.source, "post-wrap"), inArray(marketingLinks.slug, [...slugSet]))
+          );
+        }
         res.json({ updated: rows.length });
       } else {
         const baseCondition = and(

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas, marketingTasks, marketingPlans } from "@shared/schema";
+import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas, marketingTasks, marketingPlans, marketingLinks } from "@shared/schema";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
@@ -753,6 +753,10 @@ export function registerEditorialCalendarRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
+      // Archive any marketing links tied to this brief before hard-deleting it
+      await db.update(marketingLinks).set({ status: "archived", updatedAt: new Date() }).where(
+        and(eq(marketingLinks.tenantDomain, ctx.tenantDomain), eq(marketingLinks.sourceBriefId, req.params.id))
+      );
       const [deleted] = await db
         .delete(contentBriefs)
         .where(

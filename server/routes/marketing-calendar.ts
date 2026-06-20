@@ -24,6 +24,7 @@ import {
   solutionAreas,
   conferences,
   socialAccounts,
+  marketingLinks,
   SOCIAL_BRIEF_FORMATS,
   isSocialBriefFormat,
 } from "@shared/schema";
@@ -1209,6 +1210,10 @@ export function registerMarketingCalendarRoutes(app: Express) {
           affected += r.length;
         }
         if (byType.content.length) {
+          // Archive marketing links tied to these briefs before soft-deleting them
+          await db.update(marketingLinks).set({ status: "archived", updatedAt: new Date() }).where(
+            and(eq(marketingLinks.tenantDomain, ctx.tenantDomain), inArray(marketingLinks.sourceBriefId, byType.content))
+          );
           const r = await db.update(contentBriefs).set({ status: "removed", updatedAt: new Date() })
             .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
           affected += r.length;

@@ -28,6 +28,7 @@ import {
   campaigns,
   marketingAuditLog,
   brandAssets,
+  marketingLinks,
   AI_FEATURES,
   type VoiceFrameworkRef,
   type GeneratedPost,
@@ -482,6 +483,15 @@ export function registerMarketingPostsRoutes(app: Express) {
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
       ));
       if (!post) return res.status(404).json({ error: "Post not found" });
+      // Archive post-wrap marketing links embedded in this post's content before deleting
+      if (post.campaignId && post.content) {
+        const slugs = [...post.content.matchAll(/\/r\/([a-z0-9]+)/gi)].map(m => m[1]);
+        if (slugs.length > 0) {
+          await db.update(marketingLinks).set({ status: "archived", updatedAt: new Date() }).where(
+            and(eq(marketingLinks.campaignId, post.campaignId), eq(marketingLinks.source, "post-wrap"), inArray(marketingLinks.slug, slugs))
+          );
+        }
+      }
       await db.delete(generatedPosts).where(eq(generatedPosts.id, post.id));
       res.status(204).send();
     } catch (err: any) {
