@@ -2310,7 +2310,7 @@ export default function CampaignDetailPage() {
           <TabsContent value="posts" className="space-y-4">
             <div className="flex items-center gap-3">
               <Button
-                onClick={() => { setGenerateDialogAccountIds(loadSavedAccountIds(id)); setGenerateDialogOpen(true); }}
+                onClick={() => { setGenerateDialogAccountIds(loadSavedAccountIds(id)); setGenerateMode(campaign && campaign.assets.length > 0 ? "asset" : "thematic"); setGenerateDialogOpen(true); }}
                 disabled={isGenerating || generatePostsMutation.isPending}
                 className="gap-2"
                 data-testid="button-generate-posts"
@@ -4900,6 +4900,34 @@ export default function CampaignDetailPage() {
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto flex-1 pr-1">
 
+            {/* Mode Toggle — first choice the user makes */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setGenerateMode("asset")}
+                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "asset" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
+                data-testid="button-mode-asset"
+              >
+                <span className="text-sm font-semibold">From Digital Assets</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Each pinned asset drives the post — posts are written about the asset itself</span>
+              </button>
+              <button
+                onClick={() => setGenerateMode("thematic")}
+                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "thematic" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
+                data-testid="button-mode-thematic"
+              >
+                <span className="text-sm font-semibold">From Brief / Theme</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Posts come from your brief text — pinned links and images applied after</span>
+              </button>
+              <button
+                onClick={() => setGenerateMode("blog")}
+                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "blog" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
+                data-testid="button-mode-blog"
+              >
+                <span className="text-sm font-semibold">Promote a Blog Post</span>
+                <span className="text-xs text-muted-foreground mt-0.5">Paste a blog URL — AI reads it and generates 5 promotion-ready posts with visual variants</span>
+              </button>
+            </div>
+
             {/* Variants-per-platform control */}
             {(() => {
               const days = campaign?.numberOfDays ?? 7;
@@ -4993,34 +5021,6 @@ export default function CampaignDetailPage() {
                 )}
               </div>
             )}
-
-            {/* Mode Toggle */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => setGenerateMode("asset")}
-                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "asset" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
-                data-testid="button-mode-asset"
-              >
-                <span className="text-sm font-semibold">From Digital Assets</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Each pinned asset drives the post — posts are written about the asset itself</span>
-              </button>
-              <button
-                onClick={() => setGenerateMode("thematic")}
-                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "thematic" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
-                data-testid="button-mode-thematic"
-              >
-                <span className="text-sm font-semibold">From Brief / Theme</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Posts come from your brief text — pinned links and images applied after</span>
-              </button>
-              <button
-                onClick={() => setGenerateMode("blog")}
-                className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-all ${generateMode === "blog" ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/40"}`}
-                data-testid="button-mode-blog"
-              >
-                <span className="text-sm font-semibold">Promote a Blog Post</span>
-                <span className="text-xs text-muted-foreground mt-0.5">Paste a blog URL — AI reads it and generates 5 promotion-ready posts with visual variants</span>
-              </button>
-            </div>
 
             {/* Thematic Brief Fields */}
             {generateMode === "thematic" && (
