@@ -1955,6 +1955,7 @@ export const CONTENT_BRIEF_FORMATS = [
   "whitepaper",
   "ebook",
   "podcast_outline",
+  "carousel",
   "webinar",
   "press_release",
   "other",

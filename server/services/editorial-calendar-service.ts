@@ -39,6 +39,11 @@ export interface GenerateBriefsParams {
   focus?: string;
   /** When generating for a campaign, grounds briefs in that campaign's intent. */
   campaign?: CampaignBriefContext;
+  /**
+   * Pre-scraped body text of the campaign's primary source article. When
+   * provided, the AI grounds every brief in the article's specific findings.
+   */
+  sourceArticleText?: string;
 }
 
 export interface GenerateBriefsResult {
@@ -133,11 +138,19 @@ export async function generateContentBriefs(
         .join("\n")}`
     : "";
 
+  // Source article: scraped text passed in from the campaign's thematic URL.
+  // This is the single most important grounding input when present — every brief
+  // should draw specific insights, findings, or framing directly from it.
+  const sourceBlock = params.sourceArticleText?.trim()
+    ? `## Source article (primary grounding — ground briefs in its specific findings)\n${params.sourceArticleText.slice(0, 6000)}`
+    : "";
+
   const prompt = [
     params.campaign
       ? `Produce a campaign content plan of ${count} content briefs as JSON. Every brief must support the campaign described below.`
       : `Produce an editorial calendar of ${count} content briefs as JSON.`,
     campaignBlock,
+    sourceBlock,
     strategicBlock,
     keywordBlock,
     insightsBlock,
@@ -146,12 +159,12 @@ export async function generateContentBriefs(
 - Every brief MUST have a concrete demand signal (keyword volume, recurring buyer question, competitive gap, or trend) — never fabricate numbers; if unknown, state the qualitative signal.
 - Balance the funnel toward ~${DEFAULT_FUNNEL_TARGETS.awareness}% awareness / ${DEFAULT_FUNNEL_TARGETS.consideration}% consideration / ${DEFAULT_FUNNEL_TARGETS.decision}% decision. No single stage over 50%.
 - Each brief needs a sharp differentiation angle (what makes OUR take different from existing pieces) and ONE specific target reader (e.g. "Head of Demand Gen at a 150-person SaaS").
-- Ground positioning and voice in the Messaging & Positioning Framework above; do not contradict it.
+- Ground positioning and voice in the Messaging & Positioning Framework above; do not contradict it.${params.sourceArticleText ? "\n- When a source article is provided, every brief's demand signal and differentiation angle MUST reference specific findings, data points, or framing from that article — not generic market claims." : ""}
 
 ## Output format
 Respond with a JSON object: { "briefs": [ ... ] }. Each brief object has:
 - "title": string
-- "format": one of blog_post | linkedin_post | x_post | newsletter | landing_page | video_script | case_study | whitepaper | ebook | podcast_outline | webinar | press_release | other ("ebook" = a whitepaper-style long-form piece with rich suggested graphics; "webinar" = a webinar plan including a presentation deck outline)
+- "format": one of blog_post | linkedin_post | x_post | newsletter | landing_page | video_script | case_study | whitepaper | ebook | podcast_outline | carousel | webinar | press_release | other ("ebook" = a whitepaper-style long-form piece with rich suggested graphics; "webinar" = a webinar plan including a presentation deck outline; "carousel" = a 5-8 slide LinkedIn carousel)
 - "targetKeyword": string
 - "demandSignal": string (the evidence people care)
 - "funnelStage": one of awareness | consideration | decision

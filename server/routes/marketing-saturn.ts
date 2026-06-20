@@ -2024,10 +2024,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       if (!await guardFeature(req, res, "campaigns")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, parentCampaignId } = req.body;
+      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, parentCampaignId, thematicUrl, thematicBrief } = req.body;
       const updateData: any = { updatedAt: new Date() };
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
+      if (thematicUrl !== undefined) updateData.thematicUrl = typeof thematicUrl === "string" && thematicUrl.trim() ? thematicUrl.trim() : null;
+      if (thematicBrief !== undefined) updateData.thematicBrief = typeof thematicBrief === "string" && thematicBrief.trim() ? thematicBrief.trim() : null;
       if (status !== undefined) updateData.status = status;
       if (campaignType !== undefined && CAMPAIGN_TYPES.includes(campaignType)) updateData.campaignType = campaignType;
       if (objective !== undefined) updateData.objective = typeof objective === "string" && objective.trim() ? objective.trim() : null;

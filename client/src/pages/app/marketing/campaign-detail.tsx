@@ -124,6 +124,8 @@ interface Campaign {
   productIds?: string[];
   alwaysHashtags?: string[];
   parentCampaignId?: string | null;
+  thematicUrl?: string | null;
+  thematicBrief?: string | null;
   foundingSignals?: FoundingSignals | null;
   interview?: { newsItems?: string[] } | null;
   assets: CampaignAsset[];
@@ -382,6 +384,8 @@ export default function CampaignDetailPage() {
   const [editCampaignDays, setEditCampaignDays] = useState<number | "">("");
   const [editCampaignSaturday, setEditCampaignSaturday] = useState(false);
   const [editCampaignSunday, setEditCampaignSunday] = useState(false);
+  const [editCampaignThematicUrl, setEditCampaignThematicUrl] = useState("");
+  const [editCampaignThematicBrief, setEditCampaignThematicBrief] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [linkChildOpen, setLinkChildOpen] = useState(false);
   const [linkChildSearch, setLinkChildSearch] = useState("");
@@ -1035,6 +1039,8 @@ export default function CampaignDetailPage() {
     setEditCampaignSaturday(campaign.includeSaturday || false);
     setEditCampaignSunday(campaign.includeSunday || false);
     setEditCampaignAlwaysHashtags((campaign.alwaysHashtags || []).join(", "));
+    setEditCampaignThematicUrl(campaign.thematicUrl || "");
+    setEditCampaignThematicBrief(campaign.thematicBrief || "");
     setEditCampaignOpen(true);
   };
 
@@ -1055,6 +1061,8 @@ export default function CampaignDetailPage() {
       includeSaturday: editCampaignSaturday,
       includeSunday: editCampaignSunday,
       alwaysHashtags,
+      thematicUrl: editCampaignThematicUrl.trim() || null,
+      thematicBrief: editCampaignThematicBrief.trim() || null,
     });
   };
 
@@ -4761,6 +4769,30 @@ export default function CampaignDetailPage() {
                 data-testid="input-edit-campaign-hashtags"
               />
               <p className="text-[11px] text-muted-foreground">Comma or space separated. These hashtags will be added to every generated post.</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-thematic-url">Source Article URL</Label>
+              <Input
+                id="edit-campaign-thematic-url"
+                type="url"
+                value={editCampaignThematicUrl}
+                onChange={e => setEditCampaignThematicUrl(e.target.value)}
+                placeholder="https://www.synozur.com/post/..."
+                data-testid="input-edit-campaign-thematic-url"
+              />
+              <p className="text-[11px] text-muted-foreground">The blog post or article this campaign is based on. Orbit will scrape it when generating content briefs so every brief reflects the article's specific findings.</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-campaign-thematic-brief">Source Article Text (optional)</Label>
+              <Textarea
+                id="edit-campaign-thematic-brief"
+                value={editCampaignThematicBrief}
+                onChange={e => setEditCampaignThematicBrief(e.target.value)}
+                rows={4}
+                placeholder="Paste the article text here if the URL can't be scraped automatically."
+                data-testid="input-edit-campaign-thematic-brief"
+              />
+              <p className="text-[11px] text-muted-foreground">Only needed if the URL is behind a paywall or login. Pasted text takes priority over the URL.</p>
             </div>
           </div>
           <div className="flex justify-end gap-2">

@@ -186,10 +186,32 @@ export function registerEditorialCalendarRoutes(app: Express) {
         audience,
         durationDays,
         channels: [],
+        thematicUrl: campaign.thematicUrl ?? null,
+        thematicBrief: campaign.thematicBrief ?? null,
       };
 
       const bodyCount = req.body?.count != null ? Number(req.body.count) : undefined;
       const count = bodyCount && bodyCount > 0 ? bodyCount : recommendedBriefCount(campaignType);
+
+      // Scrape the source article so brief generation is grounded in its
+      // specific findings, not generic market claims.
+      let sourceArticleText: string | undefined;
+      const sourceUrl = campaign.thematicUrl?.trim();
+      const inlineText = campaign.thematicBrief?.trim();
+      if (inlineText) {
+        // User pasted the article text directly — use it as-is.
+        sourceArticleText = inlineText;
+      } else if (sourceUrl) {
+        try {
+          const { extractContentFromUrl } = await import("../services/content-extraction");
+          const extracted = await extractContentFromUrl(sourceUrl);
+          if (extracted.success && extracted.text) {
+            sourceArticleText = extracted.text;
+          }
+        } catch (scrapeErr) {
+          console.warn("[generate-briefs] Could not scrape thematic URL:", scrapeErr);
+        }
+      }
 
       const { briefs, warnings, funnel } = await generateContentBriefs({
         tenantDomain: ctx.tenantDomain,
@@ -198,6 +220,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
         count,
         focus: typeof req.body?.focus === "string" ? req.body.focus : undefined,
         campaign: campaignCtx,
+        sourceArticleText,
       });
 
       if (briefs.length === 0) {

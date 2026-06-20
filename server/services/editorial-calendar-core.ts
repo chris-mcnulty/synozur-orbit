@@ -60,6 +60,10 @@ export interface CampaignBriefContext {
   durationDays: number | null;
   /** Channels in play (e.g. linkedin, email, blog). */
   channels: string[];
+  /** URL of the primary source article / blog post anchoring this campaign. */
+  thematicUrl?: string | null;
+  /** Raw text of the source article (already scraped, or manually pasted). */
+  thematicBrief?: string | null;
 }
 
 export interface AssetMixItem {
@@ -289,6 +293,8 @@ export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
   ebook:
     "Write an ebook draft in Markdown — structured like a whitepaper (executive summary, problem framing, our point of view, a framework or approach, and a conclusion + CTA) but longer-form and far more visual. Lead with a suggested cover graphic, and weave inline [GRAPHIC: ...] cues throughout — a section-opener visual for each chapter, a diagram for any framework or process, pull-quote callouts for key stats or quotes, and data-viz or illustration ideas where they reinforce the point. Give the design team rich, specific visual direction, not just text.",
   podcast_outline: POLARIS_OUTLINE_GUIDANCE,
+  carousel:
+    "Write a 5–8 slide LinkedIn carousel in Markdown. Each slide has a **Slide N** header, a punchy headline (≤10 words), and 2-4 concise bullet points or a short paragraph. Slide 1 is the cover — a bold hook statement and subhead. Last slide is the CTA with a clear next step. Include a [VISUAL: ...] cue for each slide describing the recommended graphic or layout. No hashtags.",
   webinar:
     "Produce a complete webinar plan in Markdown with two parts. Part 1 — **Webinar Overview**: a registration-page title and abstract (100-150 words), 3-4 audience takeaways as bullets, suggested duration and run-of-show (e.g. 5 min welcome / 30 min presentation / 10 min demo / 15 min Q&A), and the CTA attendees should leave with. Part 2 — **Presentation Deck Outline**: a slide-by-slide outline (typically 12-18 slides) where each slide has a number, a slide title, 2-4 content bullets, and a one-line speaker note. Include a title slide, an agenda slide, a 'why now' problem framing section, the core content sections, a demo or example placeholder slide where relevant, a recap slide, and a closing CTA slide. Add [GRAPHIC: ...] cues on slides that need a diagram or visual.",
   press_release:
