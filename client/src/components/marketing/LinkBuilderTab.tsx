@@ -156,6 +156,8 @@ export function LinkBuilderTab({ campaignId, campaignName }: { campaignId: strin
     onError: (err: Error) => toast({ title: "Cleanup failed", description: err.message, variant: "destructive" }),
   });
 
+  const activeLinks = links.filter(l => l.status === "active");
+  const archivedLinks = links.filter(l => l.status === "archived");
   const postWrapActiveCount = activeLinks.filter(l => l.source === "post-wrap").length;
 
   const copyToClipboard = (link: MarketingLink) => {
@@ -163,9 +165,6 @@ export function LinkBuilderTab({ campaignId, campaignName }: { campaignId: strin
     navigator.clipboard.writeText(url);
     toast({ title: "Copied to clipboard", description: url });
   };
-
-  const activeLinks = links.filter(l => l.status === "active");
-  const archivedLinks = links.filter(l => l.status === "archived");
 
   return (
     <div className="space-y-4" data-testid="links-tab-content">
