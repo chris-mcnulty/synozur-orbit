@@ -3851,6 +3851,23 @@ export default function CampaignDetailPage() {
                           )}
                         </Button>
                       )}
+                      {rvSelectedIds.size > 0 && campaignArticleLeadImage && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5"
+                          disabled={rvBulkTotal > 0}
+                          onClick={() => applyArticleImageBatch(Array.from(rvSelectedIds), campaignArticleLeadImage, setRvBulkTotal, setRvBulkProgress)}
+                          title="Composite text + logo onto the article hero photo for each selected post"
+                          data-testid="button-rv-bulk-photo-overlay"
+                        >
+                          {rvBulkTotal > 0 ? (
+                            <><Loader2 className="w-3.5 h-3.5 animate-spin" />{rvBulkProgress}/{rvBulkTotal}</>
+                          ) : (
+                            <><ImageLucide className="w-3.5 h-3.5" />Photo + overlay for selected</>
+                          )}
+                        </Button>
+                      )}
                       {rvSelectedIds.size > 0 && (
                         <Button
                           size="sm"
