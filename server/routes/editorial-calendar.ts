@@ -786,7 +786,10 @@ export function registerEditorialCalendarRoutes(app: Express) {
           and(
             eq(contentBriefs.id, req.params.id),
             eq(contentBriefs.tenantDomain, ctx.tenantDomain),
-            eq(contentBriefs.marketId, ctx.marketId),
+            or(
+              eq(contentBriefs.marketId, ctx.marketId),
+              isNull(contentBriefs.marketId),
+            ),
           ),
         )
         .returning({ id: contentBriefs.id });
