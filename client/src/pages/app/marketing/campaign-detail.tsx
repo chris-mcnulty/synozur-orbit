@@ -1643,6 +1643,41 @@ export default function CampaignDetailPage() {
     return null;
   };
 
+  // Campaign-level article lead image: the first campaign-linked asset with a
+  // leadImageUrl. Used to power "Use article image" in bulk controls.
+  const campaignArticleLeadImage = (() => {
+    for (const ca of campaign?.assets || []) {
+      const asset = allAssets.find(a => a.id === ca.assetId && a.leadImageUrl);
+      if (asset?.leadImageUrl) return asset.leadImageUrl;
+    }
+    return null;
+  })();
+
+  // Sequentially set overrideImageUrl to imageUrl for every post in postIds,
+  // updating the shared progress counters as it goes.
+  const applyArticleImageBatch = async (
+    postIds: string[],
+    imageUrl: string,
+    setTotal: (n: number) => void,
+    setProgress: (n: number) => void,
+  ) => {
+    setTotal(postIds.length);
+    setProgress(0);
+    for (let i = 0; i < postIds.length; i++) {
+      await fetch(`/api/campaigns/${id}/generated-posts/${postIds[i]}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ overrideImageUrl: imageUrl }),
+      });
+      setProgress(i + 1);
+    }
+    queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+    setTotal(0);
+    setProgress(0);
+    toast({ title: `Article image applied to ${postIds.length} post${postIds.length === 1 ? "" : "s"}` });
+  };
+
 
   const campaignBreadcrumbs = [
     { label: "Marketing", href: "/app/marketing" },
@@ -2507,6 +2542,22 @@ export default function CampaignDetailPage() {
                       <><Loader2 className="w-3.5 h-3.5 animate-spin" />{postBulkProgress}/{postBulkTotal}</>
                     ) : (
                       <><Wand2 className="w-3.5 h-3.5" />Generate graphics</>
+                    )}
+                  </Button>
+                )}
+                {postSelectedIds.size > 0 && campaignArticleLeadImage && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={postBulkTotal > 0}
+                    onClick={() => applyArticleImageBatch(Array.from(postSelectedIds), campaignArticleLeadImage, setPostBulkTotal, setPostBulkProgress)}
+                    data-testid="button-posts-bulk-use-article-image"
+                  >
+                    {postBulkTotal > 0 ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" />{postBulkProgress}/{postBulkTotal}</>
+                    ) : (
+                      <><ImageLucide className="w-3.5 h-3.5" />Use article images</>
                     )}
                   </Button>
                 )}
@@ -3862,13 +3913,26 @@ export default function CampaignDetailPage() {
                           size="sm"
                           variant="outline"
                           className="h-7 text-xs gap-1.5 text-purple-700 border-purple-300 hover:bg-purple-50 dark:text-purple-400 dark:border-purple-700 dark:hover:bg-purple-950"
-                          disabled={rvGeneratingIds.size > 0 || rvBulkApproving || rvBulkRejecting}
-                          onClick={() => Array.from(rvSelectedIds).forEach(pid => generateGraphic(pid))}
+                          disabled={rvGeneratingIds.size > 0 || rvBulkApproving || rvBulkRejecting || rvBulkTotal > 0}
+                          onClick={() => bulkGenerateGraphics(Array.from(rvSelectedIds))}
                           title="Composite a text + logo graphic onto each selected post. Posts that already have a background image use it; others get one generated from the post text."
                           data-testid="button-rv-bulk-generate-graphics"
                         >
-                          {rvGeneratingIds.size > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          Generate graphics{rvGeneratingIds.size > 0 ? ` (${rvGeneratingIds.size} left…)` : ""}
+                          {rvGeneratingIds.size > 0 || rvBulkTotal > 0 ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          Generate graphics{rvGeneratingIds.size > 0 ? ` (${rvGeneratingIds.size} left…)` : rvBulkTotal > 0 ? ` (${rvBulkProgress}/${rvBulkTotal})` : ""}
+                        </Button>
+                      )}
+                      {rvSelectedIds.size > 0 && campaignArticleLeadImage && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5"
+                          disabled={rvGeneratingIds.size > 0 || rvBulkApproving || rvBulkRejecting || rvBulkTotal > 0}
+                          onClick={() => applyArticleImageBatch(Array.from(rvSelectedIds), campaignArticleLeadImage, setRvBulkTotal, setRvBulkProgress)}
+                          title="Set each selected post's image to the article's featured image"
+                          data-testid="button-rv-bulk-use-article-image"
+                        >
+                          {rvBulkTotal > 0 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{rvBulkProgress}/{rvBulkTotal}</> : <><ImageLucide className="w-3.5 h-3.5" />Use article images</>}
                         </Button>
                       )}
                     </div>
@@ -4003,16 +4067,38 @@ export default function CampaignDetailPage() {
                                           >
                                             <ImageLucide className="w-3 h-3 shrink-0" />Replace
                                           </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 text-[10px] flex-1 gap-1 px-2"
-                                            disabled={isGenerating}
-                                            onClick={e => { e.stopPropagation(); generateGraphic(post.id); }}
-                                            data-testid={`button-rv-generate-img-${post.id}`}
-                                          >
-                                            <Wand2 className="w-3 h-3 shrink-0" />Generate
-                                          </Button>
+                                          {(() => {
+                                            const articleImg = getArticleLeadImage(post);
+                                            if (articleImg) {
+                                              return (
+                                                <div className="flex-1" onClick={e => e.stopPropagation()}>
+                                                  <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                      <Button size="sm" variant="outline" className="h-6 text-[10px] w-full gap-1 px-2" disabled={isGenerating} data-testid={`button-rv-generate-img-${post.id}`}>
+                                                        <Wand2 className="w-3 h-3 shrink-0" />Generate
+                                                      </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                      <DropdownMenuItem onSelect={() => generateGraphic(post.id)}>
+                                                        <Wand2 className="w-3 h-3 mr-2" />Branded graphic
+                                                      </DropdownMenuItem>
+                                                      <DropdownMenuSeparator />
+                                                      <DropdownMenuItem onSelect={() => updatePostMutation.mutate({ postId: post.id, overrideImageUrl: articleImg })}>
+                                                        <ImageLucide className="w-3 h-3 mr-2" />Use article image
+                                                      </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                  </DropdownMenu>
+                                                </div>
+                                              );
+                                            }
+                                            return (
+                                              <Button size="sm" variant="outline" className="h-6 text-[10px] flex-1 gap-1 px-2" disabled={isGenerating}
+                                                onClick={e => { e.stopPropagation(); generateGraphic(post.id); }}
+                                                data-testid={`button-rv-generate-img-${post.id}`}>
+                                                <Wand2 className="w-3 h-3 shrink-0" />Generate
+                                              </Button>
+                                            );
+                                          })()}
                                         </div>
                                         <div className="flex items-center gap-1">
                                           <Button
