@@ -4928,6 +4928,94 @@ export default function CampaignDetailPage() {
               </button>
             </div>
 
+            {/* Blog Post Promotion — asset picker + import from URL */}
+            {generateMode === "blog" && (
+              <div className="space-y-3 p-3 rounded-lg bg-muted/40 border">
+                {/* Existing asset picker */}
+                <div>
+                  <Label className="text-sm font-medium">Pick a blog post from your content library</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Select an existing post, or import one from a URL below to save it and use it here.</p>
+                  <input
+                    type="text"
+                    value={blogSearch}
+                    onChange={e => setBlogSearch(e.target.value)}
+                    placeholder="Search posts…"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 mb-2"
+                    data-testid="input-blog-search"
+                  />
+                  {(() => {
+                    const blogAssets = allAssets.filter(a => a.url && (a as any).status !== "archived");
+                    const q = blogSearch.trim().toLowerCase();
+                    const filtered = q
+                      ? blogAssets.filter(a => a.title.toLowerCase().includes(q) || (a.url || "").toLowerCase().includes(q))
+                      : blogAssets;
+                    if (filtered.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground text-center py-3 border rounded-md bg-background">
+                          {q ? `No posts matching "${blogSearch}"` : "No web-linked posts in your library yet — import one below."}
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="max-h-[150px] overflow-y-auto border rounded-md bg-background divide-y">
+                        {filtered.map(asset => (
+                          <button
+                            key={asset.id}
+                            onClick={() => setBlogAssetId(blogAssetId === asset.id ? null : asset.id)}
+                            className={`w-full flex flex-col items-start px-3 py-2 text-left transition-colors ${blogAssetId === asset.id ? "bg-primary/10" : "hover:bg-muted/50"}`}
+                            data-testid={`button-blog-asset-${asset.id}`}
+                          >
+                            <span className={`text-sm font-medium line-clamp-1 ${blogAssetId === asset.id ? "text-primary" : ""}`}>{asset.title}</span>
+                            <span className="text-xs text-muted-foreground truncate w-full">
+                              {(() => { try { return new URL(asset.url!).hostname; } catch { return asset.url; } })()}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Import from URL */}
+                <div className="border-t pt-3 space-y-2">
+                  <Label className="text-sm font-medium">Import from URL</Label>
+                  <p className="text-xs text-muted-foreground">Paste a blog post URL — it'll be fetched, saved to your library, and selected automatically.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={blogImportUrl}
+                      onChange={e => { setBlogImportUrl(e.target.value); setBlogImportStatus("idle"); setBlogImportError(""); }}
+                      placeholder="https://yourblog.com/your-post"
+                      className="flex-1 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      data-testid="input-blog-import-url"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!blogImportUrl.trim() || blogImportStatus === "fetching"}
+                      onClick={() => importBlogMutation.mutate(blogImportUrl.trim())}
+                      data-testid="button-blog-import"
+                    >
+                      {blogImportStatus === "fetching" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Fetch & Use"}
+                    </Button>
+                  </div>
+                  {blogImportStatus === "error" && (
+                    <p className="text-xs text-destructive">{blogImportError || "Could not fetch this URL."}</p>
+                  )}
+                  {blogImportStatus === "done" && (
+                    <p className="text-xs text-green-600">Imported and selected — ready to generate.</p>
+                  )}
+                </div>
+
+                {blogAssetId && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 border-t pt-2">
+                    <Sparkles className="w-3 h-3 text-primary flex-shrink-0" />
+                    AI reads the post and generates promotion-ready posts per account — one per promotional angle (insight, question, story, tip, CTA, and more).
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Variants-per-platform control */}
             {(() => {
               const days = campaign?.numberOfDays ?? 7;
@@ -5093,94 +5181,6 @@ export default function CampaignDetailPage() {
                     data-testid="input-thematic-url"
                   />
                 </div>
-              </div>
-            )}
-
-            {/* Blog Post Promotion — asset picker + import from URL */}
-            {generateMode === "blog" && (
-              <div className="space-y-3 p-3 rounded-lg bg-muted/40 border">
-                {/* Existing asset picker */}
-                <div>
-                  <Label className="text-sm font-medium">Pick a blog post from your content library</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">Select an existing post, or import one from a URL below to save it and use it here.</p>
-                  <input
-                    type="text"
-                    value={blogSearch}
-                    onChange={e => setBlogSearch(e.target.value)}
-                    placeholder="Search posts…"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 mb-2"
-                    data-testid="input-blog-search"
-                  />
-                  {(() => {
-                    const blogAssets = allAssets.filter(a => a.url && (a as any).status !== "archived");
-                    const q = blogSearch.trim().toLowerCase();
-                    const filtered = q
-                      ? blogAssets.filter(a => a.title.toLowerCase().includes(q) || (a.url || "").toLowerCase().includes(q))
-                      : blogAssets;
-                    if (filtered.length === 0) {
-                      return (
-                        <p className="text-sm text-muted-foreground text-center py-3 border rounded-md bg-background">
-                          {q ? `No posts matching "${blogSearch}"` : "No web-linked posts in your library yet — import one below."}
-                        </p>
-                      );
-                    }
-                    return (
-                      <div className="max-h-[150px] overflow-y-auto border rounded-md bg-background divide-y">
-                        {filtered.map(asset => (
-                          <button
-                            key={asset.id}
-                            onClick={() => setBlogAssetId(blogAssetId === asset.id ? null : asset.id)}
-                            className={`w-full flex flex-col items-start px-3 py-2 text-left transition-colors ${blogAssetId === asset.id ? "bg-primary/10" : "hover:bg-muted/50"}`}
-                            data-testid={`button-blog-asset-${asset.id}`}
-                          >
-                            <span className={`text-sm font-medium line-clamp-1 ${blogAssetId === asset.id ? "text-primary" : ""}`}>{asset.title}</span>
-                            <span className="text-xs text-muted-foreground truncate w-full">
-                              {(() => { try { return new URL(asset.url!).hostname; } catch { return asset.url; } })()}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Import from URL */}
-                <div className="border-t pt-3 space-y-2">
-                  <Label className="text-sm font-medium">Import from URL</Label>
-                  <p className="text-xs text-muted-foreground">Paste a blog post URL — it'll be fetched, saved to your library, and selected automatically.</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={blogImportUrl}
-                      onChange={e => { setBlogImportUrl(e.target.value); setBlogImportStatus("idle"); setBlogImportError(""); }}
-                      placeholder="https://yourblog.com/your-post"
-                      className="flex-1 rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      data-testid="input-blog-import-url"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!blogImportUrl.trim() || blogImportStatus === "fetching"}
-                      onClick={() => importBlogMutation.mutate(blogImportUrl.trim())}
-                      data-testid="button-blog-import"
-                    >
-                      {blogImportStatus === "fetching" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Fetch & Use"}
-                    </Button>
-                  </div>
-                  {blogImportStatus === "error" && (
-                    <p className="text-xs text-destructive">{blogImportError || "Could not fetch this URL."}</p>
-                  )}
-                  {blogImportStatus === "done" && (
-                    <p className="text-xs text-green-600">Imported and selected — ready to generate.</p>
-                  )}
-                </div>
-
-                {blogAssetId && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 border-t pt-2">
-                    <Sparkles className="w-3 h-3 text-primary flex-shrink-0" />
-                    Generates exactly <strong>5 posts</strong> per account — one per promotional angle (insight, question, story, tip, CTA).
-                  </p>
-                )}
               </div>
             )}
 
