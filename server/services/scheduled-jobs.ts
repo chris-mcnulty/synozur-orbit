@@ -1656,6 +1656,23 @@ async function runScheduledBriefingJob(): Promise<void> {
           generatedCount++;
 
           const briefingData = briefing.briefingData as BriefingData;
+
+          // Look up baseline company for this market so emails clearly identify which market the report covers
+          let baselineCompanyName: string | undefined;
+          if (marketId) {
+            try {
+              const market = await storage.getMarket(marketId);
+              const baselineProfile = await storage.getCompanyProfileByContext({
+                tenantDomain,
+                marketId,
+                isDefaultMarket: false,
+              });
+              baselineCompanyName = baselineProfile?.companyName || market?.name || undefined;
+            } catch {
+              // non-fatal — email still sends without the anchor label
+            }
+          }
+
           let podcastUrl: string | undefined;
 
           if (podcastCheck.allowed) {
@@ -1684,6 +1701,7 @@ async function runScheduledBriefingJob(): Promise<void> {
                   briefingId: briefing.id,
                   periodLabel: briefingData.periodLabel,
                   podcastUrl,
+                  baselineCompanyName,
                 },
                 baseUrl,
               );

@@ -448,10 +448,15 @@ export const SUPPORT_TICKET_REPLY_EMAIL = {
 // SCHEDULED BRIEFING PODCAST EMAIL
 // ============================================
 export const SCHEDULED_BRIEFING_EMAIL = {
-  subject: (companyName: string, periodLabel?: string) => periodLabel ? `Your Weekly Intelligence Briefing & Podcast - ${companyName} (${periodLabel})` : `Your Weekly Intelligence Briefing & Podcast - ${companyName}`,
+  subject: (companyName: string, baselineCompanyName?: string, periodLabel?: string) => {
+    const anchor = baselineCompanyName || companyName;
+    return periodLabel ? `Your Weekly Intelligence Briefing — ${anchor} (${periodLabel})` : `Your Weekly Intelligence Briefing — ${anchor}`;
+  },
   heading: 'Your Weekly Intelligence Briefing',
   greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
-  intro: `Your scheduled weekly intelligence briefing is ready. Here are the highlights:`,
+  intro: (baselineCompanyName?: string) => baselineCompanyName
+    ? `Your scheduled weekly intelligence briefing is ready. This report is anchored to <span class="highlight">${baselineCompanyName}</span> as the baseline company. Here are the highlights:`
+    : `Your scheduled weekly intelligence briefing is ready. Here are the highlights:`,
   executiveSummaryHeading: 'Executive Summary',
   actionItemsHeading: 'Top Action Items',
   actionItemUrgencyLabels: {
@@ -472,8 +477,11 @@ export const SCHEDULED_BRIEFING_EMAIL = {
   viewBriefingButtonText: 'View Full Briefing',
   unsubscribeText: 'Manage your briefing subscription preferences',
   footerMessage: `You're receiving this email because you subscribed to weekly intelligence briefing updates.`,
-  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, podcastLink: string, settingsLink: string, periodLabel?: string) =>
-    `Hi ${name},\n\nYour Weekly Intelligence Briefing for ${companyName}${periodLabel ? ` (${periodLabel})` : ''}\n\nExecutive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nListen to podcast: ${podcastLink}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe, update your preferences: ${settingsLink}`,
+  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, podcastLink: string, settingsLink: string, periodLabel?: string, baselineCompanyName?: string) => {
+    const anchor = baselineCompanyName || companyName;
+    const anchorLine = baselineCompanyName ? `Baseline company: ${baselineCompanyName}\n\n` : '';
+    return `Hi ${name},\n\nYour Weekly Intelligence Briefing — ${anchor}${periodLabel ? ` (${periodLabel})` : ''}\n\n${anchorLine}Executive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nListen to podcast: ${podcastLink}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe, update your preferences: ${settingsLink}`;
+  },
 };
 
 // ============================================

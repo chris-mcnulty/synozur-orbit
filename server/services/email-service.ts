@@ -1048,6 +1048,7 @@ export async function sendScheduledBriefingEmail(
     briefingId: string;
     periodLabel?: string;
     podcastUrl?: string;
+    baselineCompanyName?: string;
   },
   baseUrl: string,
 ): Promise<boolean> {
@@ -1094,10 +1095,12 @@ export async function sendScheduledBriefingEmail(
 
   const actionItemsText = topActions.map(item => `- [${item.urgency}] ${item.title}: ${item.description}`).join("\n");
 
+  const baselineCompanyName = briefingData.baselineCompanyName;
+
   const content = `
     <h1>${copy.heading}</h1>
     <p>${copy.greeting(recipientName)}</p>
-    <p>${copy.intro}</p>
+    <p>${copy.intro(baselineCompanyName)}</p>
     
     <div class="divider"></div>
     
@@ -1139,11 +1142,12 @@ export async function sendScheduledBriefingEmail(
     podcastLink,
     settingsLink,
     briefingData.periodLabel,
+    baselineCompanyName,
   );
 
   return sendEmail({
     to: email,
-    subject: copy.subject(companyName, briefingData.periodLabel),
+    subject: copy.subject(companyName, baselineCompanyName, briefingData.periodLabel),
     html: wrapEmailContent(content),
     text,
   });
