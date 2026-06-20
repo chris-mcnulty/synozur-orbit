@@ -2544,26 +2544,33 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [campaign] = await db.select().from(campaigns)
         .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const { status } = req.body;
+      const { status, postIds } = req.body;
       if (!status || !["approved", "rejected"].includes(status)) {
         return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
       }
+      const scopedIds: string[] = Array.isArray(postIds) && postIds.length > 0 ? postIds : [];
       if (status === "rejected") {
-        const rows = await db.delete(generatedPosts)
-          .where(and(
-            eq(generatedPosts.campaignId, campaign.id),
-            ne(generatedPosts.status, "approved"),
-          ))
-          .returning();
+        const baseCondition = and(
+          eq(generatedPosts.campaignId, campaign.id),
+          ne(generatedPosts.status, "approved"),
+        );
+        const condition = scopedIds.length
+          ? and(baseCondition, inArray(generatedPosts.id, scopedIds))
+          : baseCondition;
+        const rows = await db.delete(generatedPosts).where(condition).returning();
         res.json({ updated: rows.length });
       } else {
+        const baseCondition = and(
+          eq(generatedPosts.campaignId, campaign.id),
+          ne(generatedPosts.status, "deleted"),
+          ne(generatedPosts.status, status),
+        );
+        const condition = scopedIds.length
+          ? and(baseCondition, inArray(generatedPosts.id, scopedIds))
+          : baseCondition;
         const rows = await db.update(generatedPosts)
           .set({ status, updatedAt: new Date() })
-          .where(and(
-            eq(generatedPosts.campaignId, campaign.id),
-            ne(generatedPosts.status, "deleted"),
-            ne(generatedPosts.status, status),
-          ))
+          .where(condition)
           .returning();
         res.json({ updated: rows.length });
       }

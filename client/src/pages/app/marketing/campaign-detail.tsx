@@ -905,20 +905,21 @@ export default function CampaignDetailPage() {
   });
 
   const bulkStatusMutation = useMutation({
-    mutationFn: async (status: string) => {
+    mutationFn: async ({ status, postIds }: { status: string; postIds?: string[] }) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/bulk-status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, postIds: postIds ?? [] }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
     },
-    onSuccess: (data, status) => {
+    onSuccess: (data, vars) => {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
       queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
-      toast({ title: `${data.updated} post${data.updated !== 1 ? "s" : ""} ${status === "approved" ? "approved" : "rejected"}` });
+      setPostSelectedIds(new Set());
+      toast({ title: `${data.updated} post${data.updated !== 1 ? "s" : ""} ${vars.status === "approved" ? "approved" : "rejected"}` });
     },
   });
 
@@ -2465,6 +2466,14 @@ export default function CampaignDetailPage() {
                     disabled={postBulkTotal > 0}
                     onClick={async () => {
                       const ids = Array.from(postSelectedIds);
+                      const withExisting = ids.filter(pid => {
+                        const p = posts.find(x => x.id === pid);
+                        return p && (p.overrideImageUrl || p.overrideBrandAssetId);
+                      });
+                      if (withExisting.length > 0) {
+                        const ok = window.confirm(`${withExisting.length} of the selected posts already have an image. Generating graphics will replace them. Continue?`);
+                        if (!ok) return;
+                      }
                       setPostBulkTotal(ids.length);
                       setPostBulkProgress(0);
                       for (let i = 0; i < ids.length; i++) {
@@ -2609,12 +2618,12 @@ export default function CampaignDetailPage() {
                     variant="outline"
                     size="sm"
                     className="gap-1 text-green-600 border-green-200 hover:bg-green-50"
-                    onClick={() => bulkStatusMutation.mutate("approved")}
+                    onClick={() => bulkStatusMutation.mutate({ status: "approved", postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
                     disabled={bulkStatusMutation.isPending}
                     data-testid="button-approve-all"
                   >
                     <CheckCircle className="w-3.5 h-3.5" />
-                    Approve All
+                    {postSelectedIds.size > 0 ? `Approve selected (${postSelectedIds.size})` : "Approve All"}
                   </Button>
                 )}
                 {posts.some(p => p.status !== "rejected" && p.status !== "deleted") && (
@@ -2622,12 +2631,12 @@ export default function CampaignDetailPage() {
                     variant="outline"
                     size="sm"
                     className="gap-1 text-orange-600 border-orange-200 hover:bg-orange-50"
-                    onClick={() => bulkStatusMutation.mutate("rejected")}
+                    onClick={() => bulkStatusMutation.mutate({ status: "rejected", postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
                     disabled={bulkStatusMutation.isPending}
                     data-testid="button-reject-all"
                   >
                     <XCircle className="w-3.5 h-3.5" />
-                    Reject All
+                    {postSelectedIds.size > 0 ? `Reject selected (${postSelectedIds.size})` : "Reject All"}
                   </Button>
                 )}
               </div>
