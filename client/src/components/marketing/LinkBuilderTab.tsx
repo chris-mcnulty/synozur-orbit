@@ -27,6 +27,7 @@ import {
   Archive,
   ExternalLink,
   Loader2,
+  Trash2,
 } from "lucide-react";
 
 interface MarketingLink {
@@ -139,6 +140,24 @@ export function LinkBuilderTab({ campaignId, campaignName }: { campaignId: strin
     },
   });
 
+  const cleanupMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${campaignId}/marketing-links/cleanup-post-wrap`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Cleanup failed");
+      return r.json() as Promise<{ archived: number }>;
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["/api/marketing-links"] });
+      toast({ title: data.archived > 0 ? `Cleaned up ${data.archived} orphaned link${data.archived === 1 ? "" : "s"}` : "No orphaned links found" });
+    },
+    onError: (err: Error) => toast({ title: "Cleanup failed", description: err.message, variant: "destructive" }),
+  });
+
+  const postWrapActiveCount = activeLinks.filter(l => l.source === "post-wrap").length;
+
   const copyToClipboard = (link: MarketingLink) => {
     const url = link.shortUrl || `${window.location.origin}/r/${link.slug}`;
     navigator.clipboard.writeText(url);
@@ -150,7 +169,7 @@ export function LinkBuilderTab({ campaignId, campaignName }: { campaignId: strin
 
   return (
     <div className="space-y-4" data-testid="links-tab-content">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="text-sm font-medium flex items-center gap-2">
             <Link2 className="w-4 h-4" /> Tracked Links
@@ -159,9 +178,25 @@ export function LinkBuilderTab({ campaignId, campaignName }: { campaignId: strin
             Build UTM-tagged short links and track click counts. Use these in posts, emails, or any external touchpoint.
           </p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-1.5" data-testid="button-new-link">
-          <Plus className="w-3.5 h-3.5" /> New Link
-        </Button>
+        <div className="flex items-center gap-2">
+          {postWrapActiveCount > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => cleanupMutation.mutate()}
+              disabled={cleanupMutation.isPending}
+              title="Archive auto-generated post links whose posts have been deleted"
+              data-testid="button-cleanup-post-links"
+            >
+              {cleanupMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Clean up auto-links
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setOpen(true)} className="gap-1.5" data-testid="button-new-link">
+            <Plus className="w-3.5 h-3.5" /> New Link
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

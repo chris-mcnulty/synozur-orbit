@@ -18,12 +18,13 @@
 
 import type { Express } from "express";
 import { db } from "../db";
-import { eq, and, desc, sql, inArray, gte } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, gte, ne, notInArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   marketingLinks,
   marketingLinkClicks,
   campaigns,
+  generatedPosts,
   type InsertMarketingLink,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
@@ -264,6 +265,58 @@ export function registerMarketingLinksRoutes(app: Express) {
       .returning();
     if (!row) return res.status(404).json({ error: "Link not found" });
     res.status(204).send();
+  });
+
+  // Archive post-wrap links that no longer have an active post referencing
+  // their slug in that campaign. Handles links orphaned before the automatic
+  // per-rejection cleanup was added.
+  app.post("/api/campaigns/:campaignId/marketing-links/cleanup-post-wrap", async (req, res) => {
+    if (!await guardCampaigns(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { campaignId } = req.params;
+      const [campaign] = await db.select({ id: campaigns.id })
+        .from(campaigns)
+        .where(and(eq(campaigns.id, campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)))
+        .limit(1);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      // All active post-wrap links for this campaign
+      const postWrapLinks = await db.select({ id: marketingLinks.id, slug: marketingLinks.slug })
+        .from(marketingLinks)
+        .where(and(
+          eq(marketingLinks.campaignId, campaignId),
+          eq(marketingLinks.source, "post-wrap"),
+          eq(marketingLinks.status, "active"),
+        ));
+      if (postWrapLinks.length === 0) return res.json({ archived: 0 });
+
+      // Slugs still referenced by active posts in this campaign
+      const activePosts = await db.select({ content: generatedPosts.content })
+        .from(generatedPosts)
+        .where(and(
+          eq(generatedPosts.campaignId, campaignId),
+          notInArray(generatedPosts.status, ["deleted", "rejected", "archived"]),
+        ));
+      const referencedSlugs = new Set<string>();
+      for (const p of activePosts) {
+        if (!p.content) continue;
+        for (const m of p.content.matchAll(/\/r\/([a-z0-9]+)/gi)) referencedSlugs.add(m[1]);
+      }
+
+      // Archive any links whose slug is no longer referenced
+      const orphanedIds = postWrapLinks.filter(l => !referencedSlugs.has(l.slug)).map(l => l.id);
+      if (orphanedIds.length === 0) return res.json({ archived: 0 });
+
+      await db.update(marketingLinks)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(inArray(marketingLinks.id, orphanedIds));
+
+      res.json({ archived: orphanedIds.length });
+    } catch (err: any) {
+      console.error("[marketing-links cleanup-post-wrap]", err.message);
+      res.status(500).json({ error: err.message || "Cleanup failed" });
+    }
   });
 
   // ──────────────────────────────────────────────────────────
