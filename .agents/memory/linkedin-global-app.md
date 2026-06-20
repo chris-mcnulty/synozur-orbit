@@ -14,14 +14,13 @@ short-circuits to env; `linkedin` was removed from `PLATFORM_CREDENTIAL_PLATFORM
 and wait weeks for Community Management API approval. Buffer/Hootsuite pattern:
 customers click Connect, consent, done.
 
-# Direct posting is gated behind approval
+# Direct posting is LIVE (approval received June 2026)
 
-Direct posting stays OFF until LinkedIn approves the shared app's posting scopes
-(w_member_social, w_organization_social, rw_organization_admin). Gate:
-`LINKEDIN_DIRECT_PUBLISH_ENABLED` env var (default off). When off, oauthConfigured/
-authorize/publish all refuse with a "pending LinkedIn app review" message, and the
-Social Accounts UI shows "coming soon" instead of a Connect button.
+`LINKEDIN_DIRECT_PUBLISH_ENABLED=true` is set in the shared environment.
+The Connect button and OAuth flow are active. Redirect URIs registered in
+the LinkedIn Developer Portal:
+- Production: `https://orbit.synozur.com/api/social-accounts/oauth/callback`
+- Dev: `https://4bc92ae4-16a8-4580-8f70-f19fac0c101f-00-3oqudcz68oh09.riker.replit.dev/api/social-accounts/oauth/callback`
 
-**How to apply:** To go live after approval, set `LINKEDIN_DIRECT_PUBLISH_ENABLED=true`
-and register prod + dev redirect URIs `<base-url>/api/social-accounts/oauth/callback`
-in the LinkedIn app. No code change needed.
+**How to apply:** Gate is `isLinkedInDirectPublishEnabled()` in `platform-credentials-service.ts`.
+To turn off, delete the env var or set it to anything other than "true".

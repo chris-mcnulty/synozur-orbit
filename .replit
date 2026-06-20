@@ -86,6 +86,7 @@ GNEWS_API_KEY = "e16dd44feb054d697453232587729ac7"
 STRIPE_PRO_PRICE_ID = "price_1TSygKAoFb2Twt95RtWn8M0b"
 STRIPE_PRO_ANNUAL_PRICE_ID = "price_1TSygKAoFb2Twt95Z7ftUFp6"
 LINKEDIN_MCP_URL = "https://mcp.mcpbundles.com/bundle/linkedin"
+LINKEDIN_DIRECT_PUBLISH_ENABLED = "true"
 
 [postMerge]
 path = "scripts/post-merge.sh"
