@@ -363,6 +363,7 @@ export default function CampaignDetailPage() {
   const [fsOpen, setFsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [editSocialAccountId, setEditSocialAccountId] = useState<string | null>(null);
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [assetSearch, setAssetSearch] = useState("");
@@ -851,16 +852,16 @@ export default function CampaignDetailPage() {
   });
 
   const updatePostMutation = useMutation({
-    mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags, linkUrl, linkLabel }: {
+    mutationFn: async ({ postId, editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags, linkUrl, linkLabel, socialAccountId }: {
       postId: string; editedContent?: string; status?: string;
       overrideImageUrl?: string | null; overrideBrandAssetId?: string | null; hashtags?: string[];
-      linkUrl?: string | null; linkLabel?: string | null;
+      linkUrl?: string | null; linkLabel?: string | null; socialAccountId?: string | null;
     }) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags, linkUrl, linkLabel }),
+        body: JSON.stringify({ editedContent, status, overrideImageUrl, overrideBrandAssetId, hashtags, linkUrl, linkLabel, socialAccountId }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -2933,6 +2934,7 @@ export default function CampaignDetailPage() {
                               onClick={() => {
                                 setEditingPostId(post.id);
                                 setEditContent(post.editedContent ?? post.content);
+                                setEditSocialAccountId(post.socialAccountId ?? null);
                               }}
                               data-testid={`button-edit-${post.id}`}
                             >
@@ -3160,16 +3162,41 @@ export default function CampaignDetailPage() {
                               rows={5}
                               data-testid={`textarea-edit-${post.id}`}
                             />
-                            {post.socialAccountId && (
+                            {(() => {
+                              const campaignAccounts = (campaign?.socialAccounts ?? [])
+                                .map(csa => allSocialAccounts.find(a => a.id === csa.socialAccountId))
+                                .filter((a): a is NonNullable<typeof a> => !!a && a.platform === post.platform);
+                              if (campaignAccounts.length === 0) return null;
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground shrink-0">Publish as</span>
+                                  <Select
+                                    value={editSocialAccountId ?? "__none__"}
+                                    onValueChange={v => setEditSocialAccountId(v === "__none__" ? null : v)}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs flex-1" data-testid={`select-account-${post.id}`}>
+                                      <SelectValue placeholder="No account assigned" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__">No account assigned</SelectItem>
+                                      {campaignAccounts.map(a => (
+                                        <SelectItem key={a.id} value={a.id}>{a.accountName}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              );
+                            })()}
+                            {(editSocialAccountId ?? post.socialAccountId) && (
                               <AIRewritePanel
-                                socialAccountId={post.socialAccountId}
+                                socialAccountId={(editSocialAccountId ?? post.socialAccountId)!}
                                 draft={editContent}
                                 postId={post.id}
                                 onApply={(variant) => setEditContent(variant)}
                               />
                             )}
                             <div className="flex gap-2">
-                              <Button size="sm" onClick={() => updatePostMutation.mutate({ postId: post.id, editedContent: editContent })} data-testid={`button-save-edit-${post.id}`}>Save</Button>
+                              <Button size="sm" onClick={() => updatePostMutation.mutate({ postId: post.id, editedContent: editContent, socialAccountId: editSocialAccountId })} data-testid={`button-save-edit-${post.id}`}>Save</Button>
                               <Button size="sm" variant="ghost" onClick={() => setEditingPostId(null)}>Cancel</Button>
                             </div>
                           </div>

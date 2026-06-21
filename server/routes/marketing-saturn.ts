@@ -2662,13 +2662,26 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [campaign] = await db.select().from(campaigns)
         .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel, publishedUrl } = req.body;
+      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel, publishedUrl, socialAccountId } = req.body;
       if (status === "rejected" || status === "deleted") {
         await db.delete(generatedPosts)
           .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
         return res.json({ id: req.params.postId, status });
       }
       const updateFields: any = { updatedAt: new Date() };
+      if (socialAccountId !== undefined) {
+        if (socialAccountId === null || socialAccountId === "") {
+          updateFields.socialAccountId = null;
+        } else {
+          // Tenant boundary: only allow social accounts belonging to this tenant.
+          const [ownedAccount] = await db.select({ id: socialAccounts.id }).from(socialAccounts).where(and(
+            eq(socialAccounts.id, socialAccountId),
+            eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+          ));
+          if (!ownedAccount) return res.status(404).json({ error: "Social account not found" });
+          updateFields.socialAccountId = socialAccountId;
+        }
+      }
       if (editedContent !== undefined) updateFields.editedContent = editedContent;
       if (status !== undefined) {
         updateFields.status = status;
