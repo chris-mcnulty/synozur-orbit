@@ -776,10 +776,6 @@ export function registerEditorialCalendarRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
-      // Archive any marketing links tied to this brief before hard-deleting it
-      await db.update(marketingLinks).set({ status: "archived", updatedAt: new Date() }).where(
-        and(eq(marketingLinks.tenantDomain, ctx.tenantDomain), eq(marketingLinks.sourceBriefId, req.params.id))
-      );
       const [deleted] = await db
         .delete(contentBriefs)
         .where(
