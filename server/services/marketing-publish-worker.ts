@@ -338,10 +338,13 @@ export async function publishPostNow(
   const [row] = await db
     .select({ post: generatedPosts, account: socialAccounts })
     .from(generatedPosts)
-    .innerJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))
+    .leftJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))
     .where(eq(generatedPosts.id, postId));
   if (!row) return { success: false, errorMessage: "Post not found" };
   const { post, account } = row;
+  if (!account) {
+    return { success: false, errorMessage: "No social account linked to this post. Open the post and assign an account before publishing." };
+  }
   if (post.status !== "approved" && post.status !== "publish_failed") {
     return {
       success: false,
