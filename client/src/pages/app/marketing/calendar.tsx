@@ -463,9 +463,18 @@ function PostDetailDrawer({
   const [imageUrl, setImageUrl] = useState<string | null>(post.overrideImageUrl ?? null);
   const [showPicker, setShowPicker] = useState(false);
 
+  // Track the current status locally so approve/publish updates are reflected
+  // immediately without waiting for the calendar query to refetch.
+  const [localStatus, setLocalStatus] = useState(post.status);
+
   // The calendar payload only carries a truncated preview; fetch the full row so
-  // the user can read and copy the complete post text here.
-  const { data: full } = useQuery<{ content?: string | null; editedContent?: string | null }>({
+  // the user can read the complete post text, carousel slides, and format here.
+  const { data: full } = useQuery<{
+    content?: string | null;
+    editedContent?: string | null;
+    carouselSlides?: { index: number; role: string; headline: string; imageUrl?: string | null }[] | null;
+    postFormat?: string | null;
+  }>({
     queryKey: [`/api/generated-posts/${post.id}`],
     queryFn: async () => {
       const r = await fetch(`/api/generated-posts/${post.id}`, { credentials: "include" });
@@ -473,6 +482,8 @@ function PostDetailDrawer({
     },
   });
   const fullText = full?.editedContent ?? full?.content ?? post.preview ?? "";
+  const slides = full?.carouselSlides ?? null;
+  const slidesWithImages = (slides ?? []).filter(s => s.imageUrl);
   const copyText = async () => {
     try {
       await navigator.clipboard.writeText(fullText);
@@ -484,6 +495,42 @@ function PostDetailDrawer({
 
   const invalidateCalendar = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/generated-posts/${post.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "approved" }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Approve failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      setLocalStatus("approved");
+      invalidateCalendar();
+      toast({ title: "Approved", description: "Post is ready to publish or export." });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't approve", description: err.message, variant: "destructive" }),
+  });
+
+  const publishNowMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/generated-posts/${post.id}/publish`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Publish failed");
+      return r.json() as Promise<{ publishedUrl?: string }>;
+    },
+    onSuccess: (data: { publishedUrl?: string }) => {
+      setLocalStatus("published");
+      invalidateCalendar();
+      toast({ title: "Published!", description: data.publishedUrl ? `Live at ${data.publishedUrl}` : "Post published successfully." });
+    },
+    onError: (err: Error) => toast({ title: "Publish failed", description: err.message, variant: "destructive" }),
+  });
 
   const generateImage = useMutation({
     mutationFn: async () => {
@@ -561,7 +608,7 @@ function PostDetailDrawer({
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div>
             <div className="text-xs text-muted-foreground mb-1">Status</div>
-            <Badge variant="outline">{post.status}</Badge>
+            <Badge variant="outline">{localStatus}</Badge>
           </div>
           <div>
             <div className="text-xs text-muted-foreground mb-1">Content</div>
@@ -697,7 +744,105 @@ function PostDetailDrawer({
               </div>
             )}
           </div>
-          {post.status !== "published" && (
+          {/* Carousel slides — shown when the post has multiple slides */}
+          {slides && slides.length > 0 && (
+            <div data-testid="calendar-detail-carousel">
+              <div className="flex items-center justify-between mb-1.5">
+                <Label className="text-xs">Carousel · {slides.length} slides</Label>
+                {slidesWithImages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] gap-1"
+                    onClick={async () => {
+                      toast({ title: `Downloading ${slidesWithImages.length} slides…` });
+                      for (let i = 0; i < slidesWithImages.length; i++) {
+                        await downloadImageFromUrl(
+                          slidesWithImages[i].imageUrl as string,
+                          `slide-${i + 1}`,
+                        );
+                      }
+                    }}
+                    data-testid="button-download-all-slides"
+                  >
+                    <Download className="w-3 h-3" /> Download all
+                  </Button>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2" data-testid="carousel-slides-grid">
+                {slides.map((s, i) => (
+                  <div key={i} className="space-y-1">
+                    {s.imageUrl ? (
+                      <div className="relative rounded overflow-hidden border bg-muted aspect-video">
+                        <img
+                          src={s.imageUrl}
+                          alt={s.headline}
+                          className="w-full h-full object-cover"
+                          data-testid={`slide-img-${i}`}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="absolute bottom-0 right-0 h-6 px-1.5 text-[10px] bg-black/40 hover:bg-black/60 text-white rounded-none rounded-tl"
+                          onClick={() => downloadImageFromUrl(s.imageUrl as string, `slide-${i + 1}`)}
+                          data-testid={`button-save-slide-${i}`}
+                        >
+                          <Download className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="rounded border bg-muted aspect-video flex items-center justify-center">
+                        <span className="text-[10px] text-muted-foreground">No image</span>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground leading-tight line-clamp-2">{s.headline}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Approve / Publish actions */}
+          {localStatus !== "published" && localStatus !== "exported" && localStatus !== "scheduled_external" && (
+            <div className="flex flex-wrap gap-2 pt-2 border-t" data-testid="post-action-buttons">
+              {(localStatus === "draft") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => approveMutation.mutate()}
+                  disabled={approveMutation.isPending}
+                  data-testid="button-approve-post"
+                >
+                  {approveMutation.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+                  Approve
+                </Button>
+              )}
+              {(localStatus === "approved" || localStatus === "publish_failed") && post.socialAccountId && (
+                <Button
+                  size="sm"
+                  onClick={() => publishNowMutation.mutate()}
+                  disabled={publishNowMutation.isPending}
+                  data-testid="button-publish-now-post"
+                >
+                  {publishNowMutation.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    : <Share2 className="w-3.5 h-3.5 mr-1.5" />}
+                  {publishNowMutation.isPending ? "Publishing…" : "Publish now"}
+                </Button>
+              )}
+              {localStatus === "approved" && post.campaignId && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/app/marketing/campaigns/${post.campaignId}`}>
+                    <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV in campaign
+                  </Link>
+                </Button>
+              )}
+            </div>
+          )}
+
+          {localStatus !== "published" && (
             <div>
               <Label className="text-xs">Reschedule</Label>
               <div className="flex gap-2 items-center mt-1">

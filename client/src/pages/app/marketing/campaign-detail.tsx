@@ -2198,7 +2198,7 @@ export default function CampaignDetailPage() {
                               onClick={() => navigate(`/app/marketing/editorial-calendar?calendar=${contentPlan.calendar!.id}`)}
                               data-testid={`button-open-brief-${b.id}`}
                             >
-                              Open in calendar <ExternalLink className="w-3 h-3" />
+                              Open in Content Calendar <ExternalLink className="w-3 h-3" />
                             </Button>
                           )}
                           <Button

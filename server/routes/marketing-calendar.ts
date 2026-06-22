@@ -655,9 +655,13 @@ export function registerMarketingCalendarRoutes(app: Express) {
         if (!row) return res.status(404).json({ error: "Not found" });
         return res.json({ ok: true, lifecycle: "approved" });
       }
-      // Social posts intentionally have no per-item Approve — they're high
-      // volume and rely on the bulk CSV export (= delivered) flow instead.
-      return res.status(400).json({ error: "Only blog/content and email items can be approved." });
+      if (type === "social") {
+        const [row] = await db.update(generatedPosts).set({ status: "approved", updatedAt: new Date() })
+          .where(and(eq(generatedPosts.id, id), eq(generatedPosts.tenantDomain, ctx.tenantDomain))).returning({ id: generatedPosts.id });
+        if (!row) return res.status(404).json({ error: "Not found" });
+        return res.json({ ok: true, lifecycle: "approved" });
+      }
+      return res.status(400).json({ error: "Only content, email, and social items can be approved." });
     } catch (err: any) {
       console.error("[marketing-calendar approve]", err.message);
       res.status(500).json({ error: err.message || "Failed to approve item" });

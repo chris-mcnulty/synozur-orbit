@@ -2095,9 +2095,9 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   });
   if (!item) return null;
   const assignments = resolveAssignments(item, filterOpts);
-  // Only blog/content and email require an explicit Approve; social posts are
-  // high-volume and rely on the bulk CSV export (= delivered) flow instead.
-  const canApprove = (item.type === "content" || item.type === "email") && item.lifecycle === "draft";
+  // Blog/content and email get "Finalize/Approve"; social posts can also be
+  // approved one-at-a-time from here (in addition to the bulk CSV export path).
+  const canApprove = (item.type === "content" || item.type === "email" || item.type === "social") && item.lifecycle === "draft";
   return (
     <Dialog open={!!item} onOpenChange={onOpenChange}>
       <DialogContent data-testid="dialog-item-detail" className="max-h-[85vh] overflow-y-auto">
@@ -2378,7 +2378,8 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
               </div>
             )}
             {canApprove && (
-              <Button variant="outline" size="sm" onClick={() => onApprove(item)} disabled={busy} data-testid="button-approve" title={item.type === "content" ? "Approve the brief and its draft in one step" : undefined}>
+              <Button variant="outline" size="sm" onClick={() => onApprove(item)} disabled={busy} data-testid="button-approve"
+                title={item.type === "content" ? "Approve the brief and its draft in one step" : item.type === "social" ? "Mark as approved — ready to publish or export" : undefined}>
                 <CheckCircle2 className="mr-2 h-4 w-4" /> {item.type === "content" ? "Finalize" : "Approve"}
               </Button>
             )}
@@ -2390,6 +2391,28 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
             {item.type === "email" && (
               <Button variant="outline" size="sm" onClick={() => onHandoffEmail(item)} disabled={busy || item.lifecycle === "draft"} title={item.lifecycle === "draft" ? "Approve the email first" : undefined} data-testid="button-email-engine">
                 <Mail className="mr-2 h-4 w-4" /> Hand off to email engine
+              </Button>
+            )}
+            {item.type === "social" && item.lifecycle === "approved" && (
+              <Button
+                variant="default"
+                size="sm"
+                disabled={busy}
+                data-testid="button-publish-now"
+                onClick={async () => {
+                  try {
+                    const r = await fetch(`/api/generated-posts/${item.id}/publish`, { method: "POST", credentials: "include" });
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok) throw new Error(d.error || "Publish failed");
+                    invalidate();
+                    setDetail(null);
+                    toast({ title: "Published!", description: d.publishedUrl ? `Live at ${d.publishedUrl}` : "Post published successfully." });
+                  } catch (err: any) {
+                    toast({ title: "Publish failed", description: err.message, variant: "destructive" });
+                  }
+                }}
+              >
+                <Send className="mr-2 h-4 w-4" /> Publish now via Orbit
               </Button>
             )}
             {item.type === "social" && (
@@ -2530,8 +2553,9 @@ function BacklogPanel({
         Unscheduled drafts across social, email, and content. Select items to schedule, approve, assign, or discard them in bulk.
       </p>
 
-      {/* Backlog filters */}
+      {/* Backlog filters — these filter only the unscheduled backlog list below, not the calendar grid above */}
       <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">Backlog filters:</span>
         <TypeFilterSelect value={typeFilter} onChange={setTypeFilter} filterOpts={filterOpts} testid="select-backlog-type" />
         <Select value={backlogFilters.campaignId} onValueChange={(v) => setBacklogFilters((f) => ({ ...f, campaignId: v }))}>
           <SelectTrigger className="h-8 w-[150px]" data-testid="select-backlog-campaign"><SelectValue placeholder="Campaign" /></SelectTrigger>
