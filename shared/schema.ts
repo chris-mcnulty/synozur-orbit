@@ -3762,6 +3762,23 @@ export const HUBSPOT_OAUTH_SCOPES = [
   "crm.objects.contacts.read",
   "crm.objects.contacts.write",
   "crm.objects.owners.read",
+  // Marketing-email sync (Phase 1+): write engagement to contact timelines and
+  // read/write subscription (consent) state. Adding these forces already-
+  // connected tenants to re-authorize before sync can run — see the
+  // re-consent banner. `hasHubspotEmailScopes()` gates sync paths so the rest
+  // of the integration keeps working until a tenant re-consents.
+  "timeline",
+  "communication_preferences.read",
+  "communication_preferences.write",
+] as const;
+
+// The subset of scopes required for the marketing-email sync layer. A
+// connection authorized before these were added will be missing them; sync
+// paths no-op until the tenant re-authorizes.
+export const HUBSPOT_EMAIL_SYNC_SCOPES = [
+  "communication_preferences.read",
+  "communication_preferences.write",
+  "timeline",
 ] as const;
 
 export const hubspotConnections = pgTable("hubspot_connections", {
@@ -3774,6 +3791,11 @@ export const hubspotConnections = pgTable("hubspot_connections", {
   expiresAt: timestamp("expires_at").notNull(),
   scopes: text("scopes").array().notNull().default(sql`ARRAY[]::text[]`),
   autoPushEnabled: boolean("auto_push_enabled").notNull().default(false),
+  // Marketing-email sync (Phase 1). When a recipient has no matching HubSpot
+  // contact, auto-create one so engagement/consent can be tracked. Defaults
+  // on; admins can opt out (e.g. tenants that don't want Orbit creating CRM
+  // contacts). Independent of whether the connection has the email-sync scopes.
+  autoCreateHubspotContacts: boolean("auto_create_hubspot_contacts").notNull().default(true),
   defaultOwnerId: text("default_owner_id"), // HubSpot owner ID for pushed Tasks
   connectedByUserId: varchar("connected_by_user_id").references(() => users.id, { onDelete: "set null" }),
   connectedAt: timestamp("connected_at").notNull().defaultNow(),
@@ -3915,6 +3937,12 @@ export const emailRecipients = pgTable("email_recipients", {
   email: text("email").notNull(),
   name: text("name"),
   status: text("status").notNull().default("active"), // active | unsubscribed | bounced | manual_remove
+  // HubSpot contact link (Phase 1 marketing-email sync). Durable cache of the
+  // resolved CRM contact so we don't re-search HubSpot on every send. Null
+  // until resolved; "skipped" when no contact exists and auto-create is off.
+  hubspotContactId: text("hubspot_contact_id"),
+  hsSyncStatus: text("hs_sync_status"), // null | pending | resolved | skipped | error
+  hsLastSyncedAt: timestamp("hs_last_synced_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   listEmailUniq: index("email_recipients_list_email_uniq").on(table.listId, table.email),
@@ -4006,6 +4034,14 @@ export const emailSendRecipients = pgTable("email_send_recipients", {
   clickedAt: timestamp("clicked_at"),
   openCount: integer("open_count").notNull().default(0),
   clickCount: integer("click_count").notNull().default(0),
+  // HubSpot sync state (Phase 1 marketing-email sync). hubspotContactId is the
+  // resolved CRM contact this recipient maps to; hsSyncStatus tracks resolution
+  // (and, in later phases, timeline-event push). Sync is best-effort and never
+  // blocks the SendGrid send.
+  hubspotContactId: text("hubspot_contact_id"),
+  hsSyncStatus: text("hs_sync_status"), // null | pending | resolved | skipped | error
+  hsLastEventSyncedAt: timestamp("hs_last_event_synced_at"),
+  hsSyncError: text("hs_sync_error"),
 }, (table) => ({
   sendEmailIdx: index("email_send_recipients_send_email_idx").on(table.sendId, table.email),
 }));

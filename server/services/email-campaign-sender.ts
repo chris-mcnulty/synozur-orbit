@@ -36,6 +36,9 @@ import {
 import { wrapOutboundLinksInText } from "./marketing-links-helpers";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
+import { pullSubscriptionStatus } from "./hubspot-email-sync";
+import { reconcileSuppression } from "./hubspot-email-sync-core";
+import { resolveSendRecipientContacts } from "./hubspot-contact-resolver";
 
 async function getTenantPlan(tenantDomain: string): Promise<string> {
   try {
@@ -385,7 +388,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     for (const r of rows) {
       recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
     }
-    // Filter against suppression list
+    // Filter against suppression list + HubSpot consent (HubSpot opt-out wins).
     if (recipients.length > 0) {
       const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
         .from(emailSuppressions)
@@ -393,7 +396,20 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
           eq(emailSuppressions.tenantDomain, tenantDomain),
           inArray(emailSuppressions.email, recipients.map(r => r.email)),
         ));
-      const supMap = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
+      const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
+      // Pull HubSpot opt-out state and reconcile so contacts who unsubscribed
+      // in HubSpot are excluded even if Orbit never recorded it. Best-effort:
+      // no connection / missing scopes / failure ⇒ local suppression only.
+      let hubspotOptedOut = new Set<string>();
+      try {
+        const consent = await pullSubscriptionStatus(tenantDomain, recipients.map(r => r.email));
+        hubspotOptedOut = consent.optedOut;
+      } catch { /* best-effort: fall back to local suppression */ }
+      const supMap = reconcileSuppression({
+        candidateEmails: recipients.map(r => r.email),
+        locallySuppressed: localSuppressed,
+        hubspotOptedOut,
+      });
       for (let i = recipients.length - 1; i >= 0; i--) {
         const reason = supMap.get(recipients[i].email);
         if (reason) {
@@ -580,6 +596,29 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     message: `${sentCount}/${recipients.length} delivered`,
     details: { listId, testRecipient, generatedEmailId: email.id },
   });
+
+  // HubSpot Phase 1: resolve recipients to CRM contacts so later phases can
+  // attach engagement to the right timeline. List sends only (test previews
+  // are excluded), best-effort, and after delivery so it never affects the
+  // send result.
+  if (!testRecipient && sentCount > 0) {
+    try {
+      const r = await resolveSendRecipientContacts({ tenantDomain, sendId: send.id });
+      if (r.ran) {
+        await db.insert(marketingAuditLog).values({
+          tenantDomain,
+          marketId,
+          userId: createdBy,
+          action: "hubspot_contact_resolve",
+          entityType: "email_send",
+          entityId: send.id,
+          status: r.errors > 0 ? "warning" : "ok",
+          message: `${r.resolved} resolved, ${r.created} created, ${r.skipped} unmatched`,
+          details: { resolved: r.resolved, created: r.created, skipped: r.skipped, errors: r.errors },
+        });
+      }
+    } catch { /* best-effort: resolution never blocks the send result */ }
+  }
 
   return {
     send: updated,

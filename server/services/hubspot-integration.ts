@@ -188,6 +188,51 @@ export async function getTenantClient(tenantDomain: string): Promise<{ client: C
   return { client: new Client({ accessToken }), connection: conn };
 }
 
+/**
+ * Returns a refreshed raw access token for the tenant alongside the
+ * connection. Used by sync paths that call HubSpot REST endpoints the SDK
+ * doesn't model yet (e.g. the 2026-03 subscriptions / communication-
+ * preferences API). Shares the same refresh-if-expiring logic as
+ * getTenantClient().
+ */
+export async function getTenantAccessToken(
+  tenantDomain: string,
+): Promise<{ accessToken: string; connection: HubspotConnection }> {
+  let conn = await storage.getHubspotConnection(tenantDomain);
+  if (!conn) {
+    throw new Error("HubSpot is not connected for this tenant.");
+  }
+  if (conn.expiresAt.getTime() - 60_000 <= Date.now()) {
+    conn = await refreshAccessToken(conn);
+  }
+  let accessToken: string;
+  try {
+    accessToken = decryptSecret(conn.encryptedAccessToken);
+  } catch {
+    throw new Error("Stored HubSpot access token could not be decrypted — please reconnect.");
+  }
+  return { accessToken, connection: conn };
+}
+
+/**
+ * Whether a connection has been authorized with the marketing-email sync
+ * scopes (timeline + communication preferences). Connections created before
+ * these scopes were added will be missing them until the tenant re-consents;
+ * sync paths check this and no-op when false so the rest of the integration
+ * keeps working. We check the locally-recorded scopes (set at connect time)
+ * rather than calling HubSpot.
+ */
+export function hasHubspotEmailScopes(connection: Pick<HubspotConnection, "scopes">): boolean {
+  const granted = new Set((connection.scopes ?? []).map((s) => s.trim()));
+  return (
+    granted.has("communication_preferences.read") &&
+    granted.has("communication_preferences.write") &&
+    granted.has("timeline")
+  );
+}
+
+export const HUBSPOT_REST_HOST = HUBSPOT_API_HOST;
+
 // ─────────────────────────────────────────────────────────────────────────
 // Inbound: enrichment + deal rollup
 // ─────────────────────────────────────────────────────────────────────────
