@@ -338,15 +338,26 @@ export class LinkedInPublisher implements SocialPublisher {
       };
     }
 
+    // Upload image if the post has one (overrideImageUrl takes precedence).
+    const imageUrl: string | null =
+      (post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null;
+    let imageAssetUrn: string | null = null;
+    if (imageUrl) {
+      imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
+    }
+
+    const shareContent: Record<string, unknown> = {
+      shareCommentary: { text: finalText },
+      shareMediaCategory: imageAssetUrn ? "IMAGE" : "NONE",
+    };
+    if (imageAssetUrn) {
+      shareContent.media = [{ status: "READY", media: imageAssetUrn }];
+    }
+
     const body = {
       author: account.authorUrn,
       lifecycleState: "PUBLISHED",
-      specificContent: {
-        "com.linkedin.ugc.ShareContent": {
-          shareCommentary: { text: finalText },
-          shareMediaCategory: "NONE",
-        },
-      },
+      specificContent: { "com.linkedin.ugc.ShareContent": shareContent },
       visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
     };
 
@@ -397,5 +408,76 @@ export class LinkedInPublisher implements SocialPublisher {
       publishedUrl,
       responsePayload: payload ?? { urn: createdUrn },
     };
+  }
+
+  /** Register + upload an image to LinkedIn, return the asset URN or null on failure. */
+  private async uploadImageAsset(
+    accessToken: string,
+    authorUrn: string,
+    imageUrl: string,
+  ): Promise<string | null> {
+    try {
+      // 1. Register the upload
+      const regResp = await fetch(`${API_HOST}/v2/assets?action=registerUpload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "X-Restli-Protocol-Version": "2.0.0",
+        },
+        body: JSON.stringify({
+          registerUploadRequest: {
+            recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
+            owner: authorUrn,
+            serviceRelationships: [{
+              relationshipType: "OWNER",
+              identifier: "urn:li:userGeneratedContent",
+            }],
+          },
+        }),
+      });
+      if (!regResp.ok) {
+        console.warn("[LinkedIn] registerUpload failed:", regResp.status, await regResp.text().catch(() => ""));
+        return null;
+      }
+      const regJson = (await regResp.json()) as any;
+      const uploadUrl: string | undefined =
+        regJson?.value?.uploadMechanism?.[
+          "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
+        ]?.uploadUrl;
+      const assetUrn: string | undefined = regJson?.value?.asset;
+      if (!uploadUrl || !assetUrn) {
+        console.warn("[LinkedIn] registerUpload missing uploadUrl/asset in response");
+        return null;
+      }
+
+      // 2. Download the image from its URL
+      const imgResp = await fetch(imageUrl);
+      if (!imgResp.ok) {
+        console.warn("[LinkedIn] Failed to fetch image:", imageUrl, imgResp.status);
+        return null;
+      }
+      const imageBuffer = await imgResp.arrayBuffer();
+      const contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
+
+      // 3. Upload the binary to LinkedIn
+      const uploadResp = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": contentType,
+        },
+        body: imageBuffer,
+      });
+      if (!uploadResp.ok) {
+        console.warn("[LinkedIn] Image PUT failed:", uploadResp.status, await uploadResp.text().catch(() => ""));
+        return null;
+      }
+
+      return assetUrn;
+    } catch (err: any) {
+      console.warn("[LinkedIn] uploadImageAsset error:", err.message);
+      return null;
+    }
   }
 }

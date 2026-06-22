@@ -70,7 +70,7 @@ function titleize(s: string): string {
 type Lifecycle = "draft" | "approved" | "delivered";
 
 function socialLifecycle(status: string): Lifecycle {
-  if (status === "exported" || status === "published") return "delivered";
+  if (status === "exported" || status === "scheduled_external" || status === "published") return "delivered";
   if (status === "approved") return "approved";
   return "draft";
 }
@@ -763,6 +763,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       // appear in SocialPilot CSV exports.
       if (!includeExported) {
         conds.push(ne(generatedPosts.status, "exported"));
+        conds.push(ne(generatedPosts.status, "scheduled_external"));
         conds.push(ne(generatedPosts.status, "published"));
         conds.push(ne(generatedPosts.status, "publish_failed"));
       }
@@ -861,6 +862,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
         ne(generatedPosts.status, "deleted"),
         ne(generatedPosts.status, "archived"),
         ne(generatedPosts.status, "exported"),
+        ne(generatedPosts.status, "scheduled_external"),
         ne(generatedPosts.status, "published"),
       ];
       if (fromDate) conds.push(gte(generatedPosts.scheduledDate, fromDate));
@@ -942,7 +944,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       const ids: string[] = Array.isArray(req.body?.postIds) ? req.body.postIds.filter((x: any) => typeof x === "string" && x) : [];
       if (!ids.length) return res.status(400).json({ error: "No post ids supplied." });
       const result = await db.update(generatedPosts)
-        .set({ status: "exported", updatedAt: new Date() })
+        .set({ status: "scheduled_external", updatedAt: new Date() })
         .where(and(
           eq(generatedPosts.tenantDomain, ctx.tenantDomain),
           inArray(generatedPosts.id, ids),
@@ -1098,6 +1100,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
         or(
           eq(generatedPosts.status, "exported"),
+          eq(generatedPosts.status, "scheduled_external"),
           eq(generatedPosts.status, "published"),
         ),
       ];

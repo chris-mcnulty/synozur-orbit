@@ -2611,7 +2611,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         return res.status(400).json({ error: "postIds must be a non-empty array" });
       }
       const rows = await db.update(generatedPosts)
-        .set({ status: "exported", updatedAt: new Date() })
+        .set({ status: "scheduled_external", updatedAt: new Date() })
         .where(and(
           eq(generatedPosts.campaignId, campaign.id),
           inArray(generatedPosts.id, postIds as string[]),
@@ -3243,7 +3243,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       const allPosts = await db.select().from(generatedPosts)
         .where(and(
           eq(generatedPosts.campaignId, campaign.id),
-          notInArray(generatedPosts.status, ["deleted", "rejected", "exported", "published"]),
+          notInArray(generatedPosts.status, ["deleted", "rejected", "exported", "scheduled_external", "published"]),
         ));
 
       const now = new Date();
@@ -3318,7 +3318,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
     // and should not appear in SocialPilot CSV exports.
     const excludedStatuses = includeExported
       ? ["deleted", "rejected"]
-      : ["deleted", "rejected", "exported", "published", "publish_failed"];
+      : ["deleted", "rejected", "exported", "scheduled_external", "published", "publish_failed"];
 
     const allPosts = await db.select().from(generatedPosts)
       .where(and(

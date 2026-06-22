@@ -290,10 +290,10 @@ function getPostStage(post: { status: string; publishedAt?: string; publishError
     return { label: "Rejected", cls: "text-orange-600 border-orange-300", Icon: XCircle };
   if (post.status === "publish_failed" || post.publishError)
     return { label: "Orbit: post failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
-  if (post.status === "exported")
+  if (post.status === "exported" || post.status === "scheduled_external")
     return post.scheduledDate
-      ? { label: "SocialPilot: scheduled", cls: "text-blue-600 border-blue-300", Icon: Calendar }
-      : { label: "Via SocialPilot", cls: "text-blue-600 border-blue-300", Icon: CheckCircle };
+      ? { label: "Scheduled externally", cls: "text-blue-600 border-blue-300", Icon: Calendar }
+      : { label: "Scheduled externally", cls: "text-blue-600 border-blue-300", Icon: CheckCircle };
   if (post.status === "approved")
     return { label: "Ready to post", cls: "text-emerald-600 border-emerald-300", Icon: CheckCircle };
   return { label: "Draft", cls: "text-muted-foreground border-muted-foreground/40", Icon: Pencil };
@@ -2430,13 +2430,13 @@ export default function CampaignDetailPage() {
                   </Button>
                 </div>
               )}
-              {posts.filter(p => !["exported", "published", "posted", "delivered"].includes(p.status)).length > 0 && (
+              {posts.filter(p => !["exported", "scheduled_external", "published", "posted", "delivered"].includes(p.status)).length > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="gap-1.5 text-muted-foreground hover:text-destructive"
                   onClick={() => {
-                    const count = posts.filter(p => !["exported", "published", "posted", "delivered"].includes(p.status)).length;
+                    const count = posts.filter(p => !["exported", "scheduled_external", "published", "posted", "delivered"].includes(p.status)).length;
                     if (window.confirm(`Delete all ${count} draft post${count !== 1 ? "s" : ""}? This cannot be undone — but you can regenerate them.`)) {
                       wipeDraftPostsMutation.mutate();
                     }
@@ -3051,7 +3051,7 @@ export default function CampaignDetailPage() {
                                   <Badge variant="secondary" className="text-[10px] gap-1">
                                     <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, h:mm a")}
                                   </Badge>
-                                ) : post.status !== "exported" && post.status !== "published" && (
+                                ) : post.status !== "exported" && post.status !== "scheduled_external" && post.status !== "published" && (
                                   <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-300">
                                     <Calendar className="w-2.5 h-2.5" />No date
                                   </Badge>
@@ -3102,7 +3102,7 @@ export default function CampaignDetailPage() {
                           <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-schedule-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />{format(new Date(post.scheduledDate), "MMM d, yyyy h:mm a")}
                           </Badge>
-                        ) : post.status !== "exported" && post.status !== "published" && (
+                        ) : post.status !== "exported" && post.status !== "scheduled_external" && post.status !== "published" && (
                           <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-300" data-testid={`badge-no-date-${post.id}`}>
                             <Calendar className="w-2.5 h-2.5" />No date — excluded from export
                           </Badge>
