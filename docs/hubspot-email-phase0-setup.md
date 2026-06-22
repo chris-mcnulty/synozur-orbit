@@ -71,8 +71,24 @@ No new required env vars for Phase 0/1 beyond the existing HubSpot OAuth pair
 | `MARKETING_HS_CONSENT_PULL_MAX` | `1000` | Max per-send consent lookups before skipping the pull (bulk endpoint is the follow-up). |
 | `MARKETING_HS_CONSENT_CONCURRENCY` | `5` | Concurrency for the consent pull. |
 | `MARKETING_HS_MAX_CREATE_PER_SEND` | `500` | Cap on contacts auto-created per send. |
+| `MARKETING_HS_TIMELINE_CONCURRENCY` | `5` | Concurrency for `email_sent` timeline pushes. |
+| `MARKETING_HS_BACKFILL_BATCH` | `10` | Sends processed per backfill tick (Phase 4). |
+| `MARKETING_HS_BACKFILL_DAYS` | `7` | Lookback window for the backfill job. |
+| `HUBSPOT_DEFAULT_SUBSCRIPTION_ID` | — | Portal-agnostic fallback subscription id for unsubscribe write-back. Prefer setting it **per tenant** in Settings → HubSpot CRM ("Marketing subscription ID"). |
 
-Phase 2 will add the timeline template IDs to this list.
+## 5. Subscription type & preference center (Phase 3)
+
+Unsubscribe write-back targets a single HubSpot **subscription type** (v1).
+Configure it per tenant in **Settings → HubSpot CRM → Marketing subscription ID**
+(find the id under HubSpot Settings → Marketing → Email → Subscription types).
+If unset, unsubscribes are still honored locally (recipients are suppressed)
+but are **not** written back to HubSpot.
+
+Every send footer now links a hosted **preference center** at `/p/:token`
+(alongside one-click `/u/:token`). It lets recipients unsubscribe or
+resubscribe; both update Orbit's suppression list and sync to HubSpot. HubSpot
+remains authoritative — a resubscribe HubSpot blocks (email-link opt-outs) is
+re-suppressed on the next send by the consent pull.
 
 ## 4. Verify
 

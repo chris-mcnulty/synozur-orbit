@@ -167,11 +167,13 @@ async function getSendGridCreds(): Promise<{ apiKey: string; fromEmail: string }
   return { apiKey: item.settings.api_key, fromEmail: item.settings.from_email };
 }
 
-function injectFooter(html: string, unsubUrl: string): string {
+function injectFooter(html: string, unsubUrl: string, prefsUrl: string): string {
   const footer = `
     <div style="margin-top:24px;padding:16px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;">
       You're receiving this email from a campaign sent through Orbit.<br/>
       <a href="${unsubUrl}" style="color:#666;text-decoration:underline;">Unsubscribe</a>
+      &nbsp;·&nbsp;
+      <a href="${prefsUrl}" style="color:#666;text-decoration:underline;">Manage preferences</a>
     </div>
   `;
   if (/<\/body>/i.test(html)) {
@@ -180,8 +182,8 @@ function injectFooter(html: string, unsubUrl: string): string {
   return `${html}${footer}`;
 }
 
-function injectTextFooter(text: string, unsubUrl: string): string {
-  return `${text}\n\n---\nUnsubscribe: ${unsubUrl}`;
+function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string): string {
+  return `${text}\n\n---\nUnsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
 }
 
 /**
@@ -518,11 +520,13 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   let failedCount = 0;
 
   for (const r of prepared) {
-    const unsubUrl = `${baseUrl.replace(/\/$/, "")}/u/${r.token}`;
-    const html = injectFooter(wrappedHtml, unsubUrl);
+    const base = baseUrl.replace(/\/$/, "");
+    const unsubUrl = `${base}/u/${r.token}`;
+    const prefsUrl = `${base}/p/${r.token}`;
+    const html = injectFooter(wrappedHtml, unsubUrl, prefsUrl);
     const text = wrappedText
-      ? injectTextFooter(wrappedText, unsubUrl)
-      : `Unsubscribe: ${unsubUrl}`;
+      ? injectTextFooter(wrappedText, unsubUrl, prefsUrl)
+      : `Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
     try {
       const [resp] = await sgMail.send({
         to: r.email,

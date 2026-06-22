@@ -300,6 +300,7 @@ export function registerIntegrationRoutes(app: Express) {
       scopes: c.scopes,
       autoPushEnabled: c.autoPushEnabled,
       autoCreateHubspotContacts: c.autoCreateHubspotContacts,
+      defaultSubscriptionId: c.defaultSubscriptionId,
       defaultOwnerId: c.defaultOwnerId,
       connectedByUserId: c.connectedByUserId,
       connectedAt: c.connectedAt,
@@ -451,6 +452,7 @@ export function registerIntegrationRoutes(app: Express) {
   const hubspotPrefsSchema = z.object({
     autoPushEnabled: z.boolean().optional(),
     autoCreateHubspotContacts: z.boolean().optional(),
+    defaultSubscriptionId: z.string().nullable().optional(),
     defaultOwnerId: z.string().nullable().optional(),
   });
 
@@ -465,6 +467,7 @@ export function registerIntegrationRoutes(app: Express) {
       const updates: Partial<import("@shared/schema").InsertHubspotConnection> = {};
       if (parsed.data.autoPushEnabled !== undefined) updates.autoPushEnabled = parsed.data.autoPushEnabled;
       if (parsed.data.autoCreateHubspotContacts !== undefined) updates.autoCreateHubspotContacts = parsed.data.autoCreateHubspotContacts;
+      if (parsed.data.defaultSubscriptionId !== undefined) updates.defaultSubscriptionId = parsed.data.defaultSubscriptionId;
       if (parsed.data.defaultOwnerId !== undefined) updates.defaultOwnerId = parsed.data.defaultOwnerId;
       const updated = await storage.updateHubspotConnection(ctx.tenantDomain, updates);
       res.json(publicConnectionView(updated));

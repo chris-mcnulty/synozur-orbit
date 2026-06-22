@@ -22,7 +22,7 @@ import {
   hasHubspotEmailScopes,
   HUBSPOT_REST_HOST,
 } from "./hubspot-integration";
-import { dedupeEmails, isOptedOutFromStatusPayload } from "./hubspot-email-sync-core";
+import { dedupeEmails, isOptedOutFromStatusPayload, normalizeEmail } from "./hubspot-email-sync-core";
 
 // Cap how many per-contact status lookups we perform inline per send. The
 // bulk status endpoint (Marketing Hub Enterprise) is a later optimization;
@@ -91,6 +91,84 @@ export async function pullSubscriptionStatus(
   );
 
   return { optedOut, ran: true, skippedReason: hadError ? "error" : undefined };
+}
+
+export type ConsentWriteResult = "ok" | "skipped" | "blocked" | "error";
+
+/**
+ * Resolve the HubSpot subscription id this tenant uses for marketing email:
+ * the per-connection default, or a portal-agnostic env fallback.
+ */
+function resolveSubscriptionId(conn: { defaultSubscriptionId?: string | null }): string | undefined {
+  const id = conn.defaultSubscriptionId || process.env.HUBSPOT_DEFAULT_SUBSCRIPTION_ID;
+  return id && String(id).trim() ? String(id).trim() : undefined;
+}
+
+/**
+ * Push an unsubscribe (opt-out) for `email` back to HubSpot's communication
+ * preferences. Best-effort, never throws.
+ *
+ * - "skipped": not connected / missing scopes / no subscription id configured
+ *   (local suppression already blocks the send; the pre-send consent pull
+ *   keeps HubSpot authoritative once a subscription id is set).
+ * - "blocked": HubSpot refused (e.g. the contact already opted out via an
+ *   email link and can't be programmatically changed) — treated as success
+ *   for our purposes (they're already opted out).
+ */
+export async function pushUnsubscribe(tenantDomain: string, email: string): Promise<ConsentWriteResult> {
+  try {
+    const conn = await storage.getHubspotConnection(tenantDomain);
+    if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
+    const subscriptionId = resolveSubscriptionId(conn);
+    if (!subscriptionId) return "skipped";
+
+    const { accessToken } = await getTenantAccessToken(tenantDomain);
+    const res = await fetch(`${HUBSPOT_REST_HOST}/communication-preferences/v3/unsubscribe`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ emailAddress: normalizeEmail(email), subscriptionId }),
+    });
+    if (res.ok) return "ok";
+    // 400/409 commonly mean "already unsubscribed / can't be changed" — the
+    // contact is opted out either way, so this is not a real failure.
+    if (res.status === 400 || res.status === 409) return "blocked";
+    return "error";
+  } catch {
+    return "error";
+  }
+}
+
+/**
+ * Push a (re)subscribe for `email` to HubSpot. Used by the preference center
+ * when a recipient opts back in themselves. Best-effort; HubSpot blocks
+ * programmatic re-subscribe for contacts who opted out via an email link, in
+ * which case this returns "blocked" and the next pre-send consent pull will
+ * keep them suppressed — HubSpot stays authoritative.
+ */
+export async function pushSubscribe(tenantDomain: string, email: string): Promise<ConsentWriteResult> {
+  try {
+    const conn = await storage.getHubspotConnection(tenantDomain);
+    if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
+    const subscriptionId = resolveSubscriptionId(conn);
+    if (!subscriptionId) return "skipped";
+
+    const { accessToken } = await getTenantAccessToken(tenantDomain);
+    const res = await fetch(`${HUBSPOT_REST_HOST}/communication-preferences/v3/subscribe`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        emailAddress: normalizeEmail(email),
+        subscriptionId,
+        legalBasis: "CONSENT_WITH_NOTICE",
+        legalBasisExplanation: "Contact resubscribed via the email preference center.",
+      }),
+    });
+    if (res.ok) return "ok";
+    if (res.status === 400 || res.status === 409) return "blocked";
+    return "error";
+  } catch {
+    return "error";
+  }
 }
 
 /**

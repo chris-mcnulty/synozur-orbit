@@ -3796,6 +3796,12 @@ export const hubspotConnections = pgTable("hubspot_connections", {
   // on; admins can opt out (e.g. tenants that don't want Orbit creating CRM
   // contacts). Independent of whether the connection has the email-sync scopes.
   autoCreateHubspotContacts: boolean("auto_create_hubspot_contacts").notNull().default(true),
+  // Marketing-email sync (Phase 3). The HubSpot subscription type id that
+  // marketing email maps to (single default "Marketing" type in v1). When an
+  // unsubscribe is synced back to HubSpot it opts the contact out of this
+  // subscription. Null ⇒ write-back is skipped (local suppression still
+  // applies; the pre-send consent pull keeps HubSpot authoritative).
+  defaultSubscriptionId: text("default_subscription_id"),
   defaultOwnerId: text("default_owner_id"), // HubSpot owner ID for pushed Tasks
   connectedByUserId: varchar("connected_by_user_id").references(() => users.id, { onDelete: "set null" }),
   connectedAt: timestamp("connected_at").notNull().defaultNow(),

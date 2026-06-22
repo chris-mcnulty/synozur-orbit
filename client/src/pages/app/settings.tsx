@@ -1878,6 +1878,7 @@ interface HubspotStatus {
     scopes: string[];
     autoPushEnabled: boolean;
     autoCreateHubspotContacts: boolean;
+    defaultSubscriptionId: string | null;
     defaultOwnerId: string | null;
     connectedAt: string;
     lastSyncAt: string | null;
@@ -2192,6 +2193,37 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
                 onCheckedChange={(v) => autoCreateMutation.mutate(v)}
                 disabled={autoCreateMutation.isPending || !conn.emailSyncReady}
                 data-testid="switch-hubspot-auto-create"
+              />
+            </div>
+          )}
+          {status?.outboundAllowed && (
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <Label htmlFor="hubspot-subscription-id" className="text-sm">Marketing subscription ID</Label>
+                <p className="text-xs text-muted-foreground">
+                  HubSpot subscription type that marketing email maps to. Unsubscribes sync to this subscription.
+                  Find it under Settings → Marketing → Email → Subscription types. Leave blank to skip write-back.
+                </p>
+              </div>
+              <Input
+                id="hubspot-subscription-id"
+                defaultValue={conn.defaultSubscriptionId ?? ""}
+                placeholder="e.g. 12345678"
+                className="w-48"
+                disabled={!conn.emailSyncReady}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v === (conn.defaultSubscriptionId ?? "")) return;
+                  fetch("/api/integrations/hubspot", {
+                    method: "PATCH",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ defaultSubscriptionId: v || null }),
+                  })
+                    .then(() => queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] }))
+                    .catch(() => null);
+                }}
+                data-testid="input-hubspot-subscription-id"
               />
             </div>
           )}

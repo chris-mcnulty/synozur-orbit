@@ -18,6 +18,7 @@ import {
 } from "./planner-graph-client";
 import { tickMarketingPublishWorker } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
+import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
 import { refreshSeoForContext } from "../routes/seo";
 import { db } from "../db";
 import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, generatedPosts, type SeoMetric } from "@shared/schema";
@@ -2499,6 +2500,15 @@ export function startScheduledJobs(): void {
       console.error("[Email Send Worker] Tick error:", err?.message || err);
     });
   }, 2 * 60 * 1000);
+
+  // HubSpot marketing-email sync backfill (Phase 4) — retries pending/errored
+  // contact resolution + email_sent timeline pushes for recent sends. No-ops
+  // when no tenant has HubSpot connected / templates configured.
+  setInterval(() => {
+    tickHubspotEmailSyncBackfill().catch(err => {
+      console.error("[HubSpot Email Backfill] Tick error:", err?.message || err);
+    });
+  }, 10 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
   cleanupStuckJobs().catch(err => {
