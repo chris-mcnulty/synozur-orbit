@@ -22,7 +22,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
-import { getPlatformCredentials } from "../platform-credentials-service";
+import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://twitter.com";
 const API_HOST = "https://api.twitter.com";
@@ -48,6 +48,7 @@ export class TwitterPublisher implements SocialPublisher {
   supported = true;
 
   async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    if (!await isDirectPublishEnabled("twitter")) return false;
     const creds = await getPlatformCredentials(tenantDomain, "twitter");
     return !!creds?.clientId;
   }
@@ -55,7 +56,7 @@ export class TwitterPublisher implements SocialPublisher {
   async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<OAuthAuthorizeResult> {
     const creds = await getPlatformCredentials(req.tenantDomain, "twitter");
     if (!creds?.clientId) {
-      throw new Error("Twitter OAuth is not configured for this tenant. Configure your Twitter (X) client_id in Tenant → Platform Credentials.");
+      throw new Error("X / Twitter posting isn't available on Orbit yet — the shared Synozur app hasn't been configured. Please contact Synozur support.");
     }
     const codeVerifier = generateCodeVerifier();
     const params = new URLSearchParams({

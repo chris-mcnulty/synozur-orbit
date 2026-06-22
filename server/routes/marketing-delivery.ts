@@ -410,12 +410,18 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).json({ error: `Direct publishing is not supported for ${account.platform} yet.` });
     }
     if (!await publisher.oauthConfigured(ctx.tenantDomain)) {
+      // Every platform uses a single Synozur-owned OAuth app (the
+      // Buffer/Hootsuite model) — tenants never register their own. When a
+      // platform isn't connectable yet it's because Synozur hasn't configured
+      // and enabled the shared app, not because the tenant is missing setup.
       const error = account.platform === "linkedin"
         ? "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. We'll turn on one-click Connect as soon as it's approved."
-        : `${account.platform} OAuth is not configured for this tenant. A tenant admin must register a ${account.platform} app and add its credentials in Tenant → Platform Credentials before connecting.`;
+        : `${account.platform} posting isn't available on Orbit yet — Synozur is finishing setup of the shared ${account.platform} app. We'll turn on one-click Connect as soon as it's approved.`;
       return res.status(503).json({
         error,
-        configureRequired: account.platform !== "linkedin",
+        // Tenants can no longer self-configure OAuth apps, so never redirect
+        // them to a credentials page — this is a platform-level state.
+        configureRequired: false,
         platform: account.platform,
       });
     }
@@ -707,102 +713,11 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     }
   });
 
-  // ───── Tenant-owned platform OAuth credentials ─────
-  // Per-tenant client_id / client_secret for the OAuth apps each platform
-  // requires. Tenant admins (Domain Admin or Global Admin) manage these;
-  // env vars are not consulted on a multi-tenant deployment.
-  async function requireTenantAdmin(req: Request, res: Response): Promise<boolean> {
-    if (!await guardFeature(req, res, "directPublishing")) return false;
-    const user = await storage.getUser(req.session.userId!);
-    if (!user) {
-      res.status(401).json({ error: "Not authenticated" });
-      return false;
-    }
-    if (user.role !== "Domain Admin" && user.role !== "Global Admin") {
-      res.status(403).json({
-        error: "Only a tenant admin can manage platform OAuth credentials.",
-      });
-      return false;
-    }
-    return true;
-  }
-
-  // Lists all configured / configurable platforms for the tenant. Each entry
-  // is metadata only — the secret is never returned over the wire.
-  app.get("/api/tenant/platform-credentials", async (req, res) => {
-    if (!await requireTenantAdmin(req, res)) return;
-    const ctx = await getRequestContext(req);
-    const { listPlatformCredentialMetadata } = await import("../services/platform-credentials-service");
-    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
-    const items = await listPlatformCredentialMetadata(ctx.tenantDomain, PLATFORM_CREDENTIAL_PLATFORMS);
-    res.json({ items });
-  });
-
-  // Save (upsert) credentials for a platform. clientSecret is optional only
-  // for OAuth public clients (Twitter native apps); the per-platform UI
-  // explains when each field is needed.
-  app.put("/api/tenant/platform-credentials/:platform", async (req, res) => {
-    if (!await requireTenantAdmin(req, res)) return;
-    const ctx = await getRequestContext(req);
-    const { upsertPlatformCredentials } = await import("../services/platform-credentials-service");
-    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
-    const platform = req.params.platform;
-    if (!(PLATFORM_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
-      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
-    }
-    const { clientId, clientSecret, notes } = req.body ?? {};
-    if (typeof clientId !== "string" || !clientId.trim()) {
-      return res.status(400).json({ error: "clientId is required" });
-    }
-    if (clientSecret !== undefined && clientSecret !== null && typeof clientSecret !== "string") {
-      return res.status(400).json({ error: "clientSecret must be a string when provided" });
-    }
-    try {
-      await upsertPlatformCredentials({
-        tenantDomain: ctx.tenantDomain,
-        platform,
-        clientId: clientId.trim(),
-        clientSecret: clientSecret === undefined ? undefined : (clientSecret ? clientSecret.trim() : null),
-        notes: typeof notes === "string" ? notes.slice(0, 500) : null,
-        userId: req.session.userId!,
-      });
-      await db.insert(marketingAuditLog).values({
-        tenantDomain: ctx.tenantDomain,
-        userId: req.session.userId!,
-        action: "platform_credentials_update",
-        entityType: "tenant_platform_credentials",
-        entityId: platform,
-        status: "ok",
-        message: `Updated ${platform} credentials`,
-      });
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Platform Credentials Save Error]", err.message);
-      res.status(500).json({ error: err.message || "Failed to save credentials" });
-    }
-  });
-
-  app.delete("/api/tenant/platform-credentials/:platform", async (req, res) => {
-    if (!await requireTenantAdmin(req, res)) return;
-    const ctx = await getRequestContext(req);
-    const { deletePlatformCredentials } = await import("../services/platform-credentials-service");
-    const { PLATFORM_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
-    const platform = req.params.platform;
-    if (!(PLATFORM_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
-      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
-    }
-    await deletePlatformCredentials(ctx.tenantDomain, platform);
-    await db.insert(marketingAuditLog).values({
-      tenantDomain: ctx.tenantDomain,
-      userId: req.session.userId!,
-      action: "platform_credentials_delete",
-      entityType: "tenant_platform_credentials",
-      entityId: platform,
-      status: "ok",
-      message: `Deleted ${platform} credentials`,
-    });
-    res.status(204).send();
-  });
+  // NOTE: Per-tenant platform OAuth credentials have been removed. Social
+  // platforms now use a single Synozur-owned OAuth app each (managed by a
+  // Global Admin at Admin → Platform Credentials, see server/routes/admin.ts).
+  // Tenants connect one-click from the Social Accounts page; they never
+  // register their own app or paste credentials.
 
   app.get("/api/generated-posts/:id/publish-attempts", async (req, res) => {
     if (!await guardFeature(req, res, "directPublishing")) return;

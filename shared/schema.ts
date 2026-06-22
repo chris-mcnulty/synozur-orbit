@@ -2721,24 +2721,14 @@ export const insertSocialAccountSchema = createInsertSchema(socialAccounts).omit
 export type SocialAccount = typeof socialAccounts.$inferSelect;
 export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
 
-// ─── Tenant-Owned Platform OAuth Credentials ────────────────────────────────
-// Each tenant brings their own OAuth client/app credentials per platform.
-// Multi-tenant deployments can't share a single SaaS-vendor app via env vars
-// because tenant admins don't have access to set environment variables and
-// because each tenant typically wants its own OAuth consent-screen branding,
-// rate-limit budget, and review state.
-//
-// One row per (tenantDomain, platform). Secrets are encrypted at rest with
-// the same encryption.ts helpers used for socialAccounts.encryptedAccessToken.
-//
-// The platform string matches socialAccounts.platform values: 'linkedin',
-// 'twitter', 'facebook', 'instagram'. (Bluesky uses app-passwords on each
-// social account, so it never appears here.)
-// LinkedIn is intentionally NOT listed here: it uses a single, Synozur-owned
-// global OAuth app (env vars LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET), so
-// tenants connect it one-click from the Social Accounts page without ever
-// registering their own app or entering credentials. The remaining platforms
-// stay per-tenant (each tenant brings its own OAuth app).
+// ─── Tenant-Owned Platform OAuth Credentials (DEPRECATED) ────────────────────
+// DEPRECATED: the per-tenant "bring your own OAuth app" model has been retired.
+// Expecting every tenant to register and get review-approval for their own X /
+// Facebook / Instagram app is a SaaS antipattern that doesn't happen in
+// practice. Social platforms now use a single Synozur-owned OAuth app each (see
+// `globalPlatformCredentials` below; LinkedIn uses its own shared app via env
+// vars). This table and constant are retained only so existing rows/migrations
+// don't break — nothing reads or writes them anymore.
 export const PLATFORM_CREDENTIAL_PLATFORMS = [
   "twitter",
   "facebook",
@@ -2778,6 +2768,49 @@ export const insertTenantPlatformCredentialSchema = createInsertSchema(tenantPla
 });
 export type TenantPlatformCredential = typeof tenantPlatformCredentials.$inferSelect;
 export type InsertTenantPlatformCredential = z.infer<typeof insertTenantPlatformCredentialSchema>;
+
+// ─── Global (platform-wide) social OAuth credentials ─────────────────────────
+// Synozur owns ONE OAuth app per social platform (the Buffer/Hootsuite model):
+// every tenant connects one-click from the Social Accounts page and never
+// registers their own app. These credentials are managed by a Global Admin in
+// the UI (Admin → Platform Credentials) and stored encrypted at rest — NOT in
+// per-tenant rows and NOT in environment variables.
+//
+// Platforms:
+//   - "twitter"  → X / Twitter OAuth 2.0 app (client_id, optional client_secret)
+//   - "facebook" → Meta app; ALSO powers Instagram (Instagram rides on the same
+//                  Meta app, so there is no separate "instagram" row — the
+//                  Instagram publisher resolves the "facebook" credentials).
+// LinkedIn is not stored here: it resolves from the existing shared Synozur app
+// (LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET) and its own one-click flow.
+export const GLOBAL_CREDENTIAL_PLATFORMS = [
+  "twitter",
+  "facebook",
+] as const;
+export type GlobalCredentialPlatform = (typeof GLOBAL_CREDENTIAL_PLATFORMS)[number];
+
+export const globalPlatformCredentials = pgTable("global_platform_credentials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Unique per platform — this is a singleton-per-platform table (no tenant).
+  platform: text("platform").notNull().unique(),
+  // Encrypted ciphertext blobs (same scheme as tenant_platform_credentials).
+  encryptedClientId: text("encrypted_client_id").notNull(),
+  encryptedClientSecret: text("encrypted_client_secret"),
+  notes: text("notes"),
+  // Safety switch. Posting scopes on Meta/X require platform app review, so
+  // direct publishing stays OFF until the shared app is approved. A Global
+  // Admin flips this on from the UI — no env var, no redeploy.
+  directPublishEnabled: boolean("direct_publish_enabled").notNull().default(false),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertGlobalPlatformCredentialSchema = createInsertSchema(globalPlatformCredentials).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type GlobalPlatformCredential = typeof globalPlatformCredentials.$inferSelect;
+export type InsertGlobalPlatformCredential = z.infer<typeof insertGlobalPlatformCredentialSchema>;
 
 // ─── Account Voice Profiles ──────────────────────────────────────────────────
 // Per-social-account personalization layer. Drives AI rewrites and direct-

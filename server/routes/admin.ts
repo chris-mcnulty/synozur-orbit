@@ -23,6 +23,77 @@ import { calculateBaselineScore, getCurrentWeeklyPeriod } from "../services/scor
 import { PUBLIC_TENANT_RATE_LIMIT_MAX } from "./product-feedback";
 
 export function registerAdminRoutes(app: Express) {
+  // ==================== GLOBAL SOCIAL OAUTH CREDENTIALS ====================
+  // Synozur owns one OAuth app per social platform (Buffer/Hootsuite model).
+  // Only a Global Admin manages these; tenants connect one-click and never see
+  // or enter them. Secrets are encrypted at rest and never returned over the wire.
+  async function requireGlobalAdmin(req: any, res: any): Promise<boolean> {
+    if (!req.session.userId) {
+      res.status(401).json({ error: "Not authenticated" });
+      return false;
+    }
+    const user = await storage.getUser(req.session.userId);
+    if (!user || user.role !== "Global Admin") {
+      res.status(403).json({ error: "Only Global Admins can manage platform credentials" });
+      return false;
+    }
+    return true;
+  }
+
+  app.get("/api/admin/platform-credentials", async (req, res) => {
+    if (!await requireGlobalAdmin(req, res)) return;
+    const { listGlobalPlatformCredentialMetadata } = await import("../services/platform-credentials-service");
+    const { GLOBAL_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const items = await listGlobalPlatformCredentialMetadata(GLOBAL_CREDENTIAL_PLATFORMS);
+    res.json({ items });
+  });
+
+  app.put("/api/admin/platform-credentials/:platform", async (req, res) => {
+    if (!await requireGlobalAdmin(req, res)) return;
+    const { upsertGlobalPlatformCredentials } = await import("../services/platform-credentials-service");
+    const { GLOBAL_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const platform = req.params.platform;
+    if (!(GLOBAL_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
+      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
+    }
+    const { clientId, clientSecret, notes, directPublishEnabled } = req.body ?? {};
+    if (typeof clientId !== "string" || !clientId.trim()) {
+      return res.status(400).json({ error: "clientId is required" });
+    }
+    if (clientSecret !== undefined && clientSecret !== null && typeof clientSecret !== "string") {
+      return res.status(400).json({ error: "clientSecret must be a string when provided" });
+    }
+    if (directPublishEnabled !== undefined && typeof directPublishEnabled !== "boolean") {
+      return res.status(400).json({ error: "directPublishEnabled must be a boolean when provided" });
+    }
+    try {
+      await upsertGlobalPlatformCredentials({
+        platform: platform as any,
+        clientId: clientId.trim(),
+        clientSecret: clientSecret === undefined ? undefined : (clientSecret ? clientSecret.trim() : null),
+        notes: notes === undefined ? undefined : (typeof notes === "string" ? notes.slice(0, 500) : null),
+        directPublishEnabled,
+        userId: req.session.userId!,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Global Platform Credentials Save Error]", err.message);
+      res.status(500).json({ error: err.message || "Failed to save credentials" });
+    }
+  });
+
+  app.delete("/api/admin/platform-credentials/:platform", async (req, res) => {
+    if (!await requireGlobalAdmin(req, res)) return;
+    const { deleteGlobalPlatformCredentials } = await import("../services/platform-credentials-service");
+    const { GLOBAL_CREDENTIAL_PLATFORMS } = await import("@shared/schema");
+    const platform = req.params.platform;
+    if (!(GLOBAL_CREDENTIAL_PLATFORMS as readonly string[]).includes(platform)) {
+      return res.status(400).json({ error: `Unsupported platform: ${platform}` });
+    }
+    await deleteGlobalPlatformCredentials(platform as any);
+    res.status(204).send();
+  });
+
   // ==================== USER MANAGEMENT ROUTES ====================
 
   app.get("/api/users", async (req, res) => {

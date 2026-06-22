@@ -72,7 +72,6 @@ import ConferenceDetailPage from "@/pages/app/marketing/conference-detail";
 import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
 import PlanningHubPage from "@/pages/app/marketing/planning-hub";
 import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
-import PlatformCredentialsPage from "@/pages/app/marketing/platform-credentials";
 import ComposerPage from "@/pages/app/marketing/composer";
 import CalendarPage from "@/pages/app/marketing/calendar";
 import SendsPage from "@/pages/app/marketing/sends";
@@ -94,6 +93,7 @@ import InsightsOutcomesPage from "@/pages/app/insights-outcomes";
 import InsightsVisualizationsPage from "@/pages/app/insights-visualizations";
 import SettingsIntegrationsPage from "@/pages/app/settings-integrations";
 import OAuthClientsAdminPage from "@/pages/app/admin/oauth-clients";
+import GlobalPlatformCredentialsPage from "@/pages/app/admin/platform-credentials";
 import DeveloperPortalPage from "@/pages/app/developer";
 
 function GlobalAdminOnly({ children }: { children: React.ReactNode }) {
@@ -153,6 +153,7 @@ function Router() {
       <Route path="/app/admin/ai-settings" component={AISettingsPage} />
       <Route path="/app/admin/spe-storage" component={SpeStoragePage} />
       <Route path="/app/admin/oauth-clients">{() => <GlobalAdminOnly><PageFeatureGate featureKey="partnerApi" label="Partner API" description="Manage OAuth client apps and access tokens. Available on Enterprise and Unlimited plans."><OAuthClientsAdminPage /></PageFeatureGate></GlobalAdminOnly>}</Route>
+      <Route path="/app/admin/platform-credentials">{() => <GlobalAdminOnly><GlobalPlatformCredentialsPage /></GlobalAdminOnly>}</Route>
       <Route path="/app/developer">{() => <PageFeatureGate featureKey="partnerApi" label="Developer Portal" description="Build third-party integrations using Orbit's OAuth 2.0 Partner API. Available on Enterprise and Unlimited plans."><DeveloperPortalPage /></PageFeatureGate>}</Route>
       <Route path="/app/company-roster" component={CompanyRosterPage} />
       <Route path="/app/admin" component={AdminPage} />
@@ -197,7 +198,6 @@ function Router() {
       <Route path="/app/marketing/conferences">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferencePromotionPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/conferences/:id">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferenceDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
-      <Route path="/app/marketing/platform-credentials" component={PlatformCredentialsPage} />
       <Route path="/app/marketing/composer" component={ComposerPage} />
       <Route path="/app/marketing/calendar" component={CalendarPage} />
       <Route path="/app/marketing/sends" component={SendsPage} />
