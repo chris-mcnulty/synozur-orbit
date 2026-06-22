@@ -37,7 +37,7 @@ const NOT_APPROVED_MESSAGE =
 const AUTH_HOST = "https://www.linkedin.com";
 const API_HOST = "https://api.linkedin.com";
 const DEFAULT_SCOPE =
-  "w_member_social w_organization_social rw_organization_admin";
+  "r_liteprofile w_member_social w_organization_social rw_organization_admin";
 
 // ---------------------------------------------------------------------------
 // MCP helpers
@@ -179,19 +179,28 @@ export class LinkedInPublisher implements SocialPublisher {
       scope?: string;
     };
 
-    const userResp = await fetch(`${API_HOST}/v2/userinfo`, {
-      headers: { Authorization: `Bearer ${tok.access_token}` },
-    });
-    if (!userResp.ok) {
-      const txt = await userResp.text().catch(() => "");
-      throw new Error(`LinkedIn userinfo failed: ${userResp.status} ${txt}`);
+    // Use /v2/me (r_liteprofile) — not /v2/userinfo which requires openid scope.
+    const meResp = await fetch(
+      `${API_HOST}/v2/me?projection=(id,firstName,lastName)`,
+      { headers: { Authorization: `Bearer ${tok.access_token}` } },
+    );
+    if (!meResp.ok) {
+      const txt = await meResp.text().catch(() => "");
+      throw new Error(`LinkedIn profile fetch failed: ${meResp.status} ${txt}`);
     }
-    const userinfo = (await userResp.json()) as {
-      sub: string;
-      name?: string;
-      email?: string;
-      picture?: string;
+    const me = (await meResp.json()) as {
+      id: string;
+      firstName?: { localized?: Record<string, string> };
+      lastName?: { localized?: Record<string, string> };
     };
+
+    const firstName = me.firstName?.localized
+      ? Object.values(me.firstName.localized)[0] ?? ""
+      : "";
+    const lastName = me.lastName?.localized
+      ? Object.values(me.lastName.localized)[0] ?? ""
+      : "";
+    const displayName = [firstName, lastName].filter(Boolean).join(" ") || "LinkedIn account";
 
     const expiresAt = tok.expires_in
       ? new Date(Date.now() + tok.expires_in * 1000)
@@ -205,8 +214,8 @@ export class LinkedInPublisher implements SocialPublisher {
     }> = [
       {
         mode: "person",
-        urn: `urn:li:person:${userinfo.sub}`,
-        name: userinfo.name ?? "Personal account",
+        urn: `urn:li:person:${me.id}`,
+        name: displayName,
       },
     ];
     try {
@@ -222,10 +231,10 @@ export class LinkedInPublisher implements SocialPublisher {
       expiresAt,
       scope: tok.scope ?? null,
       authorMode: "person",
-      authorUrn: `urn:li:person:${userinfo.sub}`,
-      accountName: userinfo.name ?? null,
+      authorUrn: `urn:li:person:${me.id}`,
+      accountName: displayName,
       profileUrl: null,
-      accountId: userinfo.sub,
+      accountId: me.id,
       availableAuthors,
     };
   }
