@@ -61,6 +61,31 @@ import {
 } from "../services/email-campaign-sender";
 import { LinkedInPublisher } from "../services/social-publishers/linkedin";
 import { decryptSecret } from "../utils/encryption";
+import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
+import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
+
+/**
+ * Best-effort mirror of a recipient engagement event to its HubSpot contact
+ * timeline (marketing-email sync Phase 2). No-ops when the recipient has no
+ * resolved contact or no timeline template is configured. Never throws.
+ */
+async function pushRecipientTimeline(
+  recipient: any,
+  eventKey: TimelineEventKey,
+  tokens: Record<string, string | number>,
+  occurredAt: Date,
+): Promise<void> {
+  if (!recipient?.hubspotContactId || !recipient?.sendId) return;
+  try {
+    await pushEmailTimelineEvent(recipient.tenantDomain, {
+      contactId: recipient.hubspotContactId,
+      eventKey,
+      eventId: timelineEventId(recipient.sendId, recipient.id, eventKey),
+      tokens: { sendId: recipient.sendId, ...tokens },
+      occurredAt,
+    });
+  } catch { /* best-effort */ }
+}
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -180,6 +205,7 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
           message: "Public unsubscribe",
           details: { email: recipientRow.email, sendId: recipientRow.sendId },
         });
+        await pushRecipientTimeline(recipientRow, "email_unsubscribed", {}, new Date());
       }
     } catch (err: any) {
       console.error("[Unsubscribe] Failed:", err.message);
@@ -280,6 +306,7 @@ async function handleSendGridEvent(ev: any) {
           message: ev.reason || "Bounced",
           details: { email: recipient.email, sendId: recipient.sendId },
         });
+        await pushRecipientTimeline(recipient, "email_bounced", { reason: ev.reason || ev.response || "" }, now);
       }
       break;
     }
@@ -336,6 +363,7 @@ async function handleSendGridEvent(ev: any) {
           openCount: sql`${emailSends.openCount} + 1`,
           ...(recipient.deliveredAt ? {} : { deliveredCount: sql`${emailSends.deliveredCount} + 1` }),
         }).where(eq(emailSends.id, recipient.sendId));
+        await pushRecipientTimeline(recipient, "email_opened", { openCount: 1 }, now);
       }
       break;
     }
@@ -363,6 +391,12 @@ async function handleSendGridEvent(ev: any) {
           message: typeof ev.url === "string" ? `Clicked ${ev.url}` : "Clicked link",
           details: { email: recipient.email, sendId: recipient.sendId, url: ev.url },
         });
+        await pushRecipientTimeline(
+          recipient,
+          "email_clicked",
+          { clickCount: 1, url: typeof ev.url === "string" ? ev.url : "" },
+          now,
+        );
       }
       break;
     }
@@ -385,6 +419,7 @@ async function handleSendGridEvent(ev: any) {
         reason: "unsubscribe",
         source: "sendgrid_event",
       }).onConflictDoNothing();
+      await pushRecipientTimeline(recipient, "email_unsubscribed", {}, now);
       break;
     }
   }

@@ -45,8 +45,21 @@ template per event with these tokens, and record the returned template IDs.
 | `email_unsubscribed` | "Unsubscribed" | `subject`, `subscriptionType`, `sendId` |
 
 Create via `POST /crm/v3/timeline/{appId}/event-templates` (app developer token)
-or the developer UI. Phase 2 will read the template IDs from config — store
-them as env (one per event) or in a small mapping table; see the plan §8.2.
+or the developer UI. **Phase 2 reads the template IDs from env**, one per event
+key. Until at least one is set, timeline push is dormant (every event is
+skipped — nothing is sent), so the templates can be created and wired without
+risk:
+
+| Env var | Event |
+|---|---|
+| `HUBSPOT_TLT_EMAIL_SENT` | `email_sent` |
+| `HUBSPOT_TLT_EMAIL_OPENED` | `email_opened` (first open + count) |
+| `HUBSPOT_TLT_EMAIL_CLICKED` | `email_clicked` (first click + count + url) |
+| `HUBSPOT_TLT_EMAIL_BOUNCED` | `email_bounced` |
+| `HUBSPOT_TLT_EMAIL_UNSUBSCRIBED` | `email_unsubscribed` |
+
+Events are pushed against the resolved contact (`objectId`) with a stable
+`id` so webhook replays/backfill update rather than duplicate.
 
 ## 3. Deploy config
 

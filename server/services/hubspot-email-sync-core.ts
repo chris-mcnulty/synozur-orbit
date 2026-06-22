@@ -25,6 +25,26 @@ export function dedupeEmails(emails: string[]): string[] {
   return out;
 }
 
+// Timeline events we mirror to the HubSpot contact timeline. Opens/clicks are
+// first-occurrence only (with running counts as tokens), per the locked
+// decision; `delivered` is intentionally omitted to keep the timeline readable.
+export type TimelineEventKey =
+  | "email_sent"
+  | "email_opened"
+  | "email_clicked"
+  | "email_bounced"
+  | "email_unsubscribed";
+
+/**
+ * Stable, deterministic id for a timeline event so retries (webhook replays,
+ * backfill) update rather than duplicate. HubSpot dedupes events by
+ * (eventTemplateId, id). One event per (recipient, eventKey) — opens/clicks
+ * are first-occurrence so they never need a timestamp in the key.
+ */
+export function timelineEventId(sendId: string, recipientId: string, eventKey: TimelineEventKey): string {
+  return `${sendId}.${recipientId}.${eventKey}`;
+}
+
 export type ContactResolutionOutcome = "found" | "created" | "not_found" | "error";
 
 /** Persisted hs_sync_status for a recipient given a resolution outcome. */

@@ -39,6 +39,7 @@ import { tenants } from "@shared/schema";
 import { pullSubscriptionStatus } from "./hubspot-email-sync";
 import { reconcileSuppression } from "./hubspot-email-sync-core";
 import { resolveSendRecipientContacts } from "./hubspot-contact-resolver";
+import { pushSentEventsForSend } from "./hubspot-timeline";
 
 async function getTenantPlan(tenantDomain: string): Promise<string> {
   try {
@@ -616,8 +617,31 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
           message: `${r.resolved} resolved, ${r.created} created, ${r.skipped} unmatched`,
           details: { resolved: r.resolved, created: r.created, skipped: r.skipped, errors: r.errors },
         });
+        // Phase 2: mirror an `email_sent` event to each resolved contact's
+        // HubSpot timeline. No-ops unless a timeline template is configured.
+        if (r.resolved > 0) {
+          const t = await pushSentEventsForSend({
+            tenantDomain,
+            sendId: send.id,
+            subject: email.subject,
+            campaign: email.label ?? email.campaignId ?? null,
+          });
+          if (t.pushed > 0 || t.errors > 0) {
+            await db.insert(marketingAuditLog).values({
+              tenantDomain,
+              marketId,
+              userId: createdBy,
+              action: "hubspot_timeline_push",
+              entityType: "email_send",
+              entityId: send.id,
+              status: t.errors > 0 ? "warning" : "ok",
+              message: `email_sent → ${t.pushed} timelines (${t.errors} errors)`,
+              details: { event: "email_sent", ...t },
+            });
+          }
+        }
       }
-    } catch { /* best-effort: resolution never blocks the send result */ }
+    } catch { /* best-effort: sync never blocks the send result */ }
   }
 
   return {

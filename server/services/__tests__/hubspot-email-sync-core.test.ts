@@ -6,6 +6,7 @@ import {
   syncStatusForOutcome,
   isOptedOutFromStatusPayload,
   reconcileSuppression,
+  timelineEventId,
 } from "../hubspot-email-sync-core";
 
 describe("hubspot-email-sync-core", () => {
@@ -58,6 +59,26 @@ describe("hubspot-email-sync-core", () => {
       assert.equal(
         isOptedOutFromStatusPayload({ subscriptionStatuses: [{ status: "unsubscribed" }] }),
         true,
+      );
+    });
+  });
+
+  describe("timelineEventId", () => {
+    it("is deterministic per (send, recipient, event) for idempotency", () => {
+      assert.equal(timelineEventId("s1", "r1", "email_opened"), "s1.r1.email_opened");
+      assert.equal(
+        timelineEventId("s1", "r1", "email_opened"),
+        timelineEventId("s1", "r1", "email_opened"),
+      );
+    });
+    it("differs across event keys and recipients", () => {
+      assert.notEqual(
+        timelineEventId("s1", "r1", "email_opened"),
+        timelineEventId("s1", "r1", "email_clicked"),
+      );
+      assert.notEqual(
+        timelineEventId("s1", "r1", "email_sent"),
+        timelineEventId("s1", "r2", "email_sent"),
       );
     });
   });
