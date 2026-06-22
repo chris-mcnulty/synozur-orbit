@@ -2952,13 +2952,18 @@ export default function CampaignDetailPage() {
                             {post.status === "approved" && !post.publishedAt && (() => {
                               const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
                               const connected = acct == null || acct.isConnected !== false;
+                              const isEditing = editingPostId === post.id;
                               return (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className={`gap-1 ${connected ? "text-blue-600" : "text-amber-600"}`}
-                                  title={connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
+                                  className={`gap-1 ${isEditing ? "text-muted-foreground" : connected ? "text-blue-600" : "text-amber-600"}`}
+                                  title={isEditing ? "Save your edits first, then publish" : connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
                                   onClick={() => {
+                                    if (isEditing) {
+                                      toast({ title: "Save first", description: "Click Save to apply your edits (including the account) before publishing.", variant: "default" });
+                                      return;
+                                    }
                                     if (!connected) {
                                       toast({ title: "Account not connected", description: "The linked social account has no active connection. Go to Social Accounts settings and reconnect it before publishing.", variant: "destructive" });
                                       return;
@@ -2968,7 +2973,8 @@ export default function CampaignDetailPage() {
                                   disabled={publishNowMutation.isPending}
                                   data-testid={`button-publish-now-${post.id}`}
                                 >
-                                  {publishNowMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}Publish now
+                                  {publishNowMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                  {isEditing ? "Save first →" : "Publish now"}
                                 </Button>
                               );
                             })()}
@@ -3028,17 +3034,29 @@ export default function CampaignDetailPage() {
                             data-testid={`post-compact-${post.id}`}
                           >
                             {postImage && (
-                              <img
-                                src={postImage}
-                                alt=""
-                                loading="lazy"
-                                className="w-14 h-14 rounded object-cover border border-border shrink-0"
-                                onError={e => (e.currentTarget.style.display = "none")}
-                              />
+                              <div className="shrink-0 relative">
+                                <img
+                                  src={postImage}
+                                  alt=""
+                                  loading="lazy"
+                                  className={post.postFormat === "carousel" ? "h-10 w-16 rounded object-cover border border-border" : "w-14 h-14 rounded object-cover border border-border"}
+                                  onError={e => (e.currentTarget.style.display = "none")}
+                                />
+                                {post.postFormat === "carousel" && (
+                                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] font-medium rounded px-1 leading-4">
+                                    {(post.carouselSlides as any[] | null)?.length ?? ""}
+                                  </span>
+                                )}
+                              </div>
                             )}
                             <div className="flex-1 min-w-0">
                               <p className="text-sm line-clamp-2">{post.editedContent ?? post.content}</p>
                               <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                {post.postFormat === "carousel" && (
+                                  <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-carousel-${post.id}`}>
+                                    <LayoutGrid className="w-2.5 h-2.5" />Carousel
+                                  </Badge>
+                                )}
                                 {post.socialAccountId && (() => {
                                   const acct = allSocialAccounts.find(a => a.id === post.socialAccountId);
                                   return acct ? (

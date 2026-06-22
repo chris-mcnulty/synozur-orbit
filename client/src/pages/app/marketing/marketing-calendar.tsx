@@ -2208,7 +2208,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
                       </Button>
                     )}
                   </div>
-                  <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                  <div className="mt-1 grid grid-cols-3 gap-2">
                     {slides.map((s, i) => (
                       <div key={i} className="space-y-1">
                         <div className="overflow-hidden rounded border">

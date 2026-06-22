@@ -410,71 +410,68 @@ export class LinkedInPublisher implements SocialPublisher {
     };
   }
 
-  /** Register + upload an image to LinkedIn, return the asset URN or null on failure. */
+  /** Upload an image to LinkedIn via the v2/images API, return the image URN or null on failure. */
   private async uploadImageAsset(
     accessToken: string,
     authorUrn: string,
     imageUrl: string,
   ): Promise<string | null> {
     try {
-      // 1. Register the upload
-      const regResp = await fetch(`${API_HOST}/v2/assets?action=registerUpload`, {
+      // Resolve relative URLs — server-side fetch needs an absolute base.
+      const absoluteUrl = imageUrl.startsWith("/")
+        ? `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`
+        : imageUrl;
+
+      // 1. Initialize upload via the current LinkedIn Images API.
+      const initResp = await fetch(`${API_HOST}/v2/images?action=initializeUpload`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
+          "LinkedIn-Version": "202304",
           "X-Restli-Protocol-Version": "2.0.0",
         },
         body: JSON.stringify({
-          registerUploadRequest: {
-            recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
-            owner: authorUrn,
-            serviceRelationships: [{
-              relationshipType: "OWNER",
-              identifier: "urn:li:userGeneratedContent",
-            }],
-          },
+          initializeUploadRequest: { owner: authorUrn },
         }),
       });
-      if (!regResp.ok) {
-        console.warn("[LinkedIn] registerUpload failed:", regResp.status, await regResp.text().catch(() => ""));
+      if (!initResp.ok) {
+        const errText = await initResp.text().catch(() => "");
+        console.warn("[LinkedIn] initializeUpload failed:", initResp.status, errText);
         return null;
       }
-      const regJson = (await regResp.json()) as any;
-      const uploadUrl: string | undefined =
-        regJson?.value?.uploadMechanism?.[
-          "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
-        ]?.uploadUrl;
-      const assetUrn: string | undefined = regJson?.value?.asset;
-      if (!uploadUrl || !assetUrn) {
-        console.warn("[LinkedIn] registerUpload missing uploadUrl/asset in response");
+      const initJson = (await initResp.json()) as any;
+      const uploadUrl: string | undefined = initJson?.value?.uploadUrl;
+      const imageUrn: string | undefined = initJson?.value?.image;
+      if (!uploadUrl || !imageUrn) {
+        console.warn("[LinkedIn] initializeUpload missing uploadUrl/image:", JSON.stringify(initJson));
         return null;
       }
 
-      // 2. Download the image from its URL
-      const imgResp = await fetch(imageUrl);
+      // 2. Download the image.
+      const imgResp = await fetch(absoluteUrl);
       if (!imgResp.ok) {
-        console.warn("[LinkedIn] Failed to fetch image:", imageUrl, imgResp.status);
+        console.warn("[LinkedIn] Failed to fetch image:", absoluteUrl, imgResp.status);
         return null;
       }
       const imageBuffer = await imgResp.arrayBuffer();
-      const contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
 
-      // 3. Upload the binary to LinkedIn
+      // 3. Upload binary to LinkedIn.
+      //    Pre-signed upload URLs MUST NOT receive an Authorization header —
+      //    adding one causes a 403 / signature mismatch.
       const uploadResp = await fetch(uploadUrl, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": contentType,
-        },
+        headers: { "Content-Type": "application/octet-stream" },
         body: imageBuffer,
       });
       if (!uploadResp.ok) {
-        console.warn("[LinkedIn] Image PUT failed:", uploadResp.status, await uploadResp.text().catch(() => ""));
+        const errText = await uploadResp.text().catch(() => "");
+        console.warn("[LinkedIn] Image PUT failed:", uploadResp.status, errText);
         return null;
       }
 
-      return assetUrn;
+      console.log("[LinkedIn] Image uploaded successfully:", imageUrn);
+      return imageUrn;
     } catch (err: any) {
       console.warn("[LinkedIn] uploadImageAsset error:", err.message);
       return null;
