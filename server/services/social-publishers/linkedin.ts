@@ -37,7 +37,7 @@ const NOT_APPROVED_MESSAGE =
 const AUTH_HOST = "https://www.linkedin.com";
 const API_HOST = "https://api.linkedin.com";
 const DEFAULT_SCOPE =
-  "r_liteprofile w_member_social w_organization_social rw_organization_admin";
+  "w_member_social w_organization_social rw_organization_admin";
 
 // ---------------------------------------------------------------------------
 // MCP helpers
@@ -179,62 +179,43 @@ export class LinkedInPublisher implements SocialPublisher {
       scope?: string;
     };
 
-    // Use /v2/me (r_liteprofile) — not /v2/userinfo which requires openid scope.
-    const meResp = await fetch(
-      `${API_HOST}/v2/me?projection=(id,firstName,lastName)`,
-      { headers: { Authorization: `Bearer ${tok.access_token}` } },
-    );
-    if (!meResp.ok) {
-      const txt = await meResp.text().catch(() => "");
-      throw new Error(`LinkedIn profile fetch failed: ${meResp.status} ${txt}`);
-    }
-    const me = (await meResp.json()) as {
-      id: string;
-      firstName?: { localized?: Record<string, string> };
-      lastName?: { localized?: Record<string, string> };
-    };
-
-    const firstName = me.firstName?.localized
-      ? Object.values(me.firstName.localized)[0] ?? ""
-      : "";
-    const lastName = me.lastName?.localized
-      ? Object.values(me.lastName.localized)[0] ?? ""
-      : "";
-    const displayName = [firstName, lastName].filter(Boolean).join(" ") || "LinkedIn account";
-
+    // r_liteprofile and openid/userinfo are not available on posting-only apps.
+    // Fetch admin organizations instead — this works with rw_organization_admin
+    // and is the identity Synozur needs (company page posting).
     const expiresAt = tok.expires_in
       ? new Date(Date.now() + tok.expires_in * 1000)
       : null;
+
+    let orgs: Array<{ mode: "organization"; urn: string; name: string; vanityName?: string | null }> = [];
+    try {
+      orgs = await this.fetchAdminOrganizations(tok.access_token);
+    } catch (err: unknown) {
+      console.warn("[LinkedIn] organizationAcls fetch failed:", (err as Error)?.message ?? err);
+    }
 
     const availableAuthors: Array<{
       mode: "person" | "organization";
       urn: string;
       name: string;
       vanityName?: string | null;
-    }> = [
-      {
-        mode: "person",
-        urn: `urn:li:person:${me.id}`,
-        name: displayName,
-      },
-    ];
-    try {
-      const orgs = await this.fetchAdminOrganizations(tok.access_token);
-      for (const o of orgs) availableAuthors.push(o);
-    } catch (err: unknown) {
-      console.warn("[LinkedIn] organizationAcls fetch failed:", (err as Error)?.message ?? err);
-    }
+    }> = [...orgs];
+
+    // Primary author: first org page, or a placeholder if none found.
+    const primaryOrg = orgs[0] ?? null;
+    const authorMode = primaryOrg ? "organization" : "person";
+    const authorUrn = primaryOrg?.urn ?? null;
+    const accountName = primaryOrg?.name ?? "LinkedIn account";
 
     return {
       accessToken: tok.access_token,
       refreshToken: tok.refresh_token ?? null,
       expiresAt,
       scope: tok.scope ?? null,
-      authorMode: "person",
-      authorUrn: `urn:li:person:${me.id}`,
-      accountName: displayName,
+      authorMode,
+      authorUrn,
+      accountName,
       profileUrl: null,
-      accountId: me.id,
+      accountId: primaryOrg?.urn ?? null,
       availableAuthors,
     };
   }
