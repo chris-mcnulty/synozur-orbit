@@ -37,7 +37,7 @@ const NOT_APPROVED_MESSAGE =
 const AUTH_HOST = "https://www.linkedin.com";
 const API_HOST = "https://api.linkedin.com";
 const DEFAULT_SCOPE =
-  "openid profile email w_member_social w_organization_social rw_organization_admin";
+  "w_member_social w_organization_social rw_organization_admin";
 
 // ---------------------------------------------------------------------------
 // MCP helpers
