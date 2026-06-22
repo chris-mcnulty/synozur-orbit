@@ -44,8 +44,17 @@ template per event with these tokens, and record the returned template IDs.
 | `email_bounced` | "Marketing email bounced" | `subject`, `reason`, `sendId` |
 | `email_unsubscribed` | "Unsubscribed" | `subject`, `subscriptionType`, `sendId` |
 
-Create via `POST /crm/v3/timeline/{appId}/event-templates` (app developer token)
-or the developer UI. **Phase 2 reads the template IDs from env**, one per event
+Create via `POST /crm/v3/timeline/{appId}/event-templates` (managed with your
+**developer API key**, not the OAuth connection). The easiest path is the
+helper script — it creates all 5 and prints the env lines:
+
+```bash
+APP_ID=<your app id> DEV_KEY=<your developer API key> \
+  ./scripts/hubspot-create-timeline-templates.sh
+```
+
+(`APP_ID`: Developer account → Apps → your app. `DEV_KEY`: Developer account →
+"Get HubSpot API key".) **Phase 2 reads the template IDs from env**, one per event
 key. Until at least one is set, timeline push is dormant (every event is
 skipped — nothing is sent), so the templates can be created and wired without
 risk:
