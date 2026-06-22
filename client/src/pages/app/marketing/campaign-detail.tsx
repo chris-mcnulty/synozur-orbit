@@ -2951,18 +2951,24 @@ export default function CampaignDetailPage() {
                             </Button>
                             {post.status === "approved" && !post.publishedAt && (() => {
                               const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
-                              const connected = acct?.isConnected !== false;
+                              const connected = acct == null || acct.isConnected !== false;
                               return (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="gap-1 text-blue-600"
-                                  title={connected ? "Publish now via Orbit to the linked social account" : "Account not connected — reconnect it in Social Accounts settings before publishing directly"}
-                                  onClick={() => publishNowMutation.mutate(post.id)}
-                                  disabled={publishNowMutation.isPending || !connected}
+                                  className={`gap-1 ${connected ? "text-blue-600" : "text-amber-600"}`}
+                                  title={connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
+                                  onClick={() => {
+                                    if (!connected) {
+                                      toast({ title: "Account not connected", description: "The linked social account has no active connection. Go to Social Accounts settings and reconnect it before publishing.", variant: "destructive" });
+                                      return;
+                                    }
+                                    publishNowMutation.mutate(post.id);
+                                  }}
+                                  disabled={publishNowMutation.isPending}
                                   data-testid={`button-publish-now-${post.id}`}
                                 >
-                                  <CheckCircle className="w-3.5 h-3.5" />Publish now
+                                  {publishNowMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}Publish now
                                 </Button>
                               );
                             })()}
