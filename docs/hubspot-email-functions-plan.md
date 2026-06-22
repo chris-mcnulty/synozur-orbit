@@ -134,8 +134,9 @@ This is what makes the experience true HubSpot parity (granular preferences) rat
 **Orbit is the system-of-record for the marketing list database.** Audiences live in `emailRecipientLists` / `emailRecipients` and are managed in Orbit (import, segment, edit, send). HubSpot is kept in sync so the two never drift:
 
 - **Membership sync (Orbit ⇄ HubSpot).** Each `emailRecipients` row gains `hubspotContactId` (resolved by the contact-resolver, §8.1). A list can optionally be **mirrored to a HubSpot active/static list** so a marketer can see and reuse the same audience in HubSpot.
+  - **Default `syncDirection = both`** (bidirectional, per locked decision §13.4).
   - *Push:* Orbit list → HubSpot static list (membership write).
-  - *Pull/import:* seed an Orbit list from a HubSpot list or saved view (one-time import or scheduled refresh).
+  - *Pull/import:* seed/refresh an Orbit list from a HubSpot list or saved view (one-time import or scheduled refresh), email-keyed dedup so re-imports upsert.
 - **Consent is layered on top.** The list defines *who could receive*; the subscription/suppression state (§6) defines *who is allowed to receive*. Sends always intersect list membership with consent pulled from HubSpot (§5).
 - **Dedup & identity.** Email (lowercased) is the join key; `hubspotContactId` is the durable link once resolved. Re-imports upsert rather than duplicate.
 - **New columns:** `emailRecipients + hubspotContactId, hsSyncStatus, hsLastSyncedAt`; `emailRecipientLists + hubspotListId (nullable), syncDirection (none|push|pull|both), lastSyncedAt`.
@@ -182,7 +183,7 @@ A new migration `00NN_hubspot_email_sync.sql` adds the above (additive, nullable
 ### 8.1 New services (pure-core + side-effecting, matching Orbit conventions)
 
 - **`server/services/hubspot-contact-resolver.ts`**
-  `resolveContactId(tenant, email)` → search HubSpot by email; cache the id on `emailSendRecipients.hubspotContactId`. Optionally **create** a contact when missing (admin-gated; default: do not create, mark `skipped`). Pure matching logic in a `*-core.ts`, the HubSpot call in the service.
+  `resolveContactId(tenant, email)` → search HubSpot by email; cache the id on `emailSendRecipients.hubspotContactId`. When no match and `autoCreateHubspotContacts` is **on (default)**, create the contact and use its id; when off, mark `skipped`. Pure matching logic in a `*-core.ts`, the HubSpot call in the service.
 
 - **`server/services/hubspot-email-sync.ts`**
   - `syncTimelineEvent(tenant, recipient, eventKey, payload)` → POST CRM Timeline Event using the app's template id; idempotent per (recipient, eventKey, timestamp).
@@ -234,7 +235,7 @@ Idempotency prevents duplicate timeline entries on webhook retries.
 - **HubSpot is authoritative for consent.** Pre-send pull means a contact who opted out in HubSpot is suppressed in Orbit even if Orbit never recorded it. Never auto-resubscribe (HubSpot blocks it for email-link opt-outs anyway).
 - **Best-effort, non-blocking.** Sync failures never block a SendGrid send and never lose an Orbit-side record; failures land in `hsSyncStatus=error` and are retried by the backfill job.
 - **Rate limits.** HubSpot API limits → batch timeline events, exponential backoff, queue-based drain (reuse the network-retry pattern in the git/HubSpot helpers).
-- **No HubSpot connection / scope not yet re-consented.** Feature silently no-ops (sends still work); UI shows a "Connect/Re-authorize HubSpot to enable sync" banner.
+- **Orbit runs standalone (no HubSpot required).** The entire sync layer is optional. With no connection (or scopes not yet re-consented), all sync paths silently no-op — compose, audiences, SendGrid send, tracking, and the Orbit-side suppression/unsubscribe footer all keep working; the UI shows a "Connect/Re-authorize HubSpot to enable sync" banner. Auto-create only applies when a connection exists.
 - **Contact not found & create disabled.** Mark `skipped`; surface count in reporting.
 - **Multi-tenant isolation.** All sync scoped by `tenantDomain`; tokens already encrypted at rest.
 - **Audit.** Every push/pull writes `marketingAuditLog` (`hubspot_timeline_push`, `hubspot_unsub_sync`, `hubspot_consent_pull`).
@@ -262,12 +263,12 @@ Each phase is independently shippable and gated; the send path keeps working if 
 
 ---
 
-## 13. Open questions (for sign-off)
+## 13. Locked decisions (finalized 2026-06-22)
 
-1. **Create missing HubSpot contacts** on send, or only sync engagement for contacts that already exist? (Default proposed: **do not create**; admin opt-in.)
-2. **Subscription-type granularity** — one default "Marketing" type to start, or expose full per-type mapping in v1? (Proposed: one default type in Phase 1, full mapping in Phase 3.)
-3. **Timeline event volume** — push `delivered` and every `open`/`click`, or collapse opens/clicks to first-occurrence + counts to reduce timeline noise and API usage? (Proposed: first-occurrence + running counts.)
-4. **Plan gating** — should `hubspotEmailSync` ride on the existing `hubspotIntegration` tier, or be a distinct upsell? (Proposed: same tier.)
+1. **Missing HubSpot contacts → auto-create by default, admin opt-out.** When a tenant has HubSpot connected, recipients with no matching contact are **created** in HubSpot so all engagement is captured. A per-tenant admin setting (`autoCreateHubspotContacts`, default **on**) can disable this. **Corollary — Orbit runs standalone:** the entire HubSpot sync layer is optional; tenants with no HubSpot connection use the full marketing-email + list database in Orbit with sync simply no-oping. See §10.
+2. **Single default "Marketing" subscription type in v1.** One Orbit purpose mapped to one HubSpot subscription type, with global unsubscribe. Full per-type mapping deferred to Phase 3. See §6.
+3. **Timeline = first-occurrence + running counts.** Push first open and first click as timeline events plus `openCount`/`clickCount` tokens; do not push every individual open/click. Keeps the timeline readable and conserves API quota. See §9.
+4. **List sync is bidirectional (push + pull).** Orbit remains the operational list database; lists mirror to HubSpot static lists **and** can be imported/refreshed from HubSpot lists/saved views, with email-keyed dedup + scheduled refresh. See §6.5.
 
 ---
 
