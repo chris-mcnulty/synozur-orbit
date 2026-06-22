@@ -269,33 +269,8 @@ export class LinkedInPublisher implements SocialPublisher {
         : text;
 
     // ------------------------------------------------------------------
-    // MCP path (active interim backend)
-    // ------------------------------------------------------------------
-    if (isLinkedInMcpConfigured()) {
-      try {
-        const author = await resolveMcpAuthor(account.authorUrn ?? null);
-        const { urn, raw } = await mcpCreatePost({
-          author,
-          commentary: finalText,
-          articleUrl: (post as any).articleUrl ?? null,
-        });
-        const publishedUrl = urn
-          ? `https://www.linkedin.com/feed/update/${encodeURIComponent(urn)}/`
-          : null;
-        return { success: true, publishedUrl, responsePayload: raw };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error("[LinkedIn MCP] publish failed:", msg);
-        return {
-          success: false,
-          errorCode: "mcp_error",
-          errorMessage: `LinkedIn MCP publish failed: ${msg}`,
-        };
-      }
-    }
-
-    // ------------------------------------------------------------------
-    // Direct OAuth path (gated; preferred once LinkedIn app is approved)
+    // Direct OAuth path — preferred when the account has a stored token.
+    // Falls through to MCP only when no token is present.
     // ------------------------------------------------------------------
     if (!isLinkedInDirectPublishEnabled()) {
       return {
@@ -304,12 +279,35 @@ export class LinkedInPublisher implements SocialPublisher {
         errorMessage: NOT_APPROVED_MESSAGE,
       };
     }
+    // No direct token yet — fall back to MCP if available.
     if (!account.encryptedAccessToken) {
+      if (isLinkedInMcpConfigured()) {
+        try {
+          const author = await resolveMcpAuthor(account.authorUrn ?? null);
+          const { urn, raw } = await mcpCreatePost({
+            author,
+            commentary: finalText,
+            articleUrl: (post as any).articleUrl ?? null,
+          });
+          const publishedUrl = urn
+            ? `https://www.linkedin.com/feed/update/${encodeURIComponent(urn)}/`
+            : null;
+          return { success: true, publishedUrl, responsePayload: raw };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[LinkedIn MCP] publish failed:", msg);
+          return {
+            success: false,
+            errorCode: "mcp_error",
+            errorMessage: `LinkedIn MCP publish failed: ${msg}`,
+          };
+        }
+      }
       return {
         success: false,
         errorCode: "not_connected",
         errorMessage:
-          "LinkedIn account is not connected — re-authorize before publishing.",
+          "LinkedIn account is not connected — go to Social Accounts and click Connect before publishing.",
       };
     }
     if (!account.authorUrn) {
