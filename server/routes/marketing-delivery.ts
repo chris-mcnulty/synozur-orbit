@@ -423,11 +423,16 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     purgeExpiredStates();
     const state = randomBytes(24).toString("base64url");
     const redirectUri = `${getBaseUrl(req)}/api/social-accounts/oauth/callback`;
-    const authorize = await publisher.getOAuthAuthorizeUrl({
-      redirectUri,
-      state,
-      tenantDomain: ctx.tenantDomain,
-    });
+    let authorize: string | { url: string; codeVerifier?: string };
+    try {
+      authorize = await publisher.getOAuthAuthorizeUrl({
+        redirectUri,
+        state,
+        tenantDomain: ctx.tenantDomain,
+      });
+    } catch (err: any) {
+      return res.status(503).json({ error: err.message || "OAuth connect is not available for this platform." });
+    }
     // Publishers may return a plain URL or { url, codeVerifier } for PKCE.
     const url = typeof authorize === "string" ? authorize : authorize.url;
     const codeVerifier = typeof authorize === "string" ? undefined : authorize.codeVerifier;
