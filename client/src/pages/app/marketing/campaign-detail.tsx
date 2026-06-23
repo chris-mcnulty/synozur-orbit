@@ -1767,7 +1767,14 @@ export default function CampaignDetailPage() {
   if (!campaign) {
     return (
       <AppLayout breadcrumbs={[{ label: "Marketing", href: "/app/marketing" }, { label: "Campaigns", href: "/app/marketing/campaigns" }, { label: "Not Found" }]}>
-        <div className="p-6 text-center text-muted-foreground">Campaign not found.</div>
+        <div className="p-6 flex flex-col items-center gap-4 text-center text-muted-foreground">
+          <p>Campaign not found.</p>
+          <div className="flex gap-2 flex-wrap justify-center">
+            <a href="/app/marketing/pipeline" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">← Back to Content Pipeline</a>
+            <span className="text-muted-foreground/40">·</span>
+            <a href="/app/marketing/campaigns" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">All Campaigns</a>
+          </div>
+        </div>
       </AppLayout>
     );
   }

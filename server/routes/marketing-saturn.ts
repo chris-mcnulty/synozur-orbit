@@ -1705,6 +1705,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
+
+      // Auto-close any campaigns whose end date has passed and are still active.
+      // Done here (on list load) so the UI always reflects reality without a
+      // dedicated cron job.
+      await db.update(campaigns)
+        .set({ status: "completed", updatedAt: new Date() })
+        .where(and(
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+          eq(campaigns.status, "active"),
+          isNotNull(campaigns.endDate),
+          sql`${campaigns.endDate} < NOW()`,
+        ));
+
       const conditions = [
         eq(campaigns.tenantDomain, ctx.tenantDomain),
         eq(campaigns.marketId, ctx.marketId),
@@ -2079,6 +2093,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
         ))
         .returning();
       if (!row) return res.status(404).json({ error: "Not found" });
+
+      // When a campaign is marked completed, auto-publish its in-flight briefs
+      // so they leave the Approved column and move to Published/Sent (live).
+      if (status === "completed") {
+        await db.update(contentBriefs)
+          .set({ status: "published", updatedAt: new Date() })
+          .where(and(
+            eq(contentBriefs.campaignId, row.id),
+            ne(contentBriefs.status, "removed"),
+            ne(contentBriefs.status, "published"),
+          ));
+      }
+
       if (solutionAreaIds !== undefined) {
         await db.delete(campaignSolutionAreas).where(eq(campaignSolutionAreas.campaignId, row.id));
         const validAreas = await validSolutionAreaIds(ctx, solutionAreaIds);

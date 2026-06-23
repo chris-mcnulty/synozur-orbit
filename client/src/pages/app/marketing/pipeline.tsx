@@ -19,6 +19,8 @@ import {
   CalendarClock,
   ClipboardList,
   Columns3 as ColumnsIcon,
+  Eye,
+  EyeOff,
   ExternalLink,
   ListChecks,
   Mail,
@@ -313,6 +315,7 @@ export default function ContentPipelinePage() {
   });
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
+  const [showClosed, setShowClosed] = useState(false);
   const [search, setSearch] = useState("");
   const [activeItem, setActiveItem] = useState<PipelineItem | null>(null);
   // The Published/Sent archive loads collapsed so the board stays focused on
@@ -385,24 +388,34 @@ export default function ContentPipelinePage() {
     },
   });
 
-  const { data: campaigns = [] } = useQuery<{ id: string; name: string }[]>({
-    // Active campaigns only, deduped by name — keep archived / duplicate-named
-    // campaigns out of the filter picker.
-    queryKey: ["/api/campaigns", "active-picker"],
+  const { data: allCampaigns = [] } = useQuery<{ id: string; name: string; status: string }[]>({
+    // All non-deleted campaigns — used to detect closed ones for the filter toggle.
+    queryKey: ["/api/campaigns", "pipeline-all"],
     queryFn: async () => {
-      const r = await fetch("/api/campaigns?status=active", { credentials: "include" });
+      const r = await fetch("/api/campaigns", { credentials: "include" });
       if (!r.ok) return [];
       const data = await r.json();
-      const rows: { id: string; name: string }[] = Array.isArray(data) ? data : data.campaigns ?? [];
-      const seen = new Set<string>();
-      return rows.filter((c) => {
-        const key = (c.name ?? "").trim().toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      return Array.isArray(data) ? data : data.campaigns ?? [];
     },
   });
+
+  // Active campaigns de-duped by name — shown in the campaign filter picker.
+  const campaigns = useMemo(() => {
+    const seen = new Set<string>();
+    return allCampaigns.filter((c) => {
+      if (c.status !== "active") return false;
+      const key = (c.name ?? "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [allCampaigns]);
+
+  // IDs of campaigns that are completed or archived — used to hide stale items.
+  const closedCampaignIds = useMemo(
+    () => new Set(allCampaigns.filter((c) => c.status === "completed" || c.status === "archived").map((c) => c.id)),
+    [allCampaigns],
+  );
 
   const allItems = useMemo<PipelineItem[]>(() => {
     const posts = postRows.map(postToPipelineItem);
@@ -416,10 +429,12 @@ export default function ContentPipelinePage() {
     return allItems.filter((i) => {
       if (typeFilter !== "all" && i.type !== typeFilter) return false;
       if (campaignFilter !== "all" && i.campaignId !== campaignFilter) return false;
+      // Hide items from completed/archived campaigns unless the user toggled them on.
+      if (!showClosed && i.campaignId && closedCampaignIds.has(i.campaignId)) return false;
       if (q && !`${i.title} ${i.subtitle ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [allItems, typeFilter, campaignFilter, search]);
+  }, [allItems, typeFilter, campaignFilter, showClosed, closedCampaignIds, search]);
 
   const byStage = useMemo(() => {
     const map: Record<PipelineStage, PipelineItem[]> = {
@@ -596,6 +611,17 @@ export default function ContentPipelinePage() {
               data-testid="pipeline-search"
             />
           </div>
+          <Button
+            variant={showClosed ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 px-3 text-xs gap-1.5"
+            onClick={() => setShowClosed((v) => !v)}
+            data-testid="pipeline-toggle-closed"
+            title={showClosed ? "Hide completed-campaign items" : "Show completed-campaign items"}
+          >
+            {showClosed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            {showClosed ? "Showing closed" : "Hide closed"}
+          </Button>
           <span className="ml-auto text-xs text-muted-foreground">
             {items.length} item{items.length === 1 ? "" : "s"}
           </span>

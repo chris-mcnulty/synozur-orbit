@@ -199,8 +199,9 @@ export function allowedDropStages(item: PipelineItem): PipelineStage[] {
   if (item.stage === "live") return [];
   switch (item.type) {
     case "post":
-      // publish_failed posts can be re-approved/rescheduled but not edited here.
-      return ["draft", "approved", "scheduled"].filter((s) => s !== item.stage) as PipelineStage[];
+      // publish_failed posts can be re-approved/rescheduled; "live" lets you
+      // manually mark an old post as published without re-exporting it.
+      return ["draft", "approved", "scheduled", "live"].filter((s) => s !== item.stage) as PipelineStage[];
     case "email":
       // Email scheduling/sending happens through recipient-list sends on the
       // email page, so the board only moves drafts through approval.
@@ -224,6 +225,7 @@ export function transitionFor(item: PipelineItem, target: PipelineStage): StageT
       if (target === "draft") return { body: { status: "draft", scheduledDate: null } };
       if (target === "approved") return { body: { status: "approved", scheduledDate: null } };
       if (target === "scheduled") return { body: { status: "approved" }, needsDate: true };
+      if (target === "live") return { body: { status: "published" } };
       return null;
     }
     case "email": {
