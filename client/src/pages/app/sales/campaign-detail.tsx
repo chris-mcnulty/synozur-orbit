@@ -323,6 +323,7 @@ export default function OutreachCampaignDetailPage() {
   const [hubspotContacts, setHubspotContacts] = useState<HubspotContact[] | null>(null);
   const [hubspotSearching, setHubspotSearching] = useState(false);
   const [hubspotSelected, setHubspotSelected] = useState<Set<string>>(new Set());
+  const [hubspotNotConnected, setHubspotNotConnected] = useState(false);
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
   const campaignKey = ["/api/sales-outreach/campaigns", id];
@@ -554,15 +555,22 @@ export default function OutreachCampaignDetailPage() {
 
   async function searchHubspot(q: string) {
     setHubspotSearching(true);
+    setHubspotNotConnected(false);
     try {
       const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/preview-hubspot`, { query: q || undefined, limit: 50 });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Search failed");
+      if (!res.ok) {
+        if (data.code === "no_hubspot") {
+          setHubspotNotConnected(true);
+          return;
+        }
+        throw new Error(data.error || "Search failed");
+      }
       setHubspotContacts(data.contacts ?? []);
       // Pre-select contacts not already on the campaign.
       setHubspotSelected(new Set((data.contacts ?? []).filter((c: HubspotContact) => !c.alreadyOnCampaign).map((c: HubspotContact) => c.hubspotContactId)));
     } catch (err: any) {
-      toast({ title: "HubSpot search failed", description: err?.message?.includes("connected") ? "Connect HubSpot in Integrations first." : err?.message, variant: "destructive" });
+      toast({ title: "HubSpot search failed", description: err?.message, variant: "destructive" });
     } finally {
       setHubspotSearching(false);
     }
@@ -572,6 +580,7 @@ export default function OutreachCampaignDetailPage() {
     setHubspotContacts(null);
     setHubspotQuery("");
     setHubspotSelected(new Set());
+    setHubspotNotConnected(false);
     setHubspotOpen(true);
     searchHubspot("");
   }
@@ -812,7 +821,17 @@ export default function OutreachCampaignDetailPage() {
           <CardHeader className="pb-2"><CardTitle className="text-base">Prospects ({prospects.length})</CardTitle></CardHeader>
           <CardContent>
             {prospects.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">No prospects yet — add one to research and score it.</p>
+              <div className="py-8 text-center space-y-3">
+                <p className="text-sm text-muted-foreground">No prospects yet.</p>
+                <div className="flex justify-center gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" onClick={openHubspotDialog} data-testid="button-import-hubspot-empty">
+                    <Download className="w-3.5 h-3.5 mr-1.5" /> Import from HubSpot
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setAdding(true)} data-testid="button-add-prospect-empty">
+                    <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Add manually
+                  </Button>
+                </div>
+              </div>
             ) : (
               <Table>
                 <TableHeader>
@@ -843,9 +862,15 @@ export default function OutreachCampaignDetailPage() {
                       </TableCell>
                       <TableCell>
                         {p.source && (
-                          <Badge variant="outline" className="text-[10px] capitalize">
-                            {p.source === "hubspot" ? "HubSpot" : p.source}
-                          </Badge>
+                          p.source === "hubspot" ? (
+                            <Badge variant="outline" className="text-[10px] border-orange-400 text-orange-600 dark:text-orange-400" data-testid={`badge-source-hubspot-${p.id}`}>
+                              From HubSpot
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] capitalize">
+                              {p.source}
+                            </Badge>
+                          )
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1 whitespace-nowrap">
@@ -1266,107 +1291,127 @@ export default function OutreachCampaignDetailPage() {
               <Download className="w-4 h-4" /> Import from HubSpot
             </DialogTitle>
             <DialogDescription>
-              Search your HubSpot contacts, pick who to add, then click Import.
+              Search your HubSpot contacts, pick who to add, then click Import. Contacts already on this campaign are shown highlighted and can't be re-added.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Search bar */}
-          <div className="flex gap-2">
-            <Input
-              placeholder="Search by name, email, or company…"
-              value={hubspotQuery}
-              onChange={(e) => setHubspotQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && searchHubspot(hubspotQuery)}
-              data-testid="input-hubspot-search"
-              className="flex-1"
-            />
-            <Button variant="outline" onClick={() => searchHubspot(hubspotQuery)} disabled={hubspotSearching} data-testid="button-hubspot-search">
-              {hubspotSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            </Button>
-          </div>
-
-          {/* Contact list */}
-          {hubspotSearching ? (
-            <div className="py-10 flex flex-col items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin" /> Searching HubSpot…
+          {/* Not connected — inline prompt */}
+          {hubspotNotConnected ? (
+            <div className="rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2" data-testid="hubspot-not-connected">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">HubSpot isn't connected</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">Connect your HubSpot account in Settings to import contacts from your CRM.</p>
+              <Button size="sm" variant="outline" asChild>
+                <a href="/app/settings/integrations" data-testid="link-connect-hubspot">Go to Integrations →</a>
+              </Button>
             </div>
-          ) : hubspotContacts && hubspotContacts.length > 0 ? (
+          ) : (
             <>
-              <div className="max-h-[50vh] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8">
-                        <Checkbox
-                          checked={hubspotContacts.filter((c) => !c.alreadyOnCampaign).length > 0 &&
-                            hubspotContacts.filter((c) => !c.alreadyOnCampaign).every((c) => hubspotSelected.has(c.hubspotContactId))}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setHubspotSelected(new Set(hubspotContacts.filter((c) => !c.alreadyOnCampaign).map((c) => c.hubspotContactId)));
-                            } else {
-                              setHubspotSelected(new Set());
-                            }
-                          }}
-                          data-testid="hubspot-select-all"
-                        />
-                      </TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Email</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {hubspotContacts.map((c) => (
-                      <TableRow
-                        key={c.hubspotContactId}
-                        className={c.alreadyOnCampaign ? "opacity-40" : ""}
-                        data-testid={`hubspot-contact-${c.hubspotContactId}`}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={hubspotSelected.has(c.hubspotContactId)}
-                            disabled={c.alreadyOnCampaign}
-                            onCheckedChange={() => {
-                              if (c.alreadyOnCampaign) return;
-                              setHubspotSelected((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(c.hubspotContactId)) next.delete(c.hubspotContactId);
-                                else next.add(c.hubspotContactId);
-                                return next;
-                              });
-                            }}
-                            data-testid={`hubspot-select-${c.hubspotContactId}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{c.name}</div>
-                          {c.jobTitle && <div className="text-xs text-muted-foreground">{c.jobTitle}</div>}
-                          {c.alreadyOnCampaign && <div className="text-[10px] text-muted-foreground">already on campaign</div>}
-                        </TableCell>
-                        <TableCell className="text-sm">{c.company ?? "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{c.email ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <DialogFooter className="gap-2 items-center sm:justify-between">
-                <span className="text-xs text-muted-foreground">{hubspotSelected.size} selected</span>
-                <Button
-                  onClick={() => importHubspotSelected.mutate()}
-                  disabled={hubspotSelected.size === 0 || importHubspotSelected.isPending}
-                  data-testid="button-import-hubspot-selected"
-                >
-                  {importHubspotSelected.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
-                  Import {hubspotSelected.size > 0 ? `${hubspotSelected.size} ` : ""}selected
+              {/* Search bar */}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Search by name, email, or company…"
+                  value={hubspotQuery}
+                  onChange={(e) => setHubspotQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && searchHubspot(hubspotQuery)}
+                  data-testid="input-hubspot-search"
+                  className="flex-1"
+                />
+                <Button variant="outline" onClick={() => searchHubspot(hubspotQuery)} disabled={hubspotSearching} data-testid="button-hubspot-search">
+                  {hubspotSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                 </Button>
-              </DialogFooter>
+              </div>
+
+              {/* Contact list */}
+              {hubspotSearching ? (
+                <div className="py-10 flex flex-col items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin" /> Searching HubSpot…
+                </div>
+              ) : hubspotContacts && hubspotContacts.length > 0 ? (
+                <>
+                  <div className="max-h-[50vh] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-8">
+                            <Checkbox
+                              checked={hubspotContacts.filter((c) => !c.alreadyOnCampaign).length > 0 &&
+                                hubspotContacts.filter((c) => !c.alreadyOnCampaign).every((c) => hubspotSelected.has(c.hubspotContactId))}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setHubspotSelected(new Set(hubspotContacts.filter((c) => !c.alreadyOnCampaign).map((c) => c.hubspotContactId)));
+                                } else {
+                                  setHubspotSelected(new Set());
+                                }
+                              }}
+                              data-testid="hubspot-select-all"
+                            />
+                          </TableHead>
+                          <TableHead>Name / Title</TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {hubspotContacts.map((c) => (
+                          <TableRow
+                            key={c.hubspotContactId}
+                            className={c.alreadyOnCampaign ? "bg-muted/40" : ""}
+                            data-testid={`hubspot-contact-${c.hubspotContactId}`}
+                          >
+                            <TableCell>
+                              <Checkbox
+                                checked={hubspotSelected.has(c.hubspotContactId)}
+                                disabled={c.alreadyOnCampaign}
+                                onCheckedChange={() => {
+                                  if (c.alreadyOnCampaign) return;
+                                  setHubspotSelected((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(c.hubspotContactId)) next.delete(c.hubspotContactId);
+                                    else next.add(c.hubspotContactId);
+                                    return next;
+                                  });
+                                }}
+                                data-testid={`hubspot-select-${c.hubspotContactId}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className={`font-medium ${c.alreadyOnCampaign ? "text-muted-foreground" : ""}`}>{c.name}</div>
+                              {c.jobTitle && <div className="text-xs text-muted-foreground">{c.jobTitle}</div>}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{c.company ?? "—"}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{c.email ?? "—"}</TableCell>
+                            <TableCell>
+                              {c.alreadyOnCampaign && (
+                                <Badge variant="secondary" className="text-[10px] whitespace-nowrap" data-testid={`hubspot-already-${c.hubspotContactId}`}>
+                                  Already added
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <DialogFooter className="gap-2 items-center sm:justify-between">
+                    <span className="text-xs text-muted-foreground">{hubspotSelected.size} selected</span>
+                    <Button
+                      onClick={() => importHubspotSelected.mutate()}
+                      disabled={hubspotSelected.size === 0 || importHubspotSelected.isPending}
+                      data-testid="button-import-hubspot-selected"
+                    >
+                      {importHubspotSelected.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+                      Import {hubspotSelected.size > 0 ? `${hubspotSelected.size} ` : ""}selected
+                    </Button>
+                  </DialogFooter>
+                </>
+              ) : hubspotContacts !== null ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No contacts found. Try a different search term.
+                </div>
+              ) : null}
             </>
-          ) : hubspotContacts !== null ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              No contacts found. Try a different search term.
-            </div>
-          ) : null}
+          )}
         </DialogContent>
       </Dialog>
 
