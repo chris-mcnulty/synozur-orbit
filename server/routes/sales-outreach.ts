@@ -34,7 +34,7 @@ import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
-import { preWarmMarketingCache, resolveHubspotContactId } from "../services/hubspot-contact-resolver";
+import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
@@ -1119,14 +1119,8 @@ async function pushProspectToHubspot(
   firstName: string,
   lastName: string,
 ): Promise<string> {
-  // Check shared resolver first (prospects → email_recipients cache → HubSpot
-  // search) so we avoid a redundant API call when the contact is already known.
-  if (prospect.email) {
-    const cached = await resolveHubspotContactId(prospect.email, tenantDomain, {
-      autoCreate: false, // upsertContact below handles create/update
-    });
-    if (cached) return cached;
-  }
+  // upsertContact searches by email then updates-or-creates; it preserves all
+  // contact properties on every call and is the canonical sales upsert path.
   return upsertContact(tenantDomain, {
     email: prospect.email,
     firstName: firstName || null,
