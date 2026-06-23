@@ -66,7 +66,7 @@ export interface DraftFromBriefResult extends ParsedDraft {
 
 export async function draftFromBrief(
   brief: ContentBrief,
-  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null; soundLikeMeInstructions?: string | null } = {},
+  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null; soundLikeMeInstructions?: string | null; sourceContext?: string | null } = {},
 ): Promise<DraftFromBriefResult> {
   const format = coerceFormat(brief.format);
 
@@ -141,6 +141,7 @@ Respond with exactly these three sections and nothing else:
     briefBlock,
     `## Format guidance\n${FORMAT_GUIDANCE[format]}`,
     format === "podcast_outline" ? polarisGuestBlock(opts.guest) : "",
+    opts.sourceContext?.trim() ? `## Source content (synthesize from this — do not invent facts outside it)\n${opts.sourceContext.trim()}` : "",
     opts.instructions?.trim() ? `## Additional instructions\n${opts.instructions.trim()}` : "",
     responseFormat,
   ]

@@ -157,6 +157,7 @@ const FORMAT_LABELS: Record<string, string> = {
   podcast_outline: "Podcast outline",
   webinar: "Webinar",
   press_release: "Press release",
+  linkedin_digest: "LinkedIn Digest",
   other: "Other",
 };
 
@@ -174,6 +175,7 @@ const BRIEF_FORMAT_OPTIONS: { value: string; label: string }[] = [
   { value: "podcast_outline", label: "Podcast outline" },
   { value: "webinar", label: "Webinar" },
   { value: "press_release", label: "Press release" },
+  { value: "linkedin_digest", label: "LinkedIn Digest" },
   { value: "other", label: "Other" },
 ];
 
@@ -845,6 +847,22 @@ export default function EditorialCalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // LinkedIn Digest dialog state
+  const [digestOpen, setDigestOpen] = useState(false);
+  // Step 1 inputs
+  const [digestProfileUrl, setDigestProfileUrl] = useState("");
+  const [digestStartDate, setDigestStartDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [digestEndDate, setDigestEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Step 2 preview result
+  const [digestPreview, setDigestPreview] = useState<{ postCount: number; posts: { text: string; postedAt: string }[] } | null>(null);
+  const [digestFetching, setDigestFetching] = useState(false);
+  const [digestCreating, setDigestCreating] = useState(false);
+
   const [downloadingBriefId, setDownloadingBriefId] = useState<string | null>(null);
   const downloadBriefDocx = async (brief: ContentBrief) => {
     setDownloadingBriefId(brief.id);
@@ -929,10 +947,23 @@ export default function EditorialCalendarPage() {
                 Demand-scored content briefs grounded in your messaging framework, gaps, personas, and SEO demand.
               </p>
             </div>
-            <Button onClick={() => setGenerateOpen(true)} data-testid="button-generate-calendar">
-              <Sparkles className="mr-2 h-4 w-4" />
-              Generate new briefs
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDigestPreview(null);
+                  setDigestOpen(true);
+                }}
+                data-testid="button-new-linkedin-digest"
+              >
+                <Library className="mr-2 h-4 w-4" />
+                New LinkedIn Digest
+              </Button>
+              <Button onClick={() => setGenerateOpen(true)} data-testid="button-generate-calendar">
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate new briefs
+              </Button>
+            </div>
           </div>
 
           {/* How the planning surfaces fit together */}
@@ -1519,6 +1550,201 @@ export default function EditorialCalendarPage() {
                 )}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* LinkedIn Digest dialog */}
+        <Dialog
+          open={digestOpen}
+          onOpenChange={(o) => {
+            if (!o) {
+              setDigestOpen(false);
+              setDigestPreview(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>New LinkedIn Digest</DialogTitle>
+              <DialogDescription>
+                Pulls your public LinkedIn posts over a date range and synthesizes them into a structured digest draft, ready to export as a Word document or repurpose as a newsletter or article.
+              </DialogDescription>
+            </DialogHeader>
+
+            {!digestPreview ? (
+              /* Step 1 — URL + date range */
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="digest-profile-url">Your LinkedIn profile URL</Label>
+                  <Input
+                    id="digest-profile-url"
+                    placeholder="https://www.linkedin.com/in/yourname/"
+                    value={digestProfileUrl}
+                    onChange={(e) => setDigestProfileUrl(e.target.value)}
+                    data-testid="input-digest-profile-url"
+                  />
+                  <p className="text-xs text-muted-foreground flex items-start gap-1">
+                    <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0 text-amber-500" />
+                    Your LinkedIn profile must be set to public for the post fetch to work.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="digest-start">Start date</Label>
+                    <Input
+                      id="digest-start"
+                      type="date"
+                      value={digestStartDate}
+                      onChange={(e) => setDigestStartDate(e.target.value)}
+                      data-testid="input-digest-start"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="digest-end">End date</Label>
+                    <Input
+                      id="digest-end"
+                      type="date"
+                      value={digestEndDate}
+                      onChange={(e) => setDigestEndDate(e.target.value)}
+                      data-testid="input-digest-end"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setDigestOpen(false)}>Cancel</Button>
+                  <Button
+                    disabled={digestFetching || !digestProfileUrl.trim()}
+                    onClick={async () => {
+                      if (!digestProfileUrl.includes("linkedin.com/in/")) {
+                        toast.error("Please enter a LinkedIn personal profile URL (linkedin.com/in/…).");
+                        return;
+                      }
+                      setDigestFetching(true);
+                      try {
+                        const res = await fetch("/api/linkedin-digest/preview", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: "include",
+                          body: JSON.stringify({
+                            profileUrl: digestProfileUrl.trim(),
+                            startDate: digestStartDate,
+                            endDate: digestEndDate,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || "Failed to fetch posts");
+                        setDigestPreview(data);
+                      } catch (e: any) {
+                        toast.error(e.message || "Failed to fetch LinkedIn posts");
+                      } finally {
+                        setDigestFetching(false);
+                      }
+                    }}
+                    data-testid="button-digest-fetch"
+                  >
+                    {digestFetching ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Fetching…</>
+                    ) : (
+                      <>Fetch posts</>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </div>
+            ) : (
+              /* Step 2 — confirm post count and generate */
+              <div className="space-y-4">
+                {digestPreview.postCount === 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-200">
+                    No original posts found in that date range. Make sure the profile is public and the dates are correct, then try again.
+                  </div>
+                ) : (
+                  <div className="rounded-md border bg-muted/40 p-3 space-y-1">
+                    <p className="text-sm font-medium" data-testid="text-digest-post-count">
+                      {digestPreview.postCount} original post{digestPreview.postCount === 1 ? "" : "s"} found
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {digestStartDate} to {digestEndDate} · shares and reposts excluded
+                    </p>
+                    {digestPreview.posts[0] && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1 italic">
+                        "{digestPreview.posts[0].text.slice(0, 120)}{digestPreview.posts[0].text.length > 120 ? "…" : ""}"
+                      </p>
+                    )}
+                  </div>
+                )}
+                <DialogFooter className="flex items-center justify-between gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setDigestPreview(null)}>
+                    ← Back
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" onClick={() => { setDigestOpen(false); setDigestPreview(null); }}>
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={digestCreating || digestPreview.postCount === 0}
+                      onClick={async () => {
+                        setDigestCreating(true);
+                        try {
+                          const res = await fetch("/api/linkedin-digest/create", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({
+                              profileUrl: digestProfileUrl.trim(),
+                              startDate: digestStartDate,
+                              endDate: digestEndDate,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || "Failed to create digest");
+                          queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
+                          if (data.calendarId) {
+                            queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", data.calendarId] });
+                            setSelectedId(data.calendarId);
+                          }
+                          setDigestOpen(false);
+                          setDigestPreview(null);
+                          toast.success(`LinkedIn Digest created — "${data.draft?.title || "Digest"}" is ready in the Content Library.`);
+                          // Open the draft immediately if we have it.
+                          if (data.brief?.contentAssetId) {
+                            try {
+                              const assetRes = await fetch(`/api/content-assets/${data.brief.contentAssetId}`, { credentials: "include" });
+                              if (assetRes.ok) {
+                                const asset = await assetRes.json();
+                                setDraft({
+                                  title: asset.title ?? data.draft?.title ?? null,
+                                  subtitle: asset.subtitle ?? null,
+                                  overview: asset.overview ?? null,
+                                  body: asset.content ?? data.draft?.body ?? "",
+                                  meta: asset.description ?? data.draft?.meta ?? null,
+                                  tags: asset.postTags ?? null,
+                                  format: "linkedin_digest",
+                                });
+                                setDraftAssetId(data.brief.contentAssetId);
+                                setDraftBriefTitle(data.brief.title ?? null);
+                                setDraftImageUrl(null);
+                                setDraftDirty(false);
+                              }
+                            } catch (_) { /* non-critical, user can open from the list */ }
+                          }
+                        } catch (e: any) {
+                          toast.error(e.message || "Failed to create LinkedIn Digest");
+                        } finally {
+                          setDigestCreating(false);
+                        }
+                      }}
+                      data-testid="button-digest-generate"
+                    >
+                      {digestCreating ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating digest…</>
+                      ) : (
+                        <><Sparkles className="mr-2 h-4 w-4" />Generate digest</>
+                      )}
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 

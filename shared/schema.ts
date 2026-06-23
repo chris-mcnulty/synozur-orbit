@@ -1958,6 +1958,7 @@ export const CONTENT_BRIEF_FORMATS = [
   "carousel",
   "webinar",
   "press_release",
+  "linkedin_digest",
   "other",
 ] as const;
 export type ContentBriefFormat = (typeof CONTENT_BRIEF_FORMATS)[number];
@@ -1977,7 +1978,7 @@ export type ContentFormCategory = (typeof CONTENT_FORM_CATEGORIES)[number];
 export const FORM_CATEGORY_FORMATS: Record<ContentFormCategory, ContentBriefFormat[]> = {
   short_form: ["linkedin_post", "x_post", "newsletter"],
   mid_form: ["blog_post", "press_release", "landing_page"],
-  long_form: ["whitepaper", "ebook", "case_study"],
+  long_form: ["whitepaper", "ebook", "case_study", "linkedin_digest"],
   digital_interactive: ["webinar", "video_script", "podcast_outline"],
 };
 

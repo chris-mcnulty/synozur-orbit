@@ -8,6 +8,7 @@ import { guardFeature } from "./helpers";
 import { generateContentBriefs } from "../services/editorial-calendar-service";
 import { draftFromBrief } from "../services/copywriter-service";
 import { getPersonalVoiceProfile } from "../services/outbound-voice-service";
+import { getPersonalProfilePosts } from "../services/linkedin-api";
 import {
   DEFAULT_FUNNEL_TARGETS,
   briefFormatToAssetType,
@@ -30,6 +31,7 @@ const FORMAT_LABELS: Record<string, string> = {
   podcast_outline: "Podcast outline",
   webinar: "Webinar",
   press_release: "Press release",
+  linkedin_digest: "LinkedIn Digest",
   other: "Other",
 };
 
@@ -794,6 +796,215 @@ export function registerEditorialCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[content-briefs delete]", err);
       res.status(500).json({ error: err.message || "Failed to delete content brief" });
+    }
+  });
+
+  // LinkedIn Digest — step 1: fetch posts and return count for UI confirmation.
+  // Accepts: { profileUrl, startDate, endDate }
+  // Returns: { postCount, posts: [{ text, postedAt }] } or error.
+  app.post("/api/linkedin-digest/preview", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      await getRequestContext(req);
+
+      const { profileUrl, startDate, endDate } = req.body ?? {};
+      if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.includes("linkedin.com/in/")) {
+        return res.status(400).json({ error: "Please provide a valid LinkedIn personal profile URL (linkedin.com/in/…)." });
+      }
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required." });
+      }
+
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return res.status(400).json({ error: "Invalid date format." });
+      }
+      if (start > end) {
+        return res.status(400).json({ error: "startDate must be before endDate." });
+      }
+      // Set end to end-of-day so the range is inclusive.
+      end.setUTCHours(23, 59, 59, 999);
+
+      const result = await getPersonalProfilePosts(profileUrl.trim(), start, end);
+
+      if (!result.success) {
+        return res.status(502).json({ error: result.error || "Failed to fetch posts from LinkedIn." });
+      }
+
+      res.json({
+        postCount: result.postCount ?? 0,
+        posts: (result.posts ?? []).map((p) => ({ text: p.text, postedAt: p.postedAt })),
+      });
+    } catch (err: any) {
+      console.error("[linkedin-digest preview]", err);
+      res.status(500).json({ error: err.message || "Failed to fetch LinkedIn posts" });
+    }
+  });
+
+  // LinkedIn Digest — step 2: create the brief + generate a draft from the fetched posts.
+  // Accepts: { profileUrl, startDate, endDate, calendarName? }
+  // Re-fetches posts server-side (ignores any client-supplied posts) to guarantee
+  // source authenticity — only the caller's own filtered posts feed the digest.
+  // Returns: { brief, draft: { title, body, meta, ... }, asset: { id } }
+  app.post("/api/linkedin-digest/create", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const { profileUrl, startDate, endDate, calendarName } = req.body ?? {};
+      if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.includes("linkedin.com/in/")) {
+        return res.status(400).json({ error: "Please provide a valid LinkedIn personal profile URL (linkedin.com/in/…)." });
+      }
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "profileUrl, startDate, endDate are required." });
+      }
+
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return res.status(400).json({ error: "Invalid date format." });
+      }
+      // Set end to end-of-day so the range is inclusive.
+      end.setUTCHours(23, 59, 59, 999);
+
+      // Re-fetch posts server-side — do NOT trust client-supplied posts.
+      const fetchResult = await getPersonalProfilePosts(profileUrl.trim(), start, end);
+      if (!fetchResult.success) {
+        return res.status(502).json({ error: fetchResult.error || "Failed to fetch posts from LinkedIn." });
+      }
+      const posts = fetchResult.posts ?? [];
+      if (posts.length === 0) {
+        return res.status(422).json({ error: "No original posts found in that date range. Check that the profile is public and the dates are correct." });
+      }
+
+      // Build source context block from the server-fetched posts.
+      const sourceContext = posts
+        .map((p, i) =>
+          `Post ${i + 1}${p.postedAt ? ` (${p.postedAt})` : ""}:\n${p.text}`,
+        )
+        .join("\n\n---\n\n");
+
+      // Derive a title: "[Profile Name] LinkedIn Digest — [Month Range]"
+      const startLabel = start.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      const endLabel = end.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      const dateLabel = startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
+      const briefTitle = typeof calendarName === "string" && calendarName.trim()
+        ? calendarName.trim()
+        : `LinkedIn Digest — ${dateLabel}`;
+
+      // Find-or-create a "LinkedIn Digests" editorial calendar for this tenant.
+      const digestCalendarName = "LinkedIn Digests";
+      let calendarId: string;
+
+      const existingCalendars = await db
+        .select({ id: editorialCalendars.id })
+        .from(editorialCalendars)
+        .where(
+          and(
+            eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+            eq(editorialCalendars.marketId, ctx.marketId),
+            eq(editorialCalendars.name, digestCalendarName),
+          ),
+        )
+        .limit(1);
+
+      if (existingCalendars.length) {
+        calendarId = existingCalendars[0].id;
+      } else {
+        const [newCal] = await db
+          .insert(editorialCalendars)
+          .values({
+            id: randomUUID(),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            name: digestCalendarName,
+            description: "Auto-created calendar for LinkedIn Digest briefs.",
+            funnelTargets: DEFAULT_FUNNEL_TARGETS,
+            status: "active",
+            createdBy: ctx.userId,
+          })
+          .returning();
+        calendarId = newCal.id;
+      }
+
+      // Persist the brief.
+      const briefId = randomUUID();
+      const [brief] = await db
+        .insert(contentBriefs)
+        .values({
+          id: briefId,
+          calendarId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId || null,
+          title: briefTitle,
+          format: "linkedin_digest",
+          demandSignal: `LinkedIn profile: ${profileUrl} | Date range: ${startDate} to ${endDate} | ${posts.length} original post(s)`,
+          funnelStage: "awareness",
+          differentiationAngle: "First-person perspective, own voice and experience",
+          targetReader: "LinkedIn connections and followers",
+          cta: "Follow for more or connect to continue the conversation",
+          status: "accepted",
+          aiGenerated: false,
+          sortOrder: 0,
+        })
+        .returning();
+
+      // Generate the draft using the copywriter with the posts injected.
+      const voiceProfile = await getPersonalVoiceProfile(ctx.userId);
+      const draft = await draftFromBrief(brief, {
+        isDefaultMarket: ctx.isDefaultMarket,
+        sourceContext,
+        soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
+      });
+
+      if (!draft.body?.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable draft. Please try again." });
+      }
+
+      // Persist the draft asset and link it back to the brief.
+      const result = await db.transaction(async (tx) => {
+        const [asset] = await tx
+          .insert(contentAssets)
+          .values({
+            id: randomUUID(),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            title: draft.title || briefTitle,
+            description: draft.meta || null,
+            content: draft.body,
+            subtitle: draft.subtitle || null,
+            overview: draft.overview || null,
+            assetType: briefFormatToAssetType("linkedin_digest"),
+            status: "active",
+            createdBy: ctx.userId,
+          })
+          .returning();
+
+        const [updatedBrief] = await tx
+          .update(contentBriefs)
+          .set({ contentAssetId: asset.id, status: "drafted", updatedAt: new Date() })
+          .where(eq(contentBriefs.id, brief.id))
+          .returning();
+
+        return { asset, brief: updatedBrief };
+      });
+
+      res.status(201).json({
+        ...result,
+        calendarId,
+        draft: {
+          title: draft.title,
+          subtitle: draft.subtitle,
+          overview: draft.overview,
+          body: draft.body,
+          meta: draft.meta,
+          format: "linkedin_digest",
+        },
+      });
+    } catch (err: any) {
+      console.error("[linkedin-digest create]", err);
+      res.status(500).json({ error: err.message || "Failed to create LinkedIn Digest" });
     }
   });
 

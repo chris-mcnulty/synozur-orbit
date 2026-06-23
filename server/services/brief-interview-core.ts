@@ -314,6 +314,7 @@ export const FORMAT_LABELS: Record<ContentBriefFormat, string> = {
   podcast_outline: "Podcast outline",
   webinar: "Webinar",
   press_release: "Press release",
+  linkedin_digest: "LinkedIn Digest",
   other: "Content",
 };
 

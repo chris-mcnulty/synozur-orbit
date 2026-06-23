@@ -299,6 +299,8 @@ export const FORMAT_GUIDANCE: Record<ContentBriefFormat, string> = {
     "Produce a complete webinar plan in Markdown with two parts. Part 1 — **Webinar Overview**: a registration-page title and abstract (100-150 words), 3-4 audience takeaways as bullets, suggested duration and run-of-show (e.g. 5 min welcome / 30 min presentation / 10 min demo / 15 min Q&A), and the CTA attendees should leave with. Part 2 — **Presentation Deck Outline**: a slide-by-slide outline (typically 12-18 slides) where each slide has a number, a slide title, 2-4 content bullets, and a one-line speaker note. Include a title slide, an agenda slide, a 'why now' problem framing section, the core content sections, a demo or example placeholder slide where relevant, a recap slide, and a closing CTA slide. Add [GRAPHIC: ...] cues on slides that need a diagram or visual.",
   press_release:
     "Write a press release in standard newswire style, in Markdown: a factual headline in title case, an optional one-sentence subheadline, a dateline placeholder (CITY, State — [DATE] —), a lead paragraph answering who/what/when/where/why, 2-3 body paragraphs with supporting detail, one or two quote placeholders attributed by role only (e.g. \"[QUOTE: CEO on why this matters]\") — never invent names or quotes, an 'About [Company]' boilerplate paragraph drawn from the positioning context, and a 'Media Contact:' placeholder block. Keep it factual and free of marketing superlatives; 400-600 words.",
+  linkedin_digest:
+    "Synthesize the provided LinkedIn posts (supplied in the source context block) into a structured digest. Work only from the posts provided — do not invent additional content. Structure:\n1. A short intro paragraph (2-3 sentences) naming the time period covered and the main themes that emerged.\n2. Three to five thematic sections, each with a **Bold Section Header** naming the theme and 2-4 sentences drawing directly from the posts in that group. Group by topic or message, not by chronology.\n3. A short closing paragraph (2-3 sentences) with a clear call to action (e.g. 'Connect on LinkedIn', 'Follow for more', or a relevant next step drawn from the posts).\nKeep the tone warm and reflective — first-person editorial voice. 500-800 words total.",
   other:
     "Write well-structured Markdown copy appropriate to the topic, with a clear headline, body, and a CTA.",
 };
@@ -317,7 +319,7 @@ export function briefFormatToAssetType(format: ContentBriefFormat): string {
     case "video_script":
       return "video";
     default:
-      // landing_page, linkedin_post, x_post, newsletter, other
+      // landing_page, linkedin_post, x_post, newsletter, linkedin_digest, other
       return "other";
   }
 }
