@@ -941,5 +941,31 @@ describe("sales-outreach routes", () => {
 
       expect(res.status).toBe(404);
     });
+
+    it("returns touches matched via hubspotContactId when email differs from send recipient", async () => {
+      // Prospect email changed but hubspotContactId links them to the old send.
+      pushDb({ ...PROSPECT, email: "jane.new@fund.com", hubspotContactId: "hs-jane-123" });
+      pushDb(RECIPIENT_ROW);  // mock returns the row regardless of which condition matched
+      pushDb(SEND_ROW);
+      pushDb(EMAIL_ROW);
+
+      const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].sendId).toBe("send-1");
+    });
+
+    it("falls back to email-only match when prospect has no hubspotContactId", async () => {
+      pushDb({ ...PROSPECT, hubspotContactId: null });
+      pushDb(RECIPIENT_ROW);
+      pushDb(SEND_ROW);
+      pushDb(EMAIL_ROW);
+
+      const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+    });
   });
 });

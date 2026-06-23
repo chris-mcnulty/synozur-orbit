@@ -14,7 +14,7 @@ import {
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -1128,7 +1128,17 @@ export function registerSalesOutreachRoutes(app: Express) {
       // No email → no marketing matches possible.
       if (!prospect.email) return res.json([]);
 
-      // Step 1: all send_recipient rows for this email within the tenant.
+      // Step 1: all send_recipient rows for this prospect within the tenant.
+      // Match by email always; also match by hubspotContactId when present so
+      // we catch rows where the marketing send address differs from the
+      // prospect's current email but both map to the same CRM contact.
+      const emailOrHsCondition = prospect.hubspotContactId
+        ? or(
+            eq(emailSendRecipients.email, prospect.email),
+            eq(emailSendRecipients.hubspotContactId, prospect.hubspotContactId),
+          )
+        : eq(emailSendRecipients.email, prospect.email);
+
       const recipientRows = await db
         .select({
           id: emailSendRecipients.id,
@@ -1141,7 +1151,7 @@ export function registerSalesOutreachRoutes(app: Express) {
         .from(emailSendRecipients)
         .where(and(
           eq(emailSendRecipients.tenantDomain, ctx.tenantDomain),
-          eq(emailSendRecipients.email, prospect.email),
+          emailOrHsCondition,
         ))
         .orderBy(desc(emailSendRecipients.sentAt));
 
