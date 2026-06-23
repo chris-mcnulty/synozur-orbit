@@ -11,10 +11,11 @@ import {
   emailSendRecipients,
   emailSends,
   generatedEmails,
+  emailRecipients,
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -1128,16 +1129,39 @@ export function registerSalesOutreachRoutes(app: Express) {
       // No email → no marketing matches possible.
       if (!prospect.email) return res.json([]);
 
-      // Step 1: all send_recipient rows for this prospect within the tenant.
-      // Match by email always; also match by hubspotContactId when present so
+      // Step 1a: look up any HubSpot contact IDs associated with this email in
+      // the marketing list table (email_recipients). This surfaces resolved CRM
+      // links even when prospect.hubspotContactId is null or stale — the
+      // marketing pipeline may have already resolved the contact via
+      // email_recipients.hubspotContactId.
+      const listRecipientRows = await db
+        .select({ hubspotContactId: emailRecipients.hubspotContactId })
+        .from(emailRecipients)
+        .where(and(
+          eq(emailRecipients.tenantDomain, ctx.tenantDomain),
+          eq(emailRecipients.email, prospect.email!),
+          isNotNull(emailRecipients.hubspotContactId),
+        ));
+
+      // Collect unique HubSpot contact IDs: from the prospect row itself and
+      // from any email_recipients matches.
+      const candidateHsIds = new Set<string>();
+      if (prospect.hubspotContactId) candidateHsIds.add(prospect.hubspotContactId);
+      for (const r of listRecipientRows) {
+        if (r.hubspotContactId) candidateHsIds.add(r.hubspotContactId);
+      }
+      const uniqueHsIds = [...candidateHsIds];
+
+      // Step 1b: all send_recipient rows matching this prospect within the
+      // tenant — by email always, and by hubspotContactId when available so
       // we catch rows where the marketing send address differs from the
       // prospect's current email but both map to the same CRM contact.
-      const emailOrHsCondition = prospect.hubspotContactId
+      const emailOrHsCondition = uniqueHsIds.length > 0
         ? or(
-            eq(emailSendRecipients.email, prospect.email),
-            eq(emailSendRecipients.hubspotContactId, prospect.hubspotContactId),
+            eq(emailSendRecipients.email, prospect.email!),
+            inArray(emailSendRecipients.hubspotContactId, uniqueHsIds),
           )
-        : eq(emailSendRecipients.email, prospect.email);
+        : eq(emailSendRecipients.email, prospect.email!);
 
       const recipientRows = await db
         .select({
@@ -1175,18 +1199,24 @@ export function registerSalesOutreachRoutes(app: Express) {
       const sendMap = new Map(sendRows.map(s => [s.id, s]));
       const emailMap = new Map(emailRows.map(e => [e.id, e]));
 
-      const touches = recipientRows.map(r => {
+      // Build touches, deduplicating by sendId (edge case: multiple recipient
+      // rows can resolve to the same send when email + hubspotContactId both match).
+      const seenSendIds = new Set<string>();
+      const touches: object[] = [];
+      for (const r of recipientRows) {
+        if (seenSendIds.has(r.sendId)) continue;
+        seenSendIds.add(r.sendId);
         const send = sendMap.get(r.sendId);
-        const email = send ? emailMap.get(send.generatedEmailId ?? "") : undefined;
-        return {
+        const emailRow = send ? emailMap.get(send.generatedEmailId ?? "") : undefined;
+        touches.push({
           sendId: r.sendId,
-          subject: email?.subject ?? null,
+          subject: emailRow?.subject ?? null,
           sentAt: r.sentAt,
           openedAt: r.openedAt,
           clickedAt: r.clickedAt,
           status: r.status,
-        };
-      });
+        });
+      }
 
       res.json(touches);
     } catch (err: any) {

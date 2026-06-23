@@ -887,9 +887,15 @@ describe("sales-outreach routes", () => {
 
     const SEND_ROW = { id: "send-1", generatedEmailId: "email-1" };
     const EMAIL_ROW = { id: "email-1", subject: "Synozur Q1 Insights" };
+    // email_recipients row that carries a resolved HubSpot contact ID for the
+    // prospect's email address (Step 1a result).
+    const LIST_RECIPIENT = { hubspotContactId: "hs-jane-123" };
 
     it("returns marketing touches for a prospect with matching sends", async () => {
+      // DB call sequence: prospect → email_recipients (hs ids) →
+      // email_send_recipients → email_sends → generated_emails
       pushDb(PROSPECT);
+      pushDb(LIST_RECIPIENT);
       pushDb(RECIPIENT_ROW);
       pushDb(SEND_ROW);
       pushDb(EMAIL_ROW);
@@ -907,6 +913,7 @@ describe("sales-outreach routes", () => {
     });
 
     it("returns empty array when prospect has no email address", async () => {
+      // Returns early before any email_recipients lookup.
       pushDb({ ...PROSPECT, email: null });
 
       const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
@@ -916,7 +923,9 @@ describe("sales-outreach routes", () => {
     });
 
     it("returns empty array when no send recipients match the prospect email", async () => {
+      // prospect → email_recipients (empty) → email_send_recipients (empty) → early return
       pushDb(PROSPECT);
+      pushDb(); // empty listRecipientRows (no hs ids from list)
       pushDb(); // empty recipientRows
 
       const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
@@ -942,10 +951,12 @@ describe("sales-outreach routes", () => {
       expect(res.status).toBe(404);
     });
 
-    it("returns touches matched via hubspotContactId when email differs from send recipient", async () => {
-      // Prospect email changed but hubspotContactId links them to the old send.
-      pushDb({ ...PROSPECT, email: "jane.new@fund.com", hubspotContactId: "hs-jane-123" });
-      pushDb(RECIPIENT_ROW);  // mock returns the row regardless of which condition matched
+    it("returns touches via email_recipients.hubspotContactId when prospect.hubspotContactId is absent", async () => {
+      // Represents the key scenario: prospect has no hubspotContactId, but the
+      // marketing list resolved one. The endpoint should still find the send.
+      pushDb({ ...PROSPECT, hubspotContactId: null });
+      pushDb(LIST_RECIPIENT);  // email_recipients has hs-jane-123
+      pushDb(RECIPIENT_ROW);   // email_send_recipients matched via hs id
       pushDb(SEND_ROW);
       pushDb(EMAIL_ROW);
 
@@ -956,8 +967,9 @@ describe("sales-outreach routes", () => {
       expect(res.body[0].sendId).toBe("send-1");
     });
 
-    it("falls back to email-only match when prospect has no hubspotContactId", async () => {
+    it("falls back to email-only match when neither prospect nor list has a hubspotContactId", async () => {
       pushDb({ ...PROSPECT, hubspotContactId: null });
+      pushDb(); // email_recipients returns no hs ids
       pushDb(RECIPIENT_ROW);
       pushDb(SEND_ROW);
       pushDb(EMAIL_ROW);
