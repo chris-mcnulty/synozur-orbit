@@ -14,6 +14,35 @@ import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provi
 const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/api_search";
 
 // ---------------------------------------------------------------------------
+// Applied-filter diagnostics (returned so the caller can surface hints)
+// ---------------------------------------------------------------------------
+
+/**
+ * A structured record of the filters that were actually sent to the Apollo
+ * People Search API. Returned alongside candidates so the discovery service
+ * can include them in `DiscoverResult.apolloDiagnostics` when the search
+ * returns 0 results.
+ */
+export interface ApolloAppliedFilters {
+  /** Job-title keywords sent as `person_titles` (after normalisation). */
+  personTitles: string[];
+  /** Geography strings sent as `person_locations`. */
+  locations: string[];
+  /** Industry keywords joined into `q_keywords`. */
+  industries: string[];
+  /** Headcount range strings sent as `organization_num_employees_ranges`. */
+  employeeRanges: string[];
+  /** Company names sent as `organization_names`. */
+  namedAccounts: string[];
+  /**
+   * Segments from the ICP criteria that were *not* sent to Apollo because they
+   * look like AUM / revenue descriptors (e.g. "$1B+ AUM") rather than headcount
+   * descriptors. Apollo filters by employee count, not by AUM.
+   */
+  skippedSegments: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Availability
 // ---------------------------------------------------------------------------
 
@@ -135,13 +164,21 @@ export class ApolloDiscoveryError extends Error {
   }
 }
 
+export interface ApolloSearchResult {
+  candidates: DiscoveryCandidate[];
+  appliedFilters: ApolloAppliedFilters;
+}
+
 /**
- * Search Apollo for ICP-matching people and return DiscoveryCandidate[].
+ * Search Apollo for ICP-matching people and return candidates plus a
+ * structured record of every filter that was actually sent to the API.
+ * The caller uses `appliedFilters` to surface diagnostic hints when 0
+ * results are returned.
  */
 export async function searchApollo(
   _tenantDomain: string,
   input: DiscoverySearchInput,
-): Promise<DiscoveryCandidate[]> {
+): Promise<ApolloSearchResult> {
   const apiKey = process.env.APOLLO_API_KEY?.trim();
   if (!apiKey) {
     throw new ApolloDiscoveryError(apolloReason(), "not_available");
@@ -149,10 +186,20 @@ export async function searchApollo(
 
   const { criteria, namedAccounts, limit } = input;
 
-  // Build request body from ICP criteria.
+  // Build request body from ICP criteria while recording every filter we send
+  // so callers can surface diagnostic hints when 0 results come back.
   const body: Record<string, unknown> = {
     page: 1,
     per_page: Math.min(limit, 100),
+  };
+
+  const appliedFilters: ApolloAppliedFilters = {
+    personTitles: [],
+    locations: [],
+    industries: [],
+    employeeRanges: [],
+    namedAccounts: [],
+    skippedSegments: [],
   };
 
   // Apollo limits: person_titles ≤ 10 entries, q_keywords ≤ 255 chars.
@@ -160,21 +207,33 @@ export async function searchApollo(
   // into individual atomic title keywords that Apollo can actually match against.
   if (criteria.roles?.length) {
     const titles = normalizePersonTitles(criteria.roles);
-    if (titles.length) body.person_titles = titles;
+    if (titles.length) {
+      body.person_titles = titles;
+      appliedFilters.personTitles = titles;
+    }
   }
 
   if (criteria.geographies?.length) {
-    body.person_locations = criteria.geographies.slice(0, 10);
+    const locs = criteria.geographies.slice(0, 10);
+    body.person_locations = locs;
+    appliedFilters.locations = locs;
   }
 
   // Skip headcount ranges when named accounts are specified — the firm list
   // already scopes the search and employee ranges based on AUM/revenue don't
   // translate to Apollo's headcount field (a $1B AUM PE firm may have <100 staff).
+  const allSegments = criteria.segments ?? [];
   if (!namedAccounts?.length) {
-    const employeeRanges = segmentsToEmployeeRanges(criteria.segments ?? []);
+    const employeeRanges = segmentsToEmployeeRanges(allSegments);
     if (employeeRanges.length) {
       body.organization_num_employees_ranges = employeeRanges;
+      appliedFilters.employeeRanges = employeeRanges;
     }
+    // Record segments that produced no headcount range (AUM/revenue descriptors
+    // or unrecognised keywords) so the UI can explain why they were ignored.
+    appliedFilters.skippedSegments = allSegments.filter(
+      (seg) => segmentsToEmployeeRanges([seg]).length === 0,
+    );
   }
 
   // Industries → q_keywords (capped at 255 chars to avoid Apollo "value too long").
@@ -184,11 +243,14 @@ export async function searchApollo(
   if (industryKeywords.length) {
     const kw = industryKeywords.join(" ").slice(0, 255);
     body.q_keywords = kw;
+    appliedFilters.industries = industryKeywords;
   }
 
   // Named accounts → organization_names (array, max 10 entries).
   if (namedAccounts?.length) {
-    body.organization_names = namedAccounts.slice(0, 10);
+    const names = namedAccounts.slice(0, 10);
+    body.organization_names = names;
+    appliedFilters.namedAccounts = names;
   }
 
   console.log("[Apollo] request body:", JSON.stringify(body));
@@ -265,7 +327,7 @@ export async function searchApollo(
   });
 
   // Drop any rows with no usable name.
-  return candidates.filter((c) => c.name && c.name !== "Unknown");
+  return { candidates: candidates.filter((c) => c.name && c.name !== "Unknown"), appliedFilters };
 }
 
 // ---------------------------------------------------------------------------

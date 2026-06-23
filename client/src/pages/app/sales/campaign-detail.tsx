@@ -239,6 +239,14 @@ interface ScoredDiscoveryCandidate {
   candidate: DiscoveryCandidate;
   scored: { score: number; qualified: boolean; disqualified: boolean };
 }
+interface ApolloDiagnostics {
+  personTitles: string[];
+  locations: string[];
+  industries: string[];
+  employeeRanges: string[];
+  namedAccounts: string[];
+  skippedSegments: string[];
+}
 interface DiscoverResult {
   backend: "web" | "salesnav" | "apollo";
   candidates: ScoredDiscoveryCandidate[];
@@ -246,6 +254,8 @@ interface DiscoverResult {
   droppedCount: number;
   /** Set when the primary backend returned 0 results and was retried with a fallback. */
   fallbackReason?: string;
+  /** Filters actually sent to Apollo when it returned 0 results. */
+  apolloDiagnostics?: ApolloDiagnostics;
 }
 interface DiscoveryBackend {
   id: "web" | "salesnav" | "apollo";
@@ -291,6 +301,87 @@ function initEditForm(c: OutreachCampaign) {
 }
 
 type EditForm = ReturnType<typeof initEditForm>;
+
+// ---------------------------------------------------------------------------
+// ApolloFallbackNotice — shown when Apollo returned 0 and we fell back to web
+// ---------------------------------------------------------------------------
+
+function ApolloFallbackNotice({
+  reason,
+  diagnostics,
+}: {
+  reason: string;
+  diagnostics?: ApolloDiagnostics;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const hints: string[] = [];
+  if (diagnostics) {
+    if (diagnostics.personTitles.length > 0) {
+      hints.push(
+        `Roles searched: ${diagnostics.personTitles.join(", ")} — try fewer or broader titles in your ICP persona.`,
+      );
+    }
+    if (diagnostics.industries.length > 0) {
+      hints.push(
+        `Industries searched: ${diagnostics.industries.join(", ")} — try removing or simplifying the industry keywords.`,
+      );
+    }
+    if (diagnostics.employeeRanges.length > 0) {
+      hints.push(
+        `Company size filter applied (${diagnostics.employeeRanges.join(", ")} employees) — try broadening the segment labels in your ICP.`,
+      );
+    }
+    if (diagnostics.skippedSegments.length > 0) {
+      hints.push(
+        `Company size segments not sent to Apollo: ${diagnostics.skippedSegments.join(", ")} — Apollo filters by headcount, not AUM or revenue.`,
+      );
+    }
+    if (diagnostics.locations.length > 0) {
+      hints.push(
+        `Location filter: ${diagnostics.locations.join(", ")} — try broadening or removing the geography filter.`,
+      );
+    }
+    if (diagnostics.namedAccounts.length > 0) {
+      hints.push(
+        `Named accounts filter active (${diagnostics.namedAccounts.length} companies) — Apollo may not have contacts on file for all of them.`,
+      );
+    }
+    if (hints.length === 0) {
+      hints.push("No filters were sent — Apollo may simply have no contacts for this combination.");
+    }
+  }
+
+  return (
+    <div
+      className="rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+      data-testid="discovery-fallback-notice"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span>{reason}</span>
+        {diagnostics && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="shrink-0 underline underline-offset-2 hover:no-underline font-medium"
+            data-testid="discovery-fallback-why-toggle"
+          >
+            {expanded ? "Hide hints" : "Why?"}
+          </button>
+        )}
+      </div>
+      {expanded && hints.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-amber-200 dark:border-amber-700 pt-2 list-none" data-testid="discovery-fallback-hints">
+          {hints.map((h, i) => (
+            <li key={i} className="flex gap-1.5">
+              <span className="shrink-0 mt-0.5">•</span>
+              <span>{h}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function OutreachCampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -1442,9 +1533,10 @@ export default function OutreachCampaignDetailPage() {
 
           {/* Fallback notice — shown when Apollo returned 0 and we retried with web */}
           {discoverResult?.fallbackReason && (
-            <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300" data-testid="discovery-fallback-notice">
-              {discoverResult.fallbackReason}
-            </div>
+            <ApolloFallbackNotice
+              reason={discoverResult.fallbackReason}
+              diagnostics={discoverResult.apolloDiagnostics}
+            />
           )}
 
           {/* Sales Navigator availability notice */}

@@ -35,6 +35,7 @@ import {
   isApolloAvailable,
   apolloReason,
   ApolloDiscoveryError,
+  type ApolloAppliedFilters,
 } from "./apollo-discovery-provider";
 
 /** A discovered candidate with its computed ICP fit (preview, not persisted). */
@@ -59,6 +60,12 @@ export interface DiscoverResult {
    * automatically retried with a fallback backend (e.g. Apollo → web).
    */
   fallbackReason?: string;
+  /**
+   * Structured record of the filters actually sent to Apollo when it
+   * returned 0 results. The UI uses this to show which targeting fields
+   * the user should broaden.
+   */
+  apolloDiagnostics?: ApolloAppliedFilters;
 }
 
 export interface DiscoveryBackendStatus {
@@ -140,6 +147,7 @@ export async function discoverProspects(
   let model: string | null = null;
   let provider: string | null = null;
   let fallbackReason: string | undefined;
+  let apolloDiagnostics: ApolloAppliedFilters | undefined;
 
   if (backend === "salesnav") {
     try {
@@ -156,11 +164,14 @@ export async function discoverProspects(
 
   if (backend === "apollo") {
     try {
-      found = await searchApollo(tenantDomain, input);
+      const apolloResult = await searchApollo(tenantDomain, input);
+      found = apolloResult.candidates;
       // When Apollo returns 0 results, automatically retry with web discovery
-      // so the user sees something useful rather than a blank list.
+      // so the user sees something useful rather than a blank list. Capture
+      // the applied filters so the UI can explain which fields were too narrow.
       if (found.length === 0 && isWebSearchAvailable()) {
         console.log("[discovery] Apollo returned 0 results — falling back to web discovery");
+        apolloDiagnostics = apolloResult.appliedFilters;
         fallbackReason =
           "Apollo returned no matches for these filters — showing web discovery results instead.";
         backend = "web";
@@ -209,7 +220,7 @@ export async function discoverProspects(
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 
-  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason };
+  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics };
 }
 
 /**
