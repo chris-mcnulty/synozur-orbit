@@ -74,6 +74,7 @@ interface EmailSendRecipient {
   clickCount: number;
   hubspotContactId: string | null;
   hsSyncStatus: string | null;
+  isActiveProspect?: boolean;
 }
 
 interface HubspotSyncSummary {
@@ -572,6 +573,7 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
                     <Badge variant="outline" className="text-[10px] capitalize">{r.status}</Badge>
                     {r.openCount > 0 && <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">{r.openCount} open{r.openCount !== 1 ? "s" : ""}</Badge>}
                     {r.clickCount > 0 && <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-300">{r.clickCount} click{r.clickCount !== 1 ? "s" : ""}</Badge>}
+                    {r.isActiveProspect && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300" data-testid={`badge-active-prospect-${r.id}`}>Active prospect</Badge>}
                     {r.hsSyncStatus === "resolved" && <Badge variant="outline" className="text-[10px] text-green-600 border-green-300" title={r.hubspotContactId ? `HubSpot contact ${r.hubspotContactId}` : undefined}>HubSpot</Badge>}
                     {r.hsSyncStatus === "skipped" && <Badge variant="outline" className="text-[10px] text-muted-foreground">no HS contact</Badge>}
                     {r.hsSyncStatus === "error" && <Badge variant="outline" className="text-[10px] text-red-600 border-red-300">HS sync error</Badge>}

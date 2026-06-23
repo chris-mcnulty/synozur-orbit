@@ -1170,7 +1170,28 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         eq(emailSendRecipients.suppressionReason, "active_prospect"),
       ));
     const suppressedProspectCount = Number(prospectSuppressedRow?.count ?? 0);
-    res.json({ ...send, recipients, hubspotSync, suppressedProspectCount });
+    // Flag recipients who are active sales prospects (not replied/dormant) so
+    // the marketing team gets the same cross-awareness the sales rep has.
+    const recipientEmails = recipients.map(r => r.email).filter(Boolean) as string[];
+    let activeProspectEmailSet = new Set<string>();
+    if (recipientEmails.length > 0) {
+      const activeProspectRows = await db
+        .select({ email: prospects.email })
+        .from(prospects)
+        .where(and(
+          eq(prospects.tenantDomain, ctx.tenantDomain),
+          inArray(prospects.email, recipientEmails),
+          notInArray(prospects.status, ["replied", "dormant"]),
+        ));
+      for (const p of activeProspectRows) {
+        if (p.email) activeProspectEmailSet.add(p.email.toLowerCase());
+      }
+    }
+    const recipientsWithProspectFlag = recipients.map(r => ({
+      ...r,
+      isActiveProspect: r.email ? activeProspectEmailSet.has(r.email.toLowerCase()) : false,
+    }));
+    res.json({ ...send, recipients: recipientsWithProspectFlag, hubspotSync, suppressedProspectCount });
   });
 
   // Prospect check — UI calls this when a list is selected so we can warn the

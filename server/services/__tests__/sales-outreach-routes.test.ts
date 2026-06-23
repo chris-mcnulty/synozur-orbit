@@ -865,4 +865,81 @@ describe("sales-outreach routes", () => {
       expect(tickCadence).not.toHaveBeenCalled();
     });
   });
+
+  // ── GET /api/sales-outreach/prospects/:id/marketing-touches ─────────────────
+  describe("GET /api/sales-outreach/prospects/:id/marketing-touches", () => {
+    const PROSPECT = {
+      id: "prospect-1",
+      tenantDomain: "acme.com",
+      name: "Jane Doe",
+      email: "jane@fund.com",
+      status: "new",
+    };
+
+    const RECIPIENT_ROW = {
+      id: "recv-1",
+      sendId: "send-1",
+      sentAt: "2026-01-15T10:00:00Z",
+      openedAt: "2026-01-15T14:00:00Z",
+      clickedAt: null,
+      status: "delivered",
+    };
+
+    const SEND_ROW = { id: "send-1", generatedEmailId: "email-1" };
+    const EMAIL_ROW = { id: "email-1", subject: "Synozur Q1 Insights" };
+
+    it("returns marketing touches for a prospect with matching sends", async () => {
+      pushDb(PROSPECT);
+      pushDb(RECIPIENT_ROW);
+      pushDb(SEND_ROW);
+      pushDb(EMAIL_ROW);
+
+      const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0]).toMatchObject({
+        sendId: "send-1",
+        subject: "Synozur Q1 Insights",
+        openedAt: "2026-01-15T14:00:00Z",
+        clickedAt: null,
+      });
+    });
+
+    it("returns empty array when prospect has no email address", async () => {
+      pushDb({ ...PROSPECT, email: null });
+
+      const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("returns empty array when no send recipients match the prospect email", async () => {
+      pushDb(PROSPECT);
+      pushDb(); // empty recipientRows
+
+      const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("returns 404 when prospect does not exist", async () => {
+      pushDb(); // no prospect found
+
+      const res = await request(app).get("/api/sales-outreach/prospects/nonexistent/marketing-touches");
+
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ error: expect.stringMatching(/not found/i) });
+    });
+
+    it("returns 404 when prospect belongs to a different tenant", async () => {
+      pushDb({ ...PROSPECT, tenantDomain: "other.com" });
+
+      const res = await request(app).get("/api/sales-outreach/prospects/prospect-1/marketing-touches");
+
+      expect(res.status).toBe(404);
+    });
+  });
 });

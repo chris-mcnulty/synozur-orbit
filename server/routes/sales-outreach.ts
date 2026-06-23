@@ -8,10 +8,13 @@ import {
   outreachTouches,
   outreachSendLedger,
   socialAccountVoiceProfiles,
+  emailSendRecipients,
+  emailSends,
+  generatedEmails,
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -1108,6 +1111,77 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach:prospect-delete]", err);
       res.status(500).json({ error: err.message || "Failed to delete prospect" });
+    }
+  });
+
+  // Marketing touches — returns any marketing email sends that reached this
+  // prospect (matched by email address within the same tenant). Read-only
+  // context for the sales rep; no HubSpot calls required.
+  app.get("/api/sales-outreach/prospects/:id/marketing-touches", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      // No email → no marketing matches possible.
+      if (!prospect.email) return res.json([]);
+
+      // Step 1: all send_recipient rows for this email within the tenant.
+      const recipientRows = await db
+        .select({
+          id: emailSendRecipients.id,
+          sendId: emailSendRecipients.sendId,
+          sentAt: emailSendRecipients.sentAt,
+          openedAt: emailSendRecipients.openedAt,
+          clickedAt: emailSendRecipients.clickedAt,
+          status: emailSendRecipients.status,
+        })
+        .from(emailSendRecipients)
+        .where(and(
+          eq(emailSendRecipients.tenantDomain, ctx.tenantDomain),
+          eq(emailSendRecipients.email, prospect.email),
+        ))
+        .orderBy(desc(emailSendRecipients.sentAt));
+
+      if (recipientRows.length === 0) return res.json([]);
+
+      // Step 2: resolve send subjects via email_sends → generated_emails.
+      const sendIds = [...new Set(recipientRows.map(r => r.sendId))];
+      const sendRows = await db
+        .select({ id: emailSends.id, generatedEmailId: emailSends.generatedEmailId })
+        .from(emailSends)
+        .where(inArray(emailSends.id, sendIds));
+
+      const emailIds = [...new Set(sendRows.map(s => s.generatedEmailId).filter(Boolean))] as string[];
+      const emailRows = emailIds.length > 0
+        ? await db
+            .select({ id: generatedEmails.id, subject: generatedEmails.subject })
+            .from(generatedEmails)
+            .where(inArray(generatedEmails.id, emailIds))
+        : [];
+
+      const sendMap = new Map(sendRows.map(s => [s.id, s]));
+      const emailMap = new Map(emailRows.map(e => [e.id, e]));
+
+      const touches = recipientRows.map(r => {
+        const send = sendMap.get(r.sendId);
+        const email = send ? emailMap.get(send.generatedEmailId ?? "") : undefined;
+        return {
+          sendId: r.sendId,
+          subject: email?.subject ?? null,
+          sentAt: r.sentAt,
+          openedAt: r.openedAt,
+          clickedAt: r.clickedAt,
+          status: r.status,
+        };
+      });
+
+      res.json(touches);
+    } catch (err: any) {
+      console.error("[sales-outreach:marketing-touches]", err);
+      res.status(500).json({ error: err.message || "Failed to load marketing touches" });
     }
   });
 }

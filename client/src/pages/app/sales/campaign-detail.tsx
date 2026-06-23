@@ -193,6 +193,15 @@ interface HubspotContact {
   alreadyOnCampaign: boolean;
 }
 
+interface MarketingTouch {
+  sendId: string;
+  subject: string | null;
+  sentAt: string | null;
+  openedAt: string | null;
+  clickedAt: string | null;
+  status: string;
+}
+
 interface ComplianceFlag {
   kind: "cliche" | "banned_phrase" | "suppression" | "self_email" | "can_spam";
   detail: string;
@@ -288,6 +297,7 @@ export default function OutreachCampaignDetailPage() {
   const { user } = useUser();
   const [adding, setAdding] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
+  const [marketingTouchesExpanded, setMarketingTouchesExpanded] = useState(true);
   const [form, setForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
 
   // Edit campaign dialog state.
@@ -337,6 +347,16 @@ export default function OutreachCampaignDetailPage() {
     queryKey: ["/api/personas"],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const { data: marketingTouches = [] } = useQuery<MarketingTouch[]>({
+    queryKey: ["/api/sales-outreach/prospects", dossier?.id, "marketing-touches"],
+    enabled: !!dossier?.id,
+    queryFn: async () => {
+      const r = await fetch(`/api/sales-outreach/prospects/${dossier!.id}/marketing-touches`, { credentials: "include" });
       if (!r.ok) return [];
       return r.json();
     },
@@ -1206,6 +1226,33 @@ export default function OutreachCampaignDetailPage() {
           </DialogHeader>
           {dossier?.disqualifiedReason && <p className="text-sm text-destructive">{dossier.disqualifiedReason}</p>}
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{dossier?.researchDossier}</p>
+          {marketingTouches.length > 0 && (
+            <div className="border-t pt-3">
+              <button
+                className="flex items-center gap-1.5 text-sm font-medium w-full text-left mb-2"
+                onClick={() => setMarketingTouchesExpanded(v => !v)}
+                data-testid="button-marketing-touches-toggle"
+              >
+                <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                Marketing touches ({marketingTouches.length})
+                <ChevronDown className={`w-3.5 h-3.5 ml-auto text-muted-foreground transition-transform ${marketingTouchesExpanded ? "" : "-rotate-90"}`} />
+              </button>
+              {marketingTouchesExpanded && (
+                <div className="space-y-1.5" data-testid="marketing-touches-list">
+                  {marketingTouches.map((t) => (
+                    <div key={t.sendId} className="flex items-center gap-2 text-xs" data-testid={`marketing-touch-${t.sendId}`}>
+                      <span className="flex-1 truncate text-muted-foreground">{t.subject ?? "(no subject)"}</span>
+                      <span className="text-muted-foreground shrink-0">
+                        {t.sentAt ? new Date(t.sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                      </span>
+                      {t.openedAt && <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300 shrink-0">opened</Badge>}
+                      {t.clickedAt && <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-300 shrink-0">clicked</Badge>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
