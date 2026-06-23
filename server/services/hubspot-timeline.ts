@@ -19,6 +19,7 @@ import { db } from "../db";
 import { emailSendRecipients } from "@shared/schema";
 import { storage } from "../storage";
 import { getTenantAccessToken, hasHubspotEmailScopes, HUBSPOT_REST_HOST } from "./hubspot-integration";
+import { isHubspotEmailSyncEnabled } from "./hubspot-email-sync";
 import { timelineEventId, type TimelineEventKey } from "./hubspot-email-sync-core";
 
 // Env var carrying the HubSpot event-template id for each event key. Unset ⇒
@@ -69,6 +70,7 @@ export async function pushEmailTimelineEvent(
     if (!opts.contactId) return "skipped";
     const eventTemplateId = timelineTemplateId(opts.eventKey);
     if (!eventTemplateId) return "skipped";
+    if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
 
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
@@ -117,6 +119,7 @@ export async function pushSentEventsForSend(opts: {
 }): Promise<{ pushed: number; skipped: number; errors: number }> {
   const result = { pushed: 0, skipped: 0, errors: 0 };
   if (!timelineTemplateId("email_sent")) return result;
+  if (!(await isHubspotEmailSyncEnabled(opts.tenantDomain))) return result;
 
   const rows = await db
     .select({ id: emailSendRecipients.id, contactId: emailSendRecipients.hubspotContactId })

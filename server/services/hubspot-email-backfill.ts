@@ -61,7 +61,10 @@ export async function tickHubspotEmailSyncBackfill(): Promise<BackfillResult> {
 
     for (const c of candidates) {
       const r = await resolveSendRecipientContacts({ tenantDomain: c.tenantDomain, sendId: c.sendId });
-      if (!r.ran) continue; // not connected — leave for when the tenant connects
+      // ran=false ⇒ not connected or feature disabled; the resolver already
+      // marked these recipients 'skipped', and this job does not retry skipped
+      // recipients (see file header), so there's nothing more to do here.
+      if (!r.ran) continue;
       result.sends += 1;
       result.resolved += r.resolved;
       result.created += r.created;

@@ -65,17 +65,6 @@ import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
 import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
 import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
 
-/**
- * Best-effort mirror of a recipient engagement event to its HubSpot contact
- * timeline (marketing-email sync Phase 2). No-ops when the recipient has no
- * resolved contact or no timeline template is configured. Never throws.
- */
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string
-  ));
-}
-
 /** Hosted single-subscription preference center page. */
 function preferenceCenterHtml(token: string, email: string, subscribed: boolean, justSaved = false): string {
   const action = subscribed ? "unsubscribe" : "resubscribe";
@@ -98,6 +87,11 @@ function preferenceCenterHtml(token: string, email: string, subscribed: boolean,
   </body></html>`;
 }
 
+/**
+ * Best-effort mirror of a recipient engagement event to its HubSpot contact
+ * timeline (marketing-email sync Phase 2). No-ops when the recipient has no
+ * resolved contact or no timeline template is configured. Never throws.
+ */
 async function pushRecipientTimeline(
   recipient: any,
   eventKey: TimelineEventKey,

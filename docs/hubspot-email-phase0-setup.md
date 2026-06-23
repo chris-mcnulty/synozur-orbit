@@ -35,14 +35,17 @@ requests them on every new/renewed authorization automatically.
 Timeline event templates live on the **app**, not per tenant. Create one
 template per event with these tokens, and record the returned template IDs.
 
+Tokens below match exactly what the code sends (the helper script declares the
+same set). Only `email_sent` carries `subject`; the webhook-driven events do
+not. `email_delivered` is intentionally not pushed in Phase 2.
+
 | Event key | Suggested header | Tokens |
 |---|---|---|
 | `email_sent` | "Marketing email sent" | `subject`, `campaign`, `sendId` |
-| `email_delivered` | "Marketing email delivered" | `subject`, `sendId` |
-| `email_opened` | "Opened marketing email" | `subject`, `openCount`, `sendId` |
-| `email_clicked` | "Clicked a link" | `subject`, `url`, `clickCount`, `sendId` |
-| `email_bounced` | "Marketing email bounced" | `subject`, `reason`, `sendId` |
-| `email_unsubscribed` | "Unsubscribed" | `subject`, `subscriptionType`, `sendId` |
+| `email_opened` | "Opened marketing email" | `openCount`, `sendId` |
+| `email_clicked` | "Clicked a link" | `url`, `clickCount`, `sendId` |
+| `email_bounced` | "Marketing email bounced" | `reason`, `sendId` |
+| `email_unsubscribed` | "Unsubscribed" | `sendId` |
 
 Create via `POST /crm/v3/timeline/{appId}/event-templates` (managed with your
 **developer API key**, not the OAuth connection). The easiest path is the

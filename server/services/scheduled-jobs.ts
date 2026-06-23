@@ -2502,8 +2502,10 @@ export function startScheduledJobs(): void {
   }, 2 * 60 * 1000);
 
   // HubSpot marketing-email sync backfill (Phase 4) — retries pending/errored
-  // contact resolution + email_sent timeline pushes for recent sends. No-ops
-  // when no tenant has HubSpot connected / templates configured.
+  // contact resolution for recent sends, and re-pushes email_sent timeline
+  // events. Resolution runs for any connected, feature-enabled tenant;
+  // timeline pushes additionally require templates to be configured. The tick
+  // returns early (cheap) when no recipients are pending/errored.
   setInterval(() => {
     tickHubspotEmailSyncBackfill().catch(err => {
       console.error("[HubSpot Email Backfill] Tick error:", err?.message || err);

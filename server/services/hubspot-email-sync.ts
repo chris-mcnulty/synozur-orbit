@@ -23,6 +23,23 @@ import {
   HUBSPOT_REST_HOST,
 } from "./hubspot-integration";
 import { dedupeEmails, isOptedOutFromStatusPayload, normalizeEmail } from "./hubspot-email-sync-core";
+import { checkFeatureAccessAsync } from "./plan-policy";
+
+/**
+ * Whether the marketing-email sync feature is enabled for this tenant's plan.
+ * Gates every HubSpot sync side-effect so a downgrade or a manual feature
+ * override (hubspotEmailSync = false) disables sync even while a HubSpot
+ * connection still exists. Fails closed (disabled) on error.
+ */
+export async function isHubspotEmailSyncEnabled(tenantDomain: string): Promise<boolean> {
+  try {
+    const tenant = await storage.getTenantByDomain(tenantDomain);
+    const gate = await checkFeatureAccessAsync(tenant?.plan || "free", "hubspotEmailSync");
+    return gate.allowed;
+  } catch {
+    return false;
+  }
+}
 
 // Cap how many per-contact status lookups we perform inline per send. The
 // bulk status endpoint (Marketing Hub Enterprise) is a later optimization;
@@ -37,7 +54,7 @@ export interface ConsentPullResult {
   /** True when the pull actually ran (connected + scoped + within cap). */
   ran: boolean;
   /** Reason the pull was skipped, for diagnostics/audit. */
-  skippedReason?: "not_connected" | "missing_scopes" | "too_large" | "error";
+  skippedReason?: "disabled" | "not_connected" | "missing_scopes" | "too_large" | "error";
 }
 
 const EMPTY_SKIPPED = (reason: ConsentPullResult["skippedReason"]): ConsentPullResult => ({
@@ -58,6 +75,7 @@ export async function pullSubscriptionStatus(
   const candidates = dedupeEmails(emails);
   if (candidates.length === 0) return { optedOut: new Set(), ran: true };
 
+  if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return EMPTY_SKIPPED("disabled");
   const conn = await storage.getHubspotConnection(tenantDomain);
   if (!conn) return EMPTY_SKIPPED("not_connected");
   if (!hasHubspotEmailScopes(conn)) return EMPTY_SKIPPED("missing_scopes");
@@ -117,6 +135,7 @@ function resolveSubscriptionId(conn: { defaultSubscriptionId?: string | null }):
  */
 export async function pushUnsubscribe(tenantDomain: string, email: string): Promise<ConsentWriteResult> {
   try {
+    if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
     const subscriptionId = resolveSubscriptionId(conn);
@@ -147,6 +166,7 @@ export async function pushUnsubscribe(tenantDomain: string, email: string): Prom
  */
 export async function pushSubscribe(tenantDomain: string, email: string): Promise<ConsentWriteResult> {
   try {
+    if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
     const subscriptionId = resolveSubscriptionId(conn);

@@ -18,6 +18,7 @@ import { db } from "../db";
 import { emailSendRecipients, emailRecipients } from "@shared/schema";
 import { getTenantClient } from "./hubspot-integration";
 import { storage } from "../storage";
+import { isHubspotEmailSyncEnabled } from "./hubspot-email-sync";
 import { dedupeEmails, syncStatusForOutcome, type ContactResolutionOutcome } from "./hubspot-email-sync-core";
 
 // HubSpot search caps: max 100 values per IN filter / page.
@@ -54,6 +55,13 @@ export async function resolveSendRecipientContacts(opts: {
       .where(eq(emailSendRecipients.sendId, sendId));
     const emails = dedupeEmails(rows.map((r) => r.email));
     if (emails.length === 0) return { ...EMPTY, ran: true };
+
+    // Feature gate: a downgrade / manual override disables sync even if a
+    // connection exists. Mark skipped so reporting stays accurate.
+    if (!(await isHubspotEmailSyncEnabled(tenantDomain))) {
+      await markStatus(sendId, emails, null, "skipped");
+      return { ...EMPTY, skipped: emails.length, ran: false };
+    }
 
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn) {

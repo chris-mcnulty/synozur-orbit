@@ -52,7 +52,7 @@ SENT=$(create "Marketing email sent" "Sent: {{subject}}" \
   "Campaign {{campaign}} · send {{sendId}}" \
   '[{"name":"subject","label":"Subject","type":"string"},{"name":"campaign","label":"Campaign","type":"string"},{"name":"sendId","label":"Send ID","type":"string"}]')
 
-OPENED=$(create "Marketing email opened" "Opened: {{subject}}" \
+OPENED=$(create "Marketing email opened" "Opened marketing email" \
   "Opened (unique). Send {{sendId}}" \
   '[{"name":"sendId","label":"Send ID","type":"string"},{"name":"openCount","label":"Open count","type":"number"}]')
 

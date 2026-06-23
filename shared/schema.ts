@@ -3944,8 +3944,10 @@ export const emailRecipients = pgTable("email_recipients", {
   name: text("name"),
   status: text("status").notNull().default("active"), // active | unsubscribed | bounced | manual_remove
   // HubSpot contact link (Phase 1 marketing-email sync). Durable cache of the
-  // resolved CRM contact so we don't re-search HubSpot on every send. Null
-  // until resolved; "skipped" when no contact exists and auto-create is off.
+  // resolved CRM contact so we don't re-search HubSpot on every send. Stays
+  // null until resolved, and also when no contact exists and auto-create is
+  // off — in that case hsSyncStatus is set to 'skipped' (hubspotContactId is
+  // never a sentinel string).
   hubspotContactId: text("hubspot_contact_id"),
   hsSyncStatus: text("hs_sync_status"), // null | pending | resolved | skipped | error
   hsLastSyncedAt: timestamp("hs_last_synced_at"),
