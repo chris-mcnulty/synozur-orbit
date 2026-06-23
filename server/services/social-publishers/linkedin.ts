@@ -40,6 +40,33 @@ const DEFAULT_SCOPE =
   "w_member_social w_organization_social rw_organization_admin";
 
 // ---------------------------------------------------------------------------
+// PDF helper — stitches slide images into a single PDF for document posts
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a PDF from an array of image buffers (one page per slide).
+ * LinkedIn renders document posts as a full-screen swipeable carousel,
+ * which is far more engaging than the photo-collection multiImage format.
+ */
+async function buildCarouselPdf(imageBuffers: ArrayBuffer[]): Promise<Uint8Array> {
+  const { PDFDocument } = await import("pdf-lib");
+  const pdfDoc = await PDFDocument.create();
+
+  for (const buf of imageBuffers) {
+    const bytes = new Uint8Array(buf);
+    // Detect JPEG by magic bytes 0xFF 0xD8; everything else treated as PNG.
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+    const image = isJpeg
+      ? await pdfDoc.embedJpg(bytes)
+      : await pdfDoc.embedPng(bytes);
+    const page = pdfDoc.addPage([image.width, image.height]);
+    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+  }
+
+  return pdfDoc.save();
+}
+
+// ---------------------------------------------------------------------------
 // MCP helpers
 // ---------------------------------------------------------------------------
 
@@ -339,10 +366,10 @@ export class LinkedInPublisher implements SocialPublisher {
     }
 
     // ----------------------------------------------------------------
-    // Carousel posts: upload every composited slide image, then post
-    // as CAROUSEL (LinkedIn requires at least 2 images). If none of
-    // the slides have been composited yet, bail with a friendly error
-    // rather than silently publishing as a text-only post.
+    // Carousel posts: stitch all composited slide images into a PDF
+    // and upload as a LinkedIn document. LinkedIn renders document
+    // posts as a full-screen swipeable carousel ("8 pages" style),
+    // whereas multiImage only gives a photo-collection grid.
     // ----------------------------------------------------------------
     const isCarousel = (post as any).postFormat === "carousel";
     const rawSlides: Array<{ imageUrl?: string | null }> =
@@ -350,7 +377,7 @@ export class LinkedInPublisher implements SocialPublisher {
         ? (post as any).carouselSlides
         : [];
 
-    let carouselImageUrns: string[] = [];
+    let documentAssetUrn: string | null = null;
     if (isCarousel) {
       const slideUrls = rawSlides
         .map(s => s.imageUrl)
@@ -365,26 +392,49 @@ export class LinkedInPublisher implements SocialPublisher {
         };
       }
 
-      // Upload slides in parallel; skip any that fail.
-      const uploaded = await Promise.all(
-        slideUrls.map(url =>
-          this.uploadImageAsset(accessToken, account.authorUrn, url),
-        ),
-      );
-      carouselImageUrns = uploaded.filter((u): u is string => u !== null);
+      // Download all slide images sequentially (avoids hammering storage).
+      const slideBuffers: ArrayBuffer[] = [];
+      for (const url of slideUrls) {
+        const absUrl = url.startsWith("/")
+          ? `http://localhost:${process.env.PORT ?? 5000}${url}`
+          : url;
+        try {
+          const imgResp = await fetch(absUrl);
+          if (imgResp.ok) {
+            slideBuffers.push(await imgResp.arrayBuffer());
+          } else {
+            console.warn("[LinkedIn] Carousel slide fetch failed:", absUrl, imgResp.status);
+          }
+        } catch (err: any) {
+          console.warn("[LinkedIn] Carousel slide fetch error:", absUrl, err.message);
+        }
+      }
 
-      if (carouselImageUrns.length === 0) {
+      if (slideBuffers.length === 0) {
+        return {
+          success: false,
+          errorCode: "carousel_no_images",
+          errorMessage:
+            "Could not download any carousel slide images — check that the images have been generated.",
+        };
+      }
+
+      console.log(`[LinkedIn] Carousel: ${slideBuffers.length}/${slideUrls.length} slides downloaded. Building PDF…`);
+
+      // Stitch slides into a single PDF (one image per page).
+      const pdfBytes = await buildCarouselPdf(slideBuffers);
+      console.log(`[LinkedIn] Carousel PDF built: ${(pdfBytes.byteLength / 1024).toFixed(0)} KB`);
+
+      // Upload the PDF as a LinkedIn document.
+      documentAssetUrn = await this.uploadDocumentAsset(accessToken, account.authorUrn, pdfBytes);
+      if (!documentAssetUrn) {
         return {
           success: false,
           errorCode: "carousel_upload_failed",
           errorMessage:
-            "All carousel slide images failed to upload to LinkedIn — check that the image URLs are reachable.",
+            "Carousel PDF failed to upload to LinkedIn — check that the slide image URLs are reachable.",
         };
       }
-
-      console.log(
-        `[LinkedIn] Carousel: ${carouselImageUrns.length}/${slideUrls.length} slides uploaded successfully.`,
-      );
     }
 
     // ----------------------------------------------------------------
@@ -416,16 +466,14 @@ export class LinkedInPublisher implements SocialPublisher {
       isReshareDisabledByAuthor: false,
     };
 
-    if (carouselImageUrns.length >= 2) {
-      // Multi-image carousel — uses multiImage.images[].id
+    if (documentAssetUrn) {
+      // Document carousel — the proper full-screen swipeable format.
       postBody.content = {
-        multiImage: {
-          images: carouselImageUrns.map(urn => ({ altText: "", id: urn })),
+        document: {
+          altText: (post as any).title ?? "Carousel",
+          id: documentAssetUrn,
         },
       };
-    } else if (carouselImageUrns.length === 1) {
-      // Only one carousel slide uploaded — fall back to single image.
-      postBody.content = { media: { altText: "", id: carouselImageUrns[0] } };
     } else if (imageAssetUrn) {
       postBody.content = { media: { altText: "", id: imageAssetUrn } };
     }
@@ -476,8 +524,7 @@ export class LinkedInPublisher implements SocialPublisher {
       : null;
 
     console.log(`[LinkedIn] Post created: ${createdUrn ?? "(no URN)"}`, {
-      format: carouselImageUrns.length >= 2 ? "carousel" : imageAssetUrn || carouselImageUrns.length === 1 ? "image" : "text",
-      slides: carouselImageUrns.length,
+      format: documentAssetUrn ? "document-carousel" : imageAssetUrn ? "image" : "text",
     });
 
     return {
@@ -551,6 +598,64 @@ export class LinkedInPublisher implements SocialPublisher {
       return imageUrn;
     } catch (err: any) {
       console.warn("[LinkedIn] uploadImageAsset error:", err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Upload a PDF to LinkedIn via the v2/documents API and return the
+   * document URN. Used for carousel posts (document format renders as
+   * a full-screen swipeable deck rather than a photo-collection grid).
+   */
+  private async uploadDocumentAsset(
+    accessToken: string,
+    authorUrn: string,
+    pdfBytes: Uint8Array,
+  ): Promise<string | null> {
+    try {
+      // 1. Initialize document upload.
+      const initResp = await fetch(`${API_HOST}/v2/documents?action=initializeUpload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "LinkedIn-Version": "202304",
+          "X-Restli-Protocol-Version": "2.0.0",
+        },
+        body: JSON.stringify({
+          initializeUploadRequest: { owner: authorUrn },
+        }),
+      });
+      if (!initResp.ok) {
+        const errText = await initResp.text().catch(() => "");
+        console.warn("[LinkedIn] document initializeUpload failed:", initResp.status, errText);
+        return null;
+      }
+      const initJson = (await initResp.json()) as any;
+      const uploadUrl: string | undefined = initJson?.value?.uploadUrl;
+      const documentUrn: string | undefined = initJson?.value?.document;
+      if (!uploadUrl || !documentUrn) {
+        console.warn("[LinkedIn] document initializeUpload missing uploadUrl/document:", JSON.stringify(initJson));
+        return null;
+      }
+
+      // 2. Upload the PDF binary.
+      //    Pre-signed upload URLs MUST NOT receive an Authorization header.
+      const uploadResp = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/pdf" },
+        body: pdfBytes,
+      });
+      if (!uploadResp.ok) {
+        const errText = await uploadResp.text().catch(() => "");
+        console.warn("[LinkedIn] Document PDF PUT failed:", uploadResp.status, errText);
+        return null;
+      }
+
+      console.log("[LinkedIn] Document uploaded successfully:", documentUrn);
+      return documentUrn;
+    } catch (err: any) {
+      console.warn("[LinkedIn] uploadDocumentAsset error:", err.message);
       return null;
     }
   }
