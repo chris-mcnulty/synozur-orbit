@@ -7,7 +7,7 @@
  */
 
 import { strict as assert } from "node:assert";
-import { describe, it, vi, beforeEach } from "vitest";
+import { describe, it, vi } from "vitest";
 import {
   _resolveContactWithDeps,
   type ContactResolverDeps,
@@ -21,7 +21,7 @@ import { normalizeEmail, dedupeEmails, syncStatusForOutcome } from "../hubspot-e
 function makeDeps(overrides: Partial<ContactResolverDeps> = {}): ContactResolverDeps {
   return {
     prospectLookup: vi.fn().mockResolvedValue(null),
-    recipientCacheLookup: vi.fn().mockResolvedValue(null),
+    cacheLookup: vi.fn().mockResolvedValue(null),
     hubspotSearch: vi.fn().mockResolvedValue(null),
     hubspotCreate: vi.fn().mockResolvedValue("NEW-1"),
     associateCompany: vi.fn().mockResolvedValue(undefined),
@@ -60,10 +60,10 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.writeCache as any).mock.calls[0][0], "PROS-2");
   });
 
-  it("falls through to recipient cache when prospect has no contact ID", async () => {
+  it("falls through to shared cache when prospect has no contact ID", async () => {
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue(null),
-      recipientCacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
+      cacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
     });
 
     const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
@@ -149,6 +149,27 @@ describe("_resolveContactWithDeps — priority chain", () => {
     await _resolveContactWithDeps("a@b.com", "t.com", { autoCreate: true }, deps);
 
     assert.equal((deps.associateCompany as any).mock.calls.length, 0);
+  });
+
+  it("sales prewarm is found by subsequent marketing resolution (cross-system cache hit)", async () => {
+    // Simulates: sales imports prospect → prewarm writes to cache → marketing
+    // send resolves same email → should hit cache, NOT call HubSpot search.
+    const cacheStore = new Map<string, string>();
+    const prewarmId = "PREWARM-1";
+
+    // Sales path: sales already resolved and wrote to cache
+    cacheStore.set("a@b.com", prewarmId);
+
+    const deps = makeDeps({
+      prospectLookup: vi.fn().mockResolvedValue(null),
+      cacheLookup: vi.fn().mockImplementation(async () => cacheStore.get("a@b.com") ?? null),
+    });
+
+    const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
+
+    assert.equal(result, prewarmId);
+    assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "should not call HubSpot after prewarm");
+    assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "should not create after prewarm");
   });
 });
 

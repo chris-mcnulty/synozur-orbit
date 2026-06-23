@@ -5,15 +5,19 @@
  * both the marketing-email and sales-outreach systems to map an email address
  * to a HubSpot contact ID.
  *
- * Resolution priority (per task spec)
+ * Resolution priority
  * ─────────────────────────────────────
- *   1. prospects.hubspotContactId    — sales already resolved this contact
- *   2. email_recipients.hubspotContactId — marketing list cache
- *   3. HubSpot search by email       — live API lookup
- *   4. auto-create (if enabled)      — creates contact + associates company
+ *   1. prospects.hubspotContactId     — sales already resolved this contact
+ *   2. hubspotContactIdCache          — durable cross-system cache (true upsert,
+ *                                       no FK constraints; written by both paths)
+ *   3. HubSpot search by email        — live API lookup
+ *   4. auto-create (if enabled)       — creates contact + associates company
  *
- * When a contact ID is resolved via steps 3 or 4 it is written back to
- * email_recipients so subsequent marketing sends hit the cache.
+ * Why hubspotContactIdCache and not email_recipients?
+ * email_recipients has a NOT NULL listId FK, so INSERT is impossible without a
+ * known list. hubspotContactIdCache (migration 0055) has no FK constraints and
+ * supports true upsert — making it viable for cross-system prewarming.
+ * email_recipients is still back-filled as a secondary cache for list-level reads.
  *
  * Public exports
  * ──────────────
@@ -21,12 +25,11 @@
  *   Pure DI-based core exported for unit tests — no DB or network needed.
  *
  * resolveHubspotContactId(email, tenantDomain, opts)
- *   Canonical single-contact resolver. Called from both the sales path (via
- *   pushProspectToHubspot) and per-email from the marketing batch path.
+ *   Canonical single-contact resolver. Called from both paths.
  *
  * preWarmMarketingCache(tenantDomain, email, contactId)
- *   Updates existing email_recipients rows so the next marketing send finds
- *   the ID without hitting the HubSpot API. Best-effort; safe to fire-and-forget.
+ *   Upserts into hubspotContactIdCache so the next send finds the ID without
+ *   a HubSpot API call. Safe to fire-and-forget.
  *
  * resolveSendRecipientContacts(opts)
  *   Batch resolver for a marketing send — calls resolveHubspotContactId per
@@ -35,7 +38,12 @@
 
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { emailSendRecipients, emailRecipients, prospects } from "@shared/schema";
+import {
+  emailSendRecipients,
+  emailRecipients,
+  prospects,
+  hubspotContactIdCache,
+} from "@shared/schema";
 import { getTenantClient, hasHubspotEmailScopes } from "./hubspot-integration";
 import { storage } from "../storage";
 import { isHubspotEmailSyncEnabled } from "./hubspot-email-sync";
@@ -66,15 +74,15 @@ const EMPTY: ResolveResult = { resolved: 0, created: 0, skipped: 0, errors: 0, r
 export interface ContactResolverDeps {
   /** Return { contactId, companyId } if the prospects table has a resolved id. */
   prospectLookup(): Promise<{ contactId: string; companyId: string | null } | null>;
-  /** Return the cached id from email_recipients.hubspotContactId, or null. */
-  recipientCacheLookup(): Promise<string | null>;
+  /** Return the cached id from hubspotContactIdCache, or null. */
+  cacheLookup(): Promise<string | null>;
   /** Search HubSpot by email; return the contact id or null. */
   hubspotSearch(): Promise<string | null>;
   /** Create a new HubSpot contact; return the new id. */
   hubspotCreate(): Promise<string>;
   /** Associate a contact with a company (best-effort, may throw). */
   associateCompany(contactId: string, companyId: string): Promise<void>;
-  /** Persist the resolved id back to email_recipients (UPDATE existing rows). */
+  /** Upsert the resolved id to hubspotContactIdCache (primary cross-system cache). */
   writeCache(contactId: string): Promise<void>;
   /** Whether the tenant has auto-create enabled. */
   autoCreateEnabled: boolean;
@@ -88,7 +96,7 @@ export interface ContactResolverDeps {
  * Pure resolution logic with injected deps. Tests pass vi.fn() stubs for
  * each dep and assert priority chain without DB or HubSpot network calls.
  *
- * Priority: prospect cache → recipient cache → HubSpot search → auto-create.
+ * Priority: prospect cache → shared cache → HubSpot search → auto-create.
  */
 export async function _resolveContactWithDeps(
   email: string,
@@ -106,8 +114,8 @@ export async function _resolveContactWithDeps(
     return prospect.contactId;
   }
 
-  // Step 2: marketing recipient cache (email_recipients.hubspotContactId)
-  const cached = await deps.recipientCacheLookup();
+  // Step 2: shared cross-system cache (hubspotContactIdCache)
+  const cached = await deps.cacheLookup();
   if (cached) return cached;
 
   // Step 3: HubSpot search
@@ -159,8 +167,8 @@ export async function resolveHubspotContactId(
 
     const deps: ContactResolverDeps = {
       /** Two queries: (a) row with contactId; (b) row with only companyId so
-       *  the auto-create branch can still associate the contact with its company
-       *  even when the prospect doesn't have a contact ID yet. */
+       *  auto-created contacts still get associated with the company even before
+       *  the prospect itself has been synced to HubSpot. */
       async prospectLookup() {
         const [contactRow] = await db
           .select({ contactId: prospects.hubspotContactId, companyId: prospects.hubspotCompanyId })
@@ -188,19 +196,18 @@ export async function resolveHubspotContactId(
             ),
           )
           .limit(1);
-        // Return null contactId so the resolver falls through to next step.
+        // Returning null contactId causes the resolver to fall through to next step.
         return { contactId: null as any, companyId: companyRow?.companyId ?? null };
       },
 
-      async recipientCacheLookup() {
+      async cacheLookup() {
         const [row] = await db
-          .select({ hubspotContactId: emailRecipients.hubspotContactId })
-          .from(emailRecipients)
+          .select({ hubspotContactId: hubspotContactIdCache.hubspotContactId })
+          .from(hubspotContactIdCache)
           .where(
             and(
-              eq(emailRecipients.tenantDomain, tenantDomain),
-              eq(emailRecipients.email, norm),
-              isNotNull(emailRecipients.hubspotContactId),
+              eq(hubspotContactIdCache.tenantDomain, tenantDomain),
+              eq(hubspotContactIdCache.email, norm),
             ),
           )
           .limit(1);
@@ -242,6 +249,8 @@ export async function resolveHubspotContactId(
       },
 
       async writeCache(contactId) {
+        await upsertContactIdCache(tenantDomain, norm, contactId);
+        // Secondary back-fill: update any existing list-level email_recipients rows.
         await backfillListCache(tenantDomain, norm, contactId);
       },
 
@@ -259,10 +268,10 @@ export async function resolveHubspotContactId(
 // ---------------------------------------------------------------------------
 
 /**
- * Update any existing email_recipients rows for this tenant+email with the
- * resolved contact ID, so the next marketing send finds it in the list cache
- * without a HubSpot API call. UPDATE-only (email_recipients requires a listId
- * FK so we cannot insert rows here). Safe to fire-and-forget.
+ * Upsert the resolved contact ID into hubspotContactIdCache so the next
+ * marketing send finds it without a HubSpot API call.
+ * Unlike email_recipients (which requires a NOT NULL listId FK), this table
+ * has no FK constraints and supports true upsert. Safe to fire-and-forget.
  */
 export async function preWarmMarketingCache(
   tenantDomain: string,
@@ -271,7 +280,9 @@ export async function preWarmMarketingCache(
 ): Promise<void> {
   const norm = normalizeEmail(email);
   if (!norm || !contactId) return;
-  await backfillListCache(tenantDomain, norm, contactId);
+  await upsertContactIdCache(tenantDomain, norm, contactId);
+  // Also back-fill any existing list rows as a secondary optimization.
+  await backfillListCache(tenantDomain, norm, contactId).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +321,7 @@ export async function resolveSendRecipientContacts(opts: {
       return { ...EMPTY, skipped: emails.length, ran: false };
     }
     if (!hasHubspotEmailScopes(conn)) {
-      // Connection predates the marketing-email scopes; leave pending for backfill.
+      // Connection predates marketing-email scopes; leave pending for backfill.
       await markStatus(sendId, emails, null, "pending");
       return { ...EMPTY, ran: false };
     }
@@ -322,28 +333,22 @@ export async function resolveSendRecipientContacts(opts: {
     for (const email of emails) {
       const norm = normalizeEmail(email);
 
-      // Snapshot whether this email already has a recipient-cache entry before
-      // calling the resolver, so we can accurately count "created" vs "found".
-      const preExisted = await hasRecipientCacheEntry(tenantDomain, norm);
+      // Snapshot whether this email is already in the cache before resolving,
+      // so we can accurately distinguish "found" (cache/search hit) from "created".
+      const preCached = await hasCacheEntry(tenantDomain, norm);
 
       const contactId = await resolveHubspotContactId(norm, tenantDomain, {
         autoCreate,
         name: nameByEmail.get(norm) ?? null,
       });
 
-      let outcome: ContactResolutionOutcome;
-      if (!contactId) {
-        outcome = "not_found";
-      } else if (preExisted) {
-        outcome = "found";
-      } else if (autoCreate) {
-        // Either found via HubSpot search (new to our cache) or auto-created.
-        // We conservatively use "created" only if autoCreate is on and the
-        // contact wasn't previously cached — "found" is used otherwise.
-        outcome = "created";
-      } else {
-        outcome = "found";
-      }
+      const outcome: ContactResolutionOutcome = !contactId
+        ? "not_found"
+        : preCached
+          ? "found"
+          : autoCreate
+            ? "created"  // Not in cache before + autoCreate on = new contact (or new to us)
+            : "found";
 
       await markStatus(sendId, [email], contactId, syncStatusForOutcome(outcome));
 
@@ -362,26 +367,39 @@ export async function resolveSendRecipientContacts(opts: {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/** True when email_recipients already has a resolved contact ID for this
- *  tenant+email pair. Used to distinguish "found" vs "created" in counts. */
-async function hasRecipientCacheEntry(tenantDomain: string, email: string): Promise<boolean> {
+/** True when hubspotContactIdCache already has an entry for tenant+email. */
+async function hasCacheEntry(tenantDomain: string, email: string): Promise<boolean> {
   const [row] = await db
-    .select({ id: emailRecipients.hubspotContactId })
-    .from(emailRecipients)
+    .select({ id: hubspotContactIdCache.hubspotContactId })
+    .from(hubspotContactIdCache)
     .where(
       and(
-        eq(emailRecipients.tenantDomain, tenantDomain),
-        eq(emailRecipients.email, email),
-        isNotNull(emailRecipients.hubspotContactId),
+        eq(hubspotContactIdCache.tenantDomain, tenantDomain),
+        eq(hubspotContactIdCache.email, email),
       ),
     )
     .limit(1);
   return !!row?.id;
 }
 
-/** Update existing email_recipients rows with the resolved contact ID.
- *  This is best-effort — rows that don't exist yet (person not on any list)
- *  are not created (email_recipients requires a non-null listId FK). */
+/** Upsert the resolved contact ID into the shared cross-system cache. */
+async function upsertContactIdCache(
+  tenantDomain: string,
+  email: string,
+  contactId: string,
+): Promise<void> {
+  await db
+    .insert(hubspotContactIdCache)
+    .values({ tenantDomain, email, hubspotContactId: contactId, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [hubspotContactIdCache.tenantDomain, hubspotContactIdCache.email],
+      set: { hubspotContactId: contactId, updatedAt: new Date() },
+    });
+}
+
+/** Secondary back-fill: update existing email_recipients rows with the
+ *  resolved contact ID. email_recipients requires a NOT NULL listId FK so
+ *  INSERT is not possible; this updates rows that already exist. */
 async function backfillListCache(
   tenantDomain: string,
   email: string,
