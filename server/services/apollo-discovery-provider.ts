@@ -12,6 +12,7 @@
 import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provider-core";
 
 const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/api_search";
+const APOLLO_ORG_SEARCH_URL = "https://api.apollo.io/v1/mixed_companies/search";
 
 // ---------------------------------------------------------------------------
 // Applied-filter diagnostics (returned so the caller can surface hints)
@@ -57,6 +58,87 @@ export function apolloReason(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Role acronym → full-title synonym map
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps common GTM/exec acronyms to their full-form equivalents.
+ * Keys are lowercase; values are the canonical expansions to add alongside
+ * the original acronym in Apollo's person_titles filter.
+ */
+const ROLE_SYNONYMS: Record<string, string[]> = {
+  cro: ["Chief Revenue Officer"],
+  cmo: ["Chief Marketing Officer"],
+  cto: ["Chief Technology Officer"],
+  coo: ["Chief Operating Officer"],
+  cfo: ["Chief Financial Officer"],
+  ciso: ["Chief Information Security Officer"],
+  cdo: ["Chief Digital Officer", "Chief Data Officer"],
+  cpo: ["Chief Product Officer"],
+  cso: ["Chief Sales Officer", "Chief Strategy Officer"],
+  cao: ["Chief Analytics Officer"],
+  cco: ["Chief Customer Officer", "Chief Compliance Officer"],
+  chro: ["Chief Human Resources Officer"],
+  "vp sales": ["Vice President of Sales", "VP of Sales"],
+  "vp marketing": ["Vice President of Marketing", "VP of Marketing"],
+  "vp engineering": ["Vice President of Engineering", "VP of Engineering"],
+  "vp product": ["Vice President of Product", "VP of Product"],
+  "vp operations": ["Vice President of Operations", "VP of Operations"],
+  "vp finance": ["Vice President of Finance", "VP of Finance"],
+  "vp business development": ["Vice President of Business Development"],
+  svp: ["Senior Vice President"],
+  evp: ["Executive Vice President"],
+  avp: ["Assistant Vice President"],
+  gm: ["General Manager"],
+  md: ["Managing Director"],
+};
+
+// ---------------------------------------------------------------------------
+// Industry / partner-segment → Apollo keyword tag mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps common ICP industry/partner labels to Apollo's q_organization_keyword_tags
+ * structured field values. These are sent as a dedicated structured filter rather
+ * than being crammed into the free-text q_keywords blob.
+ *
+ * Lookup is case-insensitive (keys are lowercase).
+ */
+const INDUSTRY_KEYWORD_TAGS: Record<string, string[]> = {
+  isv: ["independent software vendor", "software"],
+  "isv software": ["independent software vendor", "software"],
+  "microsoft partner": ["microsoft partner", "microsoft dynamics", "microsoft gold partner"],
+  "microsoft partners": ["microsoft partner", "microsoft dynamics", "microsoft gold partner"],
+  "managed service provider": ["managed services", "managed service provider", "it services"],
+  msp: ["managed services", "managed service provider", "it services"],
+  saas: ["saas", "software as a service", "cloud software"],
+  "systems integrator": ["systems integrator", "systems integration", "it consulting"],
+  si: ["systems integrator", "systems integration"],
+  fintech: ["financial technology", "fintech", "financial services technology"],
+  healthtech: ["health technology", "healthcare technology", "digital health"],
+  "health tech": ["health technology", "healthcare technology", "digital health"],
+  edtech: ["education technology", "edtech", "e-learning"],
+  martech: ["marketing technology", "martech"],
+  cloud: ["cloud computing", "cloud services", "cloud infrastructure"],
+  "cloud computing": ["cloud computing", "cloud services"],
+  cybersecurity: ["cybersecurity", "information security", "network security", "cyber security"],
+  "information security": ["cybersecurity", "information security"],
+  ai: ["artificial intelligence", "machine learning", "ai"],
+  "artificial intelligence": ["artificial intelligence", "machine learning"],
+  "data analytics": ["data analytics", "business intelligence", "analytics"],
+  "business intelligence": ["business intelligence", "data analytics"],
+  "professional services": ["professional services", "consulting", "advisory"],
+  consulting: ["consulting", "professional services", "management consulting"],
+  "digital transformation": ["digital transformation", "technology consulting"],
+  ecommerce: ["e-commerce", "ecommerce", "online retail"],
+  "e-commerce": ["e-commerce", "ecommerce"],
+  "private equity": ["private equity", "pe", "investment management"],
+  pe: ["private equity", "investment management"],
+  "asset management": ["asset management", "investment management", "wealth management"],
+  "wealth management": ["wealth management", "financial advisory", "investment management"],
+};
+
+// ---------------------------------------------------------------------------
 // ICP → Apollo parameter mapping
 // ---------------------------------------------------------------------------
 
@@ -88,15 +170,20 @@ function segmentsToEmployeeRanges(segments: string[]): string[] {
 }
 
 /**
- * Apollo's person_titles filter expects individual, atomic job-title keywords
- * (e.g. "CTO", "Chief Investment Officer"). ICP persona role fields are often
- * written as combined English sentences ("CTO, COO, or CFO at a PE firm") —
- * split them into clean, individual titles before sending to the API.
+ * Apollo's person_titles filter expects individual, atomic job-title keywords.
+ * ICP persona role fields are often written as combined English sentences.
+ *
+ * This function:
+ * 1. Splits combined role strings into atomic parts.
+ * 2. Expands known acronyms (CRO, CMO…) into both the acronym AND the full title
+ *    so Apollo matches both "CRO" profiles and "Chief Revenue Officer" profiles.
+ * 3. Deduplicates and caps at 10 (Apollo API limit).
  */
 function normalizePersonTitles(roles: string[]): string[] {
   const out: string[] = [];
+
   for (const role of roles) {
-    // Split on common list separators: ", " / " or " / " / " / " | "
+    // Split on common list separators: ", " / " or " / " / " | "
     const parts = role.split(/,\s+|\s+or\s+|\s*[\/|]\s*/i);
     for (const part of parts) {
       // Strip context qualifiers that follow the title: "at a ...", "for ...",
@@ -104,11 +191,27 @@ function normalizePersonTitles(roles: string[]): string[] {
       const clean = part
         .replace(/\s+(at|for|in|of|with|managing|overseeing|within|across|reporting)\s+.*/i, "")
         .trim();
-      if (clean.length > 1 && clean.length < 80) {
-        out.push(clean);
+      if (clean.length <= 1 || clean.length >= 80) continue;
+
+      out.push(clean);
+
+      // Check if this matches a known acronym synonym (case-insensitive).
+      const key = clean.toLowerCase();
+      const synonyms = ROLE_SYNONYMS[key];
+      if (synonyms?.length) {
+        out.push(...synonyms);
+      } else {
+        // Multi-word: check if it matches a "vp X" pattern.
+        const vpMatch = key.match(/^vp\s+(.+)$/);
+        if (vpMatch) {
+          const vpKey = `vp ${vpMatch[1].trim()}`;
+          const vpSynonyms = ROLE_SYNONYMS[vpKey];
+          if (vpSynonyms?.length) out.push(...vpSynonyms);
+        }
       }
     }
   }
+
   // Dedupe case-insensitively; cap at 10 (Apollo API limit).
   const seen = new Set<string>();
   return out.filter((t) => {
@@ -119,8 +222,37 @@ function normalizePersonTitles(roles: string[]): string[] {
   }).slice(0, 10);
 }
 
+/**
+ * Map industry/partner-segment labels to structured Apollo keyword tags.
+ *
+ * Returns two lists:
+ * - `structured`: tags matched via INDUSTRY_KEYWORD_TAGS (sent as q_organization_keyword_tags)
+ * - `fallback`: labels with no structured match (sent via q_keywords blob as before)
+ */
+function mapIndustriesToTags(industries: string[]): { structured: string[]; fallback: string[] } {
+  const structured: string[] = [];
+  const fallback: string[] = [];
+  const seen = new Set<string>();
+
+  for (const ind of industries) {
+    const key = ind.toLowerCase().trim();
+    const tags = INDUSTRY_KEYWORD_TAGS[key];
+    if (tags?.length) {
+      for (const t of tags) {
+        if (!seen.has(t)) {
+          seen.add(t);
+          structured.push(t);
+        }
+      }
+    } else {
+      fallback.push(ind);
+    }
+  }
+  return { structured, fallback };
+}
+
 // ---------------------------------------------------------------------------
-// Apollo response shape (partial — only fields we use)
+// Apollo response shapes
 // ---------------------------------------------------------------------------
 
 interface ApolloPerson {
@@ -153,8 +285,24 @@ interface ApolloSearchResponse {
   message?: string;
 }
 
+interface ApolloOrganization {
+  id?: string;
+  name?: string;
+  primary_domain?: string;
+  industry?: string;
+  estimated_num_employees?: number;
+}
+
+interface ApolloOrgSearchResponse {
+  organizations?: ApolloOrganization[];
+  accounts?: ApolloOrganization[];
+  pagination?: { total_entries: number };
+  error_code?: string;
+  message?: string;
+}
+
 // ---------------------------------------------------------------------------
-// Main search function
+// Main error class
 // ---------------------------------------------------------------------------
 
 export class ApolloDiscoveryError extends Error {
@@ -164,16 +312,168 @@ export class ApolloDiscoveryError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Company-similarity expansion
+// ---------------------------------------------------------------------------
+
+/**
+ * Expansion summary returned alongside discovery results so the UI can show
+ * "Searched 34 companies similar to AvePoint & Protiviti".
+ */
+export interface ApolloExpansionSummary {
+  /** The seed companies the user entered (before expansion). */
+  seedCompanies: string[];
+  /** Total companies actually searched (seed + similar). */
+  expandedCount: number;
+}
+
 export interface ApolloSearchResult {
   candidates: DiscoveryCandidate[];
+  /** Structured record of every filter sent to Apollo — used by the UI to
+   *  surface diagnostic hints when 0 results are returned. */
   appliedFilters: ApolloAppliedFilters;
+  /** Set when seed companies were expanded into a broader similar-company list. */
+  expansionSummary?: ApolloExpansionSummary;
 }
 
 /**
- * Search Apollo for ICP-matching people and return candidates plus a
- * structured record of every filter that was actually sent to the API.
- * The caller uses `appliedFilters` to surface diagnostic hints when 0
- * results are returned.
+ * Given a small list of seed companies, find similar organizations via Apollo's
+ * company search (same industry tags + similar employee range).
+ * Returns an expanded list of company names (up to ~50 total).
+ *
+ * Falls back to the seed list on any error (never throws).
+ */
+async function expandSimilarCompanies(
+  apiKey: string,
+  seedCompanies: string[],
+  employeeRanges: string[],
+  industryTags: string[],
+): Promise<string[]> {
+  try {
+    // Build a search that targets the same industry + size profile.
+    // We ask Apollo for up to 50 organizations and take their names.
+    const body: Record<string, unknown> = {
+      page: 1,
+      per_page: 50,
+    };
+
+    if (employeeRanges.length) {
+      body.organization_num_employees_ranges = employeeRanges;
+    }
+
+    if (industryTags.length) {
+      // Use a representative subset (Apollo has a keyword limit).
+      body.q_organization_keyword_tags = industryTags.slice(0, 5);
+    }
+
+    // Also pass the seed companies as context — Apollo will return similar orgs.
+    if (seedCompanies.length) {
+      body.q_organization_name = seedCompanies[0]; // seed with primary company name
+    }
+
+    console.log("[Apollo] org-expansion body:", JSON.stringify(body));
+
+    const res = await fetch(APOLLO_ORG_SEARCH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": apiKey,
+        "Cache-Control": "no-cache",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const rawText = await res.text();
+    console.log(`[Apollo] org-expansion ${res.status}:`, rawText.slice(0, 300));
+
+    if (!res.ok) {
+      console.warn("[Apollo] org-expansion non-OK, skipping expansion");
+      return seedCompanies;
+    }
+
+    const data = JSON.parse(rawText) as ApolloOrgSearchResponse;
+    const orgs = data.organizations ?? data.accounts ?? [];
+    const names = orgs
+      .map((o) => (o.name ?? "").trim())
+      .filter(Boolean);
+
+    if (names.length === 0) return seedCompanies;
+
+    // Merge: seed companies first, then similar (deduplicated).
+    const seen = new Set(seedCompanies.map((n) => n.toLowerCase()));
+    const combined = [...seedCompanies];
+    for (const n of names) {
+      if (!seen.has(n.toLowerCase())) {
+        seen.add(n.toLowerCase());
+        combined.push(n);
+      }
+    }
+    console.log(`[Apollo] org-expansion: ${seedCompanies.length} seeds → ${combined.length} total`);
+    return combined;
+  } catch (err) {
+    console.warn("[Apollo] org-expansion failed, using seeds only:", (err as Error).message);
+    return seedCompanies;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Single Apollo people-search call (internal helper)
+// ---------------------------------------------------------------------------
+
+async function apolloPeopleSearch(
+  apiKey: string,
+  body: Record<string, unknown>,
+): Promise<ApolloPerson[]> {
+  const res = await fetch(APOLLO_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Api-Key": apiKey,
+      "Cache-Control": "no-cache",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const rawText = await res.text();
+  console.log(`[Apollo] people-search ${res.status}:`, rawText.slice(0, 500));
+
+  let response: ApolloSearchResponse;
+  try {
+    response = JSON.parse(rawText) as ApolloSearchResponse;
+  } catch {
+    throw new ApolloDiscoveryError(
+      `Apollo returned non-JSON: ${res.status} ${rawText.slice(0, 200)}`,
+      "api_error",
+    );
+  }
+
+  if (!res.ok) {
+    const msg =
+      response.message ??
+      (response as any).error ??
+      (response as any).error_description ??
+      `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
+    throw new ApolloDiscoveryError(`Apollo API error: ${msg}`, "api_error");
+  }
+
+  return response.people ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Main search function
+// ---------------------------------------------------------------------------
+
+/**
+ * Search Apollo for ICP-matching people and return DiscoveryCandidate[].
+ *
+ * Enhancements over the base implementation:
+ * 1. Role acronyms (CRO, CMO…) are expanded to include their full-title forms.
+ * 2. Industry/partner segments are mapped to structured Apollo keyword tags
+ *    instead of the free-text q_keywords blob.
+ * 3. Named accounts (≤3 seed companies) are expanded to similar orgs via
+ *    Apollo's org search endpoint.
+ * 4. When the expanded company list exceeds Apollo's 10-org limit the search
+ *    is batched into parallel calls and results are deduplicated.
  */
 export async function searchApollo(
   _tenantDomain: string,
@@ -186,121 +486,165 @@ export async function searchApollo(
 
   const { criteria, namedAccounts, limit } = input;
 
-  // Build request body from ICP criteria while recording every filter we send
-  // so callers can surface diagnostic hints when 0 results come back.
-  const body: Record<string, unknown> = {
+  // ── Base request body ──────────────────────────────────────────────────────
+
+  const baseBody: Record<string, unknown> = {
     page: 1,
     per_page: Math.min(limit, 100),
   };
 
-  const appliedFilters: ApolloAppliedFilters = {
-    personTitles: [],
-    locations: [],
-    industries: [],
-    employeeRanges: [],
-    namedAccounts: [],
-    skippedSegments: [],
-  };
-
-  // Apollo limits: person_titles ≤ 10 entries, q_keywords ≤ 255 chars.
-  // normalizePersonTitles splits combined role strings ("CTO, COO, or CFO at a PE firm")
-  // into individual atomic title keywords that Apollo can actually match against.
+  // Role titles — expanded with synonyms.
   if (criteria.roles?.length) {
     const titles = normalizePersonTitles(criteria.roles);
-    if (titles.length) {
-      body.person_titles = titles;
-      appliedFilters.personTitles = titles;
-    }
+    if (titles.length) baseBody.person_titles = titles;
   }
 
   if (criteria.geographies?.length) {
-    const locs = criteria.geographies.slice(0, 10);
-    body.person_locations = locs;
-    appliedFilters.locations = locs;
+    baseBody.person_locations = criteria.geographies.slice(0, 10);
   }
 
-  // Skip headcount ranges when named accounts are specified — the firm list
-  // already scopes the search and employee ranges based on AUM/revenue don't
-  // translate to Apollo's headcount field (a $1B AUM PE firm may have <100 staff).
-  const allSegments = criteria.segments ?? [];
-  if (!namedAccounts?.length) {
-    const employeeRanges = segmentsToEmployeeRanges(allSegments);
-    if (employeeRanges.length) {
-      body.organization_num_employees_ranges = employeeRanges;
-      appliedFilters.employeeRanges = employeeRanges;
-    }
-    // Record segments that produced no headcount range (AUM/revenue descriptors
-    // or unrecognised keywords) so the UI can explain why they were ignored.
-    appliedFilters.skippedSegments = allSegments.filter(
-      (seg) => segmentsToEmployeeRanges([seg]).length === 0,
-    );
+  // Employee ranges (skip when named accounts are specified — the account list
+  // already scopes the search; AUM/revenue segments don't map to headcount).
+  const employeeRanges = !namedAccounts?.length
+    ? segmentsToEmployeeRanges(criteria.segments ?? [])
+    : segmentsToEmployeeRanges(criteria.segments ?? []); // still compute for org-expansion
+
+  if (!namedAccounts?.length && employeeRanges.length) {
+    baseBody.organization_num_employees_ranges = employeeRanges;
   }
 
-  // Industries → q_keywords (capped at 255 chars to avoid Apollo "value too long").
-  // Named accounts are sent via organization_names (proper array field), NOT joined
-  // into q_keywords, to avoid blowing the length limit.
-  const industryKeywords = (criteria.industries ?? []).filter(Boolean);
-  if (industryKeywords.length) {
-    const kw = industryKeywords.join(" ").slice(0, 255);
-    body.q_keywords = kw;
-    appliedFilters.industries = industryKeywords;
+  // ── Industry tags — structured first, keyword blob as fallback ─────────────
+  const { structured: industryTags, fallback: industryFallback } = mapIndustriesToTags(
+    criteria.industries ?? [],
+  );
+
+  if (industryTags.length) {
+    // Apollo's q_organization_keyword_tags accepts an array of tag strings.
+    baseBody.q_organization_keyword_tags = industryTags.slice(0, 10);
+    console.log("[Apollo] structured industry tags:", industryTags.slice(0, 10));
   }
 
-  // Named accounts → organization_names (array, max 10 entries).
+  // Fall back to q_keywords blob for any labels without a structured match.
+  if (industryFallback.length) {
+    const kw = industryFallback.join(" ").slice(0, 255);
+    baseBody.q_keywords = kw;
+  }
+
+  // ── Named accounts + similarity expansion ─────────────────────────────────
+
+  let expansionSummary: ApolloExpansionSummary | undefined;
+  let finalAccountList: string[] = namedAccounts ? [...namedAccounts] : [];
+
   if (namedAccounts?.length) {
-    const names = namedAccounts.slice(0, 10);
-    body.organization_names = names;
-    appliedFilters.namedAccounts = names;
+    const isSeedMode = namedAccounts.length <= 3;
+
+    if (isSeedMode) {
+      // Expand seed companies into a broader similar-company list.
+      finalAccountList = await expandSimilarCompanies(
+        apiKey,
+        namedAccounts,
+        employeeRanges,
+        industryTags,
+      );
+      if (finalAccountList.length > namedAccounts.length) {
+        expansionSummary = {
+          seedCompanies: namedAccounts,
+          expandedCount: finalAccountList.length,
+        };
+      }
+    } else {
+      finalAccountList = namedAccounts;
+    }
   }
 
-  console.log("[Apollo] request body:", JSON.stringify(body));
+  // ── Applied-filter record (for diagnostics when 0 results are returned) ────
 
-  let response: ApolloSearchResponse;
-  let rawText = "";
-  try {
-    const res = await fetch(APOLLO_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Api-Key": apiKey,
-        "Cache-Control": "no-cache",
-      },
-      body: JSON.stringify(body),
-    });
+  const appliedFilters: ApolloAppliedFilters = {
+    personTitles: Array.isArray(baseBody.person_titles) ? (baseBody.person_titles as string[]) : [],
+    locations: Array.isArray(baseBody.person_locations) ? (baseBody.person_locations as string[]) : [],
+    industries: [...industryTags, ...industryFallback],
+    employeeRanges: Array.isArray(baseBody.organization_num_employees_ranges)
+      ? (baseBody.organization_num_employees_ranges as string[])
+      : [],
+    namedAccounts: finalAccountList.slice(0, 10),
+    skippedSegments: (criteria.segments ?? []).filter(
+      (seg) => segmentsToEmployeeRanges([seg]).length === 0,
+    ),
+  };
 
-    rawText = await res.text();
-    console.log(`[Apollo] response ${res.status}:`, rawText.slice(0, 500));
+  // ── Batch execution ────────────────────────────────────────────────────────
 
+  let allPeople: ApolloPerson[] = [];
+
+  if (finalAccountList.length === 0) {
+    // No named accounts — single call.
+    console.log("[Apollo] request body (no accounts):", JSON.stringify(baseBody));
     try {
-      response = JSON.parse(rawText) as ApolloSearchResponse;
-    } catch {
+      allPeople = await apolloPeopleSearch(apiKey, baseBody);
+    } catch (err) {
+      if (err instanceof ApolloDiscoveryError) throw err;
       throw new ApolloDiscoveryError(
-        `Apollo returned non-JSON: ${res.status} ${rawText.slice(0, 200)}`,
+        `Apollo request failed: ${(err as Error).message}`,
         "api_error",
       );
     }
-
-    if (!res.ok) {
-      // Apollo can return errors under .message, .error, or .error_description.
-      const msg =
-        response.message ??
-        (response as any).error ??
-        (response as any).error_description ??
-        `HTTP ${res.status}: ${rawText.slice(0, 200)}`;
-      throw new ApolloDiscoveryError(`Apollo API error: ${msg}`, "api_error");
+  } else if (finalAccountList.length <= 10) {
+    // Fits in a single call.
+    const body = { ...baseBody, organization_names: finalAccountList };
+    console.log("[Apollo] request body (≤10 accounts):", JSON.stringify(body));
+    try {
+      allPeople = await apolloPeopleSearch(apiKey, body);
+    } catch (err) {
+      if (err instanceof ApolloDiscoveryError) throw err;
+      throw new ApolloDiscoveryError(
+        `Apollo request failed: ${(err as Error).message}`,
+        "api_error",
+      );
     }
-  } catch (err) {
-    if (err instanceof ApolloDiscoveryError) throw err;
-    throw new ApolloDiscoveryError(
-      `Apollo request failed: ${(err as Error).message}`,
-      "api_error",
+  } else {
+    // Batch: split into groups of 10 and run in parallel.
+    const batches: string[][] = [];
+    for (let i = 0; i < finalAccountList.length; i += 10) {
+      batches.push(finalAccountList.slice(i, i + 10));
+    }
+    console.log(`[Apollo] batching ${finalAccountList.length} accounts into ${batches.length} calls`);
+
+    const perBatch = Math.max(10, Math.ceil(limit / batches.length));
+
+    const results = await Promise.allSettled(
+      batches.map((batch) => {
+        const body = {
+          ...baseBody,
+          per_page: Math.min(perBatch, 100),
+          organization_names: batch,
+        };
+        return apolloPeopleSearch(apiKey, body);
+      }),
     );
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        allPeople.push(...result.value);
+      } else {
+        console.warn("[Apollo] batch call failed:", result.reason?.message);
+      }
+    }
+
+    // Deduplicate by Apollo person ID across batches.
+    const seenIds = new Set<string>();
+    allPeople = allPeople.filter((p) => {
+      if (!p.id) return true; // no ID → keep (can't dedup)
+      if (seenIds.has(p.id)) return false;
+      seenIds.add(p.id);
+      return true;
+    });
+
+    console.log(`[Apollo] batch results: ${allPeople.length} people (after dedup)`);
   }
 
-  const people = response.people ?? [];
+  // ── Map Apollo person → DiscoveryCandidate ─────────────────────────────────
 
-  // Map Apollo person → DiscoveryCandidate.
-  const candidates: DiscoveryCandidate[] = people.map((p) => {
+  const candidates: DiscoveryCandidate[] = allPeople.slice(0, limit).map((p) => {
     const name = p.name?.trim() || [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
     const locationParts = [p.city, p.state, p.country].filter(Boolean);
 
@@ -327,7 +671,11 @@ export async function searchApollo(
   });
 
   // Drop any rows with no usable name.
-  return { candidates: candidates.filter((c) => c.name && c.name !== "Unknown"), appliedFilters };
+  return {
+    candidates: candidates.filter((c) => c.name && c.name !== "Unknown"),
+    appliedFilters,
+    expansionSummary,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -404,4 +752,3 @@ export async function matchApolloPerson(input: ApolloMatchInput): Promise<Apollo
     return null;
   }
 }
-

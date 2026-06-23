@@ -256,6 +256,7 @@ interface DiscoverResult {
   fallbackReason?: string;
   /** Filters actually sent to Apollo when it returned 0 results. */
   apolloDiagnostics?: ApolloDiagnostics;
+  expansionSummary?: { seedCompanies: string[]; expandedCount: number };
 }
 interface DiscoveryBackend {
   id: "web" | "salesnav" | "apollo";
@@ -1616,6 +1617,17 @@ export default function OutreachCampaignDetailPage() {
               </p>
             </div>
           ) : null}
+          {discoverResult?.expansionSummary && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2 flex items-center gap-1" data-testid="discovery-expansion-notice">
+              <Search className="w-3 h-3 shrink-0" />
+              Searched {discoverResult.expansionSummary.expandedCount} companies similar to{" "}
+              {discoverResult.expansionSummary.seedCompanies.length === 1
+                ? discoverResult.expansionSummary.seedCompanies[0]
+                : discoverResult.expansionSummary.seedCompanies.slice(0, -1).join(", ") +
+                  " & " +
+                  discoverResult.expansionSummary.seedCompanies.at(-1)}
+            </p>
+          )}
           {discoverResult && discoverResult.droppedCount > 0 && (
             <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-dropped-notice">
               {discoverResult.droppedCount} candidate{discoverResult.droppedCount === 1 ? " was" : "s were"} filtered out — they appeared to be company names, role labels, or incomplete names rather than real people.

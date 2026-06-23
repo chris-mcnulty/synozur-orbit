@@ -66,6 +66,8 @@ export interface DiscoverResult {
    * the user should broaden.
    */
   apolloDiagnostics?: ApolloAppliedFilters;
+  /** Set when Apollo expanded seed companies into a broader similar-company list. */
+  expansionSummary?: { seedCompanies: string[]; expandedCount: number };
 }
 
 export interface DiscoveryBackendStatus {
@@ -148,6 +150,7 @@ export async function discoverProspects(
   let provider: string | null = null;
   let fallbackReason: string | undefined;
   let apolloDiagnostics: ApolloAppliedFilters | undefined;
+  let expansionSummary: DiscoverResult["expansionSummary"] | undefined;
 
   if (backend === "salesnav") {
     try {
@@ -166,6 +169,7 @@ export async function discoverProspects(
     try {
       const apolloResult = await searchApollo(tenantDomain, input);
       found = apolloResult.candidates;
+      expansionSummary = apolloResult.expansionSummary;
       // When Apollo returns 0 results, automatically retry with web discovery
       // so the user sees something useful rather than a blank list. Capture
       // the applied filters so the UI can explain which fields were too narrow.
@@ -220,7 +224,7 @@ export async function discoverProspects(
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 
-  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics };
+  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics, expansionSummary };
 }
 
 /**
