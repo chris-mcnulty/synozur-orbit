@@ -54,6 +54,11 @@ export interface DiscoverResult {
   searchCount: number;
   model: string | null;
   provider: string | null;
+  /**
+   * Set when the primary backend returned 0 results and the service
+   * automatically retried with a fallback backend (e.g. Apollo → web).
+   */
+  fallbackReason?: string;
 }
 
 export interface DiscoveryBackendStatus {
@@ -134,6 +139,7 @@ export async function discoverProspects(
   let searchCount = 0;
   let model: string | null = null;
   let provider: string | null = null;
+  let fallbackReason: string | undefined;
 
   if (backend === "salesnav") {
     try {
@@ -151,6 +157,14 @@ export async function discoverProspects(
   if (backend === "apollo") {
     try {
       found = await searchApollo(tenantDomain, input);
+      // When Apollo returns 0 results, automatically retry with web discovery
+      // so the user sees something useful rather than a blank list.
+      if (found.length === 0 && isWebSearchAvailable()) {
+        console.log("[discovery] Apollo returned 0 results — falling back to web discovery");
+        fallbackReason =
+          "Apollo returned no matches for these filters — showing web discovery results instead.";
+        backend = "web";
+      }
     } catch (err) {
       if (err instanceof ApolloDiscoveryError && err.code === "not_available") {
         backend = "web";
@@ -195,7 +209,7 @@ export async function discoverProspects(
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 
-  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider };
+  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason };
 }
 
 /**

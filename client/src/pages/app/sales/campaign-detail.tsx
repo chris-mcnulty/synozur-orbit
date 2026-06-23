@@ -244,6 +244,8 @@ interface DiscoverResult {
   candidates: ScoredDiscoveryCandidate[];
   foundCount: number;
   droppedCount: number;
+  /** Set when the primary backend returned 0 results and was retried with a fallback. */
+  fallbackReason?: string;
 }
 interface DiscoveryBackend {
   id: "web" | "salesnav" | "apollo";
@@ -1374,16 +1376,49 @@ export default function OutreachCampaignDetailPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Radar className="w-4 h-4" /> Discover prospects
+              {discoverResult && (
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] font-normal ml-1"
+                  data-testid="discovery-backend-badge"
+                >
+                  {discoverResult.backend === "apollo"
+                    ? "Results via Apollo"
+                    : discoverResult.backend === "salesnav"
+                      ? "Results via Sales Navigator"
+                      : "Results via web discovery"}
+                </Badge>
+              )}
             </DialogTitle>
             <DialogDescription>
-              Net-new people matching this campaign's ICP, found from public web sources and scored. Pick who to add.
+              Net-new people matching this campaign's ICP, scored against your criteria. Pick who to add.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Fallback notice — shown when Apollo returned 0 and we retried with web */}
+          {discoverResult?.fallbackReason && (
+            <div className="rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300" data-testid="discovery-fallback-notice">
+              {discoverResult.fallbackReason}
+            </div>
+          )}
+
+          {/* Sales Navigator availability notice */}
+          {salesNavBackend && !salesNavBackend.available && (
+            <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs text-muted-foreground" data-testid="salesnav-unavailable-notice">
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <Linkedin className="w-3 h-3" />
+                <span className="font-medium">Sales Navigator</span>
+              </span>
+              <span className="mx-1 text-border">·</span>
+              <Badge variant="outline" className="text-[10px] shrink-0">Coming soon</Badge>
+              <span className="text-muted-foreground/70">LinkedIn's API doesn't support direct access yet.</span>
+            </div>
+          )}
 
           {discover.isPending ? (
             <div className="py-10 flex flex-col items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin" />
-              Searching public sources…
+              Searching{apolloBackend?.available ? " Apollo" : " public sources"}…
             </div>
           ) : discoverResult && discoverResult.candidates.length > 0 ? (
             <>
@@ -1434,18 +1469,20 @@ export default function OutreachCampaignDetailPage() {
                 </Button>
               </DialogFooter>
             </>
-          ) : (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              No new prospects found. Try widening the campaign's roles, industries, or geographies.
+          ) : discoverResult ? (
+            <div className="py-8 text-center space-y-1.5" data-testid="discovery-empty-state">
+              <p className="text-sm font-medium">No new prospects found</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                {discoverResult.fallbackReason
+                  ? "Apollo returned no matches and web discovery also found no results — try broadening the campaign's roles, industries, or geographies."
+                  : "Everyone found is already on this campaign, or no matches were found — try widening the campaign's roles, industries, or geographies."}
+              </p>
             </div>
-          )}
+          ) : null}
           {discoverResult && discoverResult.droppedCount > 0 && (
             <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-dropped-notice">
               {discoverResult.droppedCount} candidate{discoverResult.droppedCount === 1 ? " was" : "s were"} filtered out — they appeared to be company names, role labels, or incomplete names rather than real people.
             </p>
-          )}
-          {salesNavBackend && !salesNavBackend.available && discoverResult && (
-            <p className="text-[11px] text-muted-foreground border-t pt-2">{salesNavBackend.reason}</p>
           )}
         </DialogContent>
       </Dialog>
