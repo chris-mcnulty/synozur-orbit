@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Lock, Send, ListPlus, Users, Ban, Trash2, Plus, AlertTriangle } from "lucide-react";
+import { Lock, Send, ListPlus, Users, Ban, Trash2, Plus, AlertTriangle, ChevronDown, ChevronRight, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
@@ -63,6 +63,7 @@ interface EmailSendRecipient {
   email: string;
   name: string | null;
   status: string;
+  suppressionReason: string | null;
   errorMessage: string | null;
   sentAt: string | null;
   deliveredAt: string | null;
@@ -501,7 +502,28 @@ export default function SendsPage() {
   );
 }
 
+function downloadSuppressedCsv(subject: string, suppressed: EmailSendRecipient[]) {
+  const rows = [
+    ["Email", "Name", "Suppression Reason"],
+    ...suppressed.map(r => [
+      r.email ?? "",
+      r.name ?? "",
+      r.suppressionReason ?? "active_prospect",
+    ]),
+  ];
+  const csv = rows.map(row => row.map(v => `"${v.replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `suppressed-prospects-${subject.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [suppressedOpen, setSuppressedOpen] = useState(false);
+
   const { data, isLoading } = useQuery<EmailSendDetail>({
     queryKey: [`/api/email-sends/${sendId}`],
     queryFn: async () => {
@@ -512,6 +534,8 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
     enabled: !!sendId && open,
     refetchInterval: open ? 15000 : false,
   });
+
+  const suppressedProspects = data?.recipients.filter(r => r.suppressionReason === "active_prospect") ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -544,14 +568,54 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
               <SendStat label="Unsub" value={data.unsubscribeCount} testid={`stat-unsub-${data.id}`} />
               <SendStat label="Failed" value={data.failedCount} testid={`stat-failed-${data.id}`} />
             </div>
-            {(data.suppressedProspectCount ?? 0) > 0 && (
-              <div className="flex items-center gap-2 text-xs" data-testid="prospect-suppression-summary">
-                <span className="text-muted-foreground">Prospect suppression:</span>
-                <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300" data-testid="badge-suppressed-prospects">
-                  {data.suppressedProspectCount} excluded (active prospect{data.suppressedProspectCount !== 1 ? "s" : ""})
-                </Badge>
+
+            {suppressedProspects.length > 0 && (
+              <div className="border rounded-lg overflow-hidden" data-testid="suppressed-prospects-section">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors text-amber-800 dark:text-amber-300"
+                  onClick={() => setSuppressedOpen(v => !v)}
+                  data-testid="button-toggle-suppressed-prospects"
+                >
+                  <span className="flex items-center gap-2">
+                    {suppressedOpen ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
+                    Suppressed prospects
+                    <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-400 bg-transparent" data-testid="badge-suppressed-prospects">
+                      {suppressedProspects.length} excluded
+                    </Badge>
+                  </span>
+                  <span className="text-[10px] font-normal text-amber-600 dark:text-amber-400">
+                    Active sales prospects — excluded from this send
+                  </span>
+                </button>
+                {suppressedOpen && (
+                  <div>
+                    <div className="flex items-center justify-end px-3 py-2 border-b bg-muted/30">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1.5"
+                        onClick={() => downloadSuppressedCsv(data.subject, suppressedProspects)}
+                        data-testid="button-download-suppressed-csv"
+                      >
+                        <Download className="w-3 h-3" />
+                        Download CSV
+                      </Button>
+                    </div>
+                    <div className="divide-y max-h-56 overflow-y-auto">
+                      {suppressedProspects.map(r => (
+                        <div key={r.id} className="px-3 py-2 flex items-center gap-2 text-sm" data-testid={`row-suppressed-prospect-${r.id}`}>
+                          <span className="font-mono flex-1 truncate">{r.email}</span>
+                          {r.name && <span className="text-muted-foreground text-xs truncate max-w-[140px]">{r.name}</span>}
+                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Active prospect</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+
             {data.hubspotSync && (data.hubspotSync.resolved + data.hubspotSync.skipped + data.hubspotSync.pending + data.hubspotSync.error > 0) && (
               <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="hubspot-sync-summary">
                 <span className="text-muted-foreground">HubSpot sync:</span>

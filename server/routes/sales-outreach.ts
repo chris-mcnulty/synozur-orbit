@@ -1163,6 +1163,7 @@ export function registerSalesOutreachRoutes(app: Express) {
           )
         : eq(emailSendRecipients.email, prospect.email!);
 
+
       const recipientRows = await db
         .select({
           id: emailSendRecipients.id,

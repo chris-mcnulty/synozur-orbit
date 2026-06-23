@@ -1132,6 +1132,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       email: emailSendRecipients.email,
       name: emailSendRecipients.name,
       status: emailSendRecipients.status,
+      suppressionReason: emailSendRecipients.suppressionReason,
       errorMessage: emailSendRecipients.errorMessage,
       sentAt: emailSendRecipients.sentAt,
       deliveredAt: emailSendRecipients.deliveredAt,
