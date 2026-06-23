@@ -302,6 +302,7 @@ export function registerIntegrationRoutes(app: Express) {
       autoCreateHubspotContacts: c.autoCreateHubspotContacts,
       defaultSubscriptionId: c.defaultSubscriptionId,
       defaultOwnerId: c.defaultOwnerId,
+      activeProspectSuppressionDefault: c.activeProspectSuppressionDefault,
       connectedByUserId: c.connectedByUserId,
       connectedAt: c.connectedAt,
       lastSyncAt: c.lastSyncAt,
@@ -454,6 +455,7 @@ export function registerIntegrationRoutes(app: Express) {
     autoCreateHubspotContacts: z.boolean().optional(),
     defaultSubscriptionId: z.string().nullable().optional(),
     defaultOwnerId: z.string().nullable().optional(),
+    activeProspectSuppressionDefault: z.enum(["warn", "always_exclude"]).optional(),
   });
 
   app.patch("/api/integrations/hubspot", async (req: Request, res: Response) => {
@@ -469,6 +471,7 @@ export function registerIntegrationRoutes(app: Express) {
       if (parsed.data.autoCreateHubspotContacts !== undefined) updates.autoCreateHubspotContacts = parsed.data.autoCreateHubspotContacts;
       if (parsed.data.defaultSubscriptionId !== undefined) updates.defaultSubscriptionId = parsed.data.defaultSubscriptionId;
       if (parsed.data.defaultOwnerId !== undefined) updates.defaultOwnerId = parsed.data.defaultOwnerId;
+      if (parsed.data.activeProspectSuppressionDefault !== undefined) updates.activeProspectSuppressionDefault = parsed.data.activeProspectSuppressionDefault;
       const updated = await storage.updateHubspotConnection(ctx.tenantDomain, updates);
       res.json(publicConnectionView(updated));
     } catch (err) {

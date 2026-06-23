@@ -148,6 +148,47 @@ function downloadHtmlFile(html: string, filename: string) {
 }
 
 /**
+ * Prospect-suppression warning shown inside the send dialog when some
+ * recipients are currently active sales prospects (status not in
+ * 'replied' / 'dormant'). The operator can choose to exclude them before
+ * confirming the send.
+ */
+function ProspectCheckBanner({ listId }: { listId: string }) {
+  const { data, isLoading } = useQuery<{ count: number; prospects: Array<{ email: string; name: string | null; companyName: string | null; status: string }> }>({
+    queryKey: [`/api/email-prospect-check`, listId],
+    queryFn: async () => {
+      const r = await fetch("/api/email-prospect-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ listId }),
+      });
+      if (!r.ok) return { count: 0, prospects: [] };
+      return r.json();
+    },
+    enabled: !!listId,
+  });
+  if (!listId || isLoading || !data || data.count === 0) return null;
+  return (
+    <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 space-y-1" data-testid="banner-prospect-warning">
+      <div className="font-medium flex items-center gap-1.5">
+        <span>⚠</span>
+        <span>{data.count} recipient{data.count !== 1 ? "s are" : " is"} in an active sales cadence</span>
+      </div>
+      <p className="text-amber-700">These contacts are in mid-sequence. Use the checkbox below to exclude them from this send and avoid disrupting the sales conversation.</p>
+      <ul className="ml-3 list-disc space-y-0.5 text-amber-700">
+        {data.prospects.slice(0, 5).map(p => (
+          <li key={p.email} data-testid={`text-prospect-email-${p.email}`}>
+            {p.name || p.email}{p.companyName ? ` · ${p.companyName}` : ""} <span className="capitalize">({p.status})</span>
+          </li>
+        ))}
+        {data.count > 5 && <li>…and {data.count - 5} more</li>}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * Live deliverability preview shown inside the send dialog. When the
  * operator picks a recipient list we fetch the deliverable / suppressed
  * breakdown so they know exactly how many addresses will be skipped — and
@@ -245,6 +286,7 @@ export default function EmailNewslettersPage() {
   const [sendScheduleAt, setSendScheduleAt] = useState<string>("");
   const [sendTrackOpens, setSendTrackOpens] = useState<boolean>(true);
   const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
+  const [sendExcludeActiveProspects, setSendExcludeActiveProspects] = useState<boolean>(false);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -256,6 +298,24 @@ export default function EmailNewslettersPage() {
 
   const isAllowed = tenantInfo?.features?.emailNewsletters === true;
   const directDeliveryEnabled = tenantInfo?.features?.directEmailDelivery === true;
+
+  const { data: hubspotStatus } = useQuery<{ connection?: { activeProspectSuppressionDefault?: string } }>({
+    queryKey: ["/api/integrations/hubspot/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/hubspot/status", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+    enabled: directDeliveryEnabled,
+  });
+
+  // Pre-populate the prospect-exclusion checkbox from the tenant-level default
+  // whenever the operator opens the send dialog.
+  useEffect(() => {
+    if (sendDialogEmail) {
+      const defaultVal = hubspotStatus?.connection?.activeProspectSuppressionDefault;
+      setSendExcludeActiveProspects(defaultVal === "always_exclude");
+    }
+  }, [sendDialogEmail, hubspotStatus?.connection?.activeProspectSuppressionDefault]);
 
   const { data: recipientLists = [] } = useQuery<Array<{ id: string; name: string; recipientCount: number }>>({
     queryKey: ["/api/email-recipient-lists"],
@@ -1323,7 +1383,24 @@ export default function EmailNewslettersPage() {
                     />
                     <p className="text-xs text-muted-foreground mt-1">Leave blank to send immediately. Scheduled sends queue up and dispatch automatically.</p>
                   </div>
+                  <ProspectCheckBanner listId={sendListId} />
                   <SendDeliverabilityPreview listId={sendListId} />
+                  <div className="space-y-2 pt-1 border-t">
+                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">Suppression</Label>
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendExcludeActiveProspects}
+                        onChange={e => setSendExcludeActiveProspects(e.target.checked)}
+                        className="mt-0.5"
+                        data-testid="checkbox-exclude-active-prospects"
+                      />
+                      <span>
+                        <strong>Exclude active sales prospects</strong>
+                        <span className="block text-xs text-muted-foreground">Recipients who are currently in a sales cadence (not yet replied or dormant) will be skipped to protect the sales conversation.</span>
+                      </span>
+                    </label>
+                  </div>
                   <div className="space-y-2 pt-1 border-t">
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">Tracking</Label>
                     <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -1379,6 +1456,7 @@ export default function EmailNewslettersPage() {
                       scheduledAt,
                       trackOpens: sendMode === "list" ? sendTrackOpens : undefined,
                       trackClicks: sendMode === "list" ? sendTrackClicks : undefined,
+                      excludeActiveProspects: sendMode === "list" ? sendExcludeActiveProspects : undefined,
                     });
                   }}
                   data-testid="button-confirm-send"

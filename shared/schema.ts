@@ -3804,6 +3804,11 @@ export const hubspotConnections = pgTable("hubspot_connections", {
   // applies; the pre-send consent pull keeps HubSpot authoritative).
   defaultSubscriptionId: text("default_subscription_id"),
   defaultOwnerId: text("default_owner_id"), // HubSpot owner ID for pushed Tasks
+  // Prospect-aware marketing suppression. When a send would reach an active
+  // sales prospect, the UI warns the operator. This setting controls the
+  // pre-selected action: "warn" (let the operator decide) or "always_exclude"
+  // (exclude active prospects without prompting, but still surface the count).
+  activeProspectSuppressionDefault: text("active_prospect_suppression_default").notNull().default("warn"),
   connectedByUserId: varchar("connected_by_user_id").references(() => users.id, { onDelete: "set null" }),
   connectedAt: timestamp("connected_at").notNull().defaultNow(),
   lastSyncAt: timestamp("last_sync_at"),
@@ -4019,6 +4024,9 @@ export const emailSends = pgTable("email_sends", {
   // wrapping continues to attribute conversions.
   trackOpens: boolean("track_opens").notNull().default(true),
   trackClicks: boolean("track_clicks").notNull().default(true),
+  // When true, the server will suppress recipients who are active outreach
+  // prospects (prospect status not 'replied' or 'dormant') before sending.
+  excludeActiveProspects: boolean("exclude_active_prospects").notNull().default(false),
   recipientCount: integer("recipient_count").notNull().default(0),
   sentCount: integer("sent_count").notNull().default(0),
   failedCount: integer("failed_count").notNull().default(0),
@@ -4069,6 +4077,9 @@ export const emailSendRecipients = pgTable("email_send_recipients", {
   hsSyncStatus: text("hs_sync_status"), // null | pending | resolved | skipped | error
   hsLastEventSyncedAt: timestamp("hs_last_event_synced_at"),
   hsSyncError: text("hs_sync_error"),
+  // Set when a recipient was intentionally suppressed before send (not a
+  // bounce/unsubscribe). Values: "active_prospect" | "hubspot_optout" | others.
+  suppressionReason: text("suppression_reason"),
 }, (table) => ({
   sendEmailIdx: index("email_send_recipients_send_email_idx").on(table.sendId, table.email),
 }));

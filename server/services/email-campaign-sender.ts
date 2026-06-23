@@ -21,7 +21,7 @@
 import { createHmac, createVerify, randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { db } from "../db";
-import { and, eq, inArray, lte, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, lte, isNotNull, notInArray } from "drizzle-orm";
 import {
   generatedEmails,
   emailRecipientLists,
@@ -30,6 +30,7 @@ import {
   emailSendRecipients,
   emailSuppressions,
   marketingAuditLog,
+  prospects,
   type GeneratedEmail,
   type EmailSend,
 } from "@shared/schema";
@@ -272,6 +273,13 @@ export interface DispatchSendOptions {
   trackOpens?: boolean;
   /** Per-send click-tracking toggle. Defaults to true. */
   trackClicks?: boolean;
+  /**
+   * When true, recipients who are active outreach prospects (prospect status
+   * NOT 'replied' or 'dormant') are suppressed before sending and recorded
+   * with suppressionReason = 'active_prospect'. Persisted on the send row so
+   * the worker honours the choice made at schedule time.
+   */
+  excludeActiveProspects?: boolean;
 }
 
 export interface SuppressedRecipient {
@@ -322,6 +330,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     scheduledAt: queueAt,
     trackOpens: opts.trackOpens !== false,
     trackClicks: opts.trackClicks !== false,
+    excludeActiveProspects: opts.excludeActiveProspects === true,
     recipientCount: 0,
     sentCount: 0,
     failedCount: 0,
@@ -420,6 +429,33 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
           recipients.splice(i, 1);
         }
       }
+
+      // Prospect suppression — applied AFTER standard suppression so we only
+      // check emails that would otherwise be delivered. Active prospects have
+      // a status that is NOT 'replied' (cadence concluded) or 'dormant'
+      // (sequence exhausted / disqualified).
+      if (opts.excludeActiveProspects && recipients.length > 0) {
+        const candidateEmails = recipients.map(r => r.email);
+        const activeProspectRows = await db
+          .select({ email: prospects.email })
+          .from(prospects)
+          .where(and(
+            eq(prospects.tenantDomain, tenantDomain),
+            inArray(prospects.email, candidateEmails),
+            notInArray(prospects.status, ["replied", "dormant"]),
+          ));
+        const activeProspectEmails = new Set(
+          activeProspectRows.map(p => (p.email ?? "").trim().toLowerCase()).filter(Boolean),
+        );
+        if (activeProspectEmails.size > 0) {
+          for (let i = recipients.length - 1; i >= 0; i--) {
+            if (activeProspectEmails.has(recipients[i].email)) {
+              suppressedFromSend.push({ email: recipients[i].email, reason: "active_prospect" });
+              recipients.splice(i, 1);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -468,6 +504,25 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       createdBy,
     }).returning();
     send = inserted;
+  }
+
+  // Write suppressed active-prospect rows BEFORE the main recipient rows so
+  // the send has a full audit trail. These use a stable token but are never
+  // used for delivery — the token is required because unsubscribeToken is
+  // NOT NULL UNIQUE.
+  const activeProspectSuppressed = suppressedFromSend.filter(s => s.reason === "active_prospect");
+  if (activeProspectSuppressed.length > 0) {
+    await db.insert(emailSendRecipients).values(
+      activeProspectSuppressed.map(s => ({
+        sendId: send.id,
+        tenantDomain,
+        email: s.email,
+        name: null,
+        unsubscribeToken: makeUnsubscribeToken(send.id, `suppressed:${s.email}`),
+        status: "suppressed" as const,
+        suppressionReason: "active_prospect",
+      })),
+    );
   }
 
   // Pre-create per-recipient rows with unsubscribe tokens.
@@ -735,6 +790,8 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           // re-enable tracking on a privacy-disabled scheduled send.
           trackOpens: row.send.trackOpens,
           trackClicks: row.send.trackClicks,
+          // Preserve the prospect-suppression choice captured at schedule time.
+          excludeActiveProspects: row.send.excludeActiveProspects,
         }, row.send.id);
         sent += result.sentCount;
         failed += result.failedCount;

@@ -33,7 +33,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { and, eq, ne, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, ne, desc, inArray, sql, notInArray } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import {
   socialAccounts,
@@ -46,6 +46,7 @@ import {
   emailSends,
   emailSendRecipients,
   marketingAuditLog,
+  prospects,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -1160,7 +1161,70 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       if (key in hubspotSync) hubspotSync[key] += Number(row.count);
       else hubspotSync.pending += Number(row.count);
     }
-    res.json({ ...send, recipients, hubspotSync });
+    // Count recipients suppressed as active prospects for the send summary.
+    const [prospectSuppressedRow] = await db.select({
+      count: sql<number>`count(*)::int`,
+    }).from(emailSendRecipients)
+      .where(and(
+        eq(emailSendRecipients.sendId, send.id),
+        eq(emailSendRecipients.suppressionReason, "active_prospect"),
+      ));
+    const suppressedProspectCount = Number(prospectSuppressedRow?.count ?? 0);
+    res.json({ ...send, recipients, hubspotSync, suppressedProspectCount });
+  });
+
+  // Prospect check — UI calls this when a list is selected so we can warn the
+  // operator if any recipients are currently in an active sales cadence.
+  // Active prospect = status NOT IN ('replied', 'dormant').
+  // Read-only; no state changes.
+  app.post("/api/email-prospect-check", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const { listId } = req.body ?? {};
+    if (!listId || typeof listId !== "string") {
+      return res.status(400).json({ error: "listId is required" });
+    }
+    try {
+      // Load all active recipients from the list.
+      const recipients = await db
+        .select({ email: emailRecipients.email })
+        .from(emailRecipients)
+        .where(and(
+          eq(emailRecipients.listId, listId),
+          eq(emailRecipients.tenantDomain, ctx.tenantDomain),
+          eq(emailRecipients.status, "active"),
+        ))
+        .limit(5000);
+      if (recipients.length === 0) {
+        return res.json({ count: 0, emails: [] });
+      }
+      const candidateEmails = recipients.map(r => r.email.trim().toLowerCase());
+      const activeProspects = await db
+        .select({
+          email: prospects.email,
+          name: prospects.name,
+          companyName: prospects.companyName,
+          status: prospects.status,
+        })
+        .from(prospects)
+        .where(and(
+          eq(prospects.tenantDomain, ctx.tenantDomain),
+          inArray(prospects.email, candidateEmails),
+          notInArray(prospects.status, ["replied", "dormant"]),
+        ));
+      res.json({
+        count: activeProspects.length,
+        emails: activeProspects.map(p => p.email),
+        prospects: activeProspects.map(p => ({
+          email: p.email,
+          name: p.name,
+          companyName: p.companyName,
+          status: p.status,
+        })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Failed to check prospects" });
+    }
   });
 
   // Pre-send suppression preview — UI calls this when the operator selects a
@@ -1188,7 +1252,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
     if (!email) return res.status(404).json({ error: "Email not found" });
 
-    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks } = req.body ?? {};
+    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects } = req.body ?? {};
     if (!listId && !testRecipient) {
       return res.status(400).json({ error: "Either listId or testRecipient is required" });
     }
@@ -1223,6 +1287,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         scheduledAt: scheduledAtDate,
         trackOpens: typeof trackOpens === "boolean" ? trackOpens : undefined,
         trackClicks: typeof trackClicks === "boolean" ? trackClicks : undefined,
+        excludeActiveProspects: excludeActiveProspects === true,
       });
       res.status(201).json(result);
     } catch (err: any) {

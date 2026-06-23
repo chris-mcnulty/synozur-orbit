@@ -2199,6 +2199,32 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
           {status?.outboundAllowed && (
             <div className="flex items-center justify-between pt-2">
               <div>
+                <Label htmlFor="hubspot-prospect-suppression" className="text-sm">Default prospect suppression for email sends</Label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, the "Exclude active sales prospects" option is pre-checked whenever an operator opens the email send dialog.
+                  Individual sends can still override this default.
+                </p>
+              </div>
+              <Switch
+                id="hubspot-prospect-suppression"
+                checked={conn.activeProspectSuppressionDefault === "always_exclude"}
+                onCheckedChange={(v) => {
+                  fetch("/api/integrations/hubspot", {
+                    method: "PATCH",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ activeProspectSuppressionDefault: v ? "always_exclude" : "warn" }),
+                  })
+                    .then(() => queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] }))
+                    .catch(() => null);
+                }}
+                data-testid="switch-prospect-suppression-default"
+              />
+            </div>
+          )}
+          {status?.outboundAllowed && (
+            <div className="flex items-center justify-between pt-2">
+              <div>
                 <Label htmlFor="hubspot-subscription-id" className="text-sm">Marketing subscription ID</Label>
                 <p className="text-xs text-muted-foreground">
                   HubSpot subscription type that marketing email maps to. Unsubscribes sync to this subscription.

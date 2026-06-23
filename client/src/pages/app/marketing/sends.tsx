@@ -86,6 +86,7 @@ interface HubspotSyncSummary {
 interface EmailSendDetail extends EmailSend {
   recipients: EmailSendRecipient[];
   hubspotSync?: HubspotSyncSummary;
+  suppressedProspectCount?: number;
 }
 
 type SendsTab = "sends" | "lists" | "suppressions";
@@ -542,6 +543,14 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
               <SendStat label="Unsub" value={data.unsubscribeCount} testid={`stat-unsub-${data.id}`} />
               <SendStat label="Failed" value={data.failedCount} testid={`stat-failed-${data.id}`} />
             </div>
+            {(data.suppressedProspectCount ?? 0) > 0 && (
+              <div className="flex items-center gap-2 text-xs" data-testid="prospect-suppression-summary">
+                <span className="text-muted-foreground">Prospect suppression:</span>
+                <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300" data-testid="badge-suppressed-prospects">
+                  {data.suppressedProspectCount} excluded (active prospect{data.suppressedProspectCount !== 1 ? "s" : ""})
+                </Badge>
+              </div>
+            )}
             {data.hubspotSync && (data.hubspotSync.resolved + data.hubspotSync.skipped + data.hubspotSync.pending + data.hubspotSync.error > 0) && (
               <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="hubspot-sync-summary">
                 <span className="text-muted-foreground">HubSpot sync:</span>
