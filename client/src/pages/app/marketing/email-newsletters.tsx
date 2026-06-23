@@ -327,7 +327,7 @@ export default function EmailNewslettersPage() {
   });
 
   const sendEmailMutation = useMutation({
-    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean }) => {
+    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean }) => {
       const r = await fetch(`/api/generated-emails/${emailId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -338,6 +338,7 @@ export default function EmailNewslettersPage() {
           scheduledAt: scheduledAt || undefined,
           trackOpens,
           trackClicks,
+          excludeActiveProspects,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Send failed");
