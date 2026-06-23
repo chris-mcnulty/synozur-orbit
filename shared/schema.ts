@@ -3984,6 +3984,24 @@ export const insertEmailSuppressionSchema = createInsertSchema(emailSuppressions
 export type EmailSuppression = typeof emailSuppressions.$inferSelect;
 export type InsertEmailSuppression = z.infer<typeof insertEmailSuppressionSchema>;
 
+// Shared cross-system HubSpot contact ID cache. Keyed on (tenantDomain, email)
+// with no FK to email_recipients (list-scoped) so both the sales-outreach
+// path and the marketing-email path can upsert freely. Resolution priority:
+//   1. prospects.hubspotContactId  (sales already looked this up)
+//   2. hubspotContactIdCache        (this table — cross-system cache)
+//   3. HubSpot search by email
+//   4. auto-create (if enabled) → associates with company when possible
+export const hubspotContactIdCache = pgTable("hubspot_contact_id_cache", {
+  tenantDomain: text("tenant_domain").notNull(),
+  email: text("email").notNull(),
+  hubspotContactId: text("hubspot_contact_id").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantDomain, table.email] }),
+}));
+
+export type HubspotContactIdCacheEntry = typeof hubspotContactIdCache.$inferSelect;
+
 // One row per "Send" action — links a generatedEmail to the audience and
 // records aggregate counters for the UI Sends tab.
 export const emailSends = pgTable("email_sends", {

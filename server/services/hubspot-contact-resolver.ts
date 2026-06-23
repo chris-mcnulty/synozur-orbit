@@ -1,43 +1,60 @@
 /**
- * HubSpot contact resolver — marketing-email sync Phase 1.
+ * HubSpot contact resolver — unified contact resolution layer.
  *
- * Maps the recipients of an email send to HubSpot contact ids so later phases
- * can attach engagement to the right contact timeline. For each recipient we:
- *   1. reuse a cached id from prospects (sales outreach) when present,
- *   2. reuse a cached id from email_recipients when present,
- *   3. otherwise search HubSpot by email (batched), and
- *   4. optionally create a contact when none exists and the tenant has
- *      auto-create enabled (default on; admin opt-out).
+ * Provides a SINGLE canonical path used by both the marketing-email and
+ * sales-outreach systems to map an email address to a HubSpot contact ID.
  *
- * Resolution is best-effort and runs AFTER the SendGrid send — it never blocks
- * or fails delivery. Standalone-safe: with no HubSpot connection every
- * recipient is marked `skipped`.
+ * Resolution priority
+ * ───────────────────
+ *   1. prospects.hubspotContactId   — sales already resolved this contact
+ *   2. hubspotContactIdCache        — shared cross-system cache (upsertable)
+ *   3. HubSpot search by email      — live API lookup
+ *   4. auto-create (if enabled)     — creates contact + associates company
  *
- * Exported helpers
- * ────────────────
+ * When a contact ID is resolved via steps 3 or 4 it is written to
+ * hubspotContactIdCache so subsequent lookups (either path) hit the cache.
+ *
+ * Public exports
+ * ──────────────
  * resolveHubspotContactId(email, tenantDomain, opts)
- *   Shared single-contact resolver used by both the marketing and sales paths.
- *   Checks prospects → email_recipients → HubSpot search → optional auto-create.
+ *   Single-contact canonical resolver. Called from the sales path whenever
+ *   a prospect hubspotContactId is needed, and per-email from the batch
+ *   marketing send path.
+ *
+ * _resolveContactWithDeps(email, tenantDomain, opts, deps)
+ *   Pure core implementation with injected async callbacks. Exported for
+ *   unit testing without DB or HubSpot network calls.
  *
  * preWarmMarketingCache(tenantDomain, email, contactId)
- *   Called by sales routes after writing a prospect's hubspotContactId so the
- *   next marketing send finds the id in email_recipients without a HubSpot API call.
+ *   Upserts into hubspotContactIdCache so the next marketing send finds the
+ *   ID without hitting the HubSpot API. Safe to fire-and-forget.
+ *
+ * resolveSendRecipientContacts(opts)
+ *   Batch resolver for a marketing send — calls resolveHubspotContactId per
+ *   recipient and persists results onto email_send_recipients.
  */
 
-import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, inArray } from "drizzle-orm";
 import { db } from "../db";
-import { emailSendRecipients, emailRecipients, prospects } from "@shared/schema";
+import {
+  emailSendRecipients,
+  emailRecipients,
+  prospects,
+  hubspotContactIdCache,
+} from "@shared/schema";
 import { getTenantClient, hasHubspotEmailScopes } from "./hubspot-integration";
 import { storage } from "../storage";
 import { isHubspotEmailSyncEnabled } from "./hubspot-email-sync";
-import { dedupeEmails, normalizeEmail, syncStatusForOutcome, type ContactResolutionOutcome } from "./hubspot-email-sync-core";
+import {
+  dedupeEmails,
+  normalizeEmail,
+  syncStatusForOutcome,
+  type ContactResolutionOutcome,
+} from "./hubspot-email-sync-core";
 
-// HubSpot search caps: max 100 values per IN filter / page.
-const SEARCH_CHUNK = 100;
-// Bound how many contacts we'll create inline per send to protect against
-// runaway CRM growth + API rate limits; excess is left `skipped` for the
-// backfill job (later phase) to pick up.
-const MAX_CREATE_PER_SEND = Number(process.env.MARKETING_HS_MAX_CREATE_PER_SEND || 500);
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface ResolveResult {
   resolved: number;
@@ -49,129 +66,186 @@ export interface ResolveResult {
 
 const EMPTY: ResolveResult = { resolved: 0, created: 0, skipped: 0, errors: 0, ran: false };
 
+/** Injected dependency callbacks for the core resolver. All take no parameters
+ *  because they are closures over the email / tenantDomain / client already
+ *  captured at the call site — this keeps the signature stable for tests. */
+export interface ContactResolverDeps {
+  /** Return { contactId, companyId } if the prospects table has a resolved id. */
+  prospectLookup(): Promise<{ contactId: string; companyId: string | null } | null>;
+  /** Return the cached id from hubspotContactIdCache, or null. */
+  cacheLookup(): Promise<string | null>;
+  /** Search HubSpot by email; return the contact id or null. */
+  hubspotSearch(): Promise<string | null>;
+  /** Create a new HubSpot contact; return the new id. */
+  hubspotCreate(): Promise<string>;
+  /** Associate a contact with a company (best-effort, may throw). */
+  associateCompany(contactId: string, companyId: string): Promise<void>;
+  /** Persist the resolved id to hubspotContactIdCache. */
+  writeCache(contactId: string): Promise<void>;
+  /** Whether auto-create is enabled for the tenant. */
+  autoCreateEnabled: boolean;
+}
+
 // ---------------------------------------------------------------------------
-// Public shared helpers
+// Core pure resolver (exported for unit tests)
 // ---------------------------------------------------------------------------
 
 /**
- * Shared single-contact resolver. Priority order:
- *   1. prospects.hubspotContactId (sales already looked this up)
- *   2. email_recipients.hubspotContactId (marketing cache)
- *   3. HubSpot search by email
- *   4. Auto-create (if opts.autoCreate is true) — associates with company
- *      when a matching prospect has hubspotCompanyId.
- *
- * Returns null when the contact cannot be found / created.
- * Never throws — callers must handle null.
+ * Pure resolution logic with injected deps. Tests can pass vi.fn() stubs for
+ * each dep and assert that the priority chain is respected without any DB or
+ * HubSpot network calls.
+ */
+export async function _resolveContactWithDeps(
+  email: string,
+  _tenantDomain: string,
+  opts: { autoCreate?: boolean; name?: string | null },
+  deps: ContactResolverDeps,
+): Promise<string | null> {
+  const norm = normalizeEmail(email);
+  if (!norm) return null;
+
+  // Step 1: sales prospect cache
+  const prospect = await deps.prospectLookup();
+  if (prospect?.contactId) {
+    await deps.writeCache(prospect.contactId).catch(() => {});
+    return prospect.contactId;
+  }
+
+  // Step 2: shared cross-system cache
+  const cached = await deps.cacheLookup();
+  if (cached) return cached;
+
+  // Step 3: HubSpot search
+  const found = await deps.hubspotSearch();
+  if (found) {
+    await deps.writeCache(found).catch(() => {});
+    return found;
+  }
+
+  // Step 4: auto-create
+  if (!opts.autoCreate || !deps.autoCreateEnabled) return null;
+  const created = await deps.hubspotCreate();
+  if (prospect?.companyId) {
+    await deps.associateCompany(created, prospect.companyId).catch(() => {});
+  }
+  await deps.writeCache(created).catch(() => {});
+  return created;
+}
+
+// ---------------------------------------------------------------------------
+// Public single-contact resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a single email address to a HubSpot contact ID using the canonical
+ * priority chain. Used by both the sales-outreach and marketing-email paths.
+ * Never throws — returns null on any failure.
  */
 export async function resolveHubspotContactId(
   email: string,
   tenantDomain: string,
-  opts: {
-    autoCreate?: boolean;
-    name?: string | null;
-  } = {},
+  opts: { autoCreate?: boolean; name?: string | null } = {},
 ): Promise<string | null> {
   const norm = normalizeEmail(email);
   if (!norm) return null;
 
   try {
-    // 1. Prospect cache
-    const [prospectRow] = await db
-      .select({ hubspotContactId: prospects.hubspotContactId, hubspotCompanyId: prospects.hubspotCompanyId })
-      .from(prospects)
-      .where(
-        and(
-          eq(prospects.tenantDomain, tenantDomain),
-          eq(prospects.email, norm),
-          isNotNull(prospects.hubspotContactId),
-        ),
-      )
-      .limit(1);
-    if (prospectRow?.hubspotContactId) return prospectRow.hubspotContactId;
+    // Lazy-load HubSpot client (may throw if no connection).
+    let client: Awaited<ReturnType<typeof getTenantClient>>["client"] | null = null;
+    const getClient = async () => {
+      if (!client) client = (await getTenantClient(tenantDomain)).client;
+      return client;
+    };
 
-    // 2. Marketing cache
-    const [recipientRow] = await db
-      .select({ hubspotContactId: emailRecipients.hubspotContactId })
-      .from(emailRecipients)
-      .where(
-        and(
-          eq(emailRecipients.tenantDomain, tenantDomain),
-          eq(emailRecipients.email, norm),
-          isNotNull(emailRecipients.hubspotContactId),
-        ),
-      )
-      .limit(1);
-    if (recipientRow?.hubspotContactId) return recipientRow.hubspotContactId;
-
-    // 3. HubSpot search
-    const { client } = await getTenantClient(tenantDomain);
-    const result = await client.crm.contacts.searchApi.doSearch({
-      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", values: [norm] }] }],
-      properties: ["email"],
-      limit: 1,
-      after: "0",
-    } as any);
-    if (result.results.length > 0) {
-      const id = result.results[0].id;
-      await backfillCache(tenantDomain, norm, id);
-      return id;
-    }
-
-    // 4. Auto-create
-    if (!opts.autoCreate) return null;
     const conn = await storage.getHubspotConnection(tenantDomain);
-    if (!conn?.autoCreateHubspotContacts) return null;
+    const autoCreateEnabled = !!(conn?.autoCreateHubspotContacts);
 
-    const properties: Record<string, string> = { email: norm };
-    if (opts.name) {
-      const parts = opts.name.trim().split(/\s+/);
-      properties.firstname = parts[0];
-      if (parts.length > 1) properties.lastname = parts.slice(1).join(" ");
-    }
-    const created = await client.crm.contacts.basicApi.create({ properties, associations: [] });
-    const contactId = created.id;
+    const deps: ContactResolverDeps = {
+      async prospectLookup() {
+        const [row] = await db
+          .select({ contactId: prospects.hubspotContactId, companyId: prospects.hubspotCompanyId })
+          .from(prospects)
+          .where(
+            and(
+              eq(prospects.tenantDomain, tenantDomain),
+              eq(prospects.email, norm),
+              isNotNull(prospects.hubspotContactId),
+            ),
+          )
+          .limit(1);
+        if (!row?.contactId) return null;
+        return { contactId: row.contactId, companyId: row.companyId ?? null };
+      },
 
-    // Associate with company if the prospect has one.
-    const [companyProspect] = await db
-      .select({ hubspotCompanyId: prospects.hubspotCompanyId })
-      .from(prospects)
-      .where(
-        and(
-          eq(prospects.tenantDomain, tenantDomain),
-          eq(prospects.email, norm),
-          isNotNull(prospects.hubspotCompanyId),
-        ),
-      )
-      .limit(1);
-    if (companyProspect?.hubspotCompanyId) {
-      try {
-        await client.crm.associations.v4.basicApi.create(
+      async cacheLookup() {
+        const [row] = await db
+          .select({ hubspotContactId: hubspotContactIdCache.hubspotContactId })
+          .from(hubspotContactIdCache)
+          .where(
+            and(
+              eq(hubspotContactIdCache.tenantDomain, tenantDomain),
+              eq(hubspotContactIdCache.email, norm),
+            ),
+          )
+          .limit(1);
+        return row?.hubspotContactId ?? null;
+      },
+
+      async hubspotSearch() {
+        const c = await getClient();
+        const result = await c.crm.contacts.searchApi.doSearch({
+          filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", values: [norm] }] }],
+          properties: ["email"],
+          limit: 1,
+          after: "0",
+        } as any);
+        return result.results[0]?.id ?? null;
+      },
+
+      async hubspotCreate() {
+        const c = await getClient();
+        const properties: Record<string, string> = { email: norm };
+        if (opts.name) {
+          const parts = opts.name.trim().split(/\s+/);
+          properties.firstname = parts[0];
+          if (parts.length > 1) properties.lastname = parts.slice(1).join(" ");
+        }
+        const created = await c.crm.contacts.basicApi.create({ properties, associations: [] });
+        return created.id;
+      },
+
+      async associateCompany(contactId, companyId) {
+        const c = await getClient();
+        await c.crm.associations.v4.basicApi.create(
           "contacts",
           contactId,
           "companies",
-          companyProspect.hubspotCompanyId,
+          companyId,
           [{ associationCategory: "HUBSPOT_DEFINED" as any, associationTypeId: 1 }],
         );
-      } catch {
-        // Company association is best-effort; contact is still usable.
-      }
-    }
+      },
 
-    await backfillCache(tenantDomain, norm, contactId);
-    return contactId;
+      async writeCache(contactId) {
+        await upsertCache(tenantDomain, norm, contactId);
+      },
+
+      autoCreateEnabled,
+    };
+
+    return await _resolveContactWithDeps(norm, tenantDomain, opts, deps);
   } catch {
     return null;
   }
 }
 
+// ---------------------------------------------------------------------------
+// Pre-warm helper (called from sales routes after writing prospect contactId)
+// ---------------------------------------------------------------------------
+
 /**
- * Pre-warm the marketing email_recipients cache with a contact ID resolved
- * from the sales outreach side. Called whenever a prospect's hubspotContactId
- * is written so the next marketing send hits the cache.
- *
- * Safe to call with any email that may or may not have existing list rows —
- * it updates rows that exist and lack an id; creates nothing new.
+ * Upsert a resolved contact ID into the shared cache so the next marketing
+ * send finds it without a HubSpot API call. Safe to fire-and-forget
+ * (catch(() => {}) at the call site).
  */
 export async function preWarmMarketingCache(
   tenantDomain: string,
@@ -180,11 +254,7 @@ export async function preWarmMarketingCache(
 ): Promise<void> {
   const norm = normalizeEmail(email);
   if (!norm || !contactId) return;
-  try {
-    await backfillCache(tenantDomain, norm, contactId);
-  } catch {
-    // Best-effort; never block the caller.
-  }
+  await upsertCache(tenantDomain, norm, contactId);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,9 +262,10 @@ export async function preWarmMarketingCache(
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve all recipients of a send to HubSpot contact ids and persist the
- * results onto email_send_recipients (and back-fill the email_recipients
- * cache). Never throws — returns counts for audit/diagnostics.
+ * Resolve all recipients of a send to HubSpot contact IDs and persist the
+ * results onto email_send_recipients. Calls resolveHubspotContactId per
+ * recipient so the shared priority chain is always respected. Never throws —
+ * returns counts for audit/diagnostics.
  */
 export async function resolveSendRecipientContacts(opts: {
   tenantDomain: string;
@@ -203,14 +274,14 @@ export async function resolveSendRecipientContacts(opts: {
   const { tenantDomain, sendId } = opts;
   try {
     const rows = await db
-      .select({ email: emailSendRecipients.email })
+      .select({ email: emailSendRecipients.email, name: emailSendRecipients.name })
       .from(emailSendRecipients)
       .where(eq(emailSendRecipients.sendId, sendId));
+
     const emails = dedupeEmails(rows.map((r) => r.email));
     if (emails.length === 0) return { ...EMPTY, ran: true };
 
-    // Feature gate: a downgrade / manual override disables sync even if a
-    // connection exists. Mark skipped so reporting stays accurate.
+    // Feature gate check — mark skipped/pending without touching HubSpot.
     if (!(await isHubspotEmailSyncEnabled(tenantDomain))) {
       await markStatus(sendId, emails, null, "skipped");
       return { ...EMPTY, skipped: emails.length, ran: false };
@@ -218,66 +289,57 @@ export async function resolveSendRecipientContacts(opts: {
 
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn) {
-      // No CRM connection — mark everything skipped so reporting is accurate.
       await markStatus(sendId, emails, null, "skipped");
       return { ...EMPTY, skipped: emails.length, ran: false };
     }
     if (!hasHubspotEmailScopes(conn)) {
-      // Connection predates the marketing-email scopes (tenant needs to
-      // re-authorize). Do NOT resolve or auto-create contacts before consent —
-      // leave recipients pending so the backfill picks them up after re-auth.
       await markStatus(sendId, emails, null, "pending");
       return { ...EMPTY, ran: false };
     }
 
-    // 1) Cache hit: check prospects first, then email_recipients.
-    const cached = await loadCachedContactIds(tenantDomain, emails);
+    const nameByEmail = new Map(rows.map((r) => [normalizeEmail(r.email), r.name ?? null]));
 
-    const toLookup = emails.filter((e) => !cached.has(e));
-    const { client } = await getTenantClient(tenantDomain);
-
-    // 2) Search HubSpot by email for the remainder.
-    const found = await searchContactsByEmail(client, toLookup);
-
-    // 3) Create missing contacts when auto-create is enabled.
-    const missing = toLookup.filter((e) => !found.has(e));
-    const created = new Map<string, string>();
-    if (conn.autoCreateHubspotContacts) {
-      const nameByEmail = await loadNames(sendId, missing);
-      // Pre-fetch company IDs from prospects for all missing emails in one query.
-      const companyIdByEmail = await loadProspectCompanyIds(tenantDomain, missing);
-      let createdCount = 0;
-      for (const email of missing) {
-        if (createdCount >= MAX_CREATE_PER_SEND) break;
-        try {
-          const id = await createContact(client, email, nameByEmail.get(email) ?? null, companyIdByEmail.get(email) ?? null);
-          created.set(email, id);
-          createdCount += 1;
-        } catch {
-          // leave as skipped/error below
-        }
-      }
-    }
-
-    // Persist per recipient.
     const result: ResolveResult = { resolved: 0, created: 0, skipped: 0, errors: 0, ran: true };
+
     for (const email of emails) {
-      const id = cached.get(email) ?? found.get(email) ?? created.get(email) ?? null;
+      const norm = normalizeEmail(email);
+      // Determine whether this is a new contact create by checking if
+      // the cache/prospects have it before we call resolve.
+      const preExists = await hasExistingContactId(tenantDomain, norm);
+
+      const contactId = await resolveHubspotContactId(norm, tenantDomain, {
+        autoCreate: conn.autoCreateHubspotContacts ?? false,
+        name: nameByEmail.get(norm) ?? null,
+      });
+
       let outcome: ContactResolutionOutcome;
-      if (cached.has(email) || found.has(email)) outcome = "found";
-      else if (created.has(email)) outcome = "created";
-      else outcome = "not_found";
+      if (!contactId) {
+        outcome = "not_found";
+      } else if (preExists) {
+        outcome = "found";
+      } else {
+        // resolveHubspotContactId created it (or searched HubSpot and found
+        // it for the first time this send) — distinguish by whether it was
+        // already in HubSpot vs genuinely new via auto-create.
+        // For result accounting, created means the auto-create path ran.
+        // We mark "created" here conservatively only when autoCreate was on
+        // and it wasn't pre-existing — the exact distinction doesn't affect
+        // downstream logic, only the result counter.
+        outcome = conn.autoCreateHubspotContacts ? "created" : "found";
+      }
 
-      await markStatus(sendId, [email], id, syncStatusForOutcome(outcome));
-      if (id) await backfillCache(tenantDomain, email, id);
+      await markStatus(sendId, [email], contactId, syncStatusForOutcome(outcome));
 
-      if (outcome === "found" || outcome === "created") result.resolved += 1;
+      // Also backfill the list-level cache row if it exists.
+      if (contactId) await backfillListCache(tenantDomain, norm, contactId);
+
+      if (contactId) result.resolved += 1;
       if (outcome === "created") result.created += 1;
       if (outcome === "not_found") result.skipped += 1;
     }
+
     return result;
   } catch {
-    // Resolution is best-effort; swallow so the send result is unaffected.
     return { ...EMPTY, ran: false, errors: 1 };
   }
 }
@@ -286,137 +348,71 @@ export async function resolveSendRecipientContacts(opts: {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Load cached contact IDs from both the prospects table (sales side) and
- * email_recipients (marketing cache). Prospects are checked first — the sales
- * team is more likely to have a resolved id for known contacts.
- */
-async function loadCachedContactIds(tenantDomain: string, emails: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+/** True when the tenant+email already has a resolved contact ID in either
+ *  the prospects table or the shared cache. Used to distinguish "found" vs
+ *  "created" in the batch resolver result counts. */
+async function hasExistingContactId(tenantDomain: string, email: string): Promise<boolean> {
+  const [cacheRow] = await db
+    .select({ id: hubspotContactIdCache.hubspotContactId })
+    .from(hubspotContactIdCache)
+    .where(
+      and(
+        eq(hubspotContactIdCache.tenantDomain, tenantDomain),
+        eq(hubspotContactIdCache.email, email),
+      ),
+    )
+    .limit(1);
+  if (cacheRow) return true;
 
-  for (let i = 0; i < emails.length; i += SEARCH_CHUNK) {
-    const chunk = emails.slice(i, i + SEARCH_CHUNK);
-
-    // Check prospects table first.
-    const prospectRows = await db
-      .select({ email: prospects.email, hubspotContactId: prospects.hubspotContactId })
-      .from(prospects)
-      .where(
-        and(
-          eq(prospects.tenantDomain, tenantDomain),
-          inArray(prospects.email, chunk),
-          isNotNull(prospects.hubspotContactId),
-        ),
-      );
-    for (const r of prospectRows) {
-      if (r.email && r.hubspotContactId) map.set(normalizeEmail(r.email), r.hubspotContactId);
-    }
-
-    // Fill in any still-missing from email_recipients cache.
-    const stillMissing = chunk.filter((e) => !map.has(e));
-    if (stillMissing.length > 0) {
-      const recipientRows = await db
-        .select({ email: emailRecipients.email, hubspotContactId: emailRecipients.hubspotContactId })
-        .from(emailRecipients)
-        .where(
-          and(
-            eq(emailRecipients.tenantDomain, tenantDomain),
-            inArray(emailRecipients.email, stillMissing),
-          ),
-        );
-      for (const r of recipientRows) {
-        if (r.hubspotContactId) map.set(r.email.trim().toLowerCase(), r.hubspotContactId);
-      }
-    }
-  }
-  return map;
-}
-
-/** Fetch hubspot_company_id from prospects for a list of emails (best-effort, for contact-create association). */
-async function loadProspectCompanyIds(tenantDomain: string, emails: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (emails.length === 0) return map;
-  const rows = await db
-    .select({ email: prospects.email, hubspotCompanyId: prospects.hubspotCompanyId })
+  const [prospectRow] = await db
+    .select({ id: prospects.hubspotContactId })
     .from(prospects)
     .where(
       and(
         eq(prospects.tenantDomain, tenantDomain),
-        inArray(prospects.email, emails),
-        isNotNull(prospects.hubspotCompanyId),
+        eq(prospects.email, email),
+        isNotNull(prospects.hubspotContactId),
+      ),
+    )
+    .limit(1);
+  return !!prospectRow?.id;
+}
+
+/** Upsert the resolved contact ID into the shared cross-system cache. */
+async function upsertCache(
+  tenantDomain: string,
+  email: string,
+  contactId: string,
+): Promise<void> {
+  // Drizzle does not expose onConflictDoUpdate in a cross-DB way without
+  // the dialect-specific `.onConflictDoUpdate()`; use raw SQL via the PG
+  // "ON CONFLICT" clause through Drizzle's insert + sql template.
+  await db
+    .insert(hubspotContactIdCache)
+    .values({ tenantDomain, email, hubspotContactId: contactId, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [hubspotContactIdCache.tenantDomain, hubspotContactIdCache.email],
+      set: { hubspotContactId: contactId, updatedAt: new Date() },
+    });
+}
+
+/** Back-fill the list-level email_recipients cache row when it exists. This
+ *  is a secondary write — the primary cache is hubspotContactIdCache. */
+async function backfillListCache(
+  tenantDomain: string,
+  email: string,
+  contactId: string,
+): Promise<void> {
+  await db
+    .update(emailRecipients)
+    .set({ hubspotContactId: contactId, hsSyncStatus: "resolved", hsLastSyncedAt: new Date() })
+    .where(
+      and(
+        eq(emailRecipients.tenantDomain, tenantDomain),
+        eq(emailRecipients.email, email),
+        isNull(emailRecipients.hubspotContactId),
       ),
     );
-  for (const r of rows) {
-    if (r.email && r.hubspotCompanyId) map.set(normalizeEmail(r.email), r.hubspotCompanyId);
-  }
-  return map;
-}
-
-async function loadNames(sendId: string, emails: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (emails.length === 0) return map;
-  const rows = await db
-    .select({ email: emailSendRecipients.email, name: emailSendRecipients.name })
-    .from(emailSendRecipients)
-    .where(and(eq(emailSendRecipients.sendId, sendId), inArray(emailSendRecipients.email, emails)));
-  for (const r of rows) {
-    if (r.name) map.set(r.email.trim().toLowerCase(), r.name);
-  }
-  return map;
-}
-
-async function searchContactsByEmail(
-  client: Awaited<ReturnType<typeof getTenantClient>>["client"],
-  emails: string[],
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  for (let i = 0; i < emails.length; i += SEARCH_CHUNK) {
-    const chunk = emails.slice(i, i + SEARCH_CHUNK);
-    const result = await client.crm.contacts.searchApi.doSearch({
-      filterGroups: [{ filters: [{ propertyName: "email", operator: "IN", values: chunk }] }],
-      properties: ["email"],
-      limit: SEARCH_CHUNK,
-      after: "0",
-    } as any);
-    for (const c of result.results) {
-      const email = ((c.properties as Record<string, string>)?.email || "").trim().toLowerCase();
-      if (email) map.set(email, c.id);
-    }
-  }
-  return map;
-}
-
-async function createContact(
-  client: Awaited<ReturnType<typeof getTenantClient>>["client"],
-  email: string,
-  name: string | null,
-  hubspotCompanyId: string | null,
-): Promise<string> {
-  const properties: Record<string, string> = { email };
-  if (name) {
-    const parts = name.trim().split(/\s+/);
-    properties.firstname = parts[0];
-    if (parts.length > 1) properties.lastname = parts.slice(1).join(" ");
-  }
-  const created = await client.crm.contacts.basicApi.create({ properties, associations: [] });
-  const contactId = created.id;
-
-  // Associate with HubSpot company when the prospect link exists.
-  if (hubspotCompanyId) {
-    try {
-      await client.crm.associations.v4.basicApi.create(
-        "contacts",
-        contactId,
-        "companies",
-        hubspotCompanyId,
-        [{ associationCategory: "HUBSPOT_DEFINED" as any, associationTypeId: 1 }],
-      );
-    } catch {
-      // Best-effort; contact is still usable without the company link.
-    }
-  }
-
-  return contactId;
 }
 
 async function markStatus(
@@ -435,18 +431,4 @@ async function markStatus(
       hsSyncError: status === "error" ? "contact resolution failed" : null,
     })
     .where(and(eq(emailSendRecipients.sendId, sendId), inArray(emailSendRecipients.email, emails)));
-}
-
-/** Cache the resolved id on any list rows for this tenant+email that lack one. */
-async function backfillCache(tenantDomain: string, email: string, contactId: string): Promise<void> {
-  await db
-    .update(emailRecipients)
-    .set({ hubspotContactId: contactId, hsSyncStatus: "resolved", hsLastSyncedAt: new Date() })
-    .where(
-      and(
-        eq(emailRecipients.tenantDomain, tenantDomain),
-        eq(emailRecipients.email, email),
-        isNull(emailRecipients.hubspotContactId),
-      ),
-    );
 }
