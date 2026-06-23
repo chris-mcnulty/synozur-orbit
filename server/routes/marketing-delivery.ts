@@ -310,7 +310,16 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
         });
         pushSubscribe(row.tenantDomain, row.email).catch(() => {});
       }
-      const subscribed = action === "resubscribe";
+      // Recompute the real subscribed state from the suppression table rather
+      // than assuming the action succeeded — the mutation can be a no-op (e.g.
+      // still suppressed for a different reason), so the page must reflect
+      // whether the recipient is actually deliverable now.
+      const [stillSuppressed] = await db.select({ id: emailSuppressions.id }).from(emailSuppressions)
+        .where(and(
+          eq(emailSuppressions.tenantDomain, row.tenantDomain),
+          eq(emailSuppressions.email, row.email),
+        ));
+      const subscribed = !stillSuppressed;
       res.status(200).send(preferenceCenterHtml(req.params.token, escapeHtml(row.email), subscribed, true));
     } catch (err: any) {
       console.error("[Preferences] Update failed:", err?.message);

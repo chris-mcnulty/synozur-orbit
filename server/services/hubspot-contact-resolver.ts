@@ -16,7 +16,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { emailSendRecipients, emailRecipients } from "@shared/schema";
-import { getTenantClient } from "./hubspot-integration";
+import { getTenantClient, hasHubspotEmailScopes } from "./hubspot-integration";
 import { storage } from "../storage";
 import { isHubspotEmailSyncEnabled } from "./hubspot-email-sync";
 import { dedupeEmails, syncStatusForOutcome, type ContactResolutionOutcome } from "./hubspot-email-sync-core";
@@ -68,6 +68,13 @@ export async function resolveSendRecipientContacts(opts: {
       // No CRM connection — mark everything skipped so reporting is accurate.
       await markStatus(sendId, emails, null, "skipped");
       return { ...EMPTY, skipped: emails.length, ran: false };
+    }
+    if (!hasHubspotEmailScopes(conn)) {
+      // Connection predates the marketing-email scopes (tenant needs to
+      // re-authorize). Do NOT resolve or auto-create contacts before consent —
+      // leave recipients pending so the backfill picks them up after re-auth.
+      await markStatus(sendId, emails, null, "pending");
+      return { ...EMPTY, ran: false };
     }
 
     // 1) Cache hit: pull any contact ids already resolved on the list rows.
@@ -188,7 +195,7 @@ async function markStatus(
   sendId: string,
   emails: string[],
   contactId: string | null,
-  status: "resolved" | "skipped" | "error",
+  status: "resolved" | "skipped" | "error" | "pending",
 ): Promise<void> {
   if (emails.length === 0) return;
   await db

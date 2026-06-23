@@ -542,7 +542,7 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
               <SendStat label="Unsub" value={data.unsubscribeCount} testid={`stat-unsub-${data.id}`} />
               <SendStat label="Failed" value={data.failedCount} testid={`stat-failed-${data.id}`} />
             </div>
-            {data.hubspotSync && (data.hubspotSync.resolved + data.hubspotSync.skipped + data.hubspotSync.error > 0) && (
+            {data.hubspotSync && (data.hubspotSync.resolved + data.hubspotSync.skipped + data.hubspotSync.pending + data.hubspotSync.error > 0) && (
               <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="hubspot-sync-summary">
                 <span className="text-muted-foreground">HubSpot sync:</span>
                 <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">{data.hubspotSync.resolved} synced</Badge>
