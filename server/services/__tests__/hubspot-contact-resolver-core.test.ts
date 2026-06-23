@@ -21,11 +21,11 @@ import { normalizeEmail, dedupeEmails, syncStatusForOutcome } from "../hubspot-e
 function makeDeps(overrides: Partial<ContactResolverDeps> = {}): ContactResolverDeps {
   return {
     prospectLookup: vi.fn().mockResolvedValue(null),
-    cacheLookup: vi.fn().mockResolvedValue(null),
+    recipientCacheLookup: vi.fn().mockResolvedValue(null),
     hubspotSearch: vi.fn().mockResolvedValue(null),
     hubspotCreate: vi.fn().mockResolvedValue("NEW-1"),
     associateCompany: vi.fn().mockResolvedValue(undefined),
-    writeCache: vi.fn().mockResolvedValue(undefined),
+    writeRecipientCache: vi.fn().mockResolvedValue(undefined),
     autoCreateEnabled: true,
     ...overrides,
   };
@@ -44,26 +44,26 @@ describe("_resolveContactWithDeps — priority chain", () => {
     const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
     assert.equal(result, "PROS-1");
-    assert.equal((deps.cacheLookup as any).mock.calls.length, 0, "cache should be skipped");
+    assert.equal((deps.recipientCacheLookup as any).mock.calls.length, 0, "recipient cache should be skipped");
     assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "HubSpot search should be skipped");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
   });
 
-  it("writes the prospect contact ID to cache", async () => {
+  it("writes the prospect contact ID to recipient cache", async () => {
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue({ contactId: "PROS-2", companyId: null }),
     });
 
     await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
-    assert.equal((deps.writeCache as any).mock.calls.length, 1);
-    assert.equal((deps.writeCache as any).mock.calls[0][0], "PROS-2");
+    assert.equal((deps.writeRecipientCache as any).mock.calls.length, 1);
+    assert.equal((deps.writeRecipientCache as any).mock.calls[0][0], "PROS-2");
   });
 
-  it("falls through to shared cache when prospect has no contact ID", async () => {
+  it("falls through to recipient cache when prospect has no contact ID", async () => {
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue(null),
-      cacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
+      recipientCacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
     });
 
     const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
@@ -73,7 +73,7 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
   });
 
-  it("falls through to HubSpot search when cache misses", async () => {
+  it("falls through to HubSpot search when recipient cache misses", async () => {
     const deps = makeDeps({
       hubspotSearch: vi.fn().mockResolvedValue("HS-1"),
     });
@@ -82,7 +82,7 @@ describe("_resolveContactWithDeps — priority chain", () => {
 
     assert.equal(result, "HS-1");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
-    assert.equal((deps.writeCache as any).mock.calls[0][0], "HS-1");
+    assert.equal((deps.writeRecipientCache as any).mock.calls[0][0], "HS-1");
   });
 
   it("auto-creates when all lookups return null and autoCreateEnabled is true", async () => {
@@ -94,7 +94,7 @@ describe("_resolveContactWithDeps — priority chain", () => {
 
     assert.equal(result, "CREATED-1");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 1);
-    assert.equal((deps.writeCache as any).mock.calls[0][0], "CREATED-1");
+    assert.equal((deps.writeRecipientCache as any).mock.calls[0][0], "CREATED-1");
   });
 
   it("does NOT create when autoCreate option is false", async () => {
@@ -122,13 +122,13 @@ describe("_resolveContactWithDeps — priority chain", () => {
 
     assert.equal(result, null);
     assert.equal((deps.prospectLookup as any).mock.calls.length, 0);
-    assert.equal((deps.cacheLookup as any).mock.calls.length, 0);
+    assert.equal((deps.recipientCacheLookup as any).mock.calls.length, 0);
   });
 
   it("associates contact with company when prospect has companyId", async () => {
-    // prospectLookup returns a row with companyId but no contactId (sales
-    // knows the company but hasn't resolved the contact yet). The resolver
-    // falls through to auto-create and then associates with the company.
+    // prospectLookup returns companyId but no contactId — prospect is known to
+    // sales but hasn't been synced to HubSpot yet. Resolver falls through to
+    // auto-create and should associate the new contact with the company.
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue({ contactId: null as any, companyId: "CO-1" }),
       hubspotCreate: vi.fn().mockResolvedValue("CREATED-2"),
@@ -151,24 +151,26 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.associateCompany as any).mock.calls.length, 0);
   });
 
-  it("sales prewarm is found by subsequent marketing resolution (cross-system cache hit)", async () => {
-    // Simulates: sales imports prospect → prewarm writes to cache → marketing
-    // send resolves same email → should hit cache, NOT call HubSpot search.
-    const cacheStore = new Map<string, string>();
+  it("cross-system prewarm: sales-written recipient cache is found by marketing resolve", async () => {
+    // Simulates the sales import → preWarmMarketingCache → marketing send flow:
+    // After sales writes a contactId to email_recipients, the next marketing
+    // resolve for the same email should hit the recipient cache and NOT call
+    // HubSpot search or auto-create.
+    const recipientCache = new Map<string, string>();
     const prewarmId = "PREWARM-1";
 
-    // Sales path: sales already resolved and wrote to cache
-    cacheStore.set("a@b.com", prewarmId);
+    // Simulate sales path prewarm: write to recipient cache
+    recipientCache.set("a@b.com", prewarmId);
 
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue(null),
-      cacheLookup: vi.fn().mockImplementation(async () => cacheStore.get("a@b.com") ?? null),
+      recipientCacheLookup: vi.fn().mockImplementation(async () => recipientCache.get("a@b.com") ?? null),
     });
 
     const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
     assert.equal(result, prewarmId);
-    assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "should not call HubSpot after prewarm");
+    assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "should not search HubSpot after prewarm");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "should not create after prewarm");
   });
 });
