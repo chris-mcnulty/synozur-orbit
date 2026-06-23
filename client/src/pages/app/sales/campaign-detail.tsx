@@ -495,13 +495,13 @@ export default function OutreachCampaignDetailPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
       setCsvResult({ imported: data.imported, skipped: data.skipped });
-      queryClient.invalidateQueries({ queryKey: prospectsKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns", id, "prospects"] });
     } catch (err: any) {
       toast({ title: "Import failed", description: err.message, variant: "destructive" });
     } finally {
       setCsvImporting(false);
     }
-  }, [csvRows, csvSelected, id, prospectsKey, queryClient, toast]);
+  }, [csvRows, csvSelected, id, queryClient, toast]);
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
   const campaignKey = ["/api/sales-outreach/campaigns", id];
