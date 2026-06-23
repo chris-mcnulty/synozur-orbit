@@ -3153,6 +3153,10 @@ export const generatedPosts = pgTable("generated_posts", {
   publishError: text("publish_error"),
   publishAttemptCount: integer("publish_attempt_count").notNull().default(0),
   publishNextAttemptAt: timestamp("publish_next_attempt_at"),
+  // Per-post delivery mode override. null = follow campaign autoPublish setting
+  // (or standalone auto); "csv" = reserved for CSV export only — the
+  // auto-publish worker will never touch this post even if autoPublish is on.
+  deliveryMode: text("delivery_mode"),
   // Voice profile applied at schedule/publish time. Snapshot (not FK) so
   // later edits to the voice profile don't retroactively change history.
   voiceProfileSnapshot: jsonb("voice_profile_snapshot").$type<VoiceProfileSnapshot>(),

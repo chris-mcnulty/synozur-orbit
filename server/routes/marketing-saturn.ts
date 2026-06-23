@@ -2596,6 +2596,36 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Per-post delivery mode — marks posts as Orbit-scheduled (null) or CSV-only.
+  // Skipping auto-publish for individual posts without touching the campaign-wide
+  // autoPublish toggle. Accepted: deliveryMode = null | "csv"; postIds = [] for all.
+  app.put("/api/campaigns/:campaignId/generated-posts/bulk-delivery-mode", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { deliveryMode, postIds } = req.body;
+      if (deliveryMode !== null && deliveryMode !== "csv") {
+        return res.status(400).json({ error: "deliveryMode must be null or 'csv'" });
+      }
+      const scopedIds: string[] = Array.isArray(postIds) && postIds.length > 0 ? postIds : [];
+      const baseCondition = eq(generatedPosts.campaignId, campaign.id);
+      const condition = scopedIds.length
+        ? and(baseCondition, inArray(generatedPosts.id, scopedIds))
+        : baseCondition;
+      const rows = await db.update(generatedPosts)
+        .set({ deliveryMode: deliveryMode ?? null, updatedAt: new Date() })
+        .where(condition)
+        .returning({ id: generatedPosts.id });
+      res.json({ updated: rows.length });
+    } catch (err: any) {
+      console.error("[Generated Posts Bulk Delivery Mode Error]", err.message);
+      res.status(500).json({ error: "Failed to update delivery mode" });
+    }
+  });
+
   // Mark a specific set of posts as delivered (= exported). Called after the
   // user confirms the scheduling tool accepted the downloaded CSV, so a
   // rejected export never silently buries posts.
@@ -2662,7 +2692,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [campaign] = await db.select().from(campaigns)
         .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel, publishedUrl, socialAccountId } = req.body;
+      const { editedContent, status, overrideImageUrl, overrideBrandAssetId, scheduledDate, hashtags, linkUrl, linkLabel, publishedUrl, socialAccountId, deliveryMode } = req.body;
       if (status === "rejected" || status === "deleted") {
         await db.delete(generatedPosts)
           .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)));
@@ -2711,6 +2741,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (hashtags !== undefined) updateFields.hashtags = Array.isArray(hashtags) ? hashtags : [];
       if (linkUrl !== undefined) updateFields.linkUrl = linkUrl || null;
       if (linkLabel !== undefined) updateFields.linkLabel = linkLabel || null;
+      if (deliveryMode !== undefined) updateFields.deliveryMode = deliveryMode === "csv" ? "csv" : null;
       const [row] = await db.update(generatedPosts)
         .set(updateFields)
         .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))

@@ -20,7 +20,7 @@
  */
 
 import { db } from "../db";
-import { eq, and, lte, isNotNull, or, isNull, sql } from "drizzle-orm";
+import { eq, and, lte, isNotNull, or, isNull, sql, ne } from "drizzle-orm";
 import {
   generatedPosts,
   socialAccounts,
@@ -105,6 +105,11 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           or(
             isNull(generatedPosts.campaignId),
             eq(campaignSocialAccounts.autoPublish, true),
+          ),
+          // Skip posts explicitly reserved for CSV export only.
+          or(
+            isNull(generatedPosts.deliveryMode),
+            ne(generatedPosts.deliveryMode, "csv"),
           ),
         ),
       )

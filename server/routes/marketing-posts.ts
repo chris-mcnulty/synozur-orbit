@@ -347,7 +347,7 @@ export function registerMarketingPostsRoutes(app: Express) {
 
       const {
         editedContent, hashtags, status, scheduledDate, content,
-        overrideImageUrl, overrideBrandAssetId,
+        overrideImageUrl, overrideBrandAssetId, deliveryMode,
       } = req.body ?? {};
 
       const updateFields: Partial<GeneratedPost> & { updatedAt: Date } = { updatedAt: new Date() };
@@ -401,6 +401,10 @@ export function registerMarketingPostsRoutes(app: Express) {
           }
           updateFields.scheduledDate = parsed;
         }
+      }
+
+      if (deliveryMode !== undefined) {
+        (updateFields as any).deliveryMode = deliveryMode === "csv" ? "csv" : null;
       }
 
       // When the user transitions to 'approved' (regardless of campaign vs

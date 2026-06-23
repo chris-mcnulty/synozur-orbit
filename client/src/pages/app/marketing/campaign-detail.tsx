@@ -46,6 +46,9 @@ import {
   SquareCheck,
   Users,
   ImageOff,
+  Send,
+  FileDown,
+  AlertCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -1395,6 +1398,40 @@ export default function CampaignDetailPage() {
     onError: (err: Error) => toast({ title: "Auto-publish update failed", description: err.message, variant: "destructive" }),
   });
 
+  const setDeliveryModeMutation = useMutation({
+    mutationFn: async ({ postId, deliveryMode }: { postId: string; deliveryMode: string | null }) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ deliveryMode }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update delivery mode");
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] }),
+    onError: (err: Error) => toast({ title: "Delivery mode update failed", description: err.message, variant: "destructive" }),
+  });
+
+  const bulkDeliveryModeMutation = useMutation({
+    mutationFn: async ({ deliveryMode, postIds }: { deliveryMode: string | null; postIds?: string[] }) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/bulk-delivery-mode`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ deliveryMode, postIds: postIds ?? [] }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed");
+      return r.json();
+    },
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      setPostSelectedIds(new Set());
+      toast({ title: `${data.updated} post${data.updated !== 1 ? "s" : ""} ${vars.deliveryMode === "csv" ? "reserved for CSV only" : "returned to Orbit scheduling"}` });
+    },
+    onError: (err: Error) => toast({ title: "Bulk delivery mode failed", description: err.message, variant: "destructive" }),
+  });
+
   const publishNowMutation = useMutation({
     mutationFn: async (postId: string) => {
       const r = await fetch(`/api/generated-posts/${postId}/publish`, {
@@ -2715,6 +2752,30 @@ export default function CampaignDetailPage() {
                     {postSelectedIds.size > 0 ? `Reject selected (${postSelectedIds.size})` : "Reject All"}
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  onClick={() => bulkDeliveryModeMutation.mutate({ deliveryMode: null, postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
+                  disabled={bulkDeliveryModeMutation.isPending}
+                  title="Mark these posts for auto-delivery by Orbit at their scheduled time"
+                  data-testid="button-bulk-orbit"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {postSelectedIds.size > 0 ? `Orbit (${postSelectedIds.size})` : "Orbit: all"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-muted-foreground border-muted-foreground/30 hover:bg-muted"
+                  onClick={() => bulkDeliveryModeMutation.mutate({ deliveryMode: "csv", postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
+                  disabled={bulkDeliveryModeMutation.isPending}
+                  title="Reserve these posts for CSV export — Orbit will never auto-publish them"
+                  data-testid="button-bulk-csv"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  {postSelectedIds.size > 0 ? `CSV only (${postSelectedIds.size})` : "CSV only: all"}
+                </Button>
               </div>
             )}
 
@@ -3075,6 +3136,33 @@ export default function CampaignDetailPage() {
                                   </Badge>
                                 )}
                                 <PostStageBadge post={post} />
+                                {(() => {
+                                  const dm = (post as any).deliveryMode as string | null;
+                                  if (dm === "csv") return (
+                                    <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground border-muted-foreground/30 shrink-0" data-testid={`badge-csv-only-${post.id}`}>
+                                      <FileDown className="w-2.5 h-2.5" />CSV only
+                                    </Badge>
+                                  );
+                                  if (post.status === "approved" && post.scheduledDate) {
+                                    if (!post.socialAccountId) return (
+                                      <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-300 shrink-0" data-testid={`badge-no-account-${post.id}`}>
+                                        <AlertCircle className="w-2.5 h-2.5" />No account
+                                      </Badge>
+                                    );
+                                    const csa = campaign?.socialAccounts.find(c => c.socialAccountId === post.socialAccountId);
+                                    if (post.campaignId && !csa?.autoPublish) return (
+                                      <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-300 shrink-0" data-testid={`badge-autopublish-off-${post.id}`}>
+                                        <AlertCircle className="w-2.5 h-2.5" />Auto-publish off
+                                      </Badge>
+                                    );
+                                    return (
+                                      <Badge className="text-[10px] gap-1 bg-blue-600 text-white border-transparent shrink-0" data-testid={`badge-orbit-scheduled-${post.id}`}>
+                                        <Send className="w-2.5 h-2.5" />Orbit scheduled
+                                      </Badge>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 {post.sourceBriefId && (() => {
                                   const srcBrief = briefs.find(b => b.id === post.sourceBriefId);
                                   return srcBrief ? (
@@ -3125,6 +3213,26 @@ export default function CampaignDetailPage() {
                             <Calendar className="w-2.5 h-2.5" />No date — excluded from export
                           </Badge>
                         )}
+                        <div className="flex items-center gap-1 rounded border overflow-hidden text-[10px] shrink-0" data-testid={`post-delivery-mode-${post.id}`} title="Choose how this post gets published">
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 flex items-center gap-1 transition-colors ${(post as any).deliveryMode !== "csv" ? "bg-blue-600 text-white" : "text-muted-foreground hover:bg-muted"}`}
+                            onClick={() => setDeliveryModeMutation.mutate({ postId: post.id, deliveryMode: null })}
+                            title="Orbit will auto-publish at the scheduled time"
+                            data-testid={`button-delivery-orbit-${post.id}`}
+                          >
+                            <Send className="w-2.5 h-2.5" /> Orbit
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 flex items-center gap-1 border-l transition-colors ${(post as any).deliveryMode === "csv" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                            onClick={() => setDeliveryModeMutation.mutate({ postId: post.id, deliveryMode: "csv" })}
+                            title="Reserve for CSV export only — Orbit will never auto-publish this"
+                            data-testid={`button-delivery-csv-${post.id}`}
+                          >
+                            <FileDown className="w-2.5 h-2.5" /> CSV only
+                          </button>
+                        </div>
                         <Button
                           variant="ghost"
                           size="sm"
