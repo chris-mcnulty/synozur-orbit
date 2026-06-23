@@ -459,7 +459,13 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     }
   }
 
-  if (recipients.length === 0) {
+  // ── Create / update the send row BEFORE writing suppressed rows ──────────
+  // This must happen before the empty-recipient early-return so that we always
+  // have a send.id to attach suppressed-prospect audit rows to, even when ALL
+  // recipients have been excluded.
+  if (recipients.length === 0 && suppressedFromSend.filter(s => s.reason === "active_prospect").length === 0) {
+    // Genuinely empty: no deliverable recipients and no prospect suppression.
+    // Update the existing row (worker path) and throw so the caller knows.
     if (existingSendId) {
       await db.update(emailSends).set({
         status: "failed",
@@ -469,7 +475,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     }
     throw Object.assign(new Error("No deliverable recipients (list empty or all suppressed)."), { status: 400 });
   }
-  if (!bumpTenantSendCount(tenantDomain, recipients.length)) {
+  if (recipients.length > 0 && !bumpTenantSendCount(tenantDomain, recipients.length)) {
     throw Object.assign(new Error(`Daily send cap of ${MAX_SENDS_PER_TENANT_PER_DAY} reached for this tenant.`), { status: 429 });
   }
 
@@ -506,10 +512,11 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     send = inserted;
   }
 
-  // Write suppressed active-prospect rows BEFORE the main recipient rows so
-  // the send has a full audit trail. These use a stable token but are never
-  // used for delivery — the token is required because unsubscribeToken is
-  // NOT NULL UNIQUE.
+  // Write suppressed active-prospect rows now that we have send.id. This is
+  // done before the deliverable-recipient check so that even when ALL
+  // recipients were excluded as active prospects the audit trail is persisted.
+  // The token is required because unsubscribeToken is NOT NULL UNIQUE; it is
+  // never used for delivery.
   const activeProspectSuppressed = suppressedFromSend.filter(s => s.reason === "active_prospect");
   if (activeProspectSuppressed.length > 0) {
     await db.insert(emailSendRecipients).values(
@@ -523,6 +530,20 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
         suppressionReason: "active_prospect",
       })),
     );
+  }
+
+  // If all recipients were excluded as active prospects, complete the send
+  // gracefully with 0 delivered (not "failed") so the operator sees an accurate
+  // summary rather than a generic error.
+  if (recipients.length === 0) {
+    const msg = `All ${activeProspectSuppressed.length} recipient${activeProspectSuppressed.length !== 1 ? "s" : ""} excluded as active sales prospects.`;
+    await db.update(emailSends).set({
+      status: "completed",
+      errorMessage: msg,
+      sentCount: 0,
+      completedAt: new Date(),
+    }).where(eq(emailSends.id, send.id));
+    return { sentCount: 0, failedCount: 0 };
   }
 
   // Pre-create per-recipient rows with unsubscribe tokens.
