@@ -366,10 +366,9 @@ export class LinkedInPublisher implements SocialPublisher {
     }
 
     // ----------------------------------------------------------------
-    // Carousel posts: stitch all composited slide images into a PDF
-    // and upload as a LinkedIn document. LinkedIn renders document
-    // posts as a full-screen swipeable carousel ("8 pages" style),
-    // whereas multiImage only gives a photo-collection grid.
+    // Carousel posts: try document (full-screen swipeable PDF) first;
+    // fall back to multiImage (per-image upload) if the Document API
+    // is not enabled for this LinkedIn app (404 RESOURCE_NOT_FOUND).
     // ----------------------------------------------------------------
     const isCarousel = (post as any).postFormat === "carousel";
     const rawSlides: Array<{ imageUrl?: string | null }> =
@@ -378,6 +377,8 @@ export class LinkedInPublisher implements SocialPublisher {
         : [];
 
     let documentAssetUrn: string | null = null;
+    let multiImageUrns: string[] = [];
+
     if (isCarousel) {
       const slideUrls = rawSlides
         .map(s => s.imageUrl)
@@ -392,7 +393,8 @@ export class LinkedInPublisher implements SocialPublisher {
         };
       }
 
-      // Download all slide images sequentially (avoids hammering storage).
+      // --- Attempt 1: PDF document upload (full-screen swipeable) ---
+      // Download all slide images for the PDF stitch.
       const slideBuffers: ArrayBuffer[] = [];
       for (const url of slideUrls) {
         const absUrl = url.startsWith("/")
@@ -410,30 +412,30 @@ export class LinkedInPublisher implements SocialPublisher {
         }
       }
 
-      if (slideBuffers.length === 0) {
-        return {
-          success: false,
-          errorCode: "carousel_no_images",
-          errorMessage:
-            "Could not download any carousel slide images — check that the images have been generated.",
-        };
+      if (slideBuffers.length > 0) {
+        console.log(`[LinkedIn] Carousel: ${slideBuffers.length}/${slideUrls.length} slides downloaded. Building PDF…`);
+        const pdfBytes = await buildCarouselPdf(slideBuffers);
+        console.log(`[LinkedIn] Carousel PDF built: ${(pdfBytes.byteLength / 1024).toFixed(0)} KB`);
+        documentAssetUrn = await this.uploadDocumentAsset(accessToken, account.authorUrn, pdfBytes);
       }
 
-      console.log(`[LinkedIn] Carousel: ${slideBuffers.length}/${slideUrls.length} slides downloaded. Building PDF…`);
-
-      // Stitch slides into a single PDF (one image per page).
-      const pdfBytes = await buildCarouselPdf(slideBuffers);
-      console.log(`[LinkedIn] Carousel PDF built: ${(pdfBytes.byteLength / 1024).toFixed(0)} KB`);
-
-      // Upload the PDF as a LinkedIn document.
-      documentAssetUrn = await this.uploadDocumentAsset(accessToken, account.authorUrn, pdfBytes);
+      // --- Attempt 2: multiImage fallback (feed carousel grid) ---
+      // Used when the Document API is unavailable for this app (404).
       if (!documentAssetUrn) {
-        return {
-          success: false,
-          errorCode: "carousel_upload_failed",
-          errorMessage:
-            "Carousel PDF failed to upload to LinkedIn — check that the slide image URLs are reachable.",
-        };
+        console.log("[LinkedIn] Document upload unavailable — falling back to multiImage carousel.");
+        for (const url of slideUrls) {
+          const urn = await this.uploadImageAsset(accessToken, account.authorUrn, url);
+          if (urn) multiImageUrns.push(urn);
+        }
+        if (multiImageUrns.length === 0) {
+          return {
+            success: false,
+            errorCode: "carousel_upload_failed",
+            errorMessage:
+              "Carousel images failed to upload to LinkedIn — check that the slide images have been generated.",
+          };
+        }
+        console.log(`[LinkedIn] multiImage fallback: ${multiImageUrns.length}/${slideUrls.length} images uploaded.`);
       }
     }
 
@@ -467,11 +469,18 @@ export class LinkedInPublisher implements SocialPublisher {
     };
 
     if (documentAssetUrn) {
-      // Document carousel — the proper full-screen swipeable format.
+      // Document carousel — full-screen swipeable format (requires Document API).
       postBody.content = {
         document: {
           altText: (post as any).title ?? "Carousel",
           id: documentAssetUrn,
+        },
+      };
+    } else if (multiImageUrns.length > 0) {
+      // multiImage carousel — scrollable feed carousel, works on all LinkedIn apps.
+      postBody.content = {
+        multiImage: {
+          images: multiImageUrns.map((id, i) => ({ id, altText: `Slide ${i + 1}` })),
         },
       };
     } else if (imageAssetUrn) {
