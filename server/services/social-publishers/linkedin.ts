@@ -614,12 +614,12 @@ export class LinkedInPublisher implements SocialPublisher {
   ): Promise<string | null> {
     try {
       // 1. Initialize document upload.
-      const initResp = await fetch(`${API_HOST}/v2/documents?action=initializeUpload`, {
+      const initResp = await fetch(`${API_HOST}/rest/documents?action=initializeUpload`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-          "LinkedIn-Version": "202304",
+          "LinkedIn-Version": "202302",
           "X-Restli-Protocol-Version": "2.0.0",
         },
         body: JSON.stringify({
