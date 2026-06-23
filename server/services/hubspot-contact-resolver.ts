@@ -8,23 +8,29 @@
  *
  * Resolution priority
  * ─────────────────────────────────────────────────────────────────────────
- *   1. prospects.hubspotContactId  — sales already resolved this contact
- *   2. hubspotContactIdCache       — durable cross-system cache; both paths
- *                                    can upsert freely (no FK constraints)
- *   3. HubSpot search by email     — live API lookup
- *   4. auto-create (if enabled)    — creates contact + associates company
+ *   1. prospects.hubspotContactId       — sales already resolved this contact
+ *   2. email_recipients.hubspotContactId — per-list cache; covers contacts
+ *                                          that have already been on a list
+ *   3. hubspotContactIdCache             — durable cross-system cache (no FK);
+ *                                          written by sales prewarm and by the
+ *                                          resolver after steps 4/5
+ *   4. HubSpot search by email           — live API lookup
+ *   5. auto-create (if enabled)          — creates contact + associates company
  *
- * After steps 3 or 4 the resolved ID is written to hubspotContactIdCache so
- * subsequent resolves hit the cache. email_recipients is also back-filled as
- * a secondary write (list-scoped cache). Unlike hubspotContactIdCache,
- * email_recipients has a NOT NULL listId FK and cannot be INSERT-ed without a
- * known list, so its backfill is UPDATE-only.
+ * Two-layer cache design:
+ *   email_recipients (step 2)  — has a NOT NULL listId FK so INSERT is only
+ *                                possible when a list row already exists.
+ *                                Populated at send-time; covers returning
+ *                                contacts that have been on a marketing list.
+ *   hubspotContactIdCache (step 3) — no FK constraints; accepts true upserts
+ *                                from both sales (preWarmMarketingCache) and
+ *                                the resolver after a live lookup.
+ *                                Covers prospects that were imported via sales
+ *                                but have never been on a marketing list.
  *
- * Why a dedicated cache table?
- * `preWarmMarketingCache` is called from sales routes after writing a contact
- * ID to a prospect. At that point no email_recipients row may exist yet (the
- * contact has never received a marketing email). hubspotContactIdCache has no
- * FK constraints and accepts true upserts from both systems.
+ * After steps 4 or 5 the resolved ID is written to hubspotContactIdCache so
+ * subsequent resolves skip the HubSpot API. email_recipients is back-filled
+ * via UPDATE (existing rows only) as an additional secondary optimization.
  *
  * Public exports
  * ──────────────
@@ -37,13 +43,13 @@
  *   Returns ResolveOutcome { contactId, wasCreated }.
  *
  * preWarmMarketingCache(tenantDomain, email, contactId)
- *   Upserts into hubspotContactIdCache so the next marketing send skips the
- *   HubSpot API call. Called fire-and-forget from sales routes after writing
- *   a prospect's hubspotContactId.
+ *   Upserts into hubspotContactIdCache (true upsert, no FK constraints) so
+ *   the next marketing send finds the ID at step 3 without a HubSpot API call.
+ *   Safe to fire-and-forget.
  *
  * resolveSendRecipientContacts(opts)
- *   Batch resolver for a marketing send — calls resolveHubspotContactId per
- *   recipient with a MAX_CREATE_PER_SEND cap, then persists results.
+ *   Batch resolver — calls resolveHubspotContactId per recipient with a
+ *   MAX_CREATE_PER_SEND cap, then persists results onto email_send_recipients.
  */
 
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
@@ -84,7 +90,7 @@ export interface ResolveResult {
 const EMPTY: ResolveResult = { resolved: 0, created: 0, skipped: 0, errors: 0, ran: false };
 
 /** Structured return from the resolver. wasCreated is true ONLY when the
- *  HubSpot create API was actually called (step 4). Steps 1–3 set it false,
+ *  HubSpot create API was actually called (step 5). Steps 1–4 set it false,
  *  so callers can count true auto-creates accurately. */
 export interface ResolveOutcome {
   contactId: string | null;
@@ -97,15 +103,19 @@ export interface ResolveOutcome {
 export interface ContactResolverDeps {
   /** Return { contactId, companyId } if the prospects table has a resolved id. */
   prospectLookup(): Promise<{ contactId: string; companyId: string | null } | null>;
-  /** Return the cached id from hubspotContactIdCache, or null. */
-  cacheLookup(): Promise<string | null>;
+  /** Return the cached id from email_recipients.hubspotContactId, or null.
+   *  Covers contacts that have previously been on a marketing list. */
+  recipientCacheLookup(): Promise<string | null>;
+  /** Return the cached id from hubspotContactIdCache, or null.
+   *  Covers contacts prewarmed via sales without an existing list row. */
+  sharedCacheLookup(): Promise<string | null>;
   /** Search HubSpot by email; return the contact id or null. */
   hubspotSearch(): Promise<string | null>;
   /** Create a new HubSpot contact; return the new id. */
   hubspotCreate(): Promise<string>;
   /** Associate a contact with a company (best-effort, may throw). */
   associateCompany(contactId: string, companyId: string): Promise<void>;
-  /** Upsert the resolved id to hubspotContactIdCache + backfill email_recipients. */
+  /** Upsert the resolved id to hubspotContactIdCache + back-fill email_recipients. */
   writeCache(contactId: string): Promise<void>;
   /** Whether the tenant has auto-create enabled. */
   autoCreateEnabled: boolean;
@@ -138,18 +148,23 @@ export async function _resolveContactWithDeps(
     return { contactId: prospect.contactId, wasCreated: false };
   }
 
-  // Step 2: shared cross-system cache (hubspotContactIdCache)
-  const cached = await deps.cacheLookup();
-  if (cached) return { contactId: cached, wasCreated: false };
+  // Step 2: per-list marketing cache (email_recipients.hubspotContactId)
+  const listCached = await deps.recipientCacheLookup();
+  if (listCached) return { contactId: listCached, wasCreated: false };
 
-  // Step 3: HubSpot search
+  // Step 3: shared cross-system cache (hubspotContactIdCache)
+  // Covers prospects imported via sales that have never been on a list.
+  const sharedCached = await deps.sharedCacheLookup();
+  if (sharedCached) return { contactId: sharedCached, wasCreated: false };
+
+  // Step 4: HubSpot search
   const found = await deps.hubspotSearch();
   if (found) {
     await deps.writeCache(found).catch(() => {});
     return { contactId: found, wasCreated: false };
   }
 
-  // Step 4: auto-create
+  // Step 5: auto-create
   if (!opts.autoCreate || !deps.autoCreateEnabled) {
     return { contactId: null, wasCreated: false };
   }
@@ -170,8 +185,7 @@ export async function _resolveContactWithDeps(
 
 /**
  * Resolve a single email address to a HubSpot contact ID. This is THE single
- * call site for the marketing-email path (batch resolver calls it per email).
- * Returns ResolveOutcome { contactId, wasCreated }. Never throws.
+ * call site for the marketing-email path. Never throws. Returns ResolveOutcome.
  */
 export async function resolveHubspotContactId(
   email: string,
@@ -226,7 +240,22 @@ export async function resolveHubspotContactId(
         return { contactId: null as any, companyId: companyRow?.companyId ?? null };
       },
 
-      async cacheLookup() {
+      async recipientCacheLookup() {
+        const [row] = await db
+          .select({ hubspotContactId: emailRecipients.hubspotContactId })
+          .from(emailRecipients)
+          .where(
+            and(
+              eq(emailRecipients.tenantDomain, tenantDomain),
+              eq(emailRecipients.email, norm),
+              isNotNull(emailRecipients.hubspotContactId),
+            ),
+          )
+          .limit(1);
+        return row?.hubspotContactId ?? null;
+      },
+
+      async sharedCacheLookup() {
         const [row] = await db
           .select({ hubspotContactId: hubspotContactIdCache.hubspotContactId })
           .from(hubspotContactIdCache)
@@ -275,7 +304,9 @@ export async function resolveHubspotContactId(
       },
 
       async writeCache(contactId) {
-        await upsertContactCache(tenantDomain, norm, contactId);
+        // Primary: upsert into shared cross-system cache (true upsert, no FK).
+        await upsertSharedCache(tenantDomain, norm, contactId);
+        // Secondary: update any existing list-scoped email_recipients rows.
         await backfillListCache(tenantDomain, norm, contactId).catch(() => {});
       },
 
@@ -293,11 +324,10 @@ export async function resolveHubspotContactId(
 // ---------------------------------------------------------------------------
 
 /**
- * Upsert the resolved contact ID into hubspotContactIdCache so the next
- * marketing send finds it without a HubSpot API call.
- *
- * This is a TRUE upsert into the shared cache table (no FK constraints).
- * email_recipients is also back-filled as a secondary optimization.
+ * Upsert the resolved contact ID into hubspotContactIdCache so that the next
+ * marketing send finds it at step 3 of the priority chain without a HubSpot
+ * API call. This is a TRUE upsert — hubspotContactIdCache has no FK
+ * constraints, unlike email_recipients which requires a NOT NULL listId.
  * Safe to fire-and-forget.
  */
 export async function preWarmMarketingCache(
@@ -307,7 +337,8 @@ export async function preWarmMarketingCache(
 ): Promise<void> {
   const norm = normalizeEmail(email);
   if (!norm || !contactId) return;
-  await upsertContactCache(tenantDomain, norm, contactId);
+  await upsertSharedCache(tenantDomain, norm, contactId);
+  // Secondary back-fill for any existing list rows.
   await backfillListCache(tenantDomain, norm, contactId).catch(() => {});
 }
 
@@ -317,10 +348,9 @@ export async function preWarmMarketingCache(
 
 /**
  * Resolve all recipients of a send to HubSpot contact IDs and persist the
- * results onto email_send_recipients. Calls resolveHubspotContactId per
- * recipient (single canonical call site). Uses wasCreated from the outcome
- * to gate MAX_CREATE_PER_SEND accurately — HubSpot search hits (steps 1–3)
- * return wasCreated=false and do NOT burn the creation budget.
+ * results. Calls resolveHubspotContactId per recipient (single call site).
+ * Uses wasCreated from the outcome to gate MAX_CREATE_PER_SEND accurately —
+ * cache/search hits return wasCreated=false and do NOT burn the cap.
  * Never throws — returns counts for audit/diagnostics.
  */
 export async function resolveSendRecipientContacts(opts: {
@@ -369,8 +399,8 @@ export async function resolveSendRecipientContacts(opts: {
         name: nameByEmail.get(norm) ?? null,
       });
 
-      // wasCreated=true ONLY when hubspotCreate() actually fired (step 4).
-      // Search hits (step 3) return wasCreated=false and do not burn the cap.
+      // wasCreated=true ONLY when hubspotCreate() actually fired (step 5).
+      // Cache and search hits (steps 1–4) return wasCreated=false.
       if (wasCreated) createCount += 1;
 
       const outcome: ContactResolutionOutcome = !contactId
@@ -396,8 +426,9 @@ export async function resolveSendRecipientContacts(opts: {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/** Upsert the resolved contact ID into the shared cross-system cache. */
-async function upsertContactCache(
+/** Upsert the resolved id into the shared cross-system cache. No FK
+ *  constraints — accepts writes from both sales and marketing paths. */
+async function upsertSharedCache(
   tenantDomain: string,
   email: string,
   contactId: string,

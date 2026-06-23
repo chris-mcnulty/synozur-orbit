@@ -4,7 +4,7 @@
  * Uses the DI-based `_resolveContactWithDeps` export so tests never touch
  * the database or HubSpot network. Each dep is a vi.fn() stub that lets us
  * assert exact call counts, call order, and structured outcome (wasCreated)
- * for every step of the chain.
+ * for every step of the five-step chain.
  */
 
 import { strict as assert } from "node:assert";
@@ -22,7 +22,8 @@ import { normalizeEmail, dedupeEmails, syncStatusForOutcome } from "../hubspot-e
 function makeDeps(overrides: Partial<ContactResolverDeps> = {}): ContactResolverDeps {
   return {
     prospectLookup: vi.fn().mockResolvedValue(null),
-    cacheLookup: vi.fn().mockResolvedValue(null),
+    recipientCacheLookup: vi.fn().mockResolvedValue(null),
+    sharedCacheLookup: vi.fn().mockResolvedValue(null),
     hubspotSearch: vi.fn().mockResolvedValue(null),
     hubspotCreate: vi.fn().mockResolvedValue("NEW-1"),
     associateCompany: vi.fn().mockResolvedValue(undefined),
@@ -33,11 +34,11 @@ function makeDeps(overrides: Partial<ContactResolverDeps> = {}): ContactResolver
 }
 
 // ---------------------------------------------------------------------------
-// Priority chain
+// Priority chain — five-step
 // ---------------------------------------------------------------------------
 
 describe("_resolveContactWithDeps — priority chain", () => {
-  it("returns prospect cache hit without calling downstream lookups", async () => {
+  it("step 1: prospect hit skips all downstream lookups", async () => {
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue({ contactId: "PROS-1", companyId: null }),
     });
@@ -46,12 +47,13 @@ describe("_resolveContactWithDeps — priority chain", () => {
 
     assert.equal(contactId, "PROS-1");
     assert.equal(wasCreated, false);
-    assert.equal((deps.cacheLookup as any).mock.calls.length, 0, "shared cache should be skipped");
+    assert.equal((deps.recipientCacheLookup as any).mock.calls.length, 0, "recipient cache should be skipped");
+    assert.equal((deps.sharedCacheLookup as any).mock.calls.length, 0, "shared cache should be skipped");
     assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "HubSpot search should be skipped");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
   });
 
-  it("writes prospect contact ID to shared cache", async () => {
+  it("step 1: writes prospect contact ID to cache", async () => {
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue({ contactId: "PROS-2", companyId: null }),
     });
@@ -62,21 +64,37 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.writeCache as any).mock.calls[0][0], "PROS-2");
   });
 
-  it("falls through to shared cache when prospect has no contact ID", async () => {
+  it("step 2: recipient cache hit skips shared cache, HubSpot search, and create", async () => {
     const deps = makeDeps({
-      prospectLookup: vi.fn().mockResolvedValue(null),
-      cacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
+      recipientCacheLookup: vi.fn().mockResolvedValue("LIST-1"),
     });
 
     const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
-    assert.equal(contactId, "CACHE-1");
+    assert.equal(contactId, "LIST-1");
     assert.equal(wasCreated, false);
+    assert.equal((deps.sharedCacheLookup as any).mock.calls.length, 0, "shared cache should be skipped after recipient cache hit");
     assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "HubSpot search should be skipped");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
   });
 
-  it("falls through to HubSpot search when cache misses", async () => {
+  it("step 3: shared cache hit skips HubSpot search and create (cross-system prewarm)", async () => {
+    // Simulates sales import → preWarmMarketingCache → marketing send flow:
+    // After sales writes to hubspotContactIdCache, marketing resolve finds
+    // it at step 3 — no HubSpot API call needed.
+    const deps = makeDeps({
+      sharedCacheLookup: vi.fn().mockResolvedValue("PREWARM-1"),
+    });
+
+    const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
+
+    assert.equal(contactId, "PREWARM-1");
+    assert.equal(wasCreated, false);
+    assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "no HubSpot search after prewarm");
+    assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "no create after prewarm");
+  });
+
+  it("step 4: HubSpot search hit skips create and writes to cache", async () => {
     const deps = makeDeps({
       hubspotSearch: vi.fn().mockResolvedValue("HS-1"),
     });
@@ -89,7 +107,7 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.writeCache as any).mock.calls[0][0], "HS-1");
   });
 
-  it("auto-creates when all lookups return null and autoCreateEnabled is true", async () => {
+  it("step 5: auto-creates when all lookups return null and autoCreateEnabled is true", async () => {
     const deps = makeDeps({
       hubspotCreate: vi.fn().mockResolvedValue("CREATED-1"),
     });
@@ -136,13 +154,13 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal(contactId, null);
     assert.equal(wasCreated, false);
     assert.equal((deps.prospectLookup as any).mock.calls.length, 0);
-    assert.equal((deps.cacheLookup as any).mock.calls.length, 0);
+    assert.equal((deps.recipientCacheLookup as any).mock.calls.length, 0);
+    assert.equal((deps.sharedCacheLookup as any).mock.calls.length, 0);
   });
 
-  it("associates contact with company when prospect has companyId", async () => {
-    // prospectLookup returns companyId but no contactId — prospect is in the
-    // sales CRM but hasn't been synced to HubSpot yet. The resolver should
-    // fall through to auto-create and associate the new contact with the company.
+  it("associates new contact with company when prospect has companyId but no contactId", async () => {
+    // Prospect is in the sales CRM but hasn't been synced to HubSpot yet.
+    // All cache/search lookups miss, so we auto-create and associate.
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue({ contactId: null as any, companyId: "CO-1" }),
       hubspotCreate: vi.fn().mockResolvedValue("CREATED-2"),
@@ -165,29 +183,7 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.associateCompany as any).mock.calls.length, 0);
   });
 
-  it("cross-system prewarm: sales cache write is found by marketing resolve without HubSpot call", async () => {
-    // Simulates sales import → preWarmMarketingCache → marketing send flow:
-    // After sales writes a contactId to hubspotContactIdCache, the next marketing
-    // resolve for the same email hits the cache — not HubSpot search or create.
-    const sharedCache = new Map<string, string>();
-    sharedCache.set("a@b.com", "PREWARM-1");
-
-    const deps = makeDeps({
-      prospectLookup: vi.fn().mockResolvedValue(null),
-      cacheLookup: vi.fn().mockImplementation(
-        async () => sharedCache.get("a@b.com") ?? null,
-      ),
-    });
-
-    const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
-
-    assert.equal(contactId, "PREWARM-1");
-    assert.equal(wasCreated, false);
-    assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "no HubSpot search after prewarm");
-    assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "no create after prewarm");
-  });
-
-  it("create cap: HubSpot search hits do NOT consume the creation budget", async () => {
+  it("create cap: search and cache hits do NOT consume the creation budget", async () => {
     // 3 emails: first 2 found via HubSpot search (wasCreated=false), third is a
     // genuine miss. With cap=1, the third should still be auto-created because
     // the two search hits did not burn the cap.
@@ -204,7 +200,8 @@ describe("_resolveContactWithDeps — priority chain", () => {
       const allowCreate = createCount < cap;
       const deps = makeDeps({
         prospectLookup: vi.fn().mockResolvedValue(null),
-        cacheLookup: vi.fn().mockResolvedValue(null),
+        recipientCacheLookup: vi.fn().mockResolvedValue(null),
+        sharedCacheLookup: vi.fn().mockResolvedValue(null),
         hubspotSearch: vi.fn().mockResolvedValue(searchResult),
         hubspotCreate: vi.fn().mockResolvedValue(`CREATED-${email}`),
       });
