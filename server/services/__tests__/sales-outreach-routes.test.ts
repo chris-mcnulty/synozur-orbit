@@ -980,4 +980,100 @@ describe("sales-outreach routes", () => {
       expect(res.body).toHaveLength(1);
     });
   });
+
+  // ── POST /api/sales-outreach/campaigns/:id/import-csv ──────────────────────
+
+  describe("POST /api/sales-outreach/campaigns/:id/import-csv", () => {
+    const CAMPAIGN = { id: "camp-1", tenantDomain: "acme.com", name: "Q3 Outreach" };
+
+    const CSV_ROWS = [
+      { name: "Alice Smith", title: "VP of Marketing", companyName: "Acme Co", email: "alice@acme.com", linkedinUrl: "" },
+      { name: "Bob Jones", title: "Director of Sales", companyName: "Beta Inc", email: "bob@beta.com", linkedinUrl: "https://linkedin.com/in/bobjones" },
+    ];
+
+    it("imports new contacts and returns imported + skipped counts", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      // select existing → empty (no prospects on this campaign yet)
+      pushDb(); // resolves to []
+      // insert is called → consumes one queue slot (result is unused)
+      pushDb();
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/import-csv")
+        .send({ rows: CSV_ROWS });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ imported: 2, skipped: 0, total: 2 });
+    });
+
+    it("skips duplicates already on the campaign (by email)", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      // select existing → one prospect with alice's email
+      pushDb({ email: "alice@acme.com", name: "Alice Smith" });
+      // insert is called for Bob (the non-duplicate) → consumes one queue slot
+      pushDb();
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/import-csv")
+        .send({ rows: CSV_ROWS });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ imported: 1, skipped: 1, total: 2 });
+    });
+
+    it("deduplicates within the batch itself (same email twice)", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      // select existing → none
+      pushDb();
+      // insert for the one unique row
+      pushDb();
+
+      const duplicated = [CSV_ROWS[0], { ...CSV_ROWS[0] }]; // same email twice
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/import-csv")
+        .send({ rows: duplicated });
+
+      expect(res.status).toBe(200);
+      expect(res.body.imported).toBe(1);
+      expect(res.body.skipped).toBe(0); // intra-batch dedup is silent
+    });
+
+    it("returns 400 when no rows have a name", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      // The route returns 400 before touching the DB.
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/import-csv")
+        .send({ rows: [{ name: "", email: "nobody@example.com" }] });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.stringMatching(/name/i) });
+    });
+
+    it("returns 404 when the campaign does not exist", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(undefined as any);
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/nonexistent/import-csv")
+        .send({ rows: CSV_ROWS });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("imports contacts without an email (LinkedIn-only prospects)", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      const noEmailRow = { name: "Carol Lee", title: "CRO", companyName: "Gamma Ltd", email: "", linkedinUrl: "https://linkedin.com/in/carollee" };
+      // select existing → none
+      pushDb();
+      // insert
+      pushDb();
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/import-csv")
+        .send({ rows: [noEmailRow] });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ imported: 1, skipped: 0 });
+    });
+  });
 });

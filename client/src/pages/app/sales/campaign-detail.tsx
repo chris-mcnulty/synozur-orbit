@@ -1,4 +1,4 @@
-import { useState, useRef, KeyboardEvent } from "react";
+import { useState, useRef, KeyboardEvent, useCallback } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -61,6 +61,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useUser } from "@/lib/userContext";
+import { parseCSV } from "@/lib/csv-export";
 import {
   buildLinkedInDeepLinks,
   linkedinCharLimit,
@@ -416,6 +417,91 @@ export default function OutreachCampaignDetailPage() {
   const [hubspotSearching, setHubspotSearching] = useState(false);
   const [hubspotSelected, setHubspotSelected] = useState<Set<string>>(new Set());
   const [hubspotNotConnected, setHubspotNotConnected] = useState(false);
+
+  // Apollo / CSV import dialog state.
+  interface CsvProspectRow {
+    name: string;
+    title: string;
+    companyName: string;
+    email: string;
+    linkedinUrl: string;
+  }
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<CsvProspectRow[]>([]);
+  const [csvSelected, setCsvSelected] = useState<Set<number>>(new Set());
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const csvFileRef = useRef<HTMLInputElement>(null);
+
+  const parseApolloCSV = useCallback((text: string): CsvProspectRow[] => {
+    const parsed = parseCSV(text);
+    return parsed
+      .map((row) => {
+        // Apollo export uses "First Name" / "Last Name".
+        // Also support generic exports with a "Name" column.
+        const firstName = (row["First Name"] || "").trim();
+        const lastName = (row["Last Name"] || "").trim();
+        const name = firstName || lastName
+          ? [firstName, lastName].filter(Boolean).join(" ")
+          : (row["Name"] || "").trim();
+
+        // Email: blank out if Apollo marks it as Unavailable.
+        const emailStatus = (row["Email Status"] || "").trim();
+        const rawEmail = (row["Email"] || row["email"] || "").trim();
+        const email = emailStatus === "Unavailable" ? "" : rawEmail;
+
+        return {
+          name,
+          title: (row["Title"] || row["title"] || "").trim(),
+          companyName: (row["Company Name"] || row["Company"] || row["company"] || "").trim(),
+          email,
+          linkedinUrl: (row["Person Linkedin Url"] || row["LinkedIn URL"] || row["linkedin_url"] || "").trim(),
+        };
+      })
+      .filter((r) => r.name.length > 0);
+  }, []);
+
+  const onCsvFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const rows = parseApolloCSV(text);
+      if (rows.length === 0) {
+        toast({ title: "No contacts found", description: "The CSV had no rows with a name. Check the file and try again.", variant: "destructive" });
+        return;
+      }
+      setCsvRows(rows);
+      setCsvSelected(new Set(rows.map((_, i) => i)));
+      setCsvResult(null);
+      setCsvOpen(true);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }, [parseApolloCSV, toast]);
+
+  const importCsvProspects = useCallback(async () => {
+    const rows = csvRows.filter((_, i) => csvSelected.has(i));
+    if (rows.length === 0) return;
+    setCsvImporting(true);
+    try {
+      const res = await fetch(`/api/sales-outreach/campaigns/${id}/import-csv`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Import failed");
+      setCsvResult({ imported: data.imported, skipped: data.skipped });
+      queryClient.invalidateQueries({ queryKey: prospectsKey });
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setCsvImporting(false);
+    }
+  }, [csvRows, csvSelected, id, prospectsKey, queryClient, toast]);
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
   const campaignKey = ["/api/sales-outreach/campaigns", id];
@@ -882,6 +968,18 @@ export default function OutreachCampaignDetailPage() {
               <Download className="w-4 h-4 mr-1.5" />
               Import from HubSpot
             </Button>
+            <input
+              ref={csvFileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={onCsvFileChange}
+              data-testid="input-import-csv-prospects"
+            />
+            <Button variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects">
+              <Upload className="w-4 h-4 mr-1.5" />
+              Import from CSV
+            </Button>
             <Button onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
               <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
             </Button>
@@ -918,6 +1016,9 @@ export default function OutreachCampaignDetailPage() {
                 <div className="flex justify-center gap-2 flex-wrap">
                   <Button size="sm" variant="outline" onClick={openHubspotDialog} data-testid="button-import-hubspot-empty">
                     <Download className="w-3.5 h-3.5 mr-1.5" /> Import from HubSpot
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects-empty">
+                    <Upload className="w-3.5 h-3.5 mr-1.5" /> Import from CSV
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setAdding(true)} data-testid="button-add-prospect-empty">
                     <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Add manually
@@ -1502,6 +1603,92 @@ export default function OutreachCampaignDetailPage() {
                   No contacts found. Try a different search term.
                 </div>
               ) : null}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Apollo / CSV import dialog — preview parsed rows, select, import */}
+      <Dialog open={csvOpen} onOpenChange={(o) => { if (!o) { setCsvOpen(false); setCsvResult(null); } }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="w-4 h-4" /> Import from CSV
+            </DialogTitle>
+            <DialogDescription>
+              {csvResult
+                ? `Done — imported ${csvResult.imported} prospect${csvResult.imported !== 1 ? "s" : ""}, skipped ${csvResult.skipped} already on this campaign.`
+                : `${csvRows.length} contact${csvRows.length !== 1 ? "s" : ""} found. Select which to import — contacts without an email address are still imported using their LinkedIn URL.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {csvResult ? (
+            <div className="py-6 text-center space-y-4">
+              <p className="text-2xl font-semibold">{csvResult.imported} imported</p>
+              {csvResult.skipped > 0 && (
+                <p className="text-sm text-muted-foreground">{csvResult.skipped} skipped (already on campaign)</p>
+              )}
+              <Button onClick={() => { setCsvOpen(false); setCsvResult(null); }} data-testid="button-csv-done">Done</Button>
+            </div>
+          ) : (
+            <>
+              <div className="max-h-[55vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={csvSelected.size === csvRows.length && csvRows.length > 0}
+                          onCheckedChange={(v) => setCsvSelected(v ? new Set(csvRows.map((_, i) => i)) : new Set())}
+                          data-testid="checkbox-csv-select-all"
+                        />
+                      </TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Company</TableHead>
+                      <TableHead>Email</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {csvRows.map((row, i) => (
+                      <TableRow key={i} className={!csvSelected.has(i) ? "opacity-50" : ""} data-testid={`csv-row-${i}`}>
+                        <TableCell>
+                          <Checkbox
+                            checked={csvSelected.has(i)}
+                            onCheckedChange={(v) => {
+                              const s = new Set(csvSelected);
+                              v ? s.add(i) : s.delete(i);
+                              setCsvSelected(s);
+                            }}
+                            data-testid={`checkbox-csv-row-${i}`}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.title || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.companyName || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {row.email ? row.email : (
+                            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              <Linkedin className="w-3 h-3" /> LinkedIn only
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <DialogFooter className="gap-2 items-center sm:justify-between">
+                <span className="text-xs text-muted-foreground">{csvSelected.size} of {csvRows.length} selected</span>
+                <Button
+                  onClick={importCsvProspects}
+                  disabled={csvSelected.size === 0 || csvImporting}
+                  data-testid="button-import-csv-confirm"
+                >
+                  {csvImporting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+                  Import {csvSelected.size > 0 ? `${csvSelected.size} ` : ""}prospect{csvSelected.size !== 1 ? "s" : ""}
+                </Button>
+              </DialogFooter>
             </>
           )}
         </DialogContent>

@@ -1018,6 +1018,91 @@ export function registerSalesOutreachRoutes(app: Express) {
     }
   });
 
+  // Bulk import prospects from a CSV export (e.g. Apollo).
+  // Accepts a JSON body with a `rows` array of pre-parsed contact objects;
+  // parsing happens client-side so the server never touches the raw CSV bytes.
+  // Deduplicates against prospects already on the campaign by email.
+  app.post("/api/sales-outreach/campaigns/:id/import-csv", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const rawRows: Array<{
+        name?: string;
+        title?: string | null;
+        companyName?: string | null;
+        email?: string | null;
+        linkedinUrl?: string | null;
+      }> = Array.isArray(req.body?.rows) ? req.body.rows : [];
+
+      // Filter out rows with no usable name.
+      const validRows = rawRows.filter((r) => String(r.name ?? "").trim().length > 0);
+      if (validRows.length === 0) {
+        return res.status(400).json({ error: "No valid rows — each row must have at least a name." });
+      }
+
+      // Deduplicate within the batch itself (by normalized email, then by name).
+      const seenEmails = new Set<string>();
+      const seenNames = new Set<string>();
+      const dedupedRows = validRows.filter((r) => {
+        const email = (r.email || "").trim().toLowerCase();
+        const name = String(r.name).trim().toLowerCase();
+        if (email) {
+          if (seenEmails.has(email)) return false;
+          seenEmails.add(email);
+        } else {
+          if (seenNames.has(name)) return false;
+          seenNames.add(name);
+        }
+        return true;
+      });
+
+      // Deduplicate against prospects already on this campaign.
+      const existing = await db
+        .select({ email: prospects.email, name: prospects.name })
+        .from(prospects)
+        .where(eq(prospects.campaignId, campaign.id));
+      const haveEmails = new Set(existing.map((e) => (e.email || "").toLowerCase()).filter(Boolean));
+      const haveNames = new Set(existing.map((e) => (e.name || "").toLowerCase()).filter(Boolean));
+
+      const toInsert = dedupedRows.filter((r) => {
+        const email = (r.email || "").trim().toLowerCase();
+        if (email && haveEmails.has(email)) return false;
+        if (!email && haveNames.has(String(r.name).trim().toLowerCase())) return false;
+        return true;
+      });
+
+      if (toInsert.length > 0) {
+        await db.insert(prospects).values(
+          toInsert.map((r) => ({
+            campaignId: campaign.id,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            name: String(r.name).trim(),
+            title: r.title?.trim() || null,
+            companyName: r.companyName?.trim() || null,
+            email: r.email?.trim() || null,
+            linkedinUrl: isValidLinkedInProfileUrl(r.linkedinUrl) ? r.linkedinUrl!.trim() : null,
+            source: "import" as const,
+            ownerUserId: ctx.userId,
+            status: "new" as const,
+          })),
+        );
+      }
+
+      res.json({
+        imported: toInsert.length,
+        skipped: dedupedRows.length - toInsert.length,
+        total: rawRows.length,
+      });
+    } catch (err: any) {
+      console.error("[sales-outreach:import-csv]", err);
+      res.status(500).json({ error: err.message || "Failed to import CSV" });
+    }
+  });
+
   // Push a prospect into HubSpot (create/update the contact). Returns the id.
   app.post("/api/sales-outreach/prospects/:id/sync-hubspot", async (req, res) => {
     try {
