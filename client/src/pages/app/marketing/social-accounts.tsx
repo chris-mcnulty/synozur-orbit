@@ -794,18 +794,9 @@ export default function SocialAccountsPage() {
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        // The API surfaces a `configureRequired` flag when a tenant hasn't
-        // yet registered their OAuth app. Redirect to the credentials page
-        // rather than showing a confusing toast.
-        if (body?.configureRequired) {
-          const platform = body.platform || "this platform";
-          toast({
-            title: `${platform} credentials needed`,
-            description: "A tenant admin must configure platform credentials before connecting. Redirecting...",
-          });
-          setTimeout(() => { window.location.href = "/app/marketing/platform-credentials"; }, 1200);
-          throw new Error("Configure credentials first");
-        }
+        // Platforms use a single Synozur-owned OAuth app — tenants never
+        // configure credentials. A 503 here means Synozur hasn't enabled the
+        // shared app for this platform yet; just surface the message.
         throw new Error(body.error || "Connect failed");
       }
       return r.json() as Promise<{ authorizeUrl: string }>;
@@ -814,9 +805,7 @@ export default function SocialAccountsPage() {
       window.location.href = data.authorizeUrl;
     },
     onError: (err: Error) => {
-      if (err.message !== "Configure credentials first") {
-        toast({ title: "Connect failed", description: err.message, variant: "destructive" });
-      }
+      toast({ title: "Connect failed", description: err.message, variant: "destructive" });
     },
   });
 

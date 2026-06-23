@@ -212,7 +212,6 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Developer Portal", icon: Code, href: "/app/developer", description: "OAuth 2.0 Partner API for third-party integrations." },
         // One-time setup surfaces moved out of the daily-work Marketing menu.
         { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts", section: "Connections" },
-        { label: "Platform Credentials", icon: KeyRound, href: "/app/marketing/platform-credentials", section: "Connections" },
         { label: "Browser Extension", icon: Puzzle, href: "/app/marketing/browser-extension", section: "Connections" },
         ...(isAdminUser
           ? [
@@ -227,6 +226,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
               { label: "Admin Dashboard", icon: Crown, href: "/app/admin", section: "Administration" },
               { label: "Organizations", icon: Building2, href: "/app/admin/organizations", section: "Administration" },
               { label: "OAuth Clients", icon: KeyRound, href: "/app/admin/oauth-clients", section: "Administration" },
+              { label: "Platform Credentials", icon: KeyRound, href: "/app/admin/platform-credentials", section: "Administration", description: "Synozur-owned social OAuth apps (X, Meta) used by all tenants." },
               { label: "AI Settings", icon: Brain, href: "/app/admin/ai-settings", section: "Administration" },
             ]
           : []),
@@ -246,7 +246,6 @@ const SETTINGS_PREFIXES = [
   "/app/admin",
   "/app/developer",
   "/app/marketing/social-accounts",
-  "/app/marketing/platform-credentials",
   "/app/marketing/browser-extension",
 ];
 

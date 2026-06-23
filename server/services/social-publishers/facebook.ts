@@ -27,7 +27,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
-import { getPlatformCredentials } from "../platform-credentials-service";
+import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://www.facebook.com";
 const GRAPH_HOST = "https://graph.facebook.com";
@@ -66,6 +66,7 @@ export class FacebookPublisher implements SocialPublisher {
   supported = true;
 
   async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    if (!await isDirectPublishEnabled("facebook")) return false;
     const creds = await getPlatformCredentials(tenantDomain, "facebook");
     return !!(creds?.clientId && creds.clientSecret);
   }
@@ -73,7 +74,7 @@ export class FacebookPublisher implements SocialPublisher {
   async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
     const creds = await getPlatformCredentials(req.tenantDomain, "facebook");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("Facebook OAuth is not configured for this tenant. Configure your Facebook app_id and app_secret in Tenant → Platform Credentials.");
+      throw new Error("Facebook posting isn't available on Orbit yet — the shared Synozur app hasn't been configured. Please contact Synozur support.");
     }
     const params = new URLSearchParams({
       client_id: creds.clientId,

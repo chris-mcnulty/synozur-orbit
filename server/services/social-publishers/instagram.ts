@@ -26,7 +26,7 @@ import type {
   OAuthCallbackResult,
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
-import { getPlatformCredentials } from "../platform-credentials-service";
+import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-credentials-service";
 
 const AUTH_HOST = "https://www.facebook.com";
 const GRAPH_HOST = "https://graph.facebook.com";
@@ -82,8 +82,9 @@ export class InstagramPublisher implements SocialPublisher {
   platform = "instagram";
   supported = true;
 
-  // Reads "facebook" credentials — Instagram rides on the Facebook app.
+  // Reads "facebook" credentials — Instagram rides on the shared Meta app.
   async oauthConfigured(tenantDomain: string): Promise<boolean> {
+    if (!await isDirectPublishEnabled("facebook")) return false;
     const creds = await getPlatformCredentials(tenantDomain, "facebook");
     return !!(creds?.clientId && creds.clientSecret);
   }
@@ -91,7 +92,7 @@ export class InstagramPublisher implements SocialPublisher {
   async getOAuthAuthorizeUrl(req: OAuthAuthorizeRequest): Promise<string> {
     const creds = await getPlatformCredentials(req.tenantDomain, "facebook");
     if (!creds?.clientId || !creds.clientSecret) {
-      throw new Error("Instagram OAuth requires Facebook credentials. Configure your Facebook app_id and app_secret in Tenant → Platform Credentials (Instagram rides on the Facebook app).");
+      throw new Error("Instagram posting isn't available on Orbit yet — the shared Synozur Meta app hasn't been configured. Please contact Synozur support.");
     }
     const params = new URLSearchParams({
       client_id: creds.clientId,
