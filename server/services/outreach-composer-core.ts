@@ -43,6 +43,12 @@ export interface ComposePromptInput {
   linkedinFormat?: LinkedInFormat | null;
   /** Draft intent — an ask (outreach) vs warm, no-ask (engagement). */
   intent?: OutreachIntent | null;
+  /**
+   * When the campaign is anchored to a real event, this pre-formatted block
+   * carries the facts (name, date, location, URL). The model must use these
+   * verbatim and never invent or substitute event details.
+   */
+  eventBlock?: string | null;
 }
 
 // Per-channel guardrails. LinkedIn messages must be far shorter than email; the
@@ -128,6 +134,7 @@ export function buildComposePrompt(input: ComposePromptInput): string {
     `Write this outreach ${input.channel === "email" ? "email" : "LinkedIn message"}.`,
     input.strategicBlock,
     input.voiceBlock,
+    input.eventBlock,
     prospectBlock,
     stepBlock,
     format,

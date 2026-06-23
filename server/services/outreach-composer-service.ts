@@ -20,6 +20,7 @@ import {
   emailSuppressions,
   contentAssets,
   marketingLinks,
+  conferences,
   type Prospect,
   type OutreachTouch,
   type OutreachChannel,
@@ -175,6 +176,28 @@ export async function composeTouch(
 
   const resource = await resolveStepResource(campaign.id, stepNumber);
 
+  // Load the linked conference so the AI uses real event facts, not invented ones.
+  let eventBlock: string | null = null;
+  if (campaign.conferenceId) {
+    const [conf] = await db.select().from(conferences).where(eq(conferences.id, campaign.conferenceId));
+    if (conf) {
+      const dateStr = conf.startDate
+        ? new Date(conf.startDate).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+        : null;
+      const lines = [
+        "## Event — use these facts verbatim; do not invent or substitute any event details",
+        `Name: ${conf.name}`,
+        dateStr ? `Date: ${dateStr}` : null,
+        conf.location ? `Location: ${conf.location}` : null,
+        conf.website ? `RSVP / details URL: ${conf.website}` : null,
+        (conf.description || conf.thematicBrief)
+          ? `Description: ${(conf.description || conf.thematicBrief || "").slice(0, 600)}`
+          : null,
+      ].filter(Boolean);
+      eventBlock = lines.join("\n");
+    }
+  }
+
   const prompt = buildComposePrompt({
     channel,
     stepNumber,
@@ -188,6 +211,7 @@ export async function composeTouch(
     resource,
     linkedinFormat,
     intent,
+    eventBlock,
   });
 
   const result = await completeForFeature("outreach_composer", prompt, {

@@ -80,6 +80,7 @@ interface OutreachCampaign {
   channels: string[] | null;
   eventDate: string | null;
   productId: string | null;
+  conferenceId: string | null;
   targetPersonaIds: string[] | null;
   targetingFilter: {
     geographies?: string[];
@@ -89,6 +90,14 @@ interface OutreachCampaign {
     targetRoles?: string[];
   } | null;
   createdBy: string;
+}
+
+interface ConferenceSummary {
+  id: string;
+  name: string;
+  startDate: string | null;
+  location: string | null;
+  status: string;
 }
 
 interface Product {
@@ -292,6 +301,7 @@ function initEditForm(c: OutreachCampaign) {
     goalType: c.goalType,
     salesGoal: c.salesGoal ?? "",
     productId: c.productId ?? "",
+    conferenceId: c.conferenceId ?? "",
     targetPersonaIds: c.targetPersonaIds ?? [],
     channels: c.channels ?? [],
     geographies: c.targetingFilter?.geographies ?? [],
@@ -537,6 +547,15 @@ export default function OutreachCampaignDetailPage() {
     },
   });
 
+  const { data: conferenceList = [] } = useQuery<ConferenceSummary[]>({
+    queryKey: ["/api/conferences"],
+    queryFn: async () => {
+      const r = await fetch("/api/conferences", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
   const { data: marketingTouches = [] } = useQuery<MarketingTouch[]>({
     queryKey: ["/api/sales-outreach/prospects", dossier?.id, "marketing-touches"],
     enabled: !!dossier?.id,
@@ -574,6 +593,7 @@ export default function OutreachCampaignDetailPage() {
       goalType: editForm.goalType,
       salesGoal: editForm.salesGoal,
       productId: editForm.productId || null,
+      conferenceId: editForm.conferenceId || null,
       targetPersonaIds: editForm.targetPersonaIds,
       channels: editForm.channels,
       targetingFilter: {
@@ -984,6 +1004,19 @@ export default function OutreachCampaignDetailPage() {
                   <CalendarDays className="w-3.5 h-3.5" /> {new Date(campaign.eventDate).toLocaleDateString()}
                 </span>
               )}
+              {campaign.conferenceId && conferenceList.length > 0 && (() => {
+                const conf = conferenceList.find((c) => c.id === campaign.conferenceId);
+                if (!conf) return null;
+                const dateStr = conf.startDate
+                  ? new Date(conf.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                  : null;
+                return (
+                  <Badge variant="outline" className="text-[11px] gap-1" data-testid="badge-linked-event">
+                    <CalendarDays className="w-3 h-3" />
+                    {conf.name}{dateStr ? ` · ${dateStr}` : ""}
+                  </Badge>
+                );
+              })()}
             </div>
             <h1 className="text-2xl font-bold tracking-tight mt-1.5">{campaign.name}</h1>
             {campaign.salesGoal && <p className="text-muted-foreground mt-1 max-w-2xl">{campaign.salesGoal}</p>}
@@ -1321,6 +1354,35 @@ export default function OutreachCampaignDetailPage() {
                   placeholder="e.g. Book 10 discovery calls for Polaris"
                   data-testid="input-edit-sales-goal"
                 />
+              </div>
+
+              {/* Linked event */}
+              <div className="space-y-1.5">
+                <Label htmlFor="ec-conference">Linked event</Label>
+                <Select
+                  value={editForm.conferenceId || "__none__"}
+                  onValueChange={(v) => setEditForm({ ...editForm, conferenceId: v === "__none__" ? "" : v })}
+                >
+                  <SelectTrigger id="ec-conference" data-testid="select-edit-conference">
+                    <SelectValue placeholder="No event linked" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No event linked</SelectItem>
+                    {conferenceList.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                        {c.startDate && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {new Date(c.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  When an event is linked, generated messages use the real event name, date, and location — no invented details.
+                </p>
               </div>
 
               {/* Product */}

@@ -223,6 +223,7 @@ export function registerSalesOutreachRoutes(app: Express) {
     goalType: z.enum(["meeting", "event_invite", "intro", "nurture"]).optional(),
     salesGoal: z.string().max(1000).nullable().optional(),
     productId: z.string().uuid().nullable().optional(),
+    conferenceId: z.string().nullable().optional(),
     targetPersonaIds: z.array(z.string()).nullable().optional(),
     channels: z.array(z.enum(["email", "linkedin"])).nullable().optional(),
     targetingFilter: z.object({
@@ -260,6 +261,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (body.goalType !== undefined) update.goalType = body.goalType;
       if (body.salesGoal !== undefined) update.salesGoal = body.salesGoal?.trim() || null;
       if (body.productId !== undefined) update.productId = body.productId;
+      if (body.conferenceId !== undefined) update.conferenceId = body.conferenceId;
       if (body.targetPersonaIds !== undefined) update.targetPersonaIds = body.targetPersonaIds;
       if (body.channels !== undefined) {
         update.channels = body.channels && body.channels.length > 0 ? body.channels : null;
