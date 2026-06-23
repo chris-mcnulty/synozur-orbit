@@ -21,7 +21,7 @@ import { normalizeEmail, dedupeEmails, syncStatusForOutcome } from "../hubspot-e
 function makeDeps(overrides: Partial<ContactResolverDeps> = {}): ContactResolverDeps {
   return {
     prospectLookup: vi.fn().mockResolvedValue(null),
-    cacheLookup: vi.fn().mockResolvedValue(null),
+    recipientCacheLookup: vi.fn().mockResolvedValue(null),
     hubspotSearch: vi.fn().mockResolvedValue(null),
     hubspotCreate: vi.fn().mockResolvedValue("NEW-1"),
     associateCompany: vi.fn().mockResolvedValue(undefined),
@@ -60,10 +60,10 @@ describe("_resolveContactWithDeps — priority chain", () => {
     assert.equal((deps.writeCache as any).mock.calls[0][0], "PROS-2");
   });
 
-  it("falls through to cache when prospect has no contact ID", async () => {
+  it("falls through to recipient cache when prospect has no contact ID", async () => {
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue(null),
-      cacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
+      recipientCacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
     });
 
     const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
