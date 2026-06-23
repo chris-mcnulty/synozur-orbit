@@ -13,24 +13,26 @@
  *   4. auto-create (if enabled)          — creates contact + associates company
  *
  * When a contact ID is resolved via steps 3 or 4 it is written back to any
- * existing email_recipients rows so subsequent sends hit the cache.
+ * existing email_recipients rows so subsequent sends hit the list cache.
  * email_recipients has a NOT NULL listId FK — INSERT is not possible without a
- * known list; preWarmMarketingCache therefore issues UPDATE on existing rows.
+ * known list; writeRecipientCache therefore issues UPDATE on existing rows only.
  *
  * Public exports
  * ──────────────
  * _resolveContactWithDeps(email, tenantDomain, opts, deps)
  *   Pure DI-based core exported for unit tests — no DB or network needed.
+ *   Returns { contactId, wasCreated } so callers can count true auto-creates.
  *
  * resolveHubspotContactId(email, tenantDomain, opts)
  *   Canonical single-contact resolver. The ONLY call site for both paths.
  *
  * preWarmMarketingCache(tenantDomain, email, contactId)
  *   Updates existing email_recipients rows so the next marketing send finds
- *   the ID in the list cache without a HubSpot API call. UPDATE-only.
+ *   the ID without a HubSpot API call. UPDATE-only (no INSERT due to FK).
+ *   Safe to fire-and-forget.
  *
  * resolveSendRecipientContacts(opts)
- *   Batch resolver for a marketing send — calls resolveHubspotContactId per
+ *   Batch resolver for a marketing send — calls the internal resolver per
  *   recipient with a MAX_CREATE_PER_SEND cap and persists results onto
  *   email_send_recipients.
  */
@@ -49,8 +51,8 @@ import {
 } from "./hubspot-email-sync-core";
 
 // Per-send cap on auto-created contacts to protect against runaway CRM growth
-// and HubSpot API rate limits. Recipients beyond this cap are skipped (left for
-// the backfill job in a later phase to pick up after the send).
+// and HubSpot API rate limits. Recipients beyond this cap are left for the
+// backfill job (scheduled for a later phase) to pick up after the send.
 const MAX_CREATE_PER_SEND = Number(process.env.MARKETING_HS_MAX_CREATE_PER_SEND ?? 500);
 
 // ---------------------------------------------------------------------------
@@ -81,10 +83,16 @@ export interface ContactResolverDeps {
   hubspotCreate(): Promise<string>;
   /** Associate a contact with a company (best-effort, may throw). */
   associateCompany(contactId: string, companyId: string): Promise<void>;
-  /** Update existing email_recipients rows with the resolved id. */
+  /** Update existing email_recipients rows with the resolved id (UPDATE-only). */
   writeRecipientCache(contactId: string): Promise<void>;
   /** Whether the tenant has auto-create enabled. */
   autoCreateEnabled: boolean;
+}
+
+/** Structured return from the core resolver so callers can track true creates. */
+export interface ResolveOutcome {
+  contactId: string | null;
+  wasCreated: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,37 +103,39 @@ export interface ContactResolverDeps {
  * Pure resolution logic with injected deps. Tests pass vi.fn() stubs for
  * each dep and assert priority chain without DB or HubSpot network calls.
  *
- * Priority: prospect cache → recipient cache → HubSpot search → auto-create.
+ * Returns { contactId, wasCreated } so the batch resolver can accurately
+ * count true auto-creates and enforce MAX_CREATE_PER_SEND without counting
+ * HubSpot search hits against the cap.
  */
 export async function _resolveContactWithDeps(
   email: string,
   _tenantDomain: string,
   opts: { autoCreate?: boolean; name?: string | null },
   deps: ContactResolverDeps,
-): Promise<string | null> {
+): Promise<ResolveOutcome> {
   const norm = normalizeEmail(email);
-  if (!norm) return null;
+  if (!norm) return { contactId: null, wasCreated: false };
 
   // Step 1: sales prospect cache
   const prospect = await deps.prospectLookup();
   if (prospect?.contactId) {
     await deps.writeRecipientCache(prospect.contactId).catch(() => {});
-    return prospect.contactId;
+    return { contactId: prospect.contactId, wasCreated: false };
   }
 
   // Step 2: marketing list cache (email_recipients.hubspotContactId)
   const cached = await deps.recipientCacheLookup();
-  if (cached) return cached;
+  if (cached) return { contactId: cached, wasCreated: false };
 
   // Step 3: HubSpot search
   const found = await deps.hubspotSearch();
   if (found) {
     await deps.writeRecipientCache(found).catch(() => {});
-    return found;
+    return { contactId: found, wasCreated: false };
   }
 
   // Step 4: auto-create
-  if (!opts.autoCreate || !deps.autoCreateEnabled) return null;
+  if (!opts.autoCreate || !deps.autoCreateEnabled) return { contactId: null, wasCreated: false };
   const created = await deps.hubspotCreate();
   // Associate with company when the prospect row has a hubspotCompanyId.
   // companyId is returned even when contactId is null (prospects have both fields).
@@ -134,24 +144,27 @@ export async function _resolveContactWithDeps(
     await deps.associateCompany(created, companyId).catch(() => {});
   }
   await deps.writeRecipientCache(created).catch(() => {});
-  return created;
+  return { contactId: created, wasCreated: true };
 }
 
 // ---------------------------------------------------------------------------
-// Public single-contact resolver
+// Private internal resolver with real DB deps (builds deps, tracks wasCreated)
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a single email address to a HubSpot contact ID. This is THE single
- * call site used by both paths. Never throws — returns null on any failure.
+ * Internal helper used by both `resolveHubspotContactId` and the batch
+ * resolver. Builds the full set of DB/API deps in one place and calls
+ * `_resolveContactWithDeps`. Returns structured { contactId, wasCreated }
+ * so the batch resolver can count true auto-creates accurately.
+ * Never throws — returns null contactId on any failure.
  */
-export async function resolveHubspotContactId(
+async function _resolveWithOutcome(
   email: string,
   tenantDomain: string,
-  opts: { autoCreate?: boolean; name?: string | null } = {},
-): Promise<string | null> {
+  opts: { autoCreate?: boolean; name?: string | null },
+): Promise<ResolveOutcome> {
   const norm = normalizeEmail(email);
-  if (!norm) return null;
+  if (!norm) return { contactId: null, wasCreated: false };
 
   try {
     let client: Awaited<ReturnType<typeof getTenantClient>>["client"] | null = null;
@@ -258,8 +271,25 @@ export async function resolveHubspotContactId(
 
     return await _resolveContactWithDeps(norm, tenantDomain, opts, deps);
   } catch {
-    return null;
+    return { contactId: null, wasCreated: false };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Public single-contact resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a single email address to a HubSpot contact ID. This is THE single
+ * call site used by both paths. Never throws — returns null on any failure.
+ */
+export async function resolveHubspotContactId(
+  email: string,
+  tenantDomain: string,
+  opts: { autoCreate?: boolean; name?: string | null } = {},
+): Promise<string | null> {
+  const { contactId } = await _resolveWithOutcome(email, tenantDomain, opts);
+  return contactId;
 }
 
 // ---------------------------------------------------------------------------
@@ -289,10 +319,10 @@ export async function preWarmMarketingCache(
 
 /**
  * Resolve all recipients of a send to HubSpot contact IDs and persist the
- * results onto email_send_recipients. Calls `resolveHubspotContactId` per
- * recipient so the single canonical priority chain is always respected.
- * A MAX_CREATE_PER_SEND cap prevents runaway contact creation. Never throws
- * — returns counts for audit/diagnostics.
+ * results onto email_send_recipients. Uses `_resolveWithOutcome` per recipient
+ * so `wasCreated` accurately gates the MAX_CREATE_PER_SEND cap — HubSpot
+ * search hits (existing contacts) do NOT count against the creation budget.
+ * Never throws — returns counts for audit/diagnostics.
  */
 export async function resolveSendRecipientContacts(opts: {
   tenantDomain: string;
@@ -333,35 +363,26 @@ export async function resolveSendRecipientContacts(opts: {
     for (const email of emails) {
       const norm = normalizeEmail(email);
 
-      // Pre-snapshot: check if the email already has a resolved id in the
-      // recipient cache so we can accurately classify "found" vs "created".
-      const preCached = await hasRecipientCacheEntry(tenantDomain, norm);
-
       // Respect per-send create cap: once hit, disable auto-create for the
-      // remainder so excess recipients are skipped (left for backfill).
+      // remainder so excess recipients are left for backfill.
       const allowCreate = autoCreate && createCount < MAX_CREATE_PER_SEND;
 
-      const contactId = await resolveHubspotContactId(norm, tenantDomain, {
+      // Use _resolveWithOutcome (not the public resolveHubspotContactId) so we
+      // get wasCreated to accurately gate the cap. HubSpot search hits
+      // (steps 1–3) return wasCreated=false and do NOT burn the budget.
+      const { contactId, wasCreated } = await _resolveWithOutcome(norm, tenantDomain, {
         autoCreate: allowCreate,
         name: nameByEmail.get(norm) ?? null,
       });
 
-      let outcome: ContactResolutionOutcome;
-      if (!contactId) {
-        outcome = "not_found";
-      } else if (preCached) {
-        outcome = "found";
-      } else if (allowCreate) {
-        // Contact was not previously in our cache AND auto-create was on.
-        // Could be a HubSpot-search hit (existing CRM contact newly cached)
-        // or a genuine auto-create. We conservatively count as "created" here;
-        // downstream reporting uses syncStatus "resolved" for both cases.
-        outcome = "created";
-      } else {
-        outcome = "found";
-      }
+      // wasCreated is only true when hubspotCreate() was actually called.
+      if (wasCreated) createCount += 1;
 
-      if (outcome === "created") createCount += 1;
+      const outcome: ContactResolutionOutcome = !contactId
+        ? "not_found"
+        : wasCreated
+          ? "created"
+          : "found";
 
       await markStatus(sendId, [email], contactId, syncStatusForOutcome(outcome));
 
@@ -379,22 +400,6 @@ export async function resolveSendRecipientContacts(opts: {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-/** True when email_recipients has a resolved contact ID for this tenant+email. */
-async function hasRecipientCacheEntry(tenantDomain: string, email: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: emailRecipients.hubspotContactId })
-    .from(emailRecipients)
-    .where(
-      and(
-        eq(emailRecipients.tenantDomain, tenantDomain),
-        eq(emailRecipients.email, email),
-        isNotNull(emailRecipients.hubspotContactId),
-      ),
-    )
-    .limit(1);
-  return !!row?.id;
-}
 
 /** Update existing email_recipients rows with the resolved contact ID.
  *  email_recipients has a NOT NULL listId FK — INSERT without a list is

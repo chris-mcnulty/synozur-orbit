@@ -3,7 +3,8 @@
  *
  * Uses the DI-based `_resolveContactWithDeps` export so tests never touch
  * the database or HubSpot network. Each dep is a vi.fn() stub that lets us
- * assert exact call counts and call order for every step of the chain.
+ * assert exact call counts, call order, and structured outcome for every
+ * step of the chain.
  */
 
 import { strict as assert } from "node:assert";
@@ -41,9 +42,10 @@ describe("_resolveContactWithDeps — priority chain", () => {
       prospectLookup: vi.fn().mockResolvedValue({ contactId: "PROS-1", companyId: null }),
     });
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
-    assert.equal(result, "PROS-1");
+    assert.equal(contactId, "PROS-1");
+    assert.equal(wasCreated, false);
     assert.equal((deps.recipientCacheLookup as any).mock.calls.length, 0, "recipient cache should be skipped");
     assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "HubSpot search should be skipped");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
@@ -66,9 +68,10 @@ describe("_resolveContactWithDeps — priority chain", () => {
       recipientCacheLookup: vi.fn().mockResolvedValue("CACHE-1"),
     });
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
-    assert.equal(result, "CACHE-1");
+    assert.equal(contactId, "CACHE-1");
+    assert.equal(wasCreated, false);
     assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "HubSpot search should be skipped");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
   });
@@ -78,9 +81,10 @@ describe("_resolveContactWithDeps — priority chain", () => {
       hubspotSearch: vi.fn().mockResolvedValue("HS-1"),
     });
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
-    assert.equal(result, "HS-1");
+    assert.equal(contactId, "HS-1");
+    assert.equal(wasCreated, false, "search hit should NOT set wasCreated");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "create should be skipped");
     assert.equal((deps.writeRecipientCache as any).mock.calls[0][0], "HS-1");
   });
@@ -90,9 +94,12 @@ describe("_resolveContactWithDeps — priority chain", () => {
       hubspotCreate: vi.fn().mockResolvedValue("CREATED-1"),
     });
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", { autoCreate: true }, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps(
+      "a@b.com", "t.com", { autoCreate: true }, deps,
+    );
 
-    assert.equal(result, "CREATED-1");
+    assert.equal(contactId, "CREATED-1");
+    assert.equal(wasCreated, true, "auto-create should set wasCreated");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 1);
     assert.equal((deps.writeRecipientCache as any).mock.calls[0][0], "CREATED-1");
   });
@@ -100,27 +107,34 @@ describe("_resolveContactWithDeps — priority chain", () => {
   it("does NOT create when autoCreate option is false", async () => {
     const deps = makeDeps();
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", { autoCreate: false }, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps(
+      "a@b.com", "t.com", { autoCreate: false }, deps,
+    );
 
-    assert.equal(result, null);
+    assert.equal(contactId, null);
+    assert.equal(wasCreated, false);
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0);
   });
 
   it("does NOT create when autoCreateEnabled dep is false", async () => {
     const deps = makeDeps({ autoCreateEnabled: false });
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", { autoCreate: true }, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps(
+      "a@b.com", "t.com", { autoCreate: true }, deps,
+    );
 
-    assert.equal(result, null);
+    assert.equal(contactId, null);
+    assert.equal(wasCreated, false);
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0);
   });
 
   it("returns null for an empty / invalid email without calling any dep", async () => {
     const deps = makeDeps();
 
-    const result = await _resolveContactWithDeps("", "t.com", {}, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps("", "t.com", {}, deps);
 
-    assert.equal(result, null);
+    assert.equal(contactId, null);
+    assert.equal(wasCreated, false);
     assert.equal((deps.prospectLookup as any).mock.calls.length, 0);
     assert.equal((deps.recipientCacheLookup as any).mock.calls.length, 0);
   });
@@ -154,24 +168,72 @@ describe("_resolveContactWithDeps — priority chain", () => {
   it("cross-system prewarm: sales-written recipient cache is found by marketing resolve", async () => {
     // Simulates the sales import → preWarmMarketingCache → marketing send flow:
     // After sales writes a contactId to email_recipients, the next marketing
-    // resolve for the same email should hit the recipient cache and NOT call
-    // HubSpot search or auto-create.
+    // resolve for the same email hits the recipient cache without calling
+    // HubSpot search or auto-create. wasCreated must be false.
     const recipientCache = new Map<string, string>();
-    const prewarmId = "PREWARM-1";
-
-    // Simulate sales path prewarm: write to recipient cache
-    recipientCache.set("a@b.com", prewarmId);
+    recipientCache.set("a@b.com", "PREWARM-1");
 
     const deps = makeDeps({
       prospectLookup: vi.fn().mockResolvedValue(null),
-      recipientCacheLookup: vi.fn().mockImplementation(async () => recipientCache.get("a@b.com") ?? null),
+      recipientCacheLookup: vi.fn().mockImplementation(
+        async () => recipientCache.get("a@b.com") ?? null,
+      ),
     });
 
-    const result = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
+    const { contactId, wasCreated } = await _resolveContactWithDeps("a@b.com", "t.com", {}, deps);
 
-    assert.equal(result, prewarmId);
+    assert.equal(contactId, "PREWARM-1");
+    assert.equal(wasCreated, false);
     assert.equal((deps.hubspotSearch as any).mock.calls.length, 0, "should not search HubSpot after prewarm");
     assert.equal((deps.hubspotCreate as any).mock.calls.length, 0, "should not create after prewarm");
+  });
+
+  it("create cap: HubSpot search hits do NOT count against the cap", async () => {
+    // Simulates 3 emails: the first 2 are found via HubSpot search (wasCreated=false),
+    // the 3rd is a genuine miss that should still be auto-created even if we had a
+    // cap of 1. This verifies that caps count true creates, not search hits.
+    let createCount = 0;
+    const cap = 1;
+
+    const emails = ["a@b.com", "b@b.com", "c@b.com"];
+    // a@b.com and b@b.com: found via HubSpot search (existing contacts)
+    // c@b.com: not found anywhere → should be auto-created
+    const searchResults: Record<string, string | null> = {
+      "a@b.com": "HS-A",
+      "b@b.com": "HS-B",
+      "c@b.com": null,
+    };
+
+    for (const email of emails) {
+      const allowCreate = createCount < cap;
+      const deps = makeDeps({
+        prospectLookup: vi.fn().mockResolvedValue(null),
+        recipientCacheLookup: vi.fn().mockResolvedValue(null),
+        hubspotSearch: vi.fn().mockResolvedValue(searchResults[email] ?? null),
+        hubspotCreate: vi.fn().mockResolvedValue(`CREATED-${email}`),
+      });
+
+      const { contactId, wasCreated } = await _resolveContactWithDeps(
+        email, "t.com", { autoCreate: allowCreate }, deps,
+      );
+
+      if (wasCreated) createCount += 1;
+
+      if (email === "a@b.com") {
+        assert.equal(contactId, "HS-A");
+        assert.equal(wasCreated, false, "search hit must not set wasCreated");
+        assert.equal(createCount, 0, "cap not consumed by search hit");
+      } else if (email === "b@b.com") {
+        assert.equal(contactId, "HS-B");
+        assert.equal(wasCreated, false, "search hit must not set wasCreated");
+        assert.equal(createCount, 0, "cap still not consumed");
+      } else {
+        // c@b.com: cap=1, createCount=0 → allowCreate=true → should auto-create
+        assert.equal(contactId, `CREATED-${email}`);
+        assert.equal(wasCreated, true, "genuine miss with cap available should create");
+        assert.equal(createCount, 1);
+      }
+    }
   });
 });
 

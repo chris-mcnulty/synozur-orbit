@@ -1119,7 +1119,7 @@ async function pushProspectToHubspot(
   firstName: string,
   lastName: string,
 ): Promise<string> {
-  // Check shared resolver cache first (prospects → hubspotContactIdCache → HubSpot
+  // Check shared resolver first (prospects → email_recipients cache → HubSpot
   // search) so we avoid a redundant API call when the contact is already known.
   if (prospect.email) {
     const cached = await resolveHubspotContactId(prospect.email, tenantDomain, {
