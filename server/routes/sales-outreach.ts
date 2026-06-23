@@ -34,6 +34,7 @@ import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
+import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
@@ -746,6 +747,10 @@ export function registerSalesOutreachRoutes(app: Express) {
               (await pushProspectToHubspot(ctx.tenantDomain, prospect, first, rest.join(" ")));
             if (!prospect.hubspotContactId) {
               await db.update(prospects).set({ hubspotContactId: contactId }).where(eq(prospects.id, prospect.id));
+              // Pre-warm marketing cache so the next email send skips the HubSpot search.
+              if (prospect.email) {
+                preWarmMarketingCache(ctx.tenantDomain, prospect.email, contactId).catch(() => {});
+              }
             }
             const summary = `<p><strong>Outreach approved via Orbit</strong> (${touch.channel}, step ${touch.stepNumber})</p>${touch.subject ? `<p>Subject: ${touch.subject}</p>` : ""}`;
             await logContactNote(ctx.tenantDomain, contactId, summary);
@@ -994,6 +999,13 @@ export function registerSalesOutreachRoutes(app: Express) {
             status: "new" as const,
           })),
         );
+        // Pre-warm marketing cache for contacts that have emails, so the
+        // next email send finds the id without a HubSpot search.
+        for (const c of toInsert) {
+          if (c.email) {
+            preWarmMarketingCache(ctx.tenantDomain, c.email, c.hubspotContactId).catch(() => {});
+          }
+        }
       }
       res.json({ imported: toInsert.length, skipped: contacts.length - toInsert.length, fetched: contacts.length });
     } catch (err: any) {
@@ -1021,6 +1033,10 @@ export function registerSalesOutreachRoutes(app: Express) {
         .set({ hubspotContactId, updatedAt: new Date() })
         .where(eq(prospects.id, prospect.id))
         .returning();
+      // Pre-warm marketing cache so the next email send skips the HubSpot search.
+      if (prospect.email) {
+        preWarmMarketingCache(ctx.tenantDomain, prospect.email, hubspotContactId).catch(() => {});
+      }
       res.json({ prospect: updated, hubspotContactId });
     } catch (err: any) {
       console.error("[sales-outreach:sync-hubspot]", err);
