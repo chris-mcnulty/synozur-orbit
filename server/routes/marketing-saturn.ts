@@ -560,7 +560,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       const { buildBrandedDocx } = await import("../services/docx-generator.js");
       const title = row.title || "Content Draft";
-      const docBuffer = await buildBrandedDocx(title, row.content || "");
+      // Build the full document body: prepend subtitle and overview when present
+      // so that linkedin_digest (and blog_post) content exports completely.
+      const parts: string[] = [];
+      if (row.subtitle?.trim()) parts.push(`## ${row.subtitle.trim()}`);
+      if (row.overview?.trim()) parts.push(`*${row.overview.trim()}*`);
+      parts.push(row.content || "");
+      const docBuffer = await buildBrandedDocx(title, parts.join("\n\n"));
       const safeName = title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_draft";
       const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");

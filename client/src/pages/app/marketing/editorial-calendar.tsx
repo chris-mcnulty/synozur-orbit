@@ -1791,7 +1791,7 @@ export default function EditorialCalendarPage() {
                   data-testid="input-draft-title"
                 />
               </div>
-              {draft?.format === "blog_post" && (
+              {(draft?.format === "blog_post" || draft?.format === "linkedin_digest") && (
                 <>
                   <div className="space-y-1">
                     <Label htmlFor="draft-subtitle" className="text-xs font-medium uppercase text-muted-foreground">
