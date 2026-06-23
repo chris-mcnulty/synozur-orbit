@@ -27,14 +27,25 @@ export function registerAdminRoutes(app: Express) {
   // Synozur owns one OAuth app per social platform (Buffer/Hootsuite model).
   // Only a Global Admin manages these; tenants connect one-click and never see
   // or enter them. Secrets are encrypted at rest and never returned over the wire.
-  async function requireGlobalAdmin(req: any, res: any): Promise<boolean> {
+  async function requireGlobalAdmin(
+    req: import("express").Request,
+    res: import("express").Response,
+  ): Promise<boolean> {
     if (!req.session.userId) {
       res.status(401).json({ error: "Not authenticated" });
       return false;
     }
     const user = await storage.getUser(req.session.userId);
-    if (!user || user.role !== "Global Admin") {
-      res.status(403).json({ error: "Only Global Admins can manage platform credentials" });
+    // The shared OAuth apps are platform-wide — every tenant publishes through
+    // them — so this is restricted to Synozur platform super-admins: a Global
+    // Admin whose account lives on the synozur.com tenant. This mirrors the
+    // cross-tenant guard on /api/users so a tenant-scoped "Global Admin" can't
+    // modify credentials that affect all tenants.
+    const isSynozurGlobalAdmin = !!user
+      && user.role === "Global Admin"
+      && user.email.split("@")[1] === "synozur.com";
+    if (!isSynozurGlobalAdmin) {
+      res.status(403).json({ error: "Only Synozur Global Admins can manage platform credentials" });
       return false;
     }
     return true;

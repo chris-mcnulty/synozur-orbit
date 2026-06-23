@@ -49,13 +49,19 @@ interface PlatformConfig {
   helpUrl: string;
 }
 
+// The OAuth callback lives on whatever origin the app is served from. Derive it
+// at runtime so the help text is correct in dev / staging / custom domains
+// instead of hard-coding production. (Register the prod URL too on the live app.)
+const OAUTH_CALLBACK_URL =
+  `${typeof window !== "undefined" ? window.location.origin : "https://orbit.synozur.com"}/api/social-accounts/oauth/callback`;
+
 const PLATFORMS: PlatformConfig[] = [
   {
     key: "twitter",
     label: "X / Twitter",
     secretRequired: false,
     description: "X Developer App with OAuth 2.0 + PKCE. Scopes: tweet.read, tweet.write, users.read, offline.access. client_secret is only needed for confidential apps.",
-    redirectNote: "Register `https://orbit.synozur.com/api/social-accounts/oauth/callback` as a Callback URI on the X app.",
+    redirectNote: `Register \`${OAUTH_CALLBACK_URL}\` as a Callback URI on the X app.`,
     helpUrl: "https://developer.twitter.com/en/portal/dashboard",
   },
   {
@@ -63,7 +69,7 @@ const PLATFORMS: PlatformConfig[] = [
     label: "Meta (Facebook + Instagram)",
     secretRequired: true,
     description: "One Meta app powers both Facebook Pages and Instagram. Products: Facebook Login + Instagram. App Review permissions: pages_show_list, pages_read_engagement, pages_manage_posts, instagram_basic, instagram_content_publish.",
-    redirectNote: "Register `https://orbit.synozur.com/api/social-accounts/oauth/callback` as a Valid OAuth Redirect URI in Facebook Login settings.",
+    redirectNote: `Register \`${OAUTH_CALLBACK_URL}\` as a Valid OAuth Redirect URI in Facebook Login settings.`,
     helpUrl: "https://developers.facebook.com/apps/",
   },
 ];
