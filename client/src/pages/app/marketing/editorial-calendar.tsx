@@ -865,6 +865,37 @@ export default function EditorialCalendarPage() {
   // Set when the official LinkedIn API is active but no account is connected
   const [digestNoAccount, setDigestNoAccount] = useState(false);
 
+  const [downloadingDraftId, setDownloadingDraftId] = useState<string | null>(null);
+  const downloadDraftDocx = async (brief: ContentBrief) => {
+    if (!brief.contentAssetId) return;
+    setDownloadingDraftId(brief.id);
+    try {
+      const res = await fetch(`/api/content-assets/${brief.contentAssetId}/download/docx`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = "Failed to download draft Word document";
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safe = brief.title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "Content_Draft";
+      a.download = `${safe}_Draft_${new Date().toISOString().split("T")[0]}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Downloaded draft Word document");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to download draft Word document");
+    } finally {
+      setDownloadingDraftId(null);
+    }
+  };
+
   const [downloadingBriefId, setDownloadingBriefId] = useState<string | null>(null);
   const downloadBriefDocx = async (brief: ContentBrief) => {
     setDownloadingBriefId(brief.id);
@@ -1278,6 +1309,22 @@ export default function EditorialCalendarPage() {
                               )}
                               Open draft
                             </Button>
+                            {!isSocialBriefFormat(b.format) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={downloadingDraftId === b.id}
+                                onClick={() => downloadDraftDocx(b)}
+                                data-testid={`download-draft-${b.id}`}
+                              >
+                                {downloadingDraftId === b.id ? (
+                                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FileDown className="mr-1 h-4 w-4" />
+                                )}
+                                Download draft
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
