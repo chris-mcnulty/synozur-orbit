@@ -61,6 +61,54 @@ import {
 } from "../services/email-campaign-sender";
 import { LinkedInPublisher } from "../services/social-publishers/linkedin";
 import { decryptSecret } from "../utils/encryption";
+import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
+import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
+import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
+
+/** Hosted single-subscription preference center page. */
+function preferenceCenterHtml(token: string, email: string, subscribed: boolean, justSaved = false): string {
+  const action = subscribed ? "unsubscribe" : "resubscribe";
+  const buttonLabel = subscribed ? "Unsubscribe from marketing emails" : "Resubscribe to marketing emails";
+  const statusLine = subscribed
+    ? "You are currently <strong>subscribed</strong> to marketing emails."
+    : "You are currently <strong>unsubscribed</strong> from marketing emails.";
+  const saved = justSaved
+    ? `<p style="color:#16a34a;font-size:14px;">Your preferences have been updated.</p>`
+    : "";
+  return `<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto;padding:24px;">
+    <h2 style="margin-bottom:4px;">Email preferences</h2>
+    <p style="color:#666;font-size:14px;">${email}</p>
+    ${saved}
+    <p style="font-size:15px;">${statusLine}</p>
+    <form method="POST" action="/p/${encodeURIComponent(token)}">
+      <input type="hidden" name="action" value="${action}" />
+      <button style="background:${subscribed ? "#7c3aed" : "#16a34a"};color:#fff;border:0;padding:12px 24px;border-radius:8px;font-size:15px;cursor:pointer;" type="submit">${buttonLabel}</button>
+    </form>
+  </body></html>`;
+}
+
+/**
+ * Best-effort mirror of a recipient engagement event to its HubSpot contact
+ * timeline (marketing-email sync Phase 2). No-ops when the recipient has no
+ * resolved contact or no timeline template is configured. Never throws.
+ */
+async function pushRecipientTimeline(
+  recipient: any,
+  eventKey: TimelineEventKey,
+  tokens: Record<string, string | number>,
+  occurredAt: Date,
+): Promise<void> {
+  if (!recipient?.hubspotContactId || !recipient?.sendId) return;
+  try {
+    await pushEmailTimelineEvent(recipient.tenantDomain, {
+      contactId: recipient.hubspotContactId,
+      eventKey,
+      eventId: timelineEventId(recipient.sendId, recipient.id, eventKey),
+      tokens: { sendId: recipient.sendId, ...tokens },
+      occurredAt,
+    });
+  } catch { /* best-effort */ }
+}
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -180,11 +228,103 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
           message: "Public unsubscribe",
           details: { email: recipientRow.email, sendId: recipientRow.sendId },
         });
+        await pushRecipientTimeline(recipientRow, "email_unsubscribed", {}, new Date());
+        // Phase 3: mirror the opt-out to HubSpot subscription preferences.
+        pushUnsubscribe(recipientRow.tenantDomain, recipientRow.email).catch(() => {});
       }
     } catch (err: any) {
       console.error("[Unsubscribe] Failed:", err.message);
     }
     res.status(200).send(`<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto;padding:24px;text-align:center;"><h2>You're unsubscribed</h2><p>You won't receive any more emails from this campaign.</p></body></html>`);
+  });
+
+  // Preference center (Phase 3) — a richer hosted page than the one-click
+  // /u/:token. Single "Marketing" subscription in v1: lets a recipient see
+  // their status and unsubscribe or resubscribe. Reuses the per-send token.
+  app.get("/p/:token", async (req, res) => {
+    const decoded = verifyUnsubscribeToken(req.params.token);
+    if (!decoded) return res.status(400).send("Invalid preferences link");
+    try {
+      const [row] = await db.select().from(emailSendRecipients)
+        .where(eq(emailSendRecipients.unsubscribeToken, req.params.token));
+      if (!row) return res.status(404).send("Preferences record not found");
+      const [sup] = await db.select({ id: emailSuppressions.id }).from(emailSuppressions)
+        .where(and(
+          eq(emailSuppressions.tenantDomain, row.tenantDomain),
+          eq(emailSuppressions.email, row.email),
+        ));
+      const subscribed = !sup;
+      res.status(200).send(preferenceCenterHtml(req.params.token, escapeHtml(row.email), subscribed));
+    } catch (err: any) {
+      console.error("[Preferences] Load failed:", err?.message);
+      res.status(500).send("Could not load your preferences");
+    }
+  });
+
+  app.post("/p/:token", async (req, res) => {
+    const decoded = verifyUnsubscribeToken(req.params.token);
+    if (!decoded) return res.status(400).send("Invalid preferences link");
+    const action = String((req.body?.action ?? "")).toLowerCase();
+    try {
+      const [row] = await db.select().from(emailSendRecipients)
+        .where(eq(emailSendRecipients.unsubscribeToken, req.params.token));
+      if (!row) return res.status(404).send("Preferences record not found");
+
+      if (action === "unsubscribe") {
+        await db.insert(emailSuppressions).values({
+          tenantDomain: row.tenantDomain,
+          email: row.email,
+          reason: "unsubscribe",
+          source: "preference_center",
+        }).onConflictDoNothing();
+        await db.update(emailRecipients).set({ status: "unsubscribed" })
+          .where(and(eq(emailRecipients.tenantDomain, row.tenantDomain), eq(emailRecipients.email, row.email)));
+        if (row.status !== "unsubscribed" && !row.unsubscribedAt) {
+          await db.update(emailSendRecipients).set({ status: "unsubscribed", unsubscribedAt: new Date() })
+            .where(and(eq(emailSendRecipients.id, row.id), ne(emailSendRecipients.status, "unsubscribed")));
+          await db.update(emailSends).set({ unsubscribeCount: sql`${emailSends.unsubscribeCount} + 1` })
+            .where(eq(emailSends.id, row.sendId));
+        }
+        await db.insert(marketingAuditLog).values({
+          tenantDomain: row.tenantDomain, action: "email_unsubscribe",
+          entityType: "email_send_recipient", entityId: row.id, status: "ok",
+          message: "Preference-center unsubscribe", details: { email: row.email, sendId: row.sendId },
+        });
+        await pushRecipientTimeline(row, "email_unsubscribed", {}, new Date());
+        pushUnsubscribe(row.tenantDomain, row.email).catch(() => {});
+      } else if (action === "resubscribe") {
+        // User-initiated opt-in. Clear local suppression; HubSpot stays
+        // authoritative — if it blocks the resubscribe, the next pre-send
+        // consent pull re-suppresses them.
+        await db.delete(emailSuppressions).where(and(
+          eq(emailSuppressions.tenantDomain, row.tenantDomain),
+          eq(emailSuppressions.email, row.email),
+          eq(emailSuppressions.reason, "unsubscribe"),
+        ));
+        await db.update(emailRecipients).set({ status: "active" })
+          .where(and(eq(emailRecipients.tenantDomain, row.tenantDomain), eq(emailRecipients.email, row.email)));
+        await db.insert(marketingAuditLog).values({
+          tenantDomain: row.tenantDomain, action: "email_resubscribe",
+          entityType: "email_send_recipient", entityId: row.id, status: "ok",
+          message: "Preference-center resubscribe", details: { email: row.email, sendId: row.sendId },
+        });
+        pushSubscribe(row.tenantDomain, row.email).catch(() => {});
+      }
+      // Recompute the real subscribed state from the suppression table rather
+      // than assuming the action succeeded — the mutation can be a no-op (e.g.
+      // still suppressed for a different reason), so the page must reflect
+      // whether the recipient is actually deliverable now.
+      const [stillSuppressed] = await db.select({ id: emailSuppressions.id }).from(emailSuppressions)
+        .where(and(
+          eq(emailSuppressions.tenantDomain, row.tenantDomain),
+          eq(emailSuppressions.email, row.email),
+        ));
+      const subscribed = !stillSuppressed;
+      res.status(200).send(preferenceCenterHtml(req.params.token, escapeHtml(row.email), subscribed, true));
+    } catch (err: any) {
+      console.error("[Preferences] Update failed:", err?.message);
+      res.status(500).send("Could not update your preferences");
+    }
   });
 
   // SendGrid Event Webhook — bounce/dropped/spam/unsubscribe/open/click events.
@@ -280,6 +420,7 @@ async function handleSendGridEvent(ev: any) {
           message: ev.reason || "Bounced",
           details: { email: recipient.email, sendId: recipient.sendId },
         });
+        await pushRecipientTimeline(recipient, "email_bounced", { reason: ev.reason || ev.response || "" }, now);
       }
       break;
     }
@@ -336,6 +477,7 @@ async function handleSendGridEvent(ev: any) {
           openCount: sql`${emailSends.openCount} + 1`,
           ...(recipient.deliveredAt ? {} : { deliveredCount: sql`${emailSends.deliveredCount} + 1` }),
         }).where(eq(emailSends.id, recipient.sendId));
+        await pushRecipientTimeline(recipient, "email_opened", { openCount: 1 }, now);
       }
       break;
     }
@@ -363,6 +505,12 @@ async function handleSendGridEvent(ev: any) {
           message: typeof ev.url === "string" ? `Clicked ${ev.url}` : "Clicked link",
           details: { email: recipient.email, sendId: recipient.sendId, url: ev.url },
         });
+        await pushRecipientTimeline(
+          recipient,
+          "email_clicked",
+          { clickCount: 1, url: typeof ev.url === "string" ? ev.url : "" },
+          now,
+        );
       }
       break;
     }
@@ -385,6 +533,9 @@ async function handleSendGridEvent(ev: any) {
         reason: "unsubscribe",
         source: "sendgrid_event",
       }).onConflictDoNothing();
+      await pushRecipientTimeline(recipient, "email_unsubscribed", {}, now);
+      // Phase 3: mirror the opt-out to HubSpot subscription preferences.
+      pushUnsubscribe(recipient.tenantDomain, recipient.email).catch(() => {});
       break;
     }
   }
@@ -989,11 +1140,27 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       clickedAt: emailSendRecipients.clickedAt,
       openCount: emailSendRecipients.openCount,
       clickCount: emailSendRecipients.clickCount,
+      hubspotContactId: emailSendRecipients.hubspotContactId,
+      hsSyncStatus: emailSendRecipients.hsSyncStatus,
     }).from(emailSendRecipients)
       .where(eq(emailSendRecipients.sendId, send.id))
       .orderBy(emailSendRecipients.email)
       .limit(500);
-    res.json({ ...send, recipients });
+    // HubSpot sync reconciliation summary (Phase 4): how many recipients
+    // resolved to a contact vs unmatched/pending/errored.
+    const syncRows = await db.select({
+      status: emailSendRecipients.hsSyncStatus,
+      count: sql<number>`count(*)::int`,
+    }).from(emailSendRecipients)
+      .where(eq(emailSendRecipients.sendId, send.id))
+      .groupBy(emailSendRecipients.hsSyncStatus);
+    const hubspotSync = { resolved: 0, skipped: 0, pending: 0, error: 0 };
+    for (const row of syncRows) {
+      const key = (row.status ?? "pending") as keyof typeof hubspotSync;
+      if (key in hubspotSync) hubspotSync[key] += Number(row.count);
+      else hubspotSync.pending += Number(row.count);
+    }
+    res.json({ ...send, recipients, hubspotSync });
   });
 
   // Pre-send suppression preview — UI calls this when the operator selects a

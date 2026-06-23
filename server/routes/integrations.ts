@@ -299,12 +299,19 @@ export function registerIntegrationRoutes(app: Express) {
       hubspotPortalName: c.hubspotPortalName,
       scopes: c.scopes,
       autoPushEnabled: c.autoPushEnabled,
+      autoCreateHubspotContacts: c.autoCreateHubspotContacts,
+      defaultSubscriptionId: c.defaultSubscriptionId,
       defaultOwnerId: c.defaultOwnerId,
       connectedByUserId: c.connectedByUserId,
       connectedAt: c.connectedAt,
       lastSyncAt: c.lastSyncAt,
       lastSyncError: c.lastSyncError,
       lastSyncStats: c.lastSyncStats,
+      // Marketing-email sync (Phase 0+): true once the connection has been
+      // authorized with the timeline + communication-preferences scopes. When
+      // false on an otherwise-connected portal, the UI shows a re-authorize
+      // banner — the scopes were added after this tenant last connected.
+      emailSyncReady: hubspot.hasHubspotEmailScopes(c),
     };
   }
 
@@ -318,6 +325,9 @@ export function registerIntegrationRoutes(app: Express) {
         connected: !!conn,
         oauthConfigured: hubspot.isHubspotOauthConfigured(),
         outboundAllowed: hubspot.isHubspotOutboundAllowed(ctx.plan),
+        // True when a connection exists but predates the marketing-email
+        // scopes — the tenant must re-authorize before sync activates.
+        needsReauth: conn ? !hubspot.hasHubspotEmailScopes(conn) : false,
         connection: conn ? publicConnectionView(conn) : null,
       });
     } catch (err) {
@@ -441,6 +451,8 @@ export function registerIntegrationRoutes(app: Express) {
   // Update preferences (auto-push, default owner)
   const hubspotPrefsSchema = z.object({
     autoPushEnabled: z.boolean().optional(),
+    autoCreateHubspotContacts: z.boolean().optional(),
+    defaultSubscriptionId: z.string().nullable().optional(),
     defaultOwnerId: z.string().nullable().optional(),
   });
 
@@ -454,6 +466,8 @@ export function registerIntegrationRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
       const updates: Partial<import("@shared/schema").InsertHubspotConnection> = {};
       if (parsed.data.autoPushEnabled !== undefined) updates.autoPushEnabled = parsed.data.autoPushEnabled;
+      if (parsed.data.autoCreateHubspotContacts !== undefined) updates.autoCreateHubspotContacts = parsed.data.autoCreateHubspotContacts;
+      if (parsed.data.defaultSubscriptionId !== undefined) updates.defaultSubscriptionId = parsed.data.defaultSubscriptionId;
       if (parsed.data.defaultOwnerId !== undefined) updates.defaultOwnerId = parsed.data.defaultOwnerId;
       const updated = await storage.updateHubspotConnection(ctx.tenantDomain, updates);
       res.json(publicConnectionView(updated));

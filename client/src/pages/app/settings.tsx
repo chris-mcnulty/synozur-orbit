@@ -1870,17 +1870,21 @@ interface HubspotStatus {
   connected: boolean;
   oauthConfigured: boolean;
   outboundAllowed: boolean;
+  needsReauth: boolean;
   connection: null | {
     tenantDomain: string;
     hubspotPortalId: string | null;
     hubspotPortalName: string | null;
     scopes: string[];
     autoPushEnabled: boolean;
+    autoCreateHubspotContacts: boolean;
+    defaultSubscriptionId: string | null;
     defaultOwnerId: string | null;
     connectedAt: string;
     lastSyncAt: string | null;
     lastSyncError: string | null;
     lastSyncStats: any;
+    emailSyncReady: boolean;
   };
 }
 
@@ -1990,6 +1994,22 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
     onError: (err: any) => toast.error(err?.message || "Could not update preference"),
   });
 
+  const autoCreateMutation = useMutation({
+    mutationFn: async (autoCreateHubspotContacts: boolean) => {
+      const res = await fetch("/api/integrations/hubspot", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCreateHubspotContacts }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Update failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "Could not update preference"),
+  });
+
   if (!planEligible) {
     return (
       <div className="flex items-center justify-between" data-testid="row-hubspot-locked">
@@ -2072,6 +2092,33 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
         </div>
       </div>
 
+      {status?.connected && status?.needsReauth && (
+        <div
+          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm flex items-start justify-between gap-4 dark:border-amber-800/60 dark:bg-amber-950/30"
+          data-testid="banner-hubspot-reauth"
+        >
+          <div className="space-y-0.5">
+            <p className="font-medium text-amber-800 dark:text-amber-300">Re-authorize to enable marketing-email sync</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              This connection was authorized before marketing-email sync was added. Re-authorize to grant the new
+              timeline and subscription scopes so engagement and unsubscribes sync to HubSpot. Your existing CRM
+              enrichment keeps working until you do.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-amber-400 text-amber-800 hover:bg-amber-100 dark:text-amber-200"
+            onClick={() => connectMutation.mutate()}
+            disabled={!status?.oauthConfigured || connectMutation.isPending}
+            data-testid="button-hubspot-reauth"
+          >
+            {connectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+            Re-authorize
+          </Button>
+        </div>
+      )}
+
       {conn && (
         <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1" data-testid="text-hubspot-details">
           <div>
@@ -2128,6 +2175,55 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
                 onCheckedChange={(v) => autoPushMutation.mutate(v)}
                 disabled={autoPushMutation.isPending}
                 data-testid="switch-hubspot-auto-push"
+              />
+            </div>
+          )}
+          {status?.outboundAllowed && (
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <Label htmlFor="hubspot-auto-create" className="text-sm">Auto-create contacts for email sync</Label>
+                <p className="text-xs text-muted-foreground">
+                  When a marketing-email recipient has no matching HubSpot contact, create one so engagement and
+                  unsubscribe status can be tracked. Turn off if you don't want Orbit creating CRM contacts.
+                </p>
+              </div>
+              <Switch
+                id="hubspot-auto-create"
+                checked={conn.autoCreateHubspotContacts !== false}
+                onCheckedChange={(v) => autoCreateMutation.mutate(v)}
+                disabled={autoCreateMutation.isPending || !conn.emailSyncReady}
+                data-testid="switch-hubspot-auto-create"
+              />
+            </div>
+          )}
+          {status?.outboundAllowed && (
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <Label htmlFor="hubspot-subscription-id" className="text-sm">Marketing subscription ID</Label>
+                <p className="text-xs text-muted-foreground">
+                  HubSpot subscription type that marketing email maps to. Unsubscribes sync to this subscription.
+                  Find it under Settings → Marketing → Email → Subscription types. Leave blank to skip write-back.
+                </p>
+              </div>
+              <Input
+                id="hubspot-subscription-id"
+                defaultValue={conn.defaultSubscriptionId ?? ""}
+                placeholder="e.g. 12345678"
+                className="w-48"
+                disabled={!conn.emailSyncReady}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  if (v === (conn.defaultSubscriptionId ?? "")) return;
+                  fetch("/api/integrations/hubspot", {
+                    method: "PATCH",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ defaultSubscriptionId: v || null }),
+                  })
+                    .then(() => queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] }))
+                    .catch(() => null);
+                }}
+                data-testid="input-hubspot-subscription-id"
               />
             </div>
           )}

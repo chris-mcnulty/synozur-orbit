@@ -72,10 +72,20 @@ interface EmailSendRecipient {
   clickedAt: string | null;
   openCount: number;
   clickCount: number;
+  hubspotContactId: string | null;
+  hsSyncStatus: string | null;
+}
+
+interface HubspotSyncSummary {
+  resolved: number;
+  skipped: number;
+  pending: number;
+  error: number;
 }
 
 interface EmailSendDetail extends EmailSend {
   recipients: EmailSendRecipient[];
+  hubspotSync?: HubspotSyncSummary;
 }
 
 type SendsTab = "sends" | "lists" | "suppressions";
@@ -532,6 +542,15 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
               <SendStat label="Unsub" value={data.unsubscribeCount} testid={`stat-unsub-${data.id}`} />
               <SendStat label="Failed" value={data.failedCount} testid={`stat-failed-${data.id}`} />
             </div>
+            {data.hubspotSync && (data.hubspotSync.resolved + data.hubspotSync.skipped + data.hubspotSync.pending + data.hubspotSync.error > 0) && (
+              <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="hubspot-sync-summary">
+                <span className="text-muted-foreground">HubSpot sync:</span>
+                <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">{data.hubspotSync.resolved} synced</Badge>
+                {data.hubspotSync.skipped > 0 && <Badge variant="outline" className="text-[10px] text-muted-foreground">{data.hubspotSync.skipped} unmatched</Badge>}
+                {data.hubspotSync.pending > 0 && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">{data.hubspotSync.pending} pending</Badge>}
+                {data.hubspotSync.error > 0 && <Badge variant="outline" className="text-[10px] text-red-600 border-red-300">{data.hubspotSync.error} errors</Badge>}
+              </div>
+            )}
             <div>
               <h4 className="text-sm font-medium mb-2">Recipients ({data.recipients.length})</h4>
               <div className="border rounded-lg max-h-[420px] overflow-y-auto divide-y">
@@ -544,6 +563,9 @@ function SendDrilldownDialog({ sendId, open, onOpenChange }: { sendId: string | 
                     <Badge variant="outline" className="text-[10px] capitalize">{r.status}</Badge>
                     {r.openCount > 0 && <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300">{r.openCount} open{r.openCount !== 1 ? "s" : ""}</Badge>}
                     {r.clickCount > 0 && <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-300">{r.clickCount} click{r.clickCount !== 1 ? "s" : ""}</Badge>}
+                    {r.hsSyncStatus === "resolved" && <Badge variant="outline" className="text-[10px] text-green-600 border-green-300" title={r.hubspotContactId ? `HubSpot contact ${r.hubspotContactId}` : undefined}>HubSpot</Badge>}
+                    {r.hsSyncStatus === "skipped" && <Badge variant="outline" className="text-[10px] text-muted-foreground">no HS contact</Badge>}
+                    {r.hsSyncStatus === "error" && <Badge variant="outline" className="text-[10px] text-red-600 border-red-300">HS sync error</Badge>}
                     {r.errorMessage && <span className="text-[10px] text-amber-600 truncate max-w-[200px]" title={r.errorMessage}>{r.errorMessage}</span>}
                   </div>
                 ))}

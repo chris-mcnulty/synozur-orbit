@@ -36,6 +36,10 @@ import {
 import { wrapOutboundLinksInText } from "./marketing-links-helpers";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
+import { pullSubscriptionStatus } from "./hubspot-email-sync";
+import { reconcileSuppression } from "./hubspot-email-sync-core";
+import { resolveSendRecipientContacts } from "./hubspot-contact-resolver";
+import { pushSentEventsForSend } from "./hubspot-timeline";
 
 async function getTenantPlan(tenantDomain: string): Promise<string> {
   try {
@@ -163,11 +167,13 @@ async function getSendGridCreds(): Promise<{ apiKey: string; fromEmail: string }
   return { apiKey: item.settings.api_key, fromEmail: item.settings.from_email };
 }
 
-function injectFooter(html: string, unsubUrl: string): string {
+function injectFooter(html: string, unsubUrl: string, prefsUrl: string): string {
   const footer = `
     <div style="margin-top:24px;padding:16px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;">
       You're receiving this email from a campaign sent through Orbit.<br/>
       <a href="${unsubUrl}" style="color:#666;text-decoration:underline;">Unsubscribe</a>
+      &nbsp;·&nbsp;
+      <a href="${prefsUrl}" style="color:#666;text-decoration:underline;">Manage preferences</a>
     </div>
   `;
   if (/<\/body>/i.test(html)) {
@@ -176,8 +182,8 @@ function injectFooter(html: string, unsubUrl: string): string {
   return `${html}${footer}`;
 }
 
-function injectTextFooter(text: string, unsubUrl: string): string {
-  return `${text}\n\n---\nUnsubscribe: ${unsubUrl}`;
+function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string): string {
+  return `${text}\n\n---\nUnsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
 }
 
 /**
@@ -385,7 +391,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     for (const r of rows) {
       recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
     }
-    // Filter against suppression list
+    // Filter against suppression list + HubSpot consent (HubSpot opt-out wins).
     if (recipients.length > 0) {
       const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
         .from(emailSuppressions)
@@ -393,7 +399,20 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
           eq(emailSuppressions.tenantDomain, tenantDomain),
           inArray(emailSuppressions.email, recipients.map(r => r.email)),
         ));
-      const supMap = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
+      const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
+      // Pull HubSpot opt-out state and reconcile so contacts who unsubscribed
+      // in HubSpot are excluded even if Orbit never recorded it. Best-effort:
+      // no connection / missing scopes / failure ⇒ local suppression only.
+      let hubspotOptedOut = new Set<string>();
+      try {
+        const consent = await pullSubscriptionStatus(tenantDomain, recipients.map(r => r.email));
+        hubspotOptedOut = consent.optedOut;
+      } catch { /* best-effort: fall back to local suppression */ }
+      const supMap = reconcileSuppression({
+        candidateEmails: recipients.map(r => r.email),
+        locallySuppressed: localSuppressed,
+        hubspotOptedOut,
+      });
       for (let i = recipients.length - 1; i >= 0; i--) {
         const reason = supMap.get(recipients[i].email);
         if (reason) {
@@ -501,11 +520,13 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   let failedCount = 0;
 
   for (const r of prepared) {
-    const unsubUrl = `${baseUrl.replace(/\/$/, "")}/u/${r.token}`;
-    const html = injectFooter(wrappedHtml, unsubUrl);
+    const base = baseUrl.replace(/\/$/, "");
+    const unsubUrl = `${base}/u/${r.token}`;
+    const prefsUrl = `${base}/p/${r.token}`;
+    const html = injectFooter(wrappedHtml, unsubUrl, prefsUrl);
     const text = wrappedText
-      ? injectTextFooter(wrappedText, unsubUrl)
-      : `Unsubscribe: ${unsubUrl}`;
+      ? injectTextFooter(wrappedText, unsubUrl, prefsUrl)
+      : `Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
     try {
       const [resp] = await sgMail.send({
         to: r.email,
@@ -580,6 +601,52 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     message: `${sentCount}/${recipients.length} delivered`,
     details: { listId, testRecipient, generatedEmailId: email.id },
   });
+
+  // HubSpot Phase 1: resolve recipients to CRM contacts so later phases can
+  // attach engagement to the right timeline. List sends only (test previews
+  // are excluded), best-effort, and after delivery so it never affects the
+  // send result.
+  if (!testRecipient && sentCount > 0) {
+    try {
+      const r = await resolveSendRecipientContacts({ tenantDomain, sendId: send.id });
+      if (r.ran) {
+        await db.insert(marketingAuditLog).values({
+          tenantDomain,
+          marketId,
+          userId: createdBy,
+          action: "hubspot_contact_resolve",
+          entityType: "email_send",
+          entityId: send.id,
+          status: r.errors > 0 ? "warning" : "ok",
+          message: `${r.resolved} resolved, ${r.created} created, ${r.skipped} unmatched`,
+          details: { resolved: r.resolved, created: r.created, skipped: r.skipped, errors: r.errors },
+        });
+        // Phase 2: mirror an `email_sent` event to each resolved contact's
+        // HubSpot timeline. No-ops unless a timeline template is configured.
+        if (r.resolved > 0) {
+          const t = await pushSentEventsForSend({
+            tenantDomain,
+            sendId: send.id,
+            subject: email.subject,
+            campaign: email.label ?? email.campaignId ?? null,
+          });
+          if (t.pushed > 0 || t.errors > 0) {
+            await db.insert(marketingAuditLog).values({
+              tenantDomain,
+              marketId,
+              userId: createdBy,
+              action: "hubspot_timeline_push",
+              entityType: "email_send",
+              entityId: send.id,
+              status: t.errors > 0 ? "warning" : "ok",
+              message: `email_sent → ${t.pushed} timelines (${t.errors} errors)`,
+              details: { event: "email_sent", ...t },
+            });
+          }
+        }
+      }
+    } catch { /* best-effort: sync never blocks the send result */ }
+  }
 
   return {
     send: updated,
