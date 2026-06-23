@@ -338,20 +338,89 @@ export class LinkedInPublisher implements SocialPublisher {
       };
     }
 
-    // Upload image if the post has one (overrideImageUrl takes precedence).
-    const imageUrl: string | null =
-      (post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null;
+    // ----------------------------------------------------------------
+    // Carousel posts: upload every composited slide image, then post
+    // as CAROUSEL (LinkedIn requires at least 2 images). If none of
+    // the slides have been composited yet, bail with a friendly error
+    // rather than silently publishing as a text-only post.
+    // ----------------------------------------------------------------
+    const isCarousel = (post as any).postFormat === "carousel";
+    const rawSlides: Array<{ imageUrl?: string | null }> =
+      isCarousel && Array.isArray((post as any).carouselSlides)
+        ? (post as any).carouselSlides
+        : [];
+
+    let carouselImageUrns: string[] = [];
+    if (isCarousel) {
+      const slideUrls = rawSlides
+        .map(s => s.imageUrl)
+        .filter((u): u is string => typeof u === "string" && u.length > 0);
+
+      if (slideUrls.length === 0) {
+        return {
+          success: false,
+          errorCode: "carousel_no_images",
+          errorMessage:
+            "Carousel slides don't have branded graphics yet — generate images for all slides before publishing.",
+        };
+      }
+
+      // Upload slides in parallel; skip any that fail.
+      const uploaded = await Promise.all(
+        slideUrls.map(url =>
+          this.uploadImageAsset(accessToken, account.authorUrn, url),
+        ),
+      );
+      carouselImageUrns = uploaded.filter((u): u is string => u !== null);
+
+      if (carouselImageUrns.length === 0) {
+        return {
+          success: false,
+          errorCode: "carousel_upload_failed",
+          errorMessage:
+            "All carousel slide images failed to upload to LinkedIn — check that the image URLs are reachable.",
+        };
+      }
+
+      console.log(
+        `[LinkedIn] Carousel: ${carouselImageUrns.length}/${slideUrls.length} slides uploaded successfully.`,
+      );
+    }
+
+    // ----------------------------------------------------------------
+    // Single-image posts (non-carousel).
+    // ----------------------------------------------------------------
+    const imageUrl: string | null = isCarousel
+      ? null
+      : ((post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null);
     let imageAssetUrn: string | null = null;
     if (imageUrl) {
       imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
     }
 
+    // Build the media block.
+    // LinkedIn CAROUSEL requires 2+ images; fall back to IMAGE if only 1 uploaded.
+    let mediaCategory: "CAROUSEL" | "IMAGE" | "NONE";
+    let mediaItems: Array<{ status: string; media: string }> | undefined;
+    if (carouselImageUrns.length >= 2) {
+      mediaCategory = "CAROUSEL";
+      mediaItems = carouselImageUrns.map(urn => ({ status: "READY", media: urn }));
+    } else if (carouselImageUrns.length === 1) {
+      mediaCategory = "IMAGE";
+      mediaItems = [{ status: "READY", media: carouselImageUrns[0] }];
+    } else if (imageAssetUrn) {
+      mediaCategory = "IMAGE";
+      mediaItems = [{ status: "READY", media: imageAssetUrn }];
+    } else {
+      mediaCategory = "NONE";
+    }
+
     const shareContent: Record<string, unknown> = {
       shareCommentary: { text: finalText },
-      shareMediaCategory: imageAssetUrn ? "IMAGE" : "NONE",
+      shareMediaCategory: mediaCategory,
     };
-    if (imageAssetUrn) {
-      shareContent.media = [{ status: "READY", media: imageAssetUrn }];
+    if (mediaItems) {
+      shareContent.media = mediaItems;
     }
 
     const body = {

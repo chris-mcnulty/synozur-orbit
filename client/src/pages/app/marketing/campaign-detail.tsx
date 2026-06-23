@@ -48,7 +48,6 @@ import {
   ImageOff,
   Send,
   FileDown,
-  AlertCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
