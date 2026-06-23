@@ -844,7 +844,7 @@ function PostDetailDrawer({
 
           {localStatus !== "published" && (
             <div>
-              <Label className="text-xs">Reschedule</Label>
+              <Label className="text-xs">{initial ? "Reschedule" : "Schedule"}</Label>
               <div className="flex gap-2 items-center mt-1">
                 <Input
                   type="datetime-local"
