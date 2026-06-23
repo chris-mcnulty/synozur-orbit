@@ -862,6 +862,8 @@ export default function EditorialCalendarPage() {
   const [digestPreview, setDigestPreview] = useState<{ postCount: number; posts: { text: string; postedAt: string }[] } | null>(null);
   const [digestFetching, setDigestFetching] = useState(false);
   const [digestCreating, setDigestCreating] = useState(false);
+  // Set when the official LinkedIn API is active but no account is connected
+  const [digestNoAccount, setDigestNoAccount] = useState(false);
 
   const [downloadingBriefId, setDownloadingBriefId] = useState<string | null>(null);
   const downloadBriefDocx = async (brief: ContentBrief) => {
@@ -1560,6 +1562,7 @@ export default function EditorialCalendarPage() {
             if (!o) {
               setDigestOpen(false);
               setDigestPreview(null);
+              setDigestNoAccount(false);
             }
           }}
         >
@@ -1574,6 +1577,18 @@ export default function EditorialCalendarPage() {
             {!digestPreview ? (
               /* Step 1 — URL + date range */
               <div className="space-y-4">
+                {digestNoAccount && (
+                  <div
+                    className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-800 p-3 text-sm text-blue-800 dark:text-blue-200 flex items-start gap-2"
+                    data-testid="banner-digest-no-account"
+                  >
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+                    <span>
+                      Connect your LinkedIn account in{" "}
+                      <strong>Settings → Social Accounts</strong> to use the official API.
+                    </span>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="digest-profile-url">Your LinkedIn profile URL</Label>
                   <Input
@@ -1620,6 +1635,7 @@ export default function EditorialCalendarPage() {
                         return;
                       }
                       setDigestFetching(true);
+                      setDigestNoAccount(false);
                       try {
                         const res = await fetch("/api/linkedin-digest/preview", {
                           method: "POST",
@@ -1632,7 +1648,13 @@ export default function EditorialCalendarPage() {
                           }),
                         });
                         const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || "Failed to fetch posts");
+                        if (!res.ok) {
+                          if (data.errorCode === "NO_LINKEDIN_ACCOUNT") {
+                            setDigestNoAccount(true);
+                            return;
+                          }
+                          throw new Error(data.error || "Failed to fetch posts");
+                        }
                         setDigestPreview(data);
                       } catch (e: any) {
                         toast.error(e.message || "Failed to fetch LinkedIn posts");

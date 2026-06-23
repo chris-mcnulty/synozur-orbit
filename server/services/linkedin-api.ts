@@ -558,6 +558,7 @@ export interface PersonalPostsResult {
   posts?: PersonalPost[];
   postCount?: number;
   error?: string;
+  errorCode?: "NO_LINKEDIN_ACCOUNT";
 }
 
 /**
@@ -589,8 +590,13 @@ export async function getPersonalProfilePosts(
       if (!accessToken) {
         console.warn(
           `[LinkedIn API] LINKEDIN_MEMBER_SOCIAL_ENABLED is true but no active ` +
-          `LinkedIn account token found for tenant ${tenantDomain}. Falling back to RapidAPI.`,
+          `LinkedIn account token found for tenant ${tenantDomain}. Returning NO_LINKEDIN_ACCOUNT.`,
         );
+        return {
+          success: false,
+          error: "No LinkedIn account connected for this workspace.",
+          errorCode: "NO_LINKEDIN_ACCOUNT",
+        };
       } else {
         const memberUrn = await resolveMemberUrn(accessToken);
         if (!memberUrn) {

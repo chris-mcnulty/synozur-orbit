@@ -829,6 +829,12 @@ export function registerEditorialCalendarRoutes(app: Express) {
       const result = await getPersonalProfilePosts(profileUrl.trim(), start, end, digestCtx.tenantDomain);
 
       if (!result.success) {
+        if (result.errorCode === "NO_LINKEDIN_ACCOUNT") {
+          return res.status(403).json({
+            error: result.error,
+            errorCode: "NO_LINKEDIN_ACCOUNT",
+          });
+        }
         return res.status(502).json({ error: result.error || "Failed to fetch posts from LinkedIn." });
       }
 
@@ -871,6 +877,12 @@ export function registerEditorialCalendarRoutes(app: Express) {
       // Re-fetch posts server-side — do NOT trust client-supplied posts.
       const fetchResult = await getPersonalProfilePosts(profileUrl.trim(), start, end, ctx.tenantDomain);
       if (!fetchResult.success) {
+        if (fetchResult.errorCode === "NO_LINKEDIN_ACCOUNT") {
+          return res.status(403).json({
+            error: fetchResult.error,
+            errorCode: "NO_LINKEDIN_ACCOUNT",
+          });
+        }
         return res.status(502).json({ error: fetchResult.error || "Failed to fetch posts from LinkedIn." });
       }
       const posts = fetchResult.posts ?? [];
