@@ -2,7 +2,8 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { socialAccounts } from "@shared/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { decryptSecret } from "../utils/encryption";
+import { decryptSecret, encryptSecret } from "../utils/encryption";
+import { getGlobalLinkedInCredentials } from "./platform-credentials-service";
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = "fresh-linkedin-profile-data.p.rapidapi.com";
@@ -17,13 +18,105 @@ function isMemberSocialEnabled(): boolean {
 }
 
 /**
+ * Attempt to refresh a LinkedIn access token using the stored refresh token
+ * and the global LinkedIn client credentials.
+ * Returns the new access token on success, or null on failure.
+ * Also persists the refreshed credentials back to the socialAccounts row.
+ */
+async function refreshLinkedInToken(
+  accountId: string,
+  encryptedRefreshToken: string,
+  tenantDomain: string,
+): Promise<string | null> {
+  const creds = getGlobalLinkedInCredentials();
+  if (!creds) {
+    console.warn(
+      `[LinkedIn API] Cannot refresh token for tenant ${tenantDomain}: ` +
+      `LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET not configured.`,
+    );
+    return null;
+  }
+
+  let refreshToken: string;
+  try {
+    refreshToken = decryptSecret(encryptedRefreshToken);
+  } catch {
+    console.warn(
+      `[LinkedIn API] Cannot refresh token for tenant ${tenantDomain}: ` +
+      `failed to decrypt stored refresh token.`,
+    );
+    return null;
+  }
+
+  const resp = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
+    }).toString(),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    console.warn(
+      `[LinkedIn API] Token refresh failed for tenant ${tenantDomain}: ` +
+      `${resp.status} ${errText}`,
+    );
+    return null;
+  }
+
+  const tok = (await resp.json()) as {
+    access_token: string;
+    expires_in?: number;
+    refresh_token?: string;
+  };
+
+  if (!tok.access_token) {
+    console.warn(
+      `[LinkedIn API] Token refresh for tenant ${tenantDomain} returned no access_token.`,
+    );
+    return null;
+  }
+
+  const newExpiresAt = tok.expires_in
+    ? new Date(Date.now() + tok.expires_in * 1000)
+    : null;
+
+  await db
+    .update(socialAccounts)
+    .set({
+      encryptedAccessToken: encryptSecret(tok.access_token),
+      encryptedRefreshToken: tok.refresh_token
+        ? encryptSecret(tok.refresh_token)
+        : encryptedRefreshToken,
+      tokenExpiresAt: newExpiresAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(socialAccounts.id, accountId));
+
+  console.log(
+    `[LinkedIn API] Token refreshed successfully for tenant ${tenantDomain}; ` +
+    `new expiry: ${newExpiresAt?.toISOString() ?? "unknown"}.`,
+  );
+
+  return tok.access_token;
+}
+
+/**
  * Retrieve and decrypt the access token for the tenant's connected LinkedIn
  * account. Returns null when no connected account exists or the token is absent.
+ * When the stored access token is expired, attempts a refresh using the stored
+ * refresh token and the global LinkedIn OAuth credentials before falling back.
  */
 async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<string | null> {
   const [account] = await db
     .select({
+      id: socialAccounts.id,
       encryptedAccessToken: socialAccounts.encryptedAccessToken,
+      encryptedRefreshToken: socialAccounts.encryptedRefreshToken,
       tokenExpiresAt: socialAccounts.tokenExpiresAt,
     })
     .from(socialAccounts)
@@ -40,7 +133,24 @@ async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<strin
   if (!account?.encryptedAccessToken) return null;
 
   if (account.tokenExpiresAt && account.tokenExpiresAt < new Date()) {
-    console.warn(`[LinkedIn API] Access token for tenant ${tenantDomain} is expired`);
+    console.warn(
+      `[LinkedIn API] Access token for tenant ${tenantDomain} is expired — attempting refresh.`,
+    );
+
+    if (account.encryptedRefreshToken) {
+      const refreshed = await refreshLinkedInToken(
+        account.id,
+        account.encryptedRefreshToken,
+        tenantDomain,
+      );
+      if (refreshed) return refreshed;
+    } else {
+      console.warn(
+        `[LinkedIn API] No refresh token stored for tenant ${tenantDomain} — ` +
+        `falling back gracefully.`,
+      );
+    }
+
     return null;
   }
 
