@@ -37,7 +37,7 @@ import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
-import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
+import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote } from "../services/hubspot-integration";
 import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
@@ -906,7 +906,25 @@ export function registerSalesOutreachRoutes(app: Express) {
 
   // ── HubSpot two-way ─────────────────────────────────────────────────────────
 
+  // Return all CRM contact lists for the tenant — used to populate the "By list" picker.
+  app.get("/api/sales-outreach/campaigns/:id/hubspot-lists", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!conn) return res.status(409).json({ error: "HubSpot isn't connected.", code: "no_hubspot" });
+      const lists = await listHubspotContactLists(ctx.tenantDomain);
+      res.json({ lists });
+    } catch (err: any) {
+      console.error("[sales-outreach:hubspot-lists]", err);
+      res.status(500).json({ error: err.message || "Failed to fetch HubSpot lists" });
+    }
+  });
+
   // Search HubSpot contacts without importing — for the preview dialog.
+  // Pass `listId` to load members of a specific list instead of running a search.
   // Returns contacts with a `alreadyOnCampaign` flag so the UI can grey them out.
   app.post("/api/sales-outreach/campaigns/:id/preview-hubspot", async (req, res) => {
     try {
@@ -919,8 +937,11 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Settings → Connections.", code: "no_hubspot" });
 
       const query = typeof req.body?.query === "string" ? req.body.query : undefined;
-      const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 50;
-      const contacts = await listContacts(ctx.tenantDomain, { query, limit });
+      const listId = typeof req.body?.listId === "string" ? req.body.listId : undefined;
+      const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 100;
+      const contacts = listId
+        ? await listContactsFromHubspotList(ctx.tenantDomain, listId, limit)
+        : await listContacts(ctx.tenantDomain, { query, limit });
 
       // Flag contacts already on this campaign so the UI can show them greyed out.
       const existing = await db

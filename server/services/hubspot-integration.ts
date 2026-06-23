@@ -554,6 +554,77 @@ function contactName(props: Record<string, string>): string {
   return n || props.email || "Unknown contact";
 }
 
+export interface HubspotListSummary {
+  listId: string;
+  name: string;
+  memberCount: number;
+}
+
+/**
+ * Fetch all CRM contact lists from the tenant's HubSpot, sorted by name.
+ * Uses the v3 Lists API (objectTypeId 0-1 = contacts).
+ */
+export async function listHubspotContactLists(tenantDomain: string): Promise<HubspotListSummary[]> {
+  const { client } = await getTenantClient(tenantDomain);
+  const result = await (client.crm.lists as any).listsApi.getAll({
+    objectTypeId: "0-1",
+    includeFilters: false,
+    limit: 250,
+  });
+  const lists: any[] = result?.lists ?? [];
+  return lists
+    .map((l: any) => ({
+      listId: String(l.listId),
+      name: (l.name as string) || "(unnamed list)",
+      memberCount: (l.memberCount as number) ?? 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Fetch the first `limit` contacts that are members of a given HubSpot list,
+ * returning the same HubspotContactLite shape as listContacts().
+ */
+export async function listContactsFromHubspotList(
+  tenantDomain: string,
+  listId: string,
+  limit = 100,
+): Promise<HubspotContactLite[]> {
+  const { client } = await getTenantClient(tenantDomain);
+  const cap = Math.min(Math.max(limit, 1), 200);
+
+  // Step 1: get member record IDs.
+  const membersResult = await (client.crm.lists as any).membershipsApi.getPage(
+    listId,
+    undefined, // after
+    undefined, // before
+    cap,
+  );
+  const recordIds: string[] = (membersResult?.results ?? []).map((r: any) => String(r.recordId));
+  if (recordIds.length === 0) return [];
+
+  // Step 2: batch-read contact details for those IDs.
+  const batchResult = await (client.crm.contacts.batchApi as any).read({
+    inputs: recordIds.map((id) => ({ id })),
+    properties: CONTACT_PROPS,
+    propertiesWithHistory: [],
+  });
+
+  return (batchResult.results ?? []).map((c: any) => {
+    const props = (c.properties as Record<string, string>) || {};
+    return {
+      hubspotContactId: c.id,
+      email: props.email || null,
+      firstName: props.firstname || null,
+      lastName: props.lastname || null,
+      name: contactName(props),
+      jobTitle: props.jobtitle || null,
+      company: props.company || null,
+      linkedinUrl: props.hs_linkedin_url || null,
+    };
+  });
+}
+
 /**
  * Pull contacts from the tenant's HubSpot to seed prospects. With `query`,
  * searches first/last/email/company; otherwise returns the most recently

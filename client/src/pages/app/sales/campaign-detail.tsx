@@ -412,11 +412,15 @@ export default function OutreachCampaignDetailPage() {
 
   // HubSpot import dialog state.
   const [hubspotOpen, setHubspotOpen] = useState(false);
+  const [hubspotMode, setHubspotMode] = useState<"search" | "list">("search");
   const [hubspotQuery, setHubspotQuery] = useState("");
   const [hubspotContacts, setHubspotContacts] = useState<HubspotContact[] | null>(null);
   const [hubspotSearching, setHubspotSearching] = useState(false);
   const [hubspotSelected, setHubspotSelected] = useState<Set<string>>(new Set());
   const [hubspotNotConnected, setHubspotNotConnected] = useState(false);
+  const [hubspotLists, setHubspotLists] = useState<{ listId: string; name: string; memberCount: number }[] | null>(null);
+  const [hubspotListsLoading, setHubspotListsLoading] = useState(false);
+  const [hubspotSelectedList, setHubspotSelectedList] = useState<string | null>(null);
 
   // Apollo / CSV import dialog state.
   interface CsvProspectRow {
@@ -745,10 +749,44 @@ export default function OutreachCampaignDetailPage() {
         throw new Error(data.error || "Search failed");
       }
       setHubspotContacts(data.contacts ?? []);
-      // Pre-select contacts not already on the campaign.
       setHubspotSelected(new Set((data.contacts ?? []).filter((c: HubspotContact) => !c.alreadyOnCampaign).map((c: HubspotContact) => c.hubspotContactId)));
     } catch (err: any) {
       toast({ title: "HubSpot search failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setHubspotSearching(false);
+    }
+  }
+
+  async function loadHubspotLists() {
+    if (hubspotLists !== null) return; // already loaded
+    setHubspotListsLoading(true);
+    try {
+      const res = await fetch(`/api/sales-outreach/campaigns/${id}/hubspot-lists`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.code === "no_hubspot") { setHubspotNotConnected(true); return; }
+        throw new Error(data.error || "Failed to load lists");
+      }
+      setHubspotLists(data.lists ?? []);
+    } catch (err: any) {
+      toast({ title: "Couldn't load HubSpot lists", description: err?.message, variant: "destructive" });
+    } finally {
+      setHubspotListsLoading(false);
+    }
+  }
+
+  async function loadContactsFromList(listId: string) {
+    setHubspotSearching(true);
+    setHubspotContacts(null);
+    setHubspotSelected(new Set());
+    try {
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/preview-hubspot`, { listId, limit: 100 });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load list members");
+      setHubspotContacts(data.contacts ?? []);
+      setHubspotSelected(new Set((data.contacts ?? []).filter((c: HubspotContact) => !c.alreadyOnCampaign).map((c: HubspotContact) => c.hubspotContactId)));
+    } catch (err: any) {
+      toast({ title: "HubSpot list load failed", description: err?.message, variant: "destructive" });
     } finally {
       setHubspotSearching(false);
     }
@@ -759,6 +797,8 @@ export default function OutreachCampaignDetailPage() {
     setHubspotQuery("");
     setHubspotSelected(new Set());
     setHubspotNotConnected(false);
+    setHubspotMode("search");
+    setHubspotSelectedList(null);
     setHubspotOpen(true);
     searchHubspot("");
   }
@@ -1476,7 +1516,7 @@ export default function OutreachCampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* HubSpot import dialog — search, preview, select, import */}
+      {/* HubSpot import dialog — search or browse by list, preview, select, import */}
       <Dialog open={hubspotOpen} onOpenChange={(o) => { if (!o) setHubspotOpen(false); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1484,7 +1524,7 @@ export default function OutreachCampaignDetailPage() {
               <Download className="w-4 h-4" /> Import from HubSpot
             </DialogTitle>
             <DialogDescription>
-              Search your HubSpot contacts, pick who to add, then click Import. Contacts already on this campaign are shown highlighted and can't be re-added.
+              Search contacts or pick a HubSpot list, choose who to add, then click Import. Contacts already on this campaign are shown greyed-out.
             </DialogDescription>
           </DialogHeader>
 
@@ -1499,20 +1539,83 @@ export default function OutreachCampaignDetailPage() {
             </div>
           ) : (
             <>
-              {/* Search bar */}
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search by name, email, or company…"
-                  value={hubspotQuery}
-                  onChange={(e) => setHubspotQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && searchHubspot(hubspotQuery)}
-                  data-testid="input-hubspot-search"
-                  className="flex-1"
-                />
-                <Button variant="outline" onClick={() => searchHubspot(hubspotQuery)} disabled={hubspotSearching} data-testid="button-hubspot-search">
-                  {hubspotSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {/* Mode toggle: Search contacts | Browse by list */}
+              <div className="flex items-center rounded-lg border border-border p-0.5 w-fit">
+                <Button
+                  variant={hubspotMode === "search" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 px-3 text-xs"
+                  onClick={() => setHubspotMode("search")}
+                  data-testid="hubspot-tab-search"
+                >
+                  <Search className="w-3.5 h-3.5 mr-1.5" /> Search contacts
+                </Button>
+                <Button
+                  variant={hubspotMode === "list" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 px-3 text-xs"
+                  onClick={() => {
+                    setHubspotMode("list");
+                    loadHubspotLists();
+                  }}
+                  data-testid="hubspot-tab-list"
+                >
+                  <ChevronDown className="w-3.5 h-3.5 mr-1.5" /> Browse by list
                 </Button>
               </div>
+
+              {/* Search mode */}
+              {hubspotMode === "search" && (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Search by name, email, or company…"
+                    value={hubspotQuery}
+                    onChange={(e) => setHubspotQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && searchHubspot(hubspotQuery)}
+                    data-testid="input-hubspot-search"
+                    className="flex-1"
+                  />
+                  <Button variant="outline" onClick={() => searchHubspot(hubspotQuery)} disabled={hubspotSearching} data-testid="button-hubspot-search">
+                    {hubspotSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  </Button>
+                </div>
+              )}
+
+              {/* List mode — picker */}
+              {hubspotMode === "list" && (
+                <div className="flex gap-2 items-center">
+                  {hubspotListsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-1">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading lists…
+                    </div>
+                  ) : (
+                    <Select
+                      value={hubspotSelectedList ?? ""}
+                      onValueChange={(v) => {
+                        setHubspotSelectedList(v);
+                        loadContactsFromList(v);
+                      }}
+                    >
+                      <SelectTrigger className="flex-1" data-testid="hubspot-list-picker">
+                        <SelectValue placeholder="Choose a HubSpot list…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(hubspotLists ?? []).map((l) => (
+                          <SelectItem key={l.listId} value={l.listId}>
+                            {l.name}
+                            {l.memberCount > 0 && (
+                              <span className="ml-2 text-xs text-muted-foreground">({l.memberCount})</span>
+                            )}
+                          </SelectItem>
+                        ))}
+                        {hubspotLists?.length === 0 && (
+                          <div className="px-3 py-4 text-center text-xs text-muted-foreground">No contact lists found in HubSpot.</div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
 
               {/* Contact list */}
               {hubspotSearching ? (
