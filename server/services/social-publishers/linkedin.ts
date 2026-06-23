@@ -398,46 +398,48 @@ export class LinkedInPublisher implements SocialPublisher {
       imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
     }
 
-    // Build the media block.
-    // LinkedIn CAROUSEL requires 2+ images; fall back to IMAGE if only 1 uploaded.
-    let mediaCategory: "CAROUSEL" | "IMAGE" | "NONE";
-    let mediaItems: Array<{ status: string; media: string }> | undefined;
-    if (carouselImageUrns.length >= 2) {
-      mediaCategory = "CAROUSEL";
-      mediaItems = carouselImageUrns.map(urn => ({ status: "READY", media: urn }));
-    } else if (carouselImageUrns.length === 1) {
-      mediaCategory = "IMAGE";
-      mediaItems = [{ status: "READY", media: carouselImageUrns[0] }];
-    } else if (imageAssetUrn) {
-      mediaCategory = "IMAGE";
-      mediaItems = [{ status: "READY", media: imageAssetUrn }];
-    } else {
-      mediaCategory = "NONE";
-    }
-
-    const shareContent: Record<string, unknown> = {
-      shareCommentary: { text: finalText },
-      shareMediaCategory: mediaCategory,
-    };
-    if (mediaItems) {
-      shareContent.media = mediaItems;
-    }
-
-    const body = {
+    // ----------------------------------------------------------------
+    // Build the post body for the v2/posts API (LinkedIn-Version: 202304).
+    // This is the same API version used by v2/images, so image ownership
+    // is consistent and the "not owned by the author" error cannot occur.
+    // ----------------------------------------------------------------
+    const postBody: Record<string, unknown> = {
       author: account.authorUrn,
+      commentary: finalText,
+      visibility: "PUBLIC",
+      distribution: {
+        feedDistribution: "MAIN_FEED",
+        targetEntities: [],
+        thirdPartyDistributionChannels: [],
+      },
       lifecycleState: "PUBLISHED",
-      specificContent: { "com.linkedin.ugc.ShareContent": shareContent },
-      visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+      isReshareDisabledByAuthor: false,
     };
 
-    const resp = await fetch(`${API_HOST}/v2/ugcPosts`, {
+    if (carouselImageUrns.length >= 2) {
+      // Multi-image carousel — uses multiImage.images[].id
+      postBody.content = {
+        multiImage: {
+          images: carouselImageUrns.map(urn => ({ altText: "", id: urn })),
+        },
+      };
+    } else if (carouselImageUrns.length === 1) {
+      // Only one carousel slide uploaded — fall back to single image.
+      postBody.content = { media: { altText: "", id: carouselImageUrns[0] } };
+    } else if (imageAssetUrn) {
+      postBody.content = { media: { altText: "", id: imageAssetUrn } };
+    }
+    // No image → text-only post; no content key needed.
+
+    const resp = await fetch(`${API_HOST}/v2/posts`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        "LinkedIn-Version": "202304",
         "X-Restli-Protocol-Version": "2.0.0",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(postBody),
     });
 
     if (!resp.ok) {
@@ -454,11 +456,12 @@ export class LinkedInPublisher implements SocialPublisher {
         errorMessage:
           parsed?.message ||
           errText ||
-          `LinkedIn UGC post failed: ${resp.status}`,
+          `LinkedIn post failed: ${resp.status}`,
         responsePayload: parsed ?? errText,
       };
     }
 
+    // v2/posts returns the URN in x-restli-id header (URL-encoded) or body.
     const headerUrn = resp.headers.get("x-restli-id");
     let createdUrn: string | null = null;
     let payload: any = null;
@@ -471,6 +474,11 @@ export class LinkedInPublisher implements SocialPublisher {
     const publishedUrl = createdUrn
       ? `https://www.linkedin.com/feed/update/${encodeURIComponent(createdUrn)}/`
       : null;
+
+    console.log(`[LinkedIn] Post created: ${createdUrn ?? "(no URN)"}`, {
+      format: carouselImageUrns.length >= 2 ? "carousel" : imageAssetUrn || carouselImageUrns.length === 1 ? "image" : "text",
+      slides: carouselImageUrns.length,
+    });
 
     return {
       success: true,
