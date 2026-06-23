@@ -1,7 +1,170 @@
 import { storage } from "../storage";
+import { db } from "../db";
+import { socialAccounts } from "@shared/schema";
+import { and, eq, isNotNull } from "drizzle-orm";
+import { decryptSecret } from "../utils/encryption";
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = "fresh-linkedin-profile-data.p.rapidapi.com";
+
+/**
+ * Whether the official LinkedIn r_member_social scope is approved and should be
+ * used for personal post fetching instead of the RapidAPI scraper.
+ * Set LINKEDIN_MEMBER_SOCIAL_ENABLED=true once LinkedIn grants scope approval.
+ */
+function isMemberSocialEnabled(): boolean {
+  return process.env.LINKEDIN_MEMBER_SOCIAL_ENABLED?.trim().toLowerCase() === "true";
+}
+
+/**
+ * Retrieve and decrypt the access token for the tenant's connected LinkedIn
+ * account. Returns null when no connected account exists or the token is absent.
+ */
+async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<string | null> {
+  const [account] = await db
+    .select({
+      encryptedAccessToken: socialAccounts.encryptedAccessToken,
+      tokenExpiresAt: socialAccounts.tokenExpiresAt,
+    })
+    .from(socialAccounts)
+    .where(
+      and(
+        eq(socialAccounts.tenantDomain, tenantDomain),
+        eq(socialAccounts.platform, "linkedin"),
+        eq(socialAccounts.status, "active"),
+        isNotNull(socialAccounts.encryptedAccessToken),
+      ),
+    )
+    .limit(1);
+
+  if (!account?.encryptedAccessToken) return null;
+
+  if (account.tokenExpiresAt && account.tokenExpiresAt < new Date()) {
+    console.warn(`[LinkedIn API] Access token for tenant ${tenantDomain} is expired`);
+    return null;
+  }
+
+  try {
+    return decryptSecret(account.encryptedAccessToken);
+  } catch {
+    console.warn(`[LinkedIn API] Failed to decrypt access token for tenant ${tenantDomain}`);
+    return null;
+  }
+}
+
+const LI_API = "https://api.linkedin.com";
+const LI_HEADERS = (token: string) => ({
+  Authorization: `Bearer ${token}`,
+  "X-Restli-Protocol-Version": "2.0.0",
+  "LinkedIn-Version": "202309",
+});
+
+/**
+ * Resolve the LinkedIn member URN (urn:li:person:{id}) for the owner of the
+ * given access token using the /v2/me endpoint.
+ */
+async function resolveMemberUrn(accessToken: string): Promise<string | null> {
+  const res = await fetch(`${LI_API}/v2/me`, {
+    headers: LI_HEADERS(accessToken),
+  });
+  if (!res.ok) {
+    console.warn(`[LinkedIn API] /v2/me returned ${res.status}`);
+    return null;
+  }
+  const data: any = await res.json();
+  return data?.id ? `urn:li:person:${data.id}` : null;
+}
+
+/**
+ * Fetch posts via the official LinkedIn UGC Posts API (r_member_social scope).
+ * Filters to original posts (LIFECYCLESTATE=PUBLISHED, no reshares) within the
+ * given date range. Paginates until all in-range posts are collected.
+ */
+async function fetchPostsViaOfficialApi(
+  accessToken: string,
+  memberUrn: string,
+  startMs: number,
+  endMs: number,
+): Promise<PersonalPost[]> {
+  const allPosts: PersonalPost[] = [];
+  const PAGE_SIZE = 50;
+  const MAX_PAGES = 10;
+  let start = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      q: "authors",
+      authors: `List(${memberUrn})`,
+      start: String(start),
+      count: String(PAGE_SIZE),
+    });
+
+    const res = await fetch(`${LI_API}/v2/ugcPosts?${params.toString()}`, {
+      headers: LI_HEADERS(accessToken),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[LinkedIn API] ugcPosts returned ${res.status}: ${errText}`);
+      throw new Error(`LinkedIn ugcPosts API returned ${res.status}`);
+    }
+
+    const data: any = await res.json();
+    const elements: any[] = data?.elements ?? [];
+
+    if (elements.length === 0) break;
+
+    let reachedBeforeRange = false;
+
+    for (const el of elements) {
+      const timestamp: number | undefined =
+        typeof el?.firstPublishedAt === "number"
+          ? el.firstPublishedAt
+          : typeof el?.created?.time === "number"
+            ? el.created.time
+            : undefined;
+
+      if (timestamp !== undefined && timestamp < startMs) {
+        reachedBeforeRange = true;
+        break;
+      }
+      if (timestamp !== undefined && timestamp > endMs) continue;
+
+      // Only include original published posts — skip reshares
+      if (el?.lifecycleState !== "PUBLISHED") continue;
+      if (el?.resharedBy !== undefined) continue;
+
+      const shareContent =
+        el?.specificContent?.["com.linkedin.ugc.ShareContent"] ?? {};
+      const text: string = (
+        shareContent?.shareCommentary?.text ??
+        el?.text?.text ??
+        ""
+      ).trim();
+      if (!text) continue;
+
+      const postedAt = timestamp
+        ? new Date(timestamp).toISOString()
+        : "";
+
+      allPosts.push({
+        text,
+        postedAt,
+        postedAtTimestamp: timestamp,
+        urn: el?.id,
+      });
+    }
+
+    if (reachedBeforeRange) break;
+
+    const paging = data?.paging ?? {};
+    const total: number = paging.total ?? 0;
+    start += PAGE_SIZE;
+    if (start >= total || elements.length < PAGE_SIZE) break;
+  }
+
+  return allPosts;
+}
 
 interface LinkedInCompanyData {
   success: boolean;
@@ -289,24 +452,58 @@ export interface PersonalPostsResult {
 
 /**
  * Fetch a person's own original mainline LinkedIn posts (no shares, no reposts)
- * within a date range, using the RapidAPI fresh-linkedin-profile-data endpoint.
+ * within a date range.
  *
- * Designed to be easily swapped for the official r_member_social API call once
- * LinkedIn approves that scope — only this function needs to change.
+ * Primary path (when LINKEDIN_MEMBER_SOCIAL_ENABLED=true and tenantDomain is
+ * supplied): uses the official LinkedIn UGC Posts API (r_member_social scope)
+ * with the tenant's stored OAuth access token.
+ *
+ * Fallback path: the RapidAPI fresh-linkedin-profile-data scraper (public
+ * profiles only). Used when the official scope is not yet approved, when no
+ * connected LinkedIn account exists for the tenant, or when tenantDomain is
+ * not passed (backwards-compatible callers).
  */
 export async function getPersonalProfilePosts(
   profileUrl: string,
   startDate: Date,
   endDate: Date,
+  tenantDomain?: string,
 ): Promise<PersonalPostsResult> {
-  if (!RAPIDAPI_KEY) {
-    return { success: false, error: "RapidAPI key not configured" };
-  }
-
-  const normalizedUrl = profileUrl.trim().replace(/\/$/, "");
   const startMs = startDate.getTime();
   const endMs = endDate.getTime();
 
+  // ── Official LinkedIn API path ──────────────────────────────────────────────
+  if (isMemberSocialEnabled() && tenantDomain) {
+    try {
+      const accessToken = await getTenantLinkedInAccessToken(tenantDomain);
+      if (!accessToken) {
+        console.warn(
+          `[LinkedIn API] LINKEDIN_MEMBER_SOCIAL_ENABLED is true but no active ` +
+          `LinkedIn account token found for tenant ${tenantDomain}. Falling back to RapidAPI.`,
+        );
+      } else {
+        const memberUrn = await resolveMemberUrn(accessToken);
+        if (!memberUrn) {
+          console.warn("[LinkedIn API] Could not resolve member URN. Falling back to RapidAPI.");
+        } else {
+          const posts = await fetchPostsViaOfficialApi(accessToken, memberUrn, startMs, endMs);
+          return { success: true, posts, postCount: posts.length };
+        }
+      }
+    } catch (error: any) {
+      console.error("[LinkedIn API] Official API call failed, falling back to RapidAPI:", error.message);
+    }
+  }
+
+  // ── RapidAPI fallback path ─────────────────────────────────────────────────
+  if (!RAPIDAPI_KEY) {
+    const reason = isMemberSocialEnabled()
+      ? "LinkedIn official API is enabled but no connected account token was found, and RapidAPI key is not configured"
+      : "RapidAPI key not configured";
+    return { success: false, error: reason };
+  }
+
+  const normalizedUrl = profileUrl.trim().replace(/\/$/, "");
   const allPosts: PersonalPost[] = [];
   let paginationToken: string | undefined;
   const MAX_PAGES = 5;

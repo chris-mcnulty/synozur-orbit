@@ -805,7 +805,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
   app.post("/api/linkedin-digest/preview", async (req, res) => {
     try {
       if (!(await guardFeature(req, res, "editorialCalendar"))) return;
-      await getRequestContext(req);
+      const digestCtx = await getRequestContext(req);
 
       const { profileUrl, startDate, endDate } = req.body ?? {};
       if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.includes("linkedin.com/in/")) {
@@ -826,7 +826,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
       // Set end to end-of-day so the range is inclusive.
       end.setUTCHours(23, 59, 59, 999);
 
-      const result = await getPersonalProfilePosts(profileUrl.trim(), start, end);
+      const result = await getPersonalProfilePosts(profileUrl.trim(), start, end, digestCtx.tenantDomain);
 
       if (!result.success) {
         return res.status(502).json({ error: result.error || "Failed to fetch posts from LinkedIn." });
@@ -869,7 +869,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
       end.setUTCHours(23, 59, 59, 999);
 
       // Re-fetch posts server-side — do NOT trust client-supplied posts.
-      const fetchResult = await getPersonalProfilePosts(profileUrl.trim(), start, end);
+      const fetchResult = await getPersonalProfilePosts(profileUrl.trim(), start, end, ctx.tenantDomain);
       if (!fetchResult.success) {
         return res.status(502).json({ error: fetchResult.error || "Failed to fetch posts from LinkedIn." });
       }
