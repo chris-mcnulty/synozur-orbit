@@ -34,7 +34,7 @@ import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, upsertContact, logContactNote } from "../services/hubspot-integration";
-import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
+import { preWarmMarketingCache, resolveHubspotContactId } from "../services/hubspot-contact-resolver";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";

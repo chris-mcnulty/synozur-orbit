@@ -162,7 +162,8 @@ export async function resolveHubspotContactId(
 
     const deps: ContactResolverDeps = {
       async prospectLookup() {
-        const [row] = await db
+        // Query 1: try to find a row with a resolved contact ID.
+        const [contactRow] = await db
           .select({ contactId: prospects.hubspotContactId, companyId: prospects.hubspotCompanyId })
           .from(prospects)
           .where(
@@ -173,8 +174,23 @@ export async function resolveHubspotContactId(
             ),
           )
           .limit(1);
-        if (!row?.contactId) return null;
-        return { contactId: row.contactId, companyId: row.companyId ?? null };
+        if (contactRow?.contactId) {
+          return { contactId: contactRow.contactId, companyId: contactRow.companyId ?? null };
+        }
+        // Query 2: no contact ID yet, but still return companyId so the auto-create
+        // branch can associate the new contact with the prospect's company.
+        const [companyRow] = await db
+          .select({ companyId: prospects.hubspotCompanyId })
+          .from(prospects)
+          .where(
+            and(
+              eq(prospects.tenantDomain, tenantDomain),
+              eq(prospects.email, norm),
+              isNotNull(prospects.hubspotCompanyId),
+            ),
+          )
+          .limit(1);
+        return { contactId: null as any, companyId: companyRow?.companyId ?? null };
       },
 
       async cacheLookup() {
@@ -299,38 +315,93 @@ export async function resolveSendRecipientContacts(opts: {
 
     const nameByEmail = new Map(rows.map((r) => [normalizeEmail(r.email), r.name ?? null]));
 
+    // Lazy HubSpot client — shared across all recipients in this batch.
+    let batchClient: Awaited<ReturnType<typeof getTenantClient>>["client"] | null = null;
+    const getClient = async () => {
+      if (!batchClient) batchClient = (await getTenantClient(tenantDomain)).client;
+      return batchClient;
+    };
+
+    const autoCreate = !!(conn.autoCreateHubspotContacts);
     const result: ResolveResult = { resolved: 0, created: 0, skipped: 0, errors: 0, ran: true };
 
     for (const email of emails) {
       const norm = normalizeEmail(email);
-      // Determine whether this is a new contact create by checking if
-      // the cache/prospects have it before we call resolve.
-      const preExists = await hasExistingContactId(tenantDomain, norm);
+      const name = nameByEmail.get(norm) ?? null;
 
-      const contactId = await resolveHubspotContactId(norm, tenantDomain, {
-        autoCreate: conn.autoCreateHubspotContacts ?? false,
-        name: nameByEmail.get(norm) ?? null,
-      });
+      // Track whether the auto-create branch ran so we can count accurately.
+      let wasCreated = false;
 
-      let outcome: ContactResolutionOutcome;
-      if (!contactId) {
-        outcome = "not_found";
-      } else if (preExists) {
-        outcome = "found";
-      } else {
-        // resolveHubspotContactId created it (or searched HubSpot and found
-        // it for the first time this send) — distinguish by whether it was
-        // already in HubSpot vs genuinely new via auto-create.
-        // For result accounting, created means the auto-create path ran.
-        // We mark "created" here conservatively only when autoCreate was on
-        // and it wasn't pre-existing — the exact distinction doesn't affect
-        // downstream logic, only the result counter.
-        outcome = conn.autoCreateHubspotContacts ? "created" : "found";
-      }
+      const deps: ContactResolverDeps = {
+        async prospectLookup() {
+          const [contactRow] = await db
+            .select({ contactId: prospects.hubspotContactId, companyId: prospects.hubspotCompanyId })
+            .from(prospects)
+            .where(and(eq(prospects.tenantDomain, tenantDomain), eq(prospects.email, norm), isNotNull(prospects.hubspotContactId)))
+            .limit(1);
+          if (contactRow?.contactId) return { contactId: contactRow.contactId, companyId: contactRow.companyId ?? null };
+          const [companyRow] = await db
+            .select({ companyId: prospects.hubspotCompanyId })
+            .from(prospects)
+            .where(and(eq(prospects.tenantDomain, tenantDomain), eq(prospects.email, norm), isNotNull(prospects.hubspotCompanyId)))
+            .limit(1);
+          return { contactId: null as any, companyId: companyRow?.companyId ?? null };
+        },
+        async cacheLookup() {
+          const [row] = await db
+            .select({ hubspotContactId: hubspotContactIdCache.hubspotContactId })
+            .from(hubspotContactIdCache)
+            .where(and(eq(hubspotContactIdCache.tenantDomain, tenantDomain), eq(hubspotContactIdCache.email, norm)))
+            .limit(1);
+          return row?.hubspotContactId ?? null;
+        },
+        async hubspotSearch() {
+          const c = await getClient();
+          const result = await c.crm.contacts.searchApi.doSearch({
+            filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", values: [norm] }] }],
+            properties: ["email"],
+            limit: 1,
+            after: "0",
+          } as any);
+          return result.results[0]?.id ?? null;
+        },
+        async hubspotCreate() {
+          wasCreated = true;
+          const c = await getClient();
+          const props: Record<string, string> = { email: norm };
+          if (name) {
+            const parts = name.trim().split(/\s+/);
+            props.firstname = parts[0];
+            if (parts.length > 1) props.lastname = parts.slice(1).join(" ");
+          }
+          const created = await c.crm.contacts.basicApi.create({ properties: props, associations: [] });
+          return created.id;
+        },
+        async associateCompany(contactId, companyId) {
+          const c = await getClient();
+          await c.crm.associations.v4.basicApi.create(
+            "contacts", contactId, "companies", companyId,
+            [{ associationCategory: "HUBSPOT_DEFINED" as any, associationTypeId: 1 }],
+          );
+        },
+        async writeCache(contactId) {
+          await upsertCache(tenantDomain, norm, contactId);
+        },
+        autoCreateEnabled: autoCreate,
+      };
+
+      let contactId: string | null = null;
+      try {
+        contactId = await _resolveContactWithDeps(norm, tenantDomain, { autoCreate, name }, deps);
+      } catch { /* swallow — counted as error below */ }
+
+      const outcome: ContactResolutionOutcome = !contactId
+        ? "not_found"
+        : wasCreated
+          ? "created"
+          : "found";
 
       await markStatus(sendId, [email], contactId, syncStatusForOutcome(outcome));
-
-      // Also backfill the list-level cache row if it exists.
       if (contactId) await backfillListCache(tenantDomain, norm, contactId);
 
       if (contactId) result.resolved += 1;
@@ -347,36 +418,6 @@ export async function resolveSendRecipientContacts(opts: {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-/** True when the tenant+email already has a resolved contact ID in either
- *  the prospects table or the shared cache. Used to distinguish "found" vs
- *  "created" in the batch resolver result counts. */
-async function hasExistingContactId(tenantDomain: string, email: string): Promise<boolean> {
-  const [cacheRow] = await db
-    .select({ id: hubspotContactIdCache.hubspotContactId })
-    .from(hubspotContactIdCache)
-    .where(
-      and(
-        eq(hubspotContactIdCache.tenantDomain, tenantDomain),
-        eq(hubspotContactIdCache.email, email),
-      ),
-    )
-    .limit(1);
-  if (cacheRow) return true;
-
-  const [prospectRow] = await db
-    .select({ id: prospects.hubspotContactId })
-    .from(prospects)
-    .where(
-      and(
-        eq(prospects.tenantDomain, tenantDomain),
-        eq(prospects.email, email),
-        isNotNull(prospects.hubspotContactId),
-      ),
-    )
-    .limit(1);
-  return !!prospectRow?.id;
-}
 
 /** Upsert the resolved contact ID into the shared cross-system cache. */
 async function upsertCache(
