@@ -351,9 +351,11 @@ export default function CalendarPage() {
                           onClick={() => setSelectedPost(post)}
                           className={`text-[10px] px-1 py-0.5 rounded border cursor-pointer truncate flex items-center gap-1 ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"}`}
                           data-testid={`calendar-post-${post.id}`}
-                          title={post.preview}
+                          title={post.accountName ? `${post.accountName} · ${post.preview}` : post.preview}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[post.status] ?? "bg-gray-400"}`} />
+                          {post.accountName && <span className="shrink-0 font-medium">{post.accountName}</span>}
+                          {post.accountName && <span className="shrink-0 opacity-50">·</span>}
                           <span className="truncate">{post.preview || "(empty)"}</span>
                         </div>
                       ))}
@@ -397,6 +399,11 @@ export default function CalendarPage() {
                     <span className={`shrink-0 rounded border px-1 text-[10px] ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"}`}>
                       {post.platform}
                     </span>
+                    {post.accountName && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground font-medium" data-testid={`badge-account-${post.id}`}>
+                        {post.accountName}
+                      </span>
+                    )}
                     <span className="flex-1 truncate">{post.preview || "(empty)"}</span>
                   </button>
                 ))}
