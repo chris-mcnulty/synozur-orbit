@@ -1224,18 +1224,29 @@ export default function OutreachCampaignDetailPage() {
                               : <UserSearch className="w-3.5 h-3.5" />}
                           </Button>
                         )}
-                        {!p.hubspotContactId && (
+                        {p.hubspotContactId ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] border-orange-400 text-orange-600 dark:text-orange-400 cursor-default select-none"
+                            data-testid={`badge-hubspot-linked-${p.id}`}
+                            title={`HubSpot contact ID: ${p.hubspotContactId}`}
+                          >
+                            ✓ HubSpot
+                          </Badge>
+                        ) : (
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => syncHubspot.mutate(p.id)}
                             disabled={syncHubspot.isPending && syncHubspot.variables === p.id}
                             data-testid={`push-hubspot-${p.id}`}
-                            title="Push to HubSpot"
+                            title="Create or update this contact in HubSpot"
+                            className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-700 dark:hover:bg-orange-950"
                           >
                             {syncHubspot.isPending && syncHubspot.variables === p.id
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              : <Upload className="w-3.5 h-3.5" />}
+                              ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                              : <Upload className="w-3.5 h-3.5 mr-1" />}
+                            Add to HubSpot
                           </Button>
                         )}
                         <Button
