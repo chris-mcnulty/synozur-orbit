@@ -539,8 +539,19 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
             <Input value={form.alwaysHashtags} onChange={(e) => setForm((f) => ({ ...f, alwaysHashtags: e.target.value }))} placeholder="comma or space separated" />
           </div>
           <div className="grid gap-2">
+            <Label>Event description</Label>
+            <Textarea
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="Public-facing description of the event. Used verbatim in outreach messages when this event is linked to a sales campaign."
+              data-testid="textarea-edit-event-description"
+            />
+          </div>
+          <div className="grid gap-2">
             <Label>Theme / brief (guides AI copy & graphics)</Label>
             <Textarea rows={3} value={form.thematicBrief} onChange={(e) => setForm((f) => ({ ...f, thematicBrief: e.target.value }))} />
+            <p className="text-xs text-muted-foreground">Used as a fallback event description for outreach if the field above is empty.</p>
           </div>
           <div className="grid gap-2">
             <Label>Parent campaign (optional)</Label>

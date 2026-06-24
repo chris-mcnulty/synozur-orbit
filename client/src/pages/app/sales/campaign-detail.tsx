@@ -1008,7 +1008,7 @@ export default function OutreachCampaignDetailPage() {
                 const conf = conferenceList.find((c) => c.id === campaign.conferenceId);
                 if (!conf) return null;
                 const dateStr = conf.startDate
-                  ? new Date(conf.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                  ? new Date(conf.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
                   : null;
                 return (
                   <Badge variant="outline" className="text-[11px] gap-1" data-testid="badge-linked-event">
@@ -1373,7 +1373,7 @@ export default function OutreachCampaignDetailPage() {
                         {c.name}
                         {c.startDate && (
                           <span className="ml-2 text-xs text-muted-foreground">
-                            {new Date(c.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            {new Date(c.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
                           </span>
                         )}
                       </SelectItem>
