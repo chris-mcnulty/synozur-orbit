@@ -1472,7 +1472,7 @@ export default function CampaignDetailPage() {
   const [showExportWarning, setShowExportWarning] = useState(false);
   const [includeUndated, setIncludeUndated] = useState(false);
   const [includeExported, setIncludeExported] = useState(false);
-  const [exportPreview, setExportPreview] = useState<{ totalPosts: number; datedPosts: number; undatedPosts: number; collisions: number; postsWithLink: number } | null>(null);
+  const [exportPreview, setExportPreview] = useState<{ totalPosts: number; orbitCount: number; datedPosts: number; undatedPosts: number; collisions: number; postsWithLink: number } | null>(null);
   // After a download, we confirm the scheduling tool accepted the file before
   // marking anything delivered. These hold the ids that were in the last CSV.
   const [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
@@ -5792,9 +5792,15 @@ export default function CampaignDetailPage() {
                 {exportPreview && (
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span>Total active posts:</span>
+                      <span>CSV-scheduled posts:</span>
                       <span className="font-medium">{exportPreview.totalPosts}</span>
                     </div>
+                    {exportPreview.orbitCount > 0 && (
+                      <div className="flex justify-between text-blue-600">
+                        <span>Orbit-scheduled (excluded):</span>
+                        <span className="font-medium">{exportPreview.orbitCount}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span>Posts with valid dates:</span>
                       <span className="font-medium text-green-600">{exportPreview.datedPosts}</span>
@@ -5811,6 +5817,14 @@ export default function CampaignDetailPage() {
                         <span className="font-medium text-amber-600">{exportPreview.collisions} (auto-staggered by 15 min)</span>
                       </div>
                     )}
+                  </div>
+                )}
+                {exportPreview && exportPreview.orbitCount > 0 && (
+                  <div className="rounded-md border border-blue-200 p-3 bg-blue-50 dark:bg-blue-950/40 dark:border-blue-900 text-sm">
+                    <p className="font-medium text-blue-800 dark:text-blue-200 mb-0.5">Orbit posts excluded</p>
+                    <p className="text-blue-700 dark:text-blue-300 text-xs">
+                      {exportPreview.orbitCount} post{exportPreview.orbitCount !== 1 ? "s are" : " is"} marked for Orbit direct posting and will not appear in this CSV. To include them, change their delivery mode to "CSV only" using the Select button above.
+                    </p>
                   </div>
                 )}
                 {csvFormat === "socialpilot" && exportPreview && exportPreview.postsWithLink > 0 && (

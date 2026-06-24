@@ -1264,6 +1264,12 @@ export default function MarketingCalendarPage() {
               {(Object.keys(TYPE_META) as ItemType[]).map((t) => (
                 <span key={t} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[t].dot}`} /> {TYPE_META[t].label}</span>
               ))}
+              <span className="border-l pl-4 flex items-center gap-x-3 gap-y-1.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-wide font-medium opacity-50 mr-1">Dots on pills:</span>
+                {(Object.keys(ASSIGN_META) as AssignmentKind[]).map((k) => (
+                  <span key={k} className="flex items-center gap-1"><span className={`h-2 w-2 rounded-full ${ASSIGN_META[k].dot}`} />{ASSIGN_META[k].label}</span>
+                ))}
+              </span>
               {((filterOpts?.socialChannels?.length ?? 0) > 0 || (filterOpts?.contentFormats?.length ?? 0) > 0) && (
                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-l pl-4">
                   {filterOpts?.socialChannels?.map((c) => (

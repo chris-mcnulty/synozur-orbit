@@ -3310,15 +3310,23 @@ Return ONLY a valid JSON object (no markdown fences) with:
           notInArray(generatedPosts.status, ["deleted", "rejected", "exported", "scheduled_external", "published"]),
         ));
 
+      // Only include CSV-designated posts in the export. Orbit-scheduled posts
+      // (deliveryMode = null) are published automatically by Orbit and must not
+      // be sent to an external scheduler. If NO posts have been assigned a mode
+      // yet (legacy batches), fall back to including all so nothing breaks.
+      const hasCsvPosts = allPosts.some(p => p.deliveryMode === "csv");
+      const exportablePosts = hasCsvPosts ? allPosts.filter(p => p.deliveryMode === "csv") : allPosts;
+      const orbitCount = hasCsvPosts ? allPosts.filter(p => !p.deliveryMode).length : 0;
+
       const now = new Date();
-      const dated = allPosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
-      const undated = allPosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
+      const dated = exportablePosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
+      const undated = exportablePosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
 
       const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
         .where(eq(campaignSocialAccounts.campaignId, campaign.id));
       const campaignAccountIds = campaignAccountLinks.map(l => l.socialAccountId);
       const allAccountIds = Array.from(new Set([
-        ...allPosts.map(p => p.socialAccountId).filter(Boolean),
+        ...exportablePosts.map(p => p.socialAccountId).filter(Boolean),
         ...campaignAccountIds,
       ])) as string[];
       const accountMap = new Map<string, any>();
@@ -3351,10 +3359,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
         if (count > 1) collisions++;
       }
 
-      const postsWithLink = allPosts.filter(p => p.linkUrl).length;
+      const postsWithLink = exportablePosts.filter(p => p.linkUrl).length;
 
       res.json({
-        totalPosts: allPosts.length,
+        totalPosts: exportablePosts.length,
+        orbitCount,
         datedPosts: dated.length,
         undatedPosts: undated.length,
         collisions,
@@ -3390,10 +3399,16 @@ Return ONLY a valid JSON object (no markdown fences) with:
         notInArray(generatedPosts.status, excludedStatuses),
       ));
 
+    // Only export CSV-designated posts. Orbit posts (deliveryMode = null) are
+    // published automatically by Orbit and must not go to an external scheduler.
+    // If no delivery modes are set at all (legacy batches), include everything.
+    const hasCsvPosts = allPosts.some(p => p.deliveryMode === "csv");
+    const csvEligible = hasCsvPosts ? allPosts.filter(p => p.deliveryMode === "csv") : allPosts;
+
     const now_filter = new Date();
     const posts = excludeUndated
-      ? allPosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now_filter)
-      : allPosts;
+      ? csvEligible.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now_filter)
+      : csvEligible;
 
     const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
       .where(eq(campaignSocialAccounts.campaignId, campaign.id));

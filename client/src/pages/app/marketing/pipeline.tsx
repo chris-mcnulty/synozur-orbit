@@ -399,11 +399,11 @@ export default function ContentPipelinePage() {
     },
   });
 
-  // Active campaigns de-duped by name — shown in the campaign filter picker.
+  // Active + draft/planned campaigns de-duped by name — shown in the campaign filter picker.
   const campaigns = useMemo(() => {
     const seen = new Set<string>();
     return allCampaigns.filter((c) => {
-      if (c.status !== "active") return false;
+      if (!["active", "draft", "planned"].includes(c.status)) return false;
       const key = (c.name ?? "").trim().toLowerCase();
       if (!key || seen.has(key)) return false;
       seen.add(key);

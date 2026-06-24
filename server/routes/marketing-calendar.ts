@@ -247,7 +247,9 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       const socialItems: RollupSocialItem[] = [];
       for (const p of socialRows) {
-        const date = p.scheduledDate ?? p.publishedAt ?? null;
+        // For published posts, use the actual publish time so "Post now" items
+        // appear on the day they were actually posted (not the original slot).
+        const date = p.publishedAt ?? p.scheduledDate ?? null;
         if (!includeByDate(date)) continue;
         socialItems.push({
           id: p.id,
