@@ -204,7 +204,7 @@ export default function SolutionAreasPage() {
                         variant="ghost" size="icon" className="h-7 w-7"
                         onClick={() => navigate(`/app/marketing/planning-hub?scope=theme&id=${area.id}`)}
                         data-testid={`button-plan-area-${area.id}`}
-                        title="Open in Planning Hub"
+                        title="Open in Themes Hub"
                       >
                         <Target className="w-3.5 h-3.5" />
                       </Button>

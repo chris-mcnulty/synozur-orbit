@@ -32,6 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
 import { StageBar } from "@/components/hub/hub-charts";
 import { MarketingHubNextActions } from "@/components/marketing/NextActionsByBatch";
+import { buildAreas } from "@/lib/areaNavigation";
 import { useQuery } from "@tanstack/react-query";
 
 type LongFormRecommendation = {
@@ -174,156 +175,37 @@ export default function MarketingLandingPage() {
   const activePlans = marketingPlans.filter(p => p.status === "active");
   const totalPlanTasks = marketingPlans.reduce((sum, p) => sum + (p.tasks?.length || 0), 0);
 
-  const cards = [
-    {
-      title: "Messaging Framework",
-      description: "AI-generated messaging and positioning based on competitive gaps.",
-      icon: MessageCircle,
+  // The hub cards are derived from the same Marketing nav source used by the
+  // sidebar (areaNavigation.ts) so labels, descriptions, and the set of
+  // surfaces can never drift between the two. Per-card status (Ready badges,
+  // last-updated, action labels) is layered on by href below. "Measure" is
+  // excluded — Performance has its own tab on this page.
+  const sectionOrder = ["Calendar", "Plan", "Create", "Libraries"] as const;
+  const enrichment: Record<
+    string,
+    { generated?: boolean; loading?: boolean; lastUpdated?: string | null; actionLabel?: string }
+  > = {
+    "/app/marketing/messaging-framework": {
       generated: msgGenerated,
       loading: msgLoading,
-      lastUpdated: messagingFramework?.lastGeneratedAt,
+      lastUpdated: messagingFramework?.lastGeneratedAt ?? null,
       actionLabel: msgGenerated ? "View Framework" : "Generate Framework",
-      actionHref: "/app/marketing/messaging-framework",
-      testId: "card-messaging-framework",
     },
-    {
-      title: "GTM Plan",
-      description: "Strategic Go-To-Market plan from your competitive analysis.",
-      icon: Rocket,
+    "/app/marketing/gtm-plan": {
       generated: gtmGenerated,
       loading: gtmLoading,
-      lastUpdated: gtmPlan?.lastGeneratedAt,
+      lastUpdated: gtmPlan?.lastGeneratedAt ?? null,
       actionLabel: gtmGenerated ? "View GTM Plan" : "Generate GTM Plan",
-      actionHref: "/app/marketing/gtm-plan",
-      testId: "card-gtm-plan",
     },
-    {
-      title: "Marketing Planner",
-      description: "AI-powered marketing task plans across 14 activity categories.",
-      icon: Gem,
+    "/app/marketing/projects": {
       generated: marketingPlans.length > 0,
       loading: plansLoading,
-      enterprise: true,
-      planCount: marketingPlans.length,
-      activePlanCount: activePlans.length,
-      taskCount: totalPlanTasks,
-      actionLabel: isEnterprise
-        ? (marketingPlans.length > 0 ? "View Plans" : "Create Plan")
-        : "Learn More",
-      actionHref: "/app/marketing-planner",
-      testId: "card-marketing-planner",
+      actionLabel: isEnterprise ? (marketingPlans.length > 0 ? "View Projects" : "Create Project") : "Learn More",
     },
-    {
-      title: "Social Campaigns",
-      description: "Plan and manage multi-channel marketing campaigns with AI-generated social media content.",
-      icon: LayoutList,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "View Social Campaigns",
-      actionHref: "/app/marketing/campaigns",
-      testId: "card-social-campaigns",
-    },
-    {
-      title: "Themes Hub",
-      description: "See and plan every piece of marketing for a solution-area theme in one view.",
-      icon: Target,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "Open Themes Hub",
-      actionHref: "/app/marketing/planning-hub",
-      testId: "card-planning-hub",
-    },
-    {
-      title: "Content Calendar",
-      description: "Cross-channel overview of every scheduled social post, email, and content piece.",
-      icon: CalendarRange,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "Open Content Calendar",
-      actionHref: "/app/marketing/marketing-calendar",
-      testId: "card-master-calendar",
-    },
-    {
-      title: "Content Briefs",
-      description: "Plan and draft long-form content briefs grounded in your strategy.",
-      icon: ClipboardList,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "Open Content Briefs",
-      actionHref: "/app/marketing/editorial-calendar",
-      testId: "card-content-briefs",
-    },
-    {
-      title: "Social Posts",
-      description: "Social-only view to schedule, reschedule, and add graphics to posts.",
-      icon: Share2,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "Open Social Posts",
-      actionHref: "/app/marketing/calendar",
-      testId: "card-social-posts",
-    },
-    {
-      title: "Email Newsletters",
-      description: "AI-generated email content based on competitive intelligence.",
-      icon: Mail,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "View Newsletters",
-      actionHref: "/app/marketing/email-newsletters",
-      testId: "card-email-newsletters",
-    },
-    {
-      title: "Digital/Web Assets",
-      description: "Centralized repository for URLs, articles, and web-based content.",
-      icon: Library,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "View Library",
-      actionHref: "/app/marketing/content-library",
-      testId: "card-content-library",
-    },
-    {
-      title: "Visual/Brand Assets",
-      description: "Manage approved images, logos, and visual brand identity.",
-      icon: Image,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "View Assets",
-      actionHref: "/app/marketing/brand-library",
-      testId: "card-brand-library",
-    },
-    {
-      title: "Content Pipeline",
-      description: "Every in-flight post, email, and brief on one drag-and-drop board.",
-      icon: ListChecks,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "Open Pipeline",
-      actionHref: "/app/marketing/pipeline",
-      testId: "card-content-pipeline",
-    },
-    {
-      title: "Email Sends",
-      description: "Track campaign deliveries, recipient lists, and unsubscribe suppressions.",
-      icon: Send,
-      generated: false,
-      loading: false,
-      enterprise: true,
-      actionLabel: "View Sends",
-      actionHref: "/app/marketing/sends",
-      testId: "card-sends",
-    },
-  ];
+  };
+  const marketingItems = buildAreas({ isEnterprise: true, isAdminUser: true, isGlobalAdmin: false })
+    .find((a) => a.id === "marketing")!
+    .items.filter((it) => it.href !== "/app/marketing" && it.section !== "Measure");
 
   return (
     <AppLayout>
@@ -430,83 +312,96 @@ export default function MarketingLandingPage() {
                   </CardContent>
                 </Card>
               )}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {cards.map((card) => {
-              const Icon = card.icon;
-              return (
-                <Card
-                  key={card.testId}
-                  className="group hover:border-primary/40 transition-all duration-200 flex flex-col"
-                  data-testid={card.testId}
-                >
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Icon className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {card.enterprise && !isEnterprise && (
-                          <Badge variant="outline" className="text-primary border-primary/30 text-[10px]">
-                            <Gem className="w-3 h-3 mr-0.5" />
-                            Enterprise
-                          </Badge>
-                        )}
-                        {card.loading ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                        ) : card.generated ? (
-                          <Badge className="bg-emerald-600/90 dark:bg-emerald-500/90 text-primary-foreground text-[10px]">
-                            <CheckCircle className="w-3 h-3 mr-0.5" />
-                            Ready
-                          </Badge>
-                        ) : null}
+              <div className="space-y-8">
+                {sectionOrder.map((section) => {
+                  const items = marketingItems.filter((it) => it.section === section);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={section} className="space-y-3">
+                      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {section}
+                      </h2>
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {items.map((item) => {
+                          const Icon = item.icon;
+                          const ex = enrichment[item.href] ?? {};
+                          const generatable = "generated" in ex;
+                          const isProjects = item.href === "/app/marketing/projects";
+                          const slug = item.href.split("/").pop();
+                          return (
+                            <Card
+                              key={item.href}
+                              className="group hover:border-primary/40 transition-all duration-200 flex flex-col"
+                              data-testid={`card-${slug}`}
+                            >
+                              <CardHeader className="pb-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="p-2 bg-primary/10 rounded-lg">
+                                    <Icon className="w-5 h-5 text-primary" />
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {item.enterprise && !isEnterprise && (
+                                      <Badge variant="outline" className="text-primary border-primary/30 text-[10px]">
+                                        <Gem className="w-3 h-3 mr-0.5" />
+                                        Enterprise
+                                      </Badge>
+                                    )}
+                                    {ex.loading ? (
+                                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                                    ) : ex.generated ? (
+                                      <Badge className="bg-emerald-600/90 dark:bg-emerald-500/90 text-primary-foreground text-[10px]">
+                                        <CheckCircle className="w-3 h-3 mr-0.5" />
+                                        Ready
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <CardTitle className="text-base mt-3">{item.label}</CardTitle>
+                                <CardDescription className="text-xs leading-relaxed">
+                                  {item.description}
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="mt-auto pt-0">
+                                {isProjects && isEnterprise && (
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="w-3 h-3" />
+                                      {marketingPlans.length} {marketingPlans.length === 1 ? "project" : "projects"}
+                                    </span>
+                                    {activePlans.length > 0 && (
+                                      <span className="text-emerald-500">{activePlans.length} active</span>
+                                    )}
+                                    {totalPlanTasks > 0 && <span>{totalPlanTasks} tasks</span>}
+                                  </div>
+                                )}
+                                {ex.lastUpdated && (
+                                  <p className="text-[11px] text-muted-foreground mb-3">
+                                    Last updated: {new Date(ex.lastUpdated).toLocaleDateString()}
+                                  </p>
+                                )}
+                                <Button
+                                  variant={ex.generated ? "default" : "outline"}
+                                  size="sm"
+                                  className="w-full"
+                                  asChild
+                                  data-testid={`button-card-${slug}`}
+                                >
+                                  <Link href={item.href}>
+                                    {generatable && !ex.generated && (
+                                      <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                                    )}
+                                    {ex.actionLabel ?? `Open ${item.label}`}
+                                    <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                                  </Link>
+                                </Button>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
                       </div>
                     </div>
-                    <CardTitle className="text-base mt-3">{card.title}</CardTitle>
-                    <CardDescription className="text-xs leading-relaxed">
-                      {card.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="mt-auto pt-0">
-                    {'planCount' in card && isEnterprise && (
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {card.planCount} {card.planCount === 1 ? 'plan' : 'plans'}
-                        </span>
-                        {(card.activePlanCount ?? 0) > 0 && (
-                          <span className="text-emerald-500">
-                            {card.activePlanCount} active
-                          </span>
-                        )}
-                        {(card.taskCount ?? 0) > 0 && (
-                          <span>{card.taskCount} tasks</span>
-                        )}
-                      </div>
-                    )}
-                    {card.lastUpdated && (
-                      <p className="text-[11px] text-muted-foreground mb-3">
-                        Last updated: {new Date(card.lastUpdated).toLocaleDateString()}
-                      </p>
-                    )}
-                    <Button
-                      variant={card.generated ? "default" : "outline"}
-                      size="sm"
-                      className="w-full"
-                      asChild
-                      data-testid={`button-${card.testId}`}
-                    >
-                      <Link href={card.actionHref}>
-                        {!card.generated && (
-                          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-                        )}
-                        {card.actionLabel}
-                        <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                  );
+                })}
               </div>
             </TabsContent>
           </Tabs>

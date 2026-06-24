@@ -305,7 +305,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.recommendations === false) locked.add("/app/action-items");
     if (f.pdfReports === false) locked.add("/app/reports");
     if (f.relationshipReports === false) locked.add("/app/relationship-reports");
-    if (f.marketingPlanner === false) locked.add("/app/marketing-planner");
+    if (f.marketingPlanner === false) locked.add("/app/marketing/projects");
     if (f.socialMonitoring === false) locked.add("/app/activity");
     if (f.seoTracking === false) locked.add("/app/seo-dashboard");
     if (f.outcomeMetrics === false) {

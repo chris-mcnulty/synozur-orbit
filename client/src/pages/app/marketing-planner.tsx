@@ -259,7 +259,7 @@ export default function MarketingPlanner() {
                 <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
                   <Gem className="w-12 h-12 text-primary" />
                 </div>
-                <CardTitle className="text-2xl">Marketing Planner</CardTitle>
+                <CardTitle className="text-2xl">Marketing Projects</CardTitle>
                 <CardDescription className="text-base">
                   Generate AI-powered marketing plans based on your competitive intelligence and strategic documents.
                 </CardDescription>
@@ -306,7 +306,7 @@ export default function MarketingPlanner() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="page-title">
               <Gem className="w-6 h-6 text-primary" />
-              Marketing Planner
+              Marketing Projects
             </h1>
             <p className="text-muted-foreground mt-1">
               Generate AI-powered marketing plans based on your competitive intelligence
@@ -519,7 +519,7 @@ export default function MarketingPlanner() {
                     </div>
                     <div className="pt-2 border-t">
                       <Button variant="outline" className="w-full" asChild>
-                        <a href={`/app/marketing-planner/${plan.id}`} data-testid={`link-open-plan-${plan.id}`}>
+                        <a href={`/app/marketing/projects/${plan.id}`} data-testid={`link-open-plan-${plan.id}`}>
                           {plan.configMatrix?.configured ? (
                             <>
                               <FileText className="w-4 h-4 mr-2" />

@@ -817,11 +817,11 @@ export default function EditorialCalendarPage() {
         const created = data.tasksCreated ?? 0;
         const skipped = data.tasksSkipped ?? 0;
         setCommittedPlan({ name: data.plan?.name ?? "marketing plan", tasks: created, skipped });
-        const skippedNote = skipped > 0 ? ` (skipped ${skipped} already in Planner)` : "";
+        const skippedNote = skipped > 0 ? ` (skipped ${skipped} already in the project)` : "";
         if (created === 0 && skipped > 0) {
           toast.success(`All ${skipped} item${skipped === 1 ? "" : "s"} were already in "${data.plan?.name}" — nothing new to add.`);
         } else {
-          toast.success(`Added ${created} task${created === 1 ? "" : "s"} to "${data.plan?.name}"${skippedNote} — open the Marketing Planner to review.`);
+          toast.success(`Added ${created} task${created === 1 ? "" : "s"} to "${data.plan?.name}"${skippedNote} — open Marketing Projects to review.`);
         }
       } else {
         setCommittedPlan(null);
@@ -2404,9 +2404,9 @@ export default function EditorialCalendarPage() {
 
               {schedule && schedule.length > 0 && (
                 <div className="space-y-2 rounded-md border border-dashed p-3">
-                  <Label>Push to Planner</Label>
+                  <Label>Push to a marketing project</Label>
                   <p className="text-xs text-muted-foreground">
-                    Adds these as tasks in your <strong>Marketing Planner</strong>. Those tasks then sync to{" "}
+                    Adds these as tasks in your <strong>Marketing Projects</strong> plan. Those tasks then sync to{" "}
                     <strong>Microsoft Planner</strong> automatically. This creates real tasks — it's not a preview.
                   </p>
                   <Select value={distPlanId || "__none__"} onValueChange={(v) => setDistPlanId(v === "__none__" ? "" : v)}>
@@ -2428,16 +2428,16 @@ export default function EditorialCalendarPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
                       <span>
                         Added {committedPlan.tasks} task{committedPlan.tasks === 1 ? "" : "s"} to "{committedPlan.name}".
-                        {committedPlan.skipped ? ` Skipped ${committedPlan.skipped} already in Planner.` : ""}
+                        {committedPlan.skipped ? ` Skipped ${committedPlan.skipped} already in the project.` : ""}
                       </span>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => navigate("/app/marketing-planner")}
+                        onClick={() => navigate("/app/marketing/projects")}
                         data-testid="button-open-planner"
                       >
                         <CalendarClock className="mr-1 h-4 w-4" />
-                        Open Marketing Planner
+                        Open Marketing Projects
                       </Button>
                     </div>
                   )}

@@ -37,7 +37,7 @@ const STATIC_ROUTE_LABELS: Record<string, string> = {
   "/app/marketing/messaging-framework": "Messaging Framework",
   "/app/marketing/gtm-plan": "GTM Plan",
   "/app/marketing/personas": "Personas",
-  "/app/marketing-planner": "Marketing Planner",
+  "/app/marketing/projects": "Marketing Projects",
   "/app/marketing/campaigns": "Campaigns",
   "/app/marketing/email-newsletters": "Email Newsletters",
   "/app/marketing/content-library": "Digital/Web Assets",

@@ -65,7 +65,7 @@ const platformPillars = [
   {
     id: "marketing",
     icon: CalendarDays,
-    title: "Marketing Planner",
+    title: "Marketing Projects",
     tagline: "Plan with precision",
     description: "Transform competitive insights into actionable marketing plans. Quarterly, half-year, and annual planning with AI-generated task recommendations—plus direct generation of social posts and email campaigns.",
     features: [
@@ -122,7 +122,7 @@ const capabilities = [
   },
   {
     id: "planning",
-    label: "Marketing Planner",
+    label: "Marketing Projects",
     title: "Plan your GTM activities",
     description: "Transform insights into action with AI-powered marketing planning. Generate quarterly, half-year, or annual marketing plans based on competitive intelligence and industry best practices.",
     image: "/images/capabilities/planning.png"
@@ -661,7 +661,7 @@ export default function Landing() {
           <div className="grid md:grid-cols-3 gap-6 mb-12">
             {[
               { plan: "Free", desc: "Basic competitive monitoring", features: ["1 competitor", "1 analysis/month", "Core features"] },
-              { plan: "Pro", desc: "Full intelligence suite", features: ["Up to 10 competitors", "Unlimited analysis", "Marketing Planner"], highlight: true },
+              { plan: "Pro", desc: "Full intelligence suite", features: ["Up to 10 competitors", "Unlimited analysis", "Marketing Projects"], highlight: true },
               { plan: "Enterprise", desc: "Complete GTM platform", features: ["Unlimited competitors", "Product Management", "Multi-market support"] }
             ].map((tier, i) => (
               <div key={i} className={cn(
