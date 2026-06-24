@@ -609,8 +609,9 @@ export async function listContactsFromHubspotList(
   // the same positional/options calling-convention mismatch as listsApi.getAll().
   const { accessToken } = await getTenantAccessToken(tenantDomain);
   const cap = Math.min(Math.max(limit, 1), 200);
-  const props = CONTACT_PROPS.join(",");
-  const url = `https://api.hubapi.com/contacts/v1/lists/${encodeURIComponent(listId)}/contacts/all?count=${cap}&property=${props}`;
+  // Legacy API requires repeated property= params, not comma-joined.
+  const propertyParams = CONTACT_PROPS.map((p) => `property=${encodeURIComponent(p)}`).join("&");
+  const url = `https://api.hubapi.com/contacts/v1/lists/${encodeURIComponent(listId)}/contacts/all?count=${cap}&${propertyParams}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
   });
@@ -626,12 +627,24 @@ export async function listContactsFromHubspotList(
     const firstName = p.firstname?.value || null;
     const lastName = p.lastname?.value || null;
     const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
+    // Email may be in identity-profiles rather than properties.email in the legacy API.
+    const emailFromProps = p.email?.value || null;
+    const emailFromProfile: string | null = (() => {
+      const profiles: any[] = c["identity-profiles"] ?? [];
+      for (const prof of profiles) {
+        for (const ident of prof.identities ?? []) {
+          if (ident.type === "EMAIL" && ident.value) return ident.value as string;
+        }
+      }
+      return null;
+    })();
+    const email = emailFromProps || emailFromProfile;
     return {
       hubspotContactId: String(c.vid),
-      email: p.email?.value || null,
+      email,
       firstName,
       lastName,
-      name: fullName || p.email?.value || "Unknown",
+      name: fullName || email || "Unknown",
       jobTitle: p.jobtitle?.value || null,
       company: p.company?.value || null,
       linkedinUrl: p.hs_linkedin_url?.value || null,
