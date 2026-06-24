@@ -567,14 +567,15 @@ export interface HubspotListSummary {
 
 /**
  * Fetch all CRM contact lists from the tenant's HubSpot, sorted by name.
- * Uses the v3 Lists API (objectTypeId 0-1 = contacts).
+ * Uses the legacy contacts/v1/lists endpoint (stable, requires crm.lists.read).
  */
 export async function listHubspotContactLists(tenantDomain: string): Promise<HubspotListSummary[]> {
-  // Use raw fetch instead of the SDK's listsApi.getAll() — the SDK codegen
-  // mismatches positional vs. options-object calling convention and throws
-  // "data is not iterable" inside ObjectSerializer during request serialization.
+  // Use the legacy contacts/v1/lists endpoint — it is stable, well-documented,
+  // and returns a consistent { lists: [...] } shape. The newer crm/v3/lists
+  // endpoint returned an empty array even when lists exist (response shape differs
+  // by portal). The legacy endpoint requires crm.lists.read scope.
   const { accessToken } = await getTenantAccessToken(tenantDomain);
-  const url = "https://api.hubapi.com/crm/v3/lists?objectTypeId=0-1&count=250&includeFilters=false";
+  const url = "https://api.hubapi.com/contacts/v1/lists?count=250&offset=0";
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
   });
@@ -583,12 +584,13 @@ export async function listHubspotContactLists(tenantDomain: string): Promise<Hub
     throw new Error(`HubSpot lists API error ${res.status}: ${txt}`);
   }
   const data: any = await res.json();
+  console.log("[HubSpot Lists] raw response keys:", Object.keys(data ?? {}), "list count:", data?.lists?.length ?? 0);
   const lists: any[] = data?.lists ?? [];
   return lists
     .map((l: any) => ({
       listId: String(l.listId),
       name: (l.name as string) || "(unnamed list)",
-      memberCount: (l.memberCount as number) ?? 0,
+      memberCount: (l.metaData?.size as number) ?? (l.memberCount as number) ?? 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
