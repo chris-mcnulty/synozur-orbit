@@ -568,9 +568,16 @@ export function registerMarketingPostsRoutes(app: Express) {
         campaignId: generatedPosts.campaignId,
         overrideImageUrl: generatedPosts.overrideImageUrl,
         accountName: socialAccounts.accountName,
+        // deliveryMode/publishError power the Orbit posting queue (queue.tsx):
+        // who Orbit is publishing itself vs. handing off to CSV, and why a
+        // send failed. campaignName lets the queue label cross-campaign rows.
+        deliveryMode: generatedPosts.deliveryMode,
+        publishError: generatedPosts.publishError,
+        campaignName: campaigns.name,
       })
         .from(generatedPosts)
         .leftJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))
+        .leftJoin(campaigns, eq(campaigns.id, generatedPosts.campaignId))
         .where(and(...conds))
         .orderBy(generatedPosts.scheduledDate, desc(generatedPosts.createdAt));
 

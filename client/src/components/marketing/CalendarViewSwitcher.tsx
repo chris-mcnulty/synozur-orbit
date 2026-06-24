@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { CalendarRange, ListChecks, Share2 } from "lucide-react";
+import { CalendarRange, ListChecks, Share2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,6 +13,7 @@ const VIEWS: { href: string; label: string; icon: typeof CalendarRange }[] = [
   { href: "/app/marketing/marketing-calendar", label: "Calendar", icon: CalendarRange },
   { href: "/app/marketing/pipeline", label: "Board", icon: ListChecks },
   { href: "/app/marketing/calendar", label: "Social", icon: Share2 },
+  { href: "/app/marketing/queue", label: "Queue", icon: Zap },
 ];
 
 export function CalendarViewSwitcher({ className }: { className?: string }) {
