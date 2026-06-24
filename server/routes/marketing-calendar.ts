@@ -236,6 +236,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
           date: date ? date.toISOString() : null,
           status: p.status,
           lifecycle: socialLifecycle(p.status),
+          deliveryMode: p.deliveryMode ?? null,
           platform: p.platform,
           campaignId: p.campaignId,
           solutionAreaId: p.solutionAreaId,

@@ -50,6 +50,7 @@ import {
   AlertTriangle,
   Sparkles,
   Clock,
+  Zap,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -102,6 +103,7 @@ interface CalendarItem {
   date: string | null;
   status: string;
   lifecycle: Lifecycle;
+  deliveryMode?: string | null;
   platform?: string;
   format?: string;
   calendarId?: string | null;
@@ -2111,12 +2113,22 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
           <DialogTitle className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${TYPE_META[item.type].dot}`} /> {item.title}
           </DialogTitle>
-          <DialogDescription className="flex items-center gap-2">
+          <DialogDescription className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{TYPE_META[item.type].label}</Badge>
             {channelFormatMarker(item) && (
               <Badge variant="outline" data-testid="badge-detail-channel-format">{channelFormatMarker(item)!.label}</Badge>
             )}
             <Badge variant="outline" className={LIFECYCLE_META[item.lifecycle].cls}>{LIFECYCLE_META[item.lifecycle].label}</Badge>
+            {item.type === "social" && item.deliveryMode === "csv" && (
+              <Badge variant="outline" className="gap-1 text-sky-600 border-sky-300" data-testid="badge-detail-delivery-csv">
+                <FileDown className="h-3 w-3" />CSV export
+              </Badge>
+            )}
+            {item.type === "social" && !item.deliveryMode && item.lifecycle !== "delivered" && (
+              <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-300" data-testid="badge-detail-delivery-orbit">
+                <Zap className="h-3 w-3" />Via Orbit
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -2399,7 +2411,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
                 <Mail className="mr-2 h-4 w-4" /> Hand off to email engine
               </Button>
             )}
-            {item.type === "social" && item.lifecycle === "approved" && (
+            {item.type === "social" && item.lifecycle === "approved" && item.deliveryMode !== "csv" && (
               <Button
                 variant="default"
                 size="sm"
