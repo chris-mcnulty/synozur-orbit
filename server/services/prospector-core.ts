@@ -19,6 +19,12 @@ export interface IcpCriteria {
   geographies?: string[];
   /** Company-size bands / segment labels ("mid-market", "enterprise"). */
   segments?: string[];
+  /**
+   * Named target accounts (company names or domains). When populated, the
+   * company-fit signal checks companyName against these instead of using the
+   * industry signal (which requires prior AI research to populate).
+   */
+  namedAccounts?: string[];
   /** Substrings in title/company that auto-disqualify (e.g. "intern", "student"). */
   disqualifiers?: string[];
   /** Score at/above which a prospect is qualified (default 50). */
@@ -107,9 +113,25 @@ export function scoreProspect(attrs: ProspectAttributes, criteria: IcpCriteria):
     };
   }
 
+  // When named accounts are configured, use company-name matching for the
+  // "industry" slot — it's a stronger and immediately available signal vs.
+  // industry which only populates after AI research runs on a new prospect.
+  const hasNamedAccounts = (criteria.namedAccounts?.length ?? 0) > 0;
+  const industrySignal = hasNamedAccounts
+    ? {
+        key: "industry" as keyof typeof SIGNAL_WEIGHTS,
+        label: "Named account match",
+        matched: matchesAny(attrs.companyName, criteria.namedAccounts),
+      }
+    : {
+        key: "industry" as keyof typeof SIGNAL_WEIGHTS,
+        label: "Industry fit",
+        matched: matchesAny(attrs.industry, criteria.industries),
+      };
+
   const checks: { key: keyof typeof SIGNAL_WEIGHTS; label: string; matched: boolean; note?: string }[] = [
     { key: "role", label: "Role / title fit", matched: matchesAny(attrs.title, criteria.roles) },
-    { key: "industry", label: "Industry fit", matched: matchesAny(attrs.industry, criteria.industries) },
+    industrySignal,
     { key: "geography", label: "Geography fit", matched: matchesAny(attrs.geography, criteria.geographies) },
     { key: "segment", label: "Segment / size fit", matched: matchesAny(attrs.segment, criteria.segments) },
     { key: "email", label: "Has email", matched: Boolean(norm(attrs.email)) },
@@ -146,6 +168,7 @@ export function buildIcpCriteria(
         industries?: string[] | null;
         geographies?: string[] | null;
         segments?: string[] | null;
+        namedAccounts?: string[] | null;
       }
     | undefined,
   disqualifiers?: string[],
@@ -155,11 +178,13 @@ export function buildIcpCriteria(
   const industries = [persona?.industry, ...(filter?.industries ?? [])].filter((x): x is string => !!x);
   const segments = [persona?.companySize, ...(filter?.segments ?? [])].filter((x): x is string => !!x);
   const geographies = (filter?.geographies ?? []).filter((x): x is string => !!x);
+  const namedAccounts = (filter?.namedAccounts ?? []).filter((x): x is string => !!x);
   return {
     roles: dedupe(roles),
     industries: dedupe(industries),
     geographies: dedupe(geographies),
     segments: dedupe(segments),
+    namedAccounts: dedupe(namedAccounts),
     disqualifiers,
     threshold,
   };

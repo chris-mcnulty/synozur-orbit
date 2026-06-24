@@ -1474,7 +1474,10 @@ export default function OutreachCampaignDetailPage() {
 
               {/* Targeting filter */}
               <div className="space-y-3 border rounded-md p-3">
-                <p className="text-sm font-medium">Targeting</p>
+                <div>
+                  <p className="text-sm font-medium">Targeting</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Used for both Apollo prospect discovery and ICP fit scoring. Named accounts and target roles are the most impactful for scoring newly imported contacts.</p>
+                </div>
 
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground uppercase tracking-wider">Geographies</Label>
