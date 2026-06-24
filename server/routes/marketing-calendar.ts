@@ -206,42 +206,8 @@ export function registerMarketingCalendarRoutes(app: Express) {
         .where(and(...emailConds))
         .orderBy(desc(generatedEmails.createdAt));
 
-      // ── Content briefs / drafts (tenant + market) ──
-      // Exclude briefs that are already done (published) or discarded (removed) from the backlog —
-      // only draft/approved briefs are actionable and should appear as schedulable.
-      const briefConds = [eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), ne(contentBriefs.status, "removed"), ne(contentBriefs.status, "published"), isNotNull(contentBriefs.contentAssetId)];
-      if (campaignId) briefConds.push(eq(contentBriefs.campaignId, campaignId));
-      if (solutionAreaId) briefConds.push(eq(contentBriefs.solutionAreaId, solutionAreaId));
-      if (conferenceId) briefConds.push(eq(contentBriefs.conferenceId, conferenceId));
-      const briefRows = await db
-        .select({
-          id: contentBriefs.id,
-          title: contentBriefs.title,
-          format: contentBriefs.format,
-          status: contentBriefs.status,
-          scheduledAt: contentBriefs.scheduledAt,
-          calendarId: contentBriefs.calendarId,
-          contentAssetId: contentBriefs.contentAssetId,
-          campaignId: contentBriefs.campaignId,
-          solutionAreaId: contentBriefs.solutionAreaId,
-          conferenceId: contentBriefs.conferenceId,
-        })
-        .from(contentBriefs)
-        .where(and(...briefConds))
-        .orderBy(desc(contentBriefs.createdAt));
-
-      // Pull the drafted asset (image + body) for briefs that have one, so a
-      // content item in the calendar can show its graphic and a text preview
-      // (briefs themselves carry no image/body).
-      const briefAssetIds = Array.from(new Set(briefRows.map((b) => b.contentAssetId).filter((v): v is string => !!v)));
-      const briefAssetMap = new Map<string, { leadImageUrl: string | null; content: string | null }>();
-      if (briefAssetIds.length) {
-        const assetRows = await db
-          .select({ id: contentAssets.id, leadImageUrl: contentAssets.leadImageUrl, content: contentAssets.content })
-          .from(contentAssets)
-          .where(and(eq(contentAssets.tenantDomain, ctx.tenantDomain), inArray(contentAssets.id, briefAssetIds)));
-        for (const a of assetRows) briefAssetMap.set(a.id, { leadImageUrl: a.leadImageUrl, content: a.content });
-      }
+      // Content briefs are managed in the Editorial Calendar — they are specs,
+      // not dated deliverables, and do not belong in the Content Calendar backlog.
 
       const items: any[] = [];
 
@@ -299,30 +265,8 @@ export function registerMarketingCalendarRoutes(app: Express) {
         });
       }
 
-      for (const b of briefRows) {
-        // Briefs are specs (a description handed off to create collateral), not
-        // dated deliverables — they never appear as scheduled items on the grid;
-        // they only ever live in the backlog as ideas. Any production due-date
-        // lives on the editorial-calendar / Planner side, not on this calendar.
-        const date = null;
-        if (!includeByDate(date)) continue;
-        const asset = b.contentAssetId ? briefAssetMap.get(b.contentAssetId) : null;
-        items.push({
-          id: b.id,
-          type: "content",
-          title: b.title,
-          preview: (asset?.content || "").replace(/\s+/g, " ").trim().slice(0, 160),
-          date: date ? date.toISOString() : null,
-          status: b.status,
-          lifecycle: contentLifecycle(b.status),
-          format: b.format,
-          calendarId: b.calendarId,
-          contentAssetId: b.contentAssetId,
-          imageUrl: asset?.leadImageUrl ?? null,
-          campaignId: b.campaignId,
-          solutionAreaId: b.solutionAreaId,
-          conferenceId: b.conferenceId,
-        });
+      if (false) {
+        // Briefs removed from Content Calendar — they belong in Editorial Calendar.
       }
 
       // ── Resolve campaign / theme / event NAMES server-side ──
@@ -371,17 +315,17 @@ export function registerMarketingCalendarRoutes(app: Express) {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;
     try {
       const ctx = await getRequestContext(req);
-      // Scope options to the active market plus tenant-wide (null market)
-      // records, mirroring how calendar items are scoped, so other markets'
-      // campaigns/themes/events don't bleed into the dropdowns.
-      const campMarket = or(eq(campaigns.marketId, ctx.marketId), isNull(campaigns.marketId));
+      // Campaigns are tenant-wide (social posts carry no market scope, so posts
+      // from any campaign can appear in the calendar regardless of the active
+      // market). Show all non-deleted campaigns in the filter dropdown.
+      // Themes and events remain market-scoped since those items ARE market-scoped.
       const themeMarket = or(eq(solutionAreas.marketId, ctx.marketId), isNull(solutionAreas.marketId));
       const eventMarket = or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId));
       const [camps, themes, events, platformRows, formatRows] = await Promise.all([
         db
           .select({ id: campaigns.id, name: campaigns.name })
           .from(campaigns)
-          .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), campMarket, ne(campaigns.status, "deleted")))
+          .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), ne(campaigns.status, "deleted")))
           .orderBy(asc(campaigns.name)),
         db
           .select({ id: solutionAreas.id, name: solutionAreas.name })
