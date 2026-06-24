@@ -565,13 +565,20 @@ export interface HubspotListSummary {
  * Uses the v3 Lists API (objectTypeId 0-1 = contacts).
  */
 export async function listHubspotContactLists(tenantDomain: string): Promise<HubspotListSummary[]> {
-  const { client } = await getTenantClient(tenantDomain);
-  const result = await (client.crm.lists as any).listsApi.getAll({
-    objectTypeId: "0-1",
-    includeFilters: false,
-    limit: 250,
+  // Use raw fetch instead of the SDK's listsApi.getAll() — the SDK codegen
+  // mismatches positional vs. options-object calling convention and throws
+  // "data is not iterable" inside ObjectSerializer during request serialization.
+  const { accessToken } = await getTenantAccessToken(tenantDomain);
+  const url = "https://api.hubapi.com/crm/v3/lists?objectTypeId=0-1&count=250&includeFilters=false";
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
   });
-  const lists: any[] = result?.lists ?? [];
+  if (!res.ok) {
+    const txt = await res.text().catch(() => res.statusText);
+    throw new Error(`HubSpot lists API error ${res.status}: ${txt}`);
+  }
+  const data: any = await res.json();
+  const lists: any[] = data?.lists ?? [];
   return lists
     .map((l: any) => ({
       listId: String(l.listId),
