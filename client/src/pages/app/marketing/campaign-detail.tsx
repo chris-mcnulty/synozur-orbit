@@ -3020,7 +3020,7 @@ export default function CampaignDetailPage() {
                               const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
                               const connected = acct == null || acct.isConnected !== false;
                               const isEditing = editingPostId === post.id;
-                              const isRetry = post.status === "publish_failed";
+                              const isRetry = post.status === "publish_failed" || !!post.publishError;
                               return (
                                 <Button
                                   variant="ghost"
