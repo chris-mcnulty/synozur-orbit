@@ -1479,8 +1479,20 @@ export default function CampaignDetailPage() {
   const [exportPreview, setExportPreview] = useState<{ totalPosts: number; orbitCount: number; datedPosts: number; undatedPosts: number; collisions: number; postsWithLink: number } | null>(null);
   // After a download, we confirm the scheduling tool accepted the file before
   // marking anything delivered. These hold the ids that were in the last CSV.
+  // Persisted to sessionStorage so a page refresh doesn't strand them.
+  const SESSION_KEY = `orbit-exported-ids-${id}`;
   const [showDeliverConfirm, setShowDeliverConfirm] = useState(false);
-  const [lastExportedIds, setLastExportedIds] = useState<string[]>([]);
+  const [lastExportedIds, setLastExportedIds] = useState<string[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "[]"); } catch { return []; }
+  });
+  const persistExportedIds = (ids: string[]) => {
+    setLastExportedIds(ids);
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(ids)); } catch {}
+  };
+  const clearExportedIds = () => {
+    setLastExportedIds([]);
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+  };
 
   const handleExportClick = async () => {
     setIncludeUndated(false);
@@ -1524,7 +1536,7 @@ export default function CampaignDetailPage() {
     },
     onSuccess: ({ exportedIds }) => {
       if (exportedIds.length > 0) {
-        setLastExportedIds(exportedIds);
+        persistExportedIds(exportedIds);
         setShowDeliverConfirm(true);
       } else {
         toast({ title: "Exported", description: "No new posts were included in the file." });
@@ -1546,6 +1558,7 @@ export default function CampaignDetailPage() {
     },
     onSuccess: (d) => {
       setShowDeliverConfirm(false);
+      clearExportedIds();
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
       queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
       toast({ title: `Marked ${d.updated} post${d.updated === 1 ? "" : "s"} as delivered`, description: "They won't appear in future exports unless you choose to include delivered posts." });
@@ -3020,7 +3033,20 @@ export default function CampaignDetailPage() {
                             >
                               <ImageLucide className="w-3.5 h-3.5" />
                             </Button>
-                            {(post.status === "approved" || post.status === "publish_failed") && !post.publishedAt && (() => {
+                            {post.status === "approved" && post.deliveryMode === "csv" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="gap-1 text-sky-600"
+                                title="Confirm this post was accepted by your scheduling tool (SocialPilot etc.) and mark it as delivered"
+                                onClick={() => markDeliveredMutation.mutate([post.id])}
+                                disabled={markDeliveredMutation.isPending}
+                                data-testid={`button-mark-delivered-${post.id}`}
+                              >
+                                <FileDown className="w-3.5 h-3.5" />Mark delivered
+                              </Button>
+                            )}
+                            {(post.status === "approved" || post.status === "publish_failed") && !post.publishedAt && post.deliveryMode !== "csv" && (() => {
                               const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
                               const connected = acct == null || acct.isConnected !== false;
                               const isEditing = editingPostId === post.id;
