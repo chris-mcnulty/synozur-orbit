@@ -265,6 +265,7 @@ interface GeneratedPost {
   editedContent?: string;
   hashtags: string[];
   status: string;
+  deliveryMode?: string | null;
   variantGroup?: string;
   generationJobId?: string | null;
   conferenceId?: string | null;
@@ -285,7 +286,7 @@ interface GeneratedPost {
 // ── Post lifecycle stage (brief → draft → ready → scheduled → posted) ──────────
 // Turns the raw generated-post status into one clear, human-readable stage so the
 // state of every post is obvious at a glance in lists and the review grid.
-function getPostStage(post: { status: string; publishedAt?: string; publishError?: string; scheduledDate?: string }) {
+function getPostStage(post: { status: string; publishedAt?: string; publishError?: string; scheduledDate?: string; deliveryMode?: string | null }) {
   if (post.publishedAt || post.status === "published")
     return { label: "Posted via Orbit", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
   if (post.status === "rejected")
@@ -293,11 +294,14 @@ function getPostStage(post: { status: string; publishedAt?: string; publishError
   if (post.status === "publish_failed" || post.publishError)
     return { label: "Orbit: post failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
   if (post.status === "exported" || post.status === "scheduled_external")
-    return post.scheduledDate
-      ? { label: "Scheduled externally", cls: "text-blue-600 border-blue-300", Icon: Calendar }
-      : { label: "Scheduled externally", cls: "text-blue-600 border-blue-300", Icon: CheckCircle };
-  if (post.status === "approved")
-    return { label: "Ready to post", cls: "text-emerald-600 border-emerald-300", Icon: CheckCircle };
+    return { label: "Exported to CSV", cls: "text-blue-600 border-blue-300", Icon: FileDown };
+  if (post.status === "approved") {
+    if (!post.scheduledDate)
+      return { label: "Approved – needs date", cls: "text-amber-600 border-amber-300", Icon: Calendar };
+    if (post.deliveryMode === "csv")
+      return { label: "Approved – export pending", cls: "text-sky-600 border-sky-300", Icon: FileDown };
+    return { label: "Approved – Orbit scheduled", cls: "text-emerald-600 border-emerald-300", Icon: Zap };
+  }
   return { label: "Draft", cls: "text-muted-foreground border-muted-foreground/40", Icon: Pencil };
 }
 
@@ -3144,7 +3148,7 @@ export default function CampaignDetailPage() {
                                 )}
                                 <PostStageBadge post={post} />
                                 {(() => {
-                                  const dm = (post as any).deliveryMode as string | null;
+                                  const dm = post.deliveryMode;
                                   if (dm === "csv") return (
                                     <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground border-muted-foreground/30 shrink-0" data-testid={`badge-csv-only-${post.id}`}>
                                       <FileDown className="w-2.5 h-2.5" />CSV only
@@ -3223,7 +3227,7 @@ export default function CampaignDetailPage() {
                         <div className="flex items-center gap-1 rounded border overflow-hidden text-[10px] shrink-0" data-testid={`post-delivery-mode-${post.id}`} title="Choose how this post gets published">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 flex items-center gap-1 transition-colors ${(post as any).deliveryMode !== "csv" ? "bg-blue-600 text-white" : "text-muted-foreground hover:bg-muted"}`}
+                            className={`px-2 py-0.5 flex items-center gap-1 transition-colors ${post.deliveryMode !== "csv" ? "bg-blue-600 text-white" : "text-muted-foreground hover:bg-muted"}`}
                             onClick={() => setDeliveryModeMutation.mutate({ postId: post.id, deliveryMode: null })}
                             title="Orbit will auto-publish at the scheduled time"
                             data-testid={`button-delivery-orbit-${post.id}`}
@@ -3232,7 +3236,7 @@ export default function CampaignDetailPage() {
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 flex items-center gap-1 border-l transition-colors ${(post as any).deliveryMode === "csv" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                            className={`px-2 py-0.5 flex items-center gap-1 border-l transition-colors ${post.deliveryMode === "csv" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
                             onClick={() => setDeliveryModeMutation.mutate({ postId: post.id, deliveryMode: "csv" })}
                             title="Reserve for CSV export only — Orbit will never auto-publish this"
                             data-testid={`button-delivery-csv-${post.id}`}
