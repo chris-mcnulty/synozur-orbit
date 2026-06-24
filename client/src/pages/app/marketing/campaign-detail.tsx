@@ -2749,7 +2749,7 @@ export default function CampaignDetailPage() {
                     Purge archived
                   </Button>
                 )}
-                {posts.some(p => p.status !== "approved" && p.status !== "deleted") && (
+                {posts.some(p => !["approved", "exported", "scheduled_external", "published", "publish_failed", "rejected", "deleted"].includes(p.status)) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -3000,7 +3000,7 @@ export default function CampaignDetailPage() {
                                 </Button>
                               );
                             })()}
-                            {post.status !== "approved" && (
+                            {!["approved", "exported", "scheduled_external", "published", "publish_failed", "rejected"].includes(post.status) && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -3076,7 +3076,7 @@ export default function CampaignDetailPage() {
                                 </Button>
                               );
                             })()}
-                            {!post.publishedAt && post.status !== "rejected" && (
+                            {!post.publishedAt && !["rejected", "exported", "scheduled_external"].includes(post.status) && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -4341,6 +4341,7 @@ export default function CampaignDetailPage() {
                                             );
                                           })()}
                                         </div>
+                                        {!["approved", "exported", "scheduled_external", "published", "rejected"].includes(post.status) && (
                                         <div className="flex items-center gap-1">
                                           <Button
                                             size="sm"
@@ -4363,6 +4364,7 @@ export default function CampaignDetailPage() {
                                             <XCircle className="w-3 h-3 shrink-0" />Reject
                                           </Button>
                                         </div>
+                                        )}
                                       </div>
                                     )}
                                     {/* Link attach button — LinkedIn, Facebook, X only */}
