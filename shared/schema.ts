@@ -3763,14 +3763,11 @@ export const HUBSPOT_OAUTH_SCOPES = [
   "crm.objects.contacts.read",
   "crm.objects.contacts.write",
   "crm.objects.owners.read",
-  // Marketing-email sync (Phase 1+): write engagement to contact timelines and
-  // read/write subscription (consent) state. Adding these forces already-
-  // connected tenants to re-authorize before sync can run — see the
-  // re-consent banner. `hasHubspotEmailScopes()` gates sync paths so the rest
-  // of the integration keeps working until a tenant re-consents.
-  "timeline",
-  "communication_preferences.read",
-  "communication_preferences.write",
+  // NOTE: "timeline", "communication_preferences.read", "communication_preferences.write"
+  // are intentionally excluded here. They require separate registration in the
+  // HubSpot app's dev-portal scope list before they can be requested.
+  // `hasHubspotEmailScopes()` gates email-sync paths; those paths will prompt
+  // re-consent once those scopes are added to the HubSpot app and re-added here.
   // CRM Lists API (v3): required to fetch contact lists and their members.
   // Connections created before this scope was added will need to re-authorize;
   // `hasHubspotListScopes()` gates the browse-by-list path gracefully.
