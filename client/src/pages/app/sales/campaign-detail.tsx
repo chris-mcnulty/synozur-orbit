@@ -1,4 +1,4 @@
-import { useState, useRef, KeyboardEvent, useCallback } from "react";
+import { useState, useRef, KeyboardEvent, useCallback, useMemo } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,6 +24,8 @@ import {
   Upload,
   Copy,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   UserSearch,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
@@ -295,6 +297,35 @@ function scoreColor(score: number | null): string {
 
 const FLAG_HARD = new Set(["suppression", "self_email"]);
 
+const STATUS_GROUPS: Record<string, string[]> = {
+  all: [],
+  new: ["new"],
+  researched: ["researched", "draft_pending_approval", "sent"],
+  action: ["awaiting_reply", "cadence_step_due"],
+  replied: ["replied"],
+  dormant: ["dormant"],
+  disqualified: ["disqualified"],
+};
+
+const STATUS_TAB_LABELS: Record<string, string> = {
+  all: "All",
+  new: "New",
+  researched: "In progress",
+  action: "Action needed",
+  replied: "Replied",
+  dormant: "Dormant",
+  disqualified: "Disqualified",
+};
+
+type ProspectSortKey = "name" | "company" | "score" | "status" | "source";
+
+function SortIcon({ col, sortKey, sortDir }: { col: ProspectSortKey; sortKey: ProspectSortKey; sortDir: "asc" | "desc" }) {
+  if (sortKey !== col) return <ChevronsUpDown className="ml-1 inline h-3 w-3 opacity-30" />;
+  return sortDir === "asc"
+    ? <ChevronUp className="ml-1 inline h-3 w-3" />
+    : <ChevronDown className="ml-1 inline h-3 w-3" />;
+}
+
 function initEditForm(c: OutreachCampaign) {
   return {
     name: c.name,
@@ -419,6 +450,18 @@ export default function OutreachCampaignDetailPage() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<DiscoverResult | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // Prospect list filter / sort state.
+  const [searchQ, setSearchQ] = useState("");
+  const [statusTab, setStatusTab] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [sortKey, setSortKey] = useState<ProspectSortKey>("score");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: ProspectSortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "score" ? "desc" : "asc"); }
+  }
 
   // HubSpot import dialog state.
   const [hubspotOpen, setHubspotOpen] = useState(false);
@@ -615,6 +658,39 @@ export default function OutreachCampaignDetailPage() {
       return r.json();
     },
   });
+
+  const uniqueSources = useMemo(() => {
+    const s = new Set(prospects.map((p) => p.source).filter(Boolean) as string[]);
+    return Array.from(s).sort();
+  }, [prospects]);
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: prospects.length };
+    for (const [tab, statuses] of Object.entries(STATUS_GROUPS)) {
+      if (tab === "all") continue;
+      counts[tab] = prospects.filter((p) => statuses.includes(p.status)).length;
+    }
+    return counts;
+  }, [prospects]);
+
+  const visibleProspects = useMemo(() => {
+    let list = [...prospects];
+    const q = searchQ.toLowerCase().trim();
+    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || (p.companyName?.toLowerCase() ?? "").includes(q) || (p.title?.toLowerCase() ?? "").includes(q));
+    const statuses = STATUS_GROUPS[statusTab] ?? [];
+    if (statuses.length) list = list.filter((p) => statuses.includes(p.status));
+    if (sourceFilter !== "all") list = list.filter((p) => p.source === sourceFilter);
+    list.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "score") cmp = (a.icpScore ?? -1) - (b.icpScore ?? -1);
+      else if (sortKey === "name") cmp = a.name.localeCompare(b.name);
+      else if (sortKey === "company") cmp = (a.companyName ?? "").localeCompare(b.companyName ?? "");
+      else if (sortKey === "status") cmp = a.status.localeCompare(b.status);
+      else if (sortKey === "source") cmp = (a.source ?? "").localeCompare(b.source ?? "");
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [prospects, searchQ, statusTab, sourceFilter, sortKey, sortDir]);
 
   const { data: performance } = useQuery<{
     contacted: number;
@@ -1084,7 +1160,11 @@ export default function OutreachCampaignDetailPage() {
         )}
 
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Prospects ({prospects.length})</CardTitle></CardHeader>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Prospects ({visibleProspects.length}{visibleProspects.length !== prospects.length ? ` of ${prospects.length}` : ""})
+            </CardTitle>
+          </CardHeader>
           <CardContent>
             {prospects.length === 0 ? (
               <div className="py-8 text-center space-y-3">
@@ -1102,19 +1182,108 @@ export default function OutreachCampaignDetailPage() {
                 </div>
               </div>
             ) : (
+              <>
+                {/* ── Filter bar ── */}
+                <div className="mb-3 space-y-2">
+                  <div className="flex flex-wrap gap-1">
+                    {Object.keys(STATUS_GROUPS).map((tab) => {
+                      const count = tabCounts[tab] ?? 0;
+                      if (tab !== "all" && count === 0) return null;
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setStatusTab(tab)}
+                          data-testid={`tab-status-${tab}`}
+                          className={`rounded-full px-3 py-0.5 text-xs font-medium transition-colors ${
+                            statusTab === tab
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          }`}
+                        >
+                          {STATUS_TAB_LABELS[tab]}
+                          <span className={`ml-1.5 ${statusTab === tab ? "opacity-80" : "opacity-60"}`}>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <div className="relative flex-1 min-w-[180px]">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        value={searchQ}
+                        onChange={(e) => setSearchQ(e.target.value)}
+                        placeholder="Search name, company, title…"
+                        data-testid="input-prospect-search"
+                        className="w-full rounded-md border border-input bg-background pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                    {uniqueSources.length > 1 && (
+                      <select
+                        value={sourceFilter}
+                        onChange={(e) => setSourceFilter(e.target.value)}
+                        data-testid="select-source-filter"
+                        className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring capitalize"
+                      >
+                        <option value="all">All sources</option>
+                        {uniqueSources.map((s) => (
+                          <option key={s} value={s} className="capitalize">{s}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead className="text-center">Score</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Source</TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none whitespace-nowrap"
+                      onClick={() => toggleSort("name")}
+                      data-testid="th-sort-name"
+                    >
+                      Name <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none whitespace-nowrap"
+                      onClick={() => toggleSort("company")}
+                      data-testid="th-sort-company"
+                    >
+                      Company <SortIcon col="company" sortKey={sortKey} sortDir={sortDir} />
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none text-center whitespace-nowrap"
+                      onClick={() => toggleSort("score")}
+                      data-testid="th-sort-score"
+                    >
+                      Score <SortIcon col="score" sortKey={sortKey} sortDir={sortDir} />
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none whitespace-nowrap"
+                      onClick={() => toggleSort("status")}
+                      data-testid="th-sort-status"
+                    >
+                      State <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none whitespace-nowrap"
+                      onClick={() => toggleSort("source")}
+                      data-testid="th-sort-source"
+                    >
+                      Source <SortIcon col="source" sortKey={sortKey} sortDir={sortDir} />
+                    </TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {prospects.map((p) => (
+                  {visibleProspects.length === 0 ? (
+                    <TableRow>
+                      <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                        No prospects match this filter.{" "}
+                        <button className="underline" onClick={() => { setSearchQ(""); setStatusTab("all"); setSourceFilter("all"); }}>Clear filters</button>
+                      </td>
+                    </TableRow>
+                  ) : null}
+                  {visibleProspects.map((p) => (
                     <TableRow key={p.id} data-testid={`prospect-${p.id}`}>
                       <TableCell>
                         <div className="font-medium">{p.name}</div>
@@ -1274,6 +1443,7 @@ export default function OutreachCampaignDetailPage() {
                   ))}
                 </TableBody>
               </Table>
+              </>
             )}
           </CardContent>
         </Card>
