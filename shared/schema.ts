@@ -3770,7 +3770,7 @@ export const HUBSPOT_OAUTH_SCOPES = [
   // of the integration keeps working until a tenant re-consents.
   "timeline",
   "communication_preferences.read",
-  "communication_preferences.write",
+  "communication_preferences.read_write",
   // CRM Lists API (v3): required to fetch contact lists and their members.
   // Connections created before this scope was added will need to re-authorize;
   // `hasHubspotListScopes()` gates the browse-by-list path gracefully.
@@ -3783,7 +3783,7 @@ export const HUBSPOT_OAUTH_SCOPES = [
 // paths no-op until the tenant re-authorizes.
 export const HUBSPOT_EMAIL_SYNC_SCOPES = [
   "communication_preferences.read",
-  "communication_preferences.write",
+  "communication_preferences.read_write",
   "timeline",
 ] as const;
 
