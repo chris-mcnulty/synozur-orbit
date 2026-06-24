@@ -3775,6 +3775,7 @@ export const HUBSPOT_OAUTH_SCOPES = [
   // Connections created before this scope was added will need to re-authorize;
   // `hasHubspotListScopes()` gates the browse-by-list path gracefully.
   "crm.lists.read",
+  "crm.lists.write",
 ] as const;
 
 // The subset of scopes required for the marketing-email sync layer. A
