@@ -2666,15 +2666,34 @@ function BacklogPanel({
             {items.map((it) => {
               const k = itemKey(it);
               const checked = selected.has(k);
+              const postPreview = it.preview?.trim();
               return (
                 <div key={k} className={`flex items-center gap-3 px-3 py-2 text-sm ${checked ? "bg-primary/5" : "hover:bg-muted/50"}`} data-testid={`backlog-row-${it.id}`}>
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-item-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
                   <ChannelFormatTag item={it} />
-                  <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-backlog-item-${it.id}`}>
-                    {it.title}
+                  <button
+                    onClick={() => onSelect(it)}
+                    className="min-w-0 flex-1 text-left"
+                    data-testid={`button-backlog-item-${it.id}`}
+                  >
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate font-medium hover:underline">{it.title}</span>
+                      {it.campaignName && (
+                        <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
+                          {it.campaignName}
+                        </span>
+                      )}
+                      {!it.campaignName && it.conferenceName && (
+                        <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                          {it.conferenceName}
+                        </span>
+                      )}
+                    </div>
+                    {postPreview && (
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
+                    )}
                   </button>
-                  <AssignmentDots item={it} filterOpts={filterOpts} />
                   <Badge variant="outline" className={`shrink-0 px-1.5 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
                 </div>
               );
