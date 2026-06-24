@@ -3016,16 +3016,17 @@ export default function CampaignDetailPage() {
                             >
                               <ImageLucide className="w-3.5 h-3.5" />
                             </Button>
-                            {post.status === "approved" && !post.publishedAt && (() => {
+                            {(post.status === "approved" || post.status === "publish_failed") && !post.publishedAt && (() => {
                               const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
                               const connected = acct == null || acct.isConnected !== false;
                               const isEditing = editingPostId === post.id;
+                              const isRetry = post.status === "publish_failed";
                               return (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className={`gap-1 ${isEditing ? "text-muted-foreground" : connected ? "text-blue-600" : "text-amber-600"}`}
-                                  title={isEditing ? "Save your edits first, then publish" : connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
+                                  className={`gap-1 ${isEditing ? "text-muted-foreground" : isRetry ? "text-amber-600" : connected ? "text-blue-600" : "text-amber-600"}`}
+                                  title={isEditing ? "Save your edits first, then publish" : isRetry ? "Previous attempt failed — retry publishing now" : connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
                                   onClick={() => {
                                     if (isEditing) {
                                       toast({ title: "Save first", description: "Click Save to apply your edits (including the account) before publishing.", variant: "default" });
@@ -3040,8 +3041,8 @@ export default function CampaignDetailPage() {
                                   disabled={publishNowMutation.isPending}
                                   data-testid={`button-publish-now-${post.id}`}
                                 >
-                                  {publishNowMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                                  {isEditing ? "Save first →" : "Publish now"}
+                                  {publishNowMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isRetry ? <RefreshCw className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                  {isEditing ? "Save first →" : isRetry ? "Retry publish" : "Publish now"}
                                 </Button>
                               );
                             })()}
@@ -3258,17 +3259,34 @@ export default function CampaignDetailPage() {
                         </Button>
                         </div>
                         {post.publishedAt && (
-                          <div className="flex items-center gap-2 text-xs text-green-600" data-testid={`badge-published-${post.id}`}>
-                            <CheckCircle className="w-3 h-3" />
-                            Published {format(new Date(post.publishedAt), "MMM d, h:mm a")}
-                            {post.publishedUrl && (
-                              <a href={post.publishedUrl} target="_blank" rel="noopener noreferrer" className="underline" data-testid={`link-published-${post.id}`}>view</a>
+                          <div className="flex items-center gap-2 flex-wrap text-xs text-green-600" data-testid={`badge-published-${post.id}`}>
+                            <span className="flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" />
+                              Posted {format(new Date(post.publishedAt), "MMM d, h:mm a")}
+                            </span>
+                            {post.publishedUrl ? (
+                              <a
+                                href={post.publishedUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-600/10 hover:bg-green-600/20 text-green-700 font-medium transition-colors"
+                                data-testid={`link-published-${post.id}`}
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                View on {post.platform === "linkedin" ? "LinkedIn" : post.platform === "twitter" ? "X" : post.platform}
+                              </a>
+                            ) : (
+                              <span className="flex items-center gap-1 text-amber-600" title="The post was sent but the platform did not return a confirmation URL — check the platform directly to verify it appeared">
+                                <AlertCircle className="w-3 h-3" />
+                                No confirmation URL captured
+                              </span>
                             )}
                           </div>
                         )}
                         {post.publishError && !post.publishedAt && (
-                          <div className="text-xs text-amber-600" data-testid={`text-publish-error-${post.id}`}>
-                            Publish error: {post.publishError}
+                          <div className="flex items-center gap-1 text-xs text-red-500" data-testid={`text-publish-error-${post.id}`}>
+                            <AlertCircle className="w-3 h-3 shrink-0" />
+                            Publish failed: {post.publishError}
                           </div>
                         )}
                         {postImage && (
