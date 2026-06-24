@@ -73,6 +73,7 @@ function toActionItems(
         scheduledDate: p.scheduledDate ? p.scheduledDate.toISOString() : null,
         publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
         publishError: p.publishError,
+        deliveryMode: p.deliveryMode,
       }),
       batchKey: key,
       batchLabel: key ? batchLabel(p, key, conferenceNames) : null,

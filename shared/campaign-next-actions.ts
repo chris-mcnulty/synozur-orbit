@@ -82,14 +82,23 @@ export interface SocialPostLike {
   scheduledDate?: string | null;
   publishedAt?: string | null;
   publishError?: string | null;
+  /** null = Orbit auto-posting, "csv" = manual CSV export */
+  deliveryMode?: string | null;
 }
 
 /** Map a generated social post to the next action it is waiting on. */
 export function socialPostAction(p: SocialPostLike): NextAction {
-  if (p.publishedAt || p.status === "published" || p.status === "exported") return "done";
+  // Already published / externally scheduled / CSV-confirmed — nothing left to do.
+  if (p.publishedAt || p.status === "published" || p.status === "exported" || p.status === "scheduled_external") return "done";
   if (p.status === "rejected" || p.status === "deleted" || p.status === "archived") return "done";
   if (p.status === "publish_failed" || p.publishError) return "fix";
-  if (p.status === "approved") return p.scheduledDate ? "post" : "schedule";
+  if (p.status === "approved") {
+    if (!p.scheduledDate) return "schedule";
+    // CSV-only posts still need the user to run an export even after scheduling.
+    if (p.deliveryMode === "csv") return "post";
+    // Orbit-scheduled posts are queued for auto-posting — user has nothing left to do.
+    return "done";
+  }
   return "approve"; // draft / anything earlier
 }
 
