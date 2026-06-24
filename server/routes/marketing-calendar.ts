@@ -146,8 +146,18 @@ export function registerMarketingCalendarRoutes(app: Express) {
         return scheduled ? inWindow(date) : wantUnscheduled;
       };
 
-      // ── Social posts (scoped by tenant only — generated_posts has no market) ──
-      const socialConds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain), ne(generatedPosts.status, "rejected"), ne(generatedPosts.status, "deleted"), ne(generatedPosts.status, "archived")];
+      // ── Social posts — scoped to current market via campaign join ──
+      // generated_posts has no direct marketId; market scope is resolved through
+      // the post's campaign. Posts without a campaign are tenant-wide and always
+      // included. Posts whose campaign belongs to a different market are excluded.
+      const socialConds = [eq(generatedPosts.tenantDomain, ctx.tenantDomain), ne(generatedPosts.status, "rejected"), ne(generatedPosts.status, "deleted"), ne(generatedPosts.status, "archived"),
+        // Market scope: posts without a campaign are tenant-wide; posts with a campaign
+        // must belong to the current market AND the campaign must not be deleted.
+        or(
+          isNull(generatedPosts.campaignId),
+          and(ne(campaigns.status, "deleted"), or(eq(campaigns.marketId, ctx.marketId), isNull(campaigns.marketId))),
+        )!,
+      ];
       if (campaignId) socialConds.push(eq(generatedPosts.campaignId, campaignId));
       if (solutionAreaId) socialConds.push(eq(generatedPosts.solutionAreaId, solutionAreaId));
       if (conferenceId) socialConds.push(eq(generatedPosts.conferenceId, conferenceId));
@@ -182,6 +192,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
         })
         .from(generatedPosts)
         .leftJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))
+        .leftJoin(campaigns, eq(campaigns.id, generatedPosts.campaignId))
         .where(and(...socialConds))
         .orderBy(desc(generatedPosts.createdAt));
 
@@ -315,17 +326,15 @@ export function registerMarketingCalendarRoutes(app: Express) {
     if (!(await guardFeature(req, res, "editorialCalendar"))) return;
     try {
       const ctx = await getRequestContext(req);
-      // Campaigns are tenant-wide (social posts carry no market scope, so posts
-      // from any campaign can appear in the calendar regardless of the active
-      // market). Show all non-deleted campaigns in the filter dropdown.
-      // Themes and events remain market-scoped since those items ARE market-scoped.
+      // Scope options to the active market plus tenant-wide (null market) records.
+      const campMarket = or(eq(campaigns.marketId, ctx.marketId), isNull(campaigns.marketId));
       const themeMarket = or(eq(solutionAreas.marketId, ctx.marketId), isNull(solutionAreas.marketId));
       const eventMarket = or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId));
       const [camps, themes, events, platformRows, formatRows] = await Promise.all([
         db
           .select({ id: campaigns.id, name: campaigns.name })
           .from(campaigns)
-          .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), ne(campaigns.status, "deleted")))
+          .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), campMarket, ne(campaigns.status, "deleted")))
           .orderBy(asc(campaigns.name)),
         db
           .select({ id: solutionAreas.id, name: solutionAreas.name })
