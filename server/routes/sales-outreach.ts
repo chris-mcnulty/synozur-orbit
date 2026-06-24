@@ -37,7 +37,7 @@ import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
-import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote } from "../services/hubspot-integration";
+import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote, hasHubspotListScopes } from "../services/hubspot-integration";
 import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
@@ -917,6 +917,12 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
       const conn = await storage.getHubspotConnection(ctx.tenantDomain);
       if (!conn) return res.status(409).json({ error: "HubSpot isn't connected.", code: "no_hubspot" });
+      if (!hasHubspotListScopes(conn)) {
+        return res.status(409).json({
+          error: "HubSpot needs to be reconnected to access contact lists. Go to Settings → Connections and reconnect HubSpot.",
+          code: "no_list_scopes",
+        });
+      }
       const lists = await listHubspotContactLists(ctx.tenantDomain);
       res.json({ lists });
     } catch (err: any) {

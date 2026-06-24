@@ -231,6 +231,11 @@ export function hasHubspotEmailScopes(connection: Pick<HubspotConnection, "scope
   );
 }
 
+export function hasHubspotListScopes(connection: Pick<HubspotConnection, "scopes">): boolean {
+  const granted = new Set((connection.scopes ?? []).map((s) => s.trim()));
+  return granted.has("crm.lists.read");
+}
+
 export const HUBSPOT_REST_HOST = HUBSPOT_API_HOST;
 
 // ─────────────────────────────────────────────────────────────────────────

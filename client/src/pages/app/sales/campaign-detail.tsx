@@ -428,6 +428,7 @@ export default function OutreachCampaignDetailPage() {
   const [hubspotSearching, setHubspotSearching] = useState(false);
   const [hubspotSelected, setHubspotSelected] = useState<Set<string>>(new Set());
   const [hubspotNotConnected, setHubspotNotConnected] = useState(false);
+  const [hubspotNeedsReconnect, setHubspotNeedsReconnect] = useState(false);
   const [hubspotLists, setHubspotLists] = useState<{ listId: string; name: string; memberCount: number }[] | null>(null);
   const [hubspotListsLoading, setHubspotListsLoading] = useState(false);
   const [hubspotSelectedList, setHubspotSelectedList] = useState<string | null>(null);
@@ -785,8 +786,10 @@ export default function OutreachCampaignDetailPage() {
       const data = await res.json();
       if (!res.ok) {
         if (data.code === "no_hubspot") { setHubspotNotConnected(true); return; }
+        if (data.code === "no_list_scopes") { setHubspotNeedsReconnect(true); return; }
         throw new Error(data.error || "Failed to load lists");
       }
+      setHubspotNeedsReconnect(false);
       setHubspotLists(data.lists ?? []);
     } catch (err: any) {
       toast({ title: "Couldn't load HubSpot lists", description: err?.message, variant: "destructive" });
@@ -1657,7 +1660,13 @@ export default function OutreachCampaignDetailPage() {
               {/* List mode — picker */}
               {hubspotMode === "list" && (
                 <div className="flex gap-2 items-center">
-                  {hubspotListsLoading ? (
+                  {hubspotNeedsReconnect ? (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 py-1">
+                      HubSpot needs to be reconnected to enable list browsing — the{" "}
+                      <strong>crm.lists.read</strong> permission wasn't granted when it was first connected.
+                      Go to <strong>Settings → Connections</strong> and reconnect HubSpot to grant it.
+                    </p>
+                  ) : hubspotListsLoading ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground py-1">
                       <Loader2 className="w-4 h-4 animate-spin" /> Loading lists…
                     </div>
