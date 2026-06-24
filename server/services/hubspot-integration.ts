@@ -604,37 +604,37 @@ export async function listContactsFromHubspotList(
   listId: string,
   limit = 100,
 ): Promise<HubspotContactLite[]> {
-  const { client } = await getTenantClient(tenantDomain);
+  // Use the legacy contacts/v1/lists/{listId}/contacts/all endpoint.
+  // The SDK's membershipsApi.getPage() silently returns empty results due to
+  // the same positional/options calling-convention mismatch as listsApi.getAll().
+  const { accessToken } = await getTenantAccessToken(tenantDomain);
   const cap = Math.min(Math.max(limit, 1), 200);
-
-  // Step 1: get member record IDs.
-  const membersResult = await (client.crm.lists as any).membershipsApi.getPage(
-    listId,
-    undefined, // after
-    undefined, // before
-    cap,
-  );
-  const recordIds: string[] = (membersResult?.results ?? []).map((r: any) => String(r.recordId));
-  if (recordIds.length === 0) return [];
-
-  // Step 2: batch-read contact details for those IDs.
-  const batchResult = await (client.crm.contacts.batchApi as any).read({
-    inputs: recordIds.map((id) => ({ id })),
-    properties: CONTACT_PROPS,
-    propertiesWithHistory: [],
+  const props = CONTACT_PROPS.join(",");
+  const url = `https://api.hubapi.com/contacts/v1/lists/${encodeURIComponent(listId)}/contacts/all?count=${cap}&property=${props}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
   });
-
-  return (batchResult.results ?? []).map((c: any) => {
-    const props = (c.properties as Record<string, string>) || {};
+  if (!res.ok) {
+    const txt = await res.text().catch(() => res.statusText);
+    throw new Error(`HubSpot list-contacts API error ${res.status}: ${txt}`);
+  }
+  const data: any = await res.json();
+  console.log("[HubSpot List Contacts] listId:", listId, "count:", data?.contacts?.length ?? 0);
+  const contacts: any[] = data?.contacts ?? [];
+  return contacts.map((c: any) => {
+    const p = (c.properties as Record<string, { value: string }>) || {};
+    const firstName = p.firstname?.value || null;
+    const lastName = p.lastname?.value || null;
+    const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
     return {
-      hubspotContactId: c.id,
-      email: props.email || null,
-      firstName: props.firstname || null,
-      lastName: props.lastname || null,
-      name: contactName(props),
-      jobTitle: props.jobtitle || null,
-      company: props.company || null,
-      linkedinUrl: props.hs_linkedin_url || null,
+      hubspotContactId: String(c.vid),
+      email: p.email?.value || null,
+      firstName,
+      lastName,
+      name: fullName || p.email?.value || "Unknown",
+      jobTitle: p.jobtitle?.value || null,
+      company: p.company?.value || null,
+      linkedinUrl: p.hs_linkedin_url?.value || null,
     };
   });
 }
