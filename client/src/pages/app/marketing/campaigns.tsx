@@ -165,7 +165,9 @@ export default function CampaignsPage() {
     ? `Address this strategic recommendation: ${recommendationContext}`
     : "";
 
-  const isInstant = !!preselectedAssetId;
+  // Open the create flow immediately when arriving from a preselected asset
+  // or an "Act on this insight" handoff (briefing/recommendation prefill).
+  const isInstant = !!preselectedAssetId || !!prefillContext;
   const [addOpen, setAddOpen] = useState(isInstant);
   const [step, setStep] = useState(0);
   const [stepAttempted, setStepAttempted] = useState<Record<number, boolean>>({});

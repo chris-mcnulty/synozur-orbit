@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -67,9 +67,12 @@ export default function OutreachInterviewPage() {
   const { toast } = useToast();
   const [stepIdx, setStepIdx] = useState(0);
 
+  // Seed the goal from an "Act on this insight" handoff (?goal=...).
+  const initialGoal = new URLSearchParams(useSearch()).get("goal") ?? "";
+
   // Form state
   const [name, setName] = useState("");
-  const [goal, setGoal] = useState("");
+  const [goal, setGoal] = useState(initialGoal);
   const [message, setMessage] = useState("");
   const [personaIds, setPersonaIds] = useState<string[]>([]);
   const [targetRoles, setTargetRoles] = useState("");
