@@ -48,7 +48,11 @@ export function ClicksByCampaign() {
       const key = l.campaignId ?? "__standalone__";
       let g = byCampaign.get(key);
       if (!g) {
-        g = { name: l.campaignName ?? "Standalone posts", recent: 0, dests: new Set(), links: 0, spark: l.sparkline.map(() => 0) };
+        // A non-null campaignId whose name didn't resolve (e.g. a campaign in
+        // another market) is its own "Unknown campaign" bucket — not lumped in
+        // with genuine standalone (no-campaign) posts.
+        const name = l.campaignName ?? (l.campaignId ? "Unknown campaign" : "Standalone posts");
+        g = { name, recent: 0, dests: new Set(), links: 0, spark: l.sparkline.map(() => 0) };
         byCampaign.set(key, g);
       }
       g.recent += l.recentClicks;

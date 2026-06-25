@@ -374,7 +374,11 @@ export function registerMarketingLinksRoutes(app: Express) {
     if (campaignIds.length > 0) {
       const camps = await db.select({ id: campaigns.id, name: campaigns.name })
         .from(campaigns)
-        .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), inArray(campaigns.id, campaignIds)));
+        .where(and(
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+          inArray(campaigns.id, campaignIds),
+        ));
       for (const c of camps) campaignNameById[c.id] = c.name;
     }
 

@@ -382,7 +382,11 @@ export default function ComposerPage() {
                               credentials: "include",
                               body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
                             });
-                            const { uploadURL, objectPath } = await res.json();
+                            const body = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              throw new Error(body.error || `Couldn't start the upload (${res.status})`);
+                            }
+                            const { uploadURL, objectPath } = body;
                             pendingUploadPathRef.current = objectPath;
                             return { method: "PUT" as const, url: uploadURL, headers: { "Content-Type": file.type || "application/octet-stream" } };
                           }}

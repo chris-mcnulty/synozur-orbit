@@ -158,9 +158,10 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       inHeader: true,
       items: [
         { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
-        // Calendar: one cluster for the three ways to see scheduled work —
-        // the cross-channel Calendar (default), the drag-and-drop Board, and
-        // the social-only view. Each page also shows a shared view switcher.
+        // Calendar: one cluster for the ways to see scheduled work — the
+        // cross-channel Calendar (default), the drag-and-drop Board, the
+        // social-only view, and the Orbit Posting Queue. Each page also shows
+        // a shared view switcher.
         { label: "Content Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, section: "Calendar", description: "Cross-channel overview of every scheduled social post, email, and content piece." },
         { label: "Pipeline Board", icon: ListChecks, href: "/app/marketing/pipeline", enterprise: true, section: "Calendar", indent: true, description: "Every in-flight post, email, and brief on one board, draggable between stages." },
         { label: "Social Calendar", icon: Share2, href: "/app/marketing/calendar", enterprise: true, section: "Calendar", indent: true, description: "Social-only view to schedule, reschedule, and add graphics to posts." },

@@ -3,11 +3,12 @@ import { CalendarRange, ListChecks, Share2, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Segmented switcher shared by the three scheduling surfaces — the
- * cross-channel Content Calendar, the drag-and-drop Pipeline Board, and the
- * social-only Social Calendar. They were three disconnected pages; this makes
- * them read as one "Calendar" with three views. Each entry links to a real
- * route, so the pages stay independent under the hood.
+ * Segmented switcher shared by the marketing scheduling surfaces — the
+ * cross-channel Content Calendar, the drag-and-drop Pipeline Board, the
+ * social-only Social Calendar, and the Orbit Posting Queue. They were
+ * disconnected pages; this makes them read as one "Calendar" with several
+ * views. Each entry links to a real route, so the pages stay independent
+ * under the hood.
  */
 const VIEWS: { href: string; label: string; icon: typeof CalendarRange }[] = [
   { href: "/app/marketing/marketing-calendar", label: "Calendar", icon: CalendarRange },

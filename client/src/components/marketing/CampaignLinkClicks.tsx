@@ -176,6 +176,9 @@ export function CampaignLinkClicks({ campaignId }: { campaignId: string }) {
           {groups.map((g) => {
             const open = expanded.has(g.destinationUrl);
             const best = g.variants[0];
+            // Short, selector-safe token for test IDs — the raw URL is long
+            // and contains characters that break CSS-based E2E selectors.
+            const slug = g.destinationUrl.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 48).toLowerCase();
             return (
               <div key={g.destinationUrl}>
                 <button
@@ -188,7 +191,7 @@ export function CampaignLinkClicks({ campaignId }: { campaignId: string }) {
                     })
                   }
                   className="w-full grid grid-cols-[20px_1fr_auto_auto] sm:grid-cols-[20px_1fr_80px_96px_96px] items-center gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
-                  data-testid={`dest-row-${g.destinationUrl}`}
+                  data-testid={`dest-row-${slug}`}
                   aria-expanded={open}
                 >
                   <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", open && "rotate-90")} />
@@ -209,7 +212,7 @@ export function CampaignLinkClicks({ campaignId }: { campaignId: string }) {
                 </button>
 
                 {open && (
-                  <div className="bg-muted/30 border-t border-border" data-testid={`dest-variants-${g.destinationUrl}`}>
+                  <div className="bg-muted/30 border-t border-border" data-testid={`dest-variants-${slug}`}>
                     <div className="px-4 pl-11 py-2 text-[11px] text-muted-foreground">
                       {g.linkCount} post {g.linkCount === 1 ? "variation" : "variations"}
                       {best && best.clickCount > 0 && (
