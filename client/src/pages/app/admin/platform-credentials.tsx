@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import AppLayout from "@/components/layout/AppLayout";
 import {
   KeyRound, AlertTriangle, CheckCircle2, ExternalLink, Loader2, ShieldCheck, ShieldOff,
 } from "lucide-react";
@@ -106,6 +107,7 @@ export default function GlobalPlatformCredentialsPage() {
   });
 
   return (
+    <AppLayout>
     <div className="container mx-auto p-6 max-w-4xl space-y-6" data-testid="page-global-platform-credentials">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -237,6 +239,7 @@ export default function GlobalPlatformCredentialsPage() {
         />
       )}
     </div>
+    </AppLayout>
   );
 }
 
