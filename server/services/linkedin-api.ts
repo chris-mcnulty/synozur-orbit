@@ -6,7 +6,20 @@ import { decryptSecret, encryptSecret } from "../utils/encryption";
 import { getGlobalLinkedInCredentials } from "./platform-credentials-service";
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = "fresh-linkedin-profile-data.p.rapidapi.com";
+const RAPIDAPI_HOST = "fresh-linkedin-scraper-api.p.rapidapi.com";
+const RAPIDAPI_BASE = `https://${RAPIDAPI_HOST}/api/v1`;
+
+/** Extract company slug from a LinkedIn company URL, e.g. linkedin.com/company/microsoft → "microsoft" */
+function extractCompanySlug(url: string): string | null {
+  const m = url.match(/linkedin\.com\/company\/([^\/\?#]+)/i);
+  return m ? m[1] : null;
+}
+
+/** Extract personal username from a LinkedIn profile URL, e.g. linkedin.com/in/williamhgates → "williamhgates" */
+function extractProfileUsername(url: string): string | null {
+  const m = url.match(/linkedin\.com\/in\/([^\/\?#]+)/i);
+  return m ? m[1] : null;
+}
 
 /**
  * Whether the official LinkedIn r_member_social scope is approved and should be
@@ -344,11 +357,10 @@ export async function getCompanyByDomain(domain: string): Promise<LinkedInApiRes
 
   try {
     const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
-    const companyName = cleanDomain.split(".")[0];
-    const linkedinUrl = `https://www.linkedin.com/company/${companyName}/`;
-    
+    const slug = cleanDomain.split(".")[0];
+
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/get-company-by-linkedinurl?linkedin_url=${encodeURIComponent(linkedinUrl)}`,
+      `${RAPIDAPI_BASE}/company/profile?company=${encodeURIComponent(slug)}`,
       {
         method: "GET",
         headers: {
@@ -365,17 +377,16 @@ export async function getCompanyByDomain(domain: string): Promise<LinkedInApiRes
     }
 
     const data: LinkedInCompanyData = await response.json();
-    
+
     if (!data.data) {
       return { success: false, error: data.message || "No company data found" };
     }
 
-    // API returns employee_count, staff_count, or company_size_on_linkedin depending on company
     const apiData = data.data as any;
     return {
       success: true,
       companyData: data.data,
-      followerCount: apiData.follower_count,
+      followerCount: apiData.follower_count ?? apiData.followers_count,
       employeeCount: apiData.employee_count || apiData.staff_count || data.data.company_size_on_linkedin,
     };
   } catch (error: any) {
@@ -390,12 +401,16 @@ export async function getCompanyDetails(linkedinUrl: string): Promise<LinkedInAp
   }
 
   try {
-    const normalizedUrl = linkedinUrl.includes("linkedin.com/company/") 
-      ? linkedinUrl 
-      : `https://www.linkedin.com/company/${linkedinUrl}/`;
+    const slug =
+      extractCompanySlug(linkedinUrl) ??
+      (linkedinUrl.includes("linkedin.com/company/") ? null : linkedinUrl);
+
+    if (!slug) {
+      return { success: false, error: "Could not extract company slug from LinkedIn URL" };
+    }
 
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/get-company-by-linkedinurl?linkedin_url=${encodeURIComponent(normalizedUrl)}`,
+      `${RAPIDAPI_BASE}/company/profile?company=${encodeURIComponent(slug)}`,
       {
         method: "GET",
         headers: {
@@ -412,17 +427,16 @@ export async function getCompanyDetails(linkedinUrl: string): Promise<LinkedInAp
     }
 
     const data: LinkedInCompanyData = await response.json();
-    
+
     if (!data.data) {
       return { success: false, error: data.message || "No company data found" };
     }
 
-    // API returns employee_count, staff_count, or company_size_on_linkedin depending on company
     const apiData = data.data as any;
     return {
       success: true,
       companyData: data.data,
-      followerCount: apiData.follower_count,
+      followerCount: apiData.follower_count ?? apiData.followers_count,
       employeeCount: apiData.employee_count || apiData.staff_count || data.data.company_size_on_linkedin,
     };
   } catch (error: any) {
@@ -437,12 +451,12 @@ export async function getCompanyPosts(linkedinUrl: string): Promise<LinkedInApiR
   }
 
   try {
-    const normalizedUrl = linkedinUrl.includes("linkedin.com/company/") 
-      ? linkedinUrl 
+    const normalizedUrl = linkedinUrl.includes("linkedin.com/company/")
+      ? linkedinUrl
       : `https://www.linkedin.com/company/${linkedinUrl}/`;
 
     const response = await fetch(
-      `https://${RAPIDAPI_HOST}/get-company-posts?linkedin_url=${encodeURIComponent(normalizedUrl)}&type=posts`,
+      `${RAPIDAPI_BASE}/company/posts?linkedin_url=${encodeURIComponent(normalizedUrl)}`,
       {
         method: "GET",
         headers: {
@@ -459,15 +473,26 @@ export async function getCompanyPosts(linkedinUrl: string): Promise<LinkedInApiR
     }
 
     const data: LinkedInCompanyPosts = await response.json();
-    
-    const posts = data.data || [];
+
+    const rawPosts: any[] = (data as any).data || [];
+    // New API: engagement is nested in stats{}; old shape had flat num_likes etc.
+    const posts = rawPosts.map((p: any) => ({
+      urn: p.urn ?? p.post_id,
+      text: p.text ?? p.content ?? "",
+      posted_at: p.posted_at ?? "",
+      num_likes: p.num_likes ?? p.stats?.likes ?? 0,
+      num_comments: p.num_comments ?? p.stats?.comments ?? 0,
+      num_reposts: p.num_reposts ?? p.stats?.shares ?? 0,
+      author: p.author,
+    }));
+
     const totalEngagement = posts.reduce((sum, post) => {
       return sum + (post.num_likes || 0) + (post.num_comments || 0) + (post.num_reposts || 0);
     }, 0);
 
     return {
       success: true,
-      posts: posts,
+      posts,
       recentPostCount: posts.length,
       totalEngagement,
     };
@@ -619,21 +644,19 @@ export async function getPersonalProfilePosts(
     return { success: false, error: reason };
   }
 
-  const normalizedUrl = profileUrl.trim().replace(/\/$/, "");
+  // New API (fresh-linkedin-scraper-api) identifies profiles by username slug, not full URL.
+  const username = extractProfileUsername(profileUrl.trim());
+  if (!username) {
+    return { success: false, error: "Could not extract LinkedIn username from profile URL. Expected a URL like https://www.linkedin.com/in/username" };
+  }
+
   const allPosts: PersonalPost[] = [];
-  let paginationToken: string | undefined;
   const MAX_PAGES = 5;
 
-  for (let page = 0; page < MAX_PAGES; page++) {
+  for (let page = 1; page <= MAX_PAGES; page++) {
     try {
-      const params = new URLSearchParams({
-        linkedin_url: normalizedUrl,
-        type: "posts",
-      });
-      if (paginationToken) params.set("pagination_token", paginationToken);
-
       const response = await fetch(
-        `https://${RAPIDAPI_HOST}/get-profile-posts?${params.toString()}`,
+        `${RAPIDAPI_BASE}/user/posts?username=${encodeURIComponent(username)}&page=${page}`,
         {
           method: "GET",
           headers: {
@@ -657,34 +680,36 @@ export async function getPersonalProfilePosts(
       let reachedBeforeRange = false;
 
       for (const raw of rawPosts) {
-        // Parse post timestamp — the API returns either a unix ms timestamp or
-        // an ISO string in posted_at.
+        // Parse post timestamp — new API returns ISO string in posted_at.
+        const postedAtStr: string = raw?.posted_at ?? raw?.postedAt ?? "";
         const timestamp: number | undefined =
           typeof raw?.posted_at_timestamp === "number"
             ? raw.posted_at_timestamp
-            : typeof raw?.posted_at === "string" && raw.posted_at.match(/^\d+$/)
-              ? Number(raw.posted_at)
-              : typeof raw?.posted_at === "string"
-                ? new Date(raw.posted_at).getTime()
+            : postedAtStr.match(/^\d+$/)
+              ? Number(postedAtStr)
+              : postedAtStr
+                ? new Date(postedAtStr).getTime()
                 : undefined;
 
-        if (timestamp !== undefined && timestamp < startMs) {
+        if (timestamp !== undefined && !isNaN(timestamp) && timestamp < startMs) {
           reachedBeforeRange = true;
           break;
         }
-        if (timestamp !== undefined && timestamp > endMs) continue;
+        if (timestamp !== undefined && !isNaN(timestamp) && timestamp > endMs) continue;
 
         // Filter to original posts only — exclude reshares, shares, and comments.
-        const activityType: string = (raw?.activity_type ?? raw?.activityType ?? "").toUpperCase();
+        // New API may not return activity_type; fall back to structural signals.
+        const activityType: string = (raw?.activity_type ?? raw?.activityType ?? raw?.post_type ?? "").toUpperCase();
         const isExcluded =
           activityType === "SHARE" ||
           activityType === "RESHARE" ||
           activityType === "COMMENT" ||
           raw?.is_reshared === true ||
           raw?.reshared === true ||
+          raw?.is_repost === true ||
           raw?.is_comment === true ||
           raw?.isComment === true ||
-          raw?.root_post !== undefined; // comment replies often include a root_post reference
+          raw?.root_post !== undefined;
         if (isExcluded) continue;
 
         const text: string = (raw?.text ?? raw?.content ?? "").trim();
@@ -692,18 +717,18 @@ export async function getPersonalProfilePosts(
 
         allPosts.push({
           text,
-          postedAt: raw?.posted_at ?? "",
+          postedAt: postedAtStr,
           postedAtTimestamp: timestamp,
-          urn: raw?.urn,
+          urn: raw?.urn ?? raw?.post_id,
           activityType: activityType || undefined,
         });
       }
 
       if (reachedBeforeRange) break;
 
-      // Pagination
-      paginationToken = data?.pagination_token ?? data?.paginationToken;
-      if (!paginationToken) break;
+      // New API uses has_more flag instead of pagination tokens.
+      const hasMore: boolean = data?.has_more ?? false;
+      if (!hasMore) break;
     } catch (error: any) {
       console.error("[LinkedIn API] Error fetching personal profile posts:", error);
       return { success: false, error: error.message };
