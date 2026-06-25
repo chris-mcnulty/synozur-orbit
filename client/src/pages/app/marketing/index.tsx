@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkPerformanceTab } from "@/components/marketing/LinkPerformanceTab";
+import { ClicksByCampaign } from "@/components/marketing/ClicksByCampaign";
 import { StageBar } from "@/components/hub/hub-charts";
 import { MarketingHubNextActions } from "@/components/marketing/NextActionsByBatch";
 import { buildAreas } from "@/lib/areaNavigation";
@@ -252,7 +253,8 @@ export default function MarketingLandingPage() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="performance">
+            <TabsContent value="performance" className="space-y-4">
+              <ClicksByCampaign />
               <LinkPerformanceTab />
             </TabsContent>
 

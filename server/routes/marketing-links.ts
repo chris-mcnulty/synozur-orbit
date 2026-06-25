@@ -367,6 +367,17 @@ export function registerMarketingLinksRoutes(app: Express) {
       dayKeys.push(d.toISOString().slice(0, 10));
     }
 
+    // Campaign names for the "clicks by campaign" leaderboard, fetched once
+    // for the campaigns referenced by these links.
+    const campaignIds = Array.from(new Set(links.map(l => l.campaignId).filter((x): x is string => !!x)));
+    const campaignNameById: Record<string, string> = {};
+    if (campaignIds.length > 0) {
+      const camps = await db.select({ id: campaigns.id, name: campaigns.name })
+        .from(campaigns)
+        .where(and(eq(campaigns.tenantDomain, ctx.tenantDomain), inArray(campaigns.id, campaignIds)));
+      for (const c of camps) campaignNameById[c.id] = c.name;
+    }
+
     const result = links.map(link => {
       const daily = perDayByLink[link.id] || {};
       const sparkline = dayKeys.map(d => daily[d] ?? 0);
@@ -377,6 +388,7 @@ export function registerMarketingLinksRoutes(app: Express) {
         label: link.label,
         destinationUrl: link.destinationUrl,
         campaignId: link.campaignId,
+        campaignName: link.campaignId ? (campaignNameById[link.campaignId] ?? null) : null,
         utmSource: link.utmSource,
         utmMedium: link.utmMedium,
         utmCampaign: link.utmCampaign,

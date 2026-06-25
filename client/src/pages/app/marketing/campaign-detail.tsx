@@ -53,6 +53,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
+import { CampaignLinkClicks } from "@/components/marketing/CampaignLinkClicks";
 import {
   type HubResponse, type ItemType,
   RollupStat, HubItemsList, AttachDialog, CreateActionDialog,
@@ -2384,6 +2385,7 @@ export default function CampaignDetailPage() {
           </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
+            <CampaignLinkClicks campaignId={id!} />
             <LinkBuilderTab campaignId={id!} campaignName={campaign.name} />
           </TabsContent>
 
