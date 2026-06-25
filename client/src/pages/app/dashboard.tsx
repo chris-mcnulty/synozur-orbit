@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
+import { useOnboardingSteps } from "@/lib/useOnboardingSteps";
 import { cn, cleanSignalSummary } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
@@ -377,49 +378,11 @@ export default function Dashboard() {
     return "log";
   };
 
-  // Onboarding checklist items
-  const onboardingSteps = [
-    {
-      id: "company",
-      label: "Set up company profile",
-      description: "Add your website and company details",
-      complete: !!baselineComplete,
-      href: "/app/company-profile",
-      icon: Building2,
-    },
-    {
-      id: "competitors",
-      label: "Add competitors",
-      description: "Track at least one competitor",
-      complete: competitors.length > 0,
-      href: "/app/competitors",
-      icon: Users,
-    },
-    {
-      id: "analysis",
-      label: "Run an analysis",
-      description: "Generate competitive insights",
-      complete: !!hasAnalysis,
-      href: "/app/analysis",
-      icon: Sparkles,
-    },
-    {
-      id: "battlecards",
-      label: "Create a battle card",
-      description: "Arm your sales team",
-      complete: battleCards.length > 0,
-      href: "/app/battlecards",
-      icon: Swords,
-    },
-    {
-      id: "reports",
-      label: "Generate a report",
-      description: "Create your first competitive report",
-      complete: reports.length > 0,
-      href: "/app/reports",
-      icon: FileText,
-    },
-  ];
+  // Onboarding checklist — shared source of truth with the Getting Started
+  // page (useOnboardingSteps). The dashboard nudge shows only the one-time
+  // setup steps, so it disappears once setup is done (not on data staleness).
+  const onboarding = useOnboardingSteps();
+  const onboardingSteps = onboarding.setupSteps;
 
   const completedSteps = onboardingSteps.filter(s => s.complete).length;
   const onboardingProgress = Math.round((completedSteps / onboardingSteps.length) * 100);

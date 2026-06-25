@@ -7,13 +7,11 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
-  Rocket, Building2, Users, Sparkles, Swords, FileText,
-  CheckCircle2, ChevronRight, ArrowRight, Eye, RefreshCw
+  Rocket, CheckCircle2, ChevronRight, ArrowRight, Eye
 } from "lucide-react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { calculateStaleness } from "@/lib/staleness";
+import { useOnboardingSteps } from "@/lib/useOnboardingSteps";
 
 const CHECKLIST_DISMISSED_KEY = "orbit_onboarding_dismissed";
 
@@ -22,132 +20,7 @@ export default function GettingStartedPage() {
     return localStorage.getItem(CHECKLIST_DISMISSED_KEY) !== "true";
   });
 
-  const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
-    queryFn: async () => {
-      const response = await fetch("/api/company-profile", { credentials: "include" });
-      if (!response.ok) return null;
-      return response.json();
-    },
-  });
-
-  const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
-    queryFn: async () => {
-      const response = await fetch("/api/competitors", { credentials: "include" });
-      if (!response.ok) return [];
-      return response.json();
-    },
-  });
-
-  const { data: analysis } = useQuery({
-    queryKey: ["/api/analysis"],
-    queryFn: async () => {
-      const response = await fetch("/api/analysis", { credentials: "include" });
-      if (!response.ok) return null;
-      return response.json();
-    },
-  });
-
-  const { data: battleCards = [] } = useQuery({
-    queryKey: ["/api/battlecards"],
-    queryFn: async () => {
-      const response = await fetch("/api/battlecards", { credentials: "include" });
-      if (!response.ok) return [];
-      return response.json();
-    },
-  });
-
-  const { data: reports = [] } = useQuery({
-    queryKey: ["/api/reports"],
-    queryFn: async () => {
-      const response = await fetch("/api/reports", { credentials: "include" });
-      if (!response.ok) return [];
-      return response.json();
-    },
-  });
-
-  const baselineComplete = companyProfile && companyProfile.websiteUrl;
-  const hasAnalysis = analysis && analysis.themes;
-
-  // Check if all data sources are fresh (no stale sources)
-  const allDataFresh = (() => {
-    const timestamps = [
-      companyProfile?.lastFullCrawl,
-      ...competitors.map((c: any) => c.lastFullCrawl),
-      ...competitors.map((c: any) => c.lastSocialCrawl),
-    ].filter(Boolean);
-    if (timestamps.length === 0) return false;
-    return timestamps.every((ts: string) => calculateStaleness(ts) !== "stale");
-  })();
-
-  const steps = [
-    {
-      id: "company",
-      step: 1,
-      label: "Set up your company profile",
-      description: "Add your website URL and company details so Orbit can establish your competitive baseline. This is the foundation for all analysis.",
-      complete: !!baselineComplete,
-      href: "/app/company-profile",
-      icon: Building2,
-      cta: "Set Up Profile",
-    },
-    {
-      id: "competitors",
-      step: 2,
-      label: "Add your first competitor",
-      description: "Enter a competitor's website URL and Orbit will automatically crawl their site, social profiles, and blog to build a competitive profile.",
-      complete: competitors.length > 0,
-      href: "/app/competitors",
-      icon: Users,
-      cta: "Add Competitor",
-    },
-    {
-      id: "analysis",
-      step: 3,
-      label: "Run a competitive analysis",
-      description: "Once you have a baseline and at least one competitor, run an AI-powered analysis to uncover themes, gaps, and strategic opportunities.",
-      complete: !!hasAnalysis,
-      href: "/app/analysis",
-      icon: Sparkles,
-      cta: "Run Analysis",
-    },
-    {
-      id: "battlecards",
-      step: 4,
-      label: "Create a battle card",
-      description: "Generate sales battle cards that compare your strengths against specific competitors. Perfect for arming your sales team with talking points.",
-      complete: battleCards.length > 0,
-      href: "/app/battlecards",
-      icon: Swords,
-      cta: "Create Battle Card",
-    },
-    {
-      id: "reports",
-      step: 5,
-      label: "Generate a report",
-      description: "Create a branded PDF competitive report you can share with your team or stakeholders. Reports include analysis, positioning, and recommendations.",
-      complete: reports.length > 0,
-      href: "/app/reports",
-      icon: FileText,
-      cta: "Generate Report",
-    },
-    {
-      id: "freshness",
-      step: 6,
-      label: "Keep your data fresh",
-      description: "Orbit works best when data is refreshed regularly. Check Data Sources to see freshness and refresh stale data anytime. Pro and Enterprise plans include automatic scheduled refreshes.",
-      complete: allDataFresh,
-      href: "/app/data-sources",
-      icon: RefreshCw,
-      cta: "Check Freshness",
-    },
-  ];
-
-  const completedCount = steps.filter(s => s.complete).length;
-  const progress = Math.round((completedCount / steps.length) * 100);
-  const allComplete = completedCount === steps.length;
-  const nextStep = steps.find(s => !s.complete);
+  const { steps, completedCount, progress, allComplete, nextStep } = useOnboardingSteps();
 
   const handleToggleDashboard = (checked: boolean) => {
     setShowOnDashboard(checked);
@@ -256,7 +129,7 @@ export default function GettingStartedPage() {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground">{step.description}</p>
+                      <p className="text-sm text-muted-foreground">{step.detail}</p>
                     </div>
 
                     <div className="shrink-0 self-center">
