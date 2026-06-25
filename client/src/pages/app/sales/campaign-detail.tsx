@@ -455,6 +455,7 @@ export default function OutreachCampaignDetailPage() {
   const [searchQ, setSearchQ] = useState("");
   const [statusTab, setStatusTab] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [scoreFilter, setScoreFilter] = useState("all"); // all | high | medium | low | unscored
   const [sortKey, setSortKey] = useState<ProspectSortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -680,6 +681,17 @@ export default function OutreachCampaignDetailPage() {
     const statuses = STATUS_GROUPS[statusTab] ?? [];
     if (statuses.length) list = list.filter((p) => statuses.includes(p.status));
     if (sourceFilter !== "all") list = list.filter((p) => p.source === sourceFilter);
+    // Score buckets mirror the scoreColor thresholds (70+ / 50–69 / <50).
+    if (scoreFilter !== "all") {
+      list = list.filter((p) => {
+        const s = p.icpScore;
+        if (scoreFilter === "unscored") return s == null;
+        if (s == null) return false;
+        if (scoreFilter === "high") return s >= 70;
+        if (scoreFilter === "medium") return s >= 50 && s < 70;
+        return s < 50; // low
+      });
+    }
     list.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "score") cmp = (a.icpScore ?? -1) - (b.icpScore ?? -1);
@@ -690,7 +702,7 @@ export default function OutreachCampaignDetailPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [prospects, searchQ, statusTab, sourceFilter, sortKey, sortDir]);
+  }, [prospects, searchQ, statusTab, sourceFilter, scoreFilter, sortKey, sortDir]);
 
   const { data: performance } = useQuery<{
     contacted: number;
@@ -1231,6 +1243,18 @@ export default function OutreachCampaignDetailPage() {
                         ))}
                       </select>
                     )}
+                    <select
+                      value={scoreFilter}
+                      onChange={(e) => setScoreFilter(e.target.value)}
+                      data-testid="select-score-filter"
+                      className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="all">All scores</option>
+                      <option value="high">High (70+)</option>
+                      <option value="medium">Medium (50–69)</option>
+                      <option value="low">Low (&lt;50)</option>
+                      <option value="unscored">Unscored</option>
+                    </select>
                   </div>
                 </div>
               <Table>
