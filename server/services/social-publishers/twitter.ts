@@ -26,6 +26,8 @@ import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-cred
 
 const AUTH_HOST = "https://twitter.com";
 const API_HOST = "https://api.twitter.com";
+// Media upload still lives on v1.1 even for OAuth 2.0 user-context apps.
+const UPLOAD_HOST = "https://upload.twitter.com";
 // `tweet.write` to post, `tweet.read` + `users.read` to look up the author,
 // `offline.access` so we can refresh the access token later.
 const DEFAULT_SCOPE = "tweet.read tweet.write users.read offline.access";
@@ -254,13 +256,26 @@ export class TwitterPublisher implements SocialPublisher {
       ? `${text}\n\n${hashtags.map(h => h.startsWith("#") ? h : `#${h}`).join(" ")}`
       : text;
 
+    // Upload image if present — X requires bytes pushed to their media
+    // endpoint; it never fetches URLs directly, so private/object-storage
+    // URLs work fine as long as the server can reach them.
+    const imageUrl: string | null =
+      (post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null;
+    let mediaId: string | null = null;
+    if (imageUrl) {
+      mediaId = await this.uploadMedia(accessToken, imageUrl);
+    }
+
+    const tweetBody: Record<string, unknown> = { text: finalText };
+    if (mediaId) tweetBody.media = { media_ids: [mediaId] };
+
     const resp = await fetch(`${API_HOST}/2/tweets`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text: finalText }),
+      body: JSON.stringify(tweetBody),
     });
 
     if (!resp.ok) {
@@ -290,5 +305,58 @@ export class TwitterPublisher implements SocialPublisher {
       refreshedRefreshToken,
       refreshedTokenExpiresAt,
     };
+  }
+
+  /**
+   * Download an image from `imageUrl` and upload it to X's media endpoint.
+   * Returns the media_id_string on success, null on any failure (tweet will
+   * fall back to text-only rather than failing entirely).
+   *
+   * X media upload lives on v1.1 (upload.twitter.com) even for OAuth 2.0
+   * user-context apps. The multipart upload uses the user's Bearer token.
+   */
+  private async uploadMedia(accessToken: string, imageUrl: string): Promise<string | null> {
+    try {
+      // Resolve relative URLs — server-side fetch needs an absolute base.
+      const absoluteUrl = imageUrl.startsWith("/")
+        ? `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`
+        : imageUrl;
+
+      // 1. Download the image bytes.
+      const imgResp = await fetch(absoluteUrl);
+      if (!imgResp.ok) {
+        console.warn("[Twitter] Failed to fetch image for upload:", absoluteUrl, imgResp.status);
+        return null;
+      }
+      const imageBuffer = Buffer.from(await imgResp.arrayBuffer());
+      const contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
+
+      // 2. Upload to X via multipart/form-data.
+      const form = new FormData();
+      form.append("media", new Blob([imageBuffer], { type: contentType }), "image");
+
+      const uploadResp = await fetch(`${UPLOAD_HOST}/1.1/media/upload.json`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: form,
+      });
+
+      if (!uploadResp.ok) {
+        const errText = await uploadResp.text().catch(() => "");
+        console.warn("[Twitter] Media upload failed:", uploadResp.status, errText);
+        return null;
+      }
+
+      const uploadJson = await uploadResp.json() as { media_id_string?: string };
+      if (!uploadJson.media_id_string) {
+        console.warn("[Twitter] Media upload response missing media_id_string:", uploadJson);
+        return null;
+      }
+
+      return uploadJson.media_id_string;
+    } catch (err: any) {
+      console.warn("[Twitter] uploadMedia error:", err.message);
+      return null;
+    }
   }
 }
