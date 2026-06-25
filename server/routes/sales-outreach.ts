@@ -302,6 +302,42 @@ export function registerSalesOutreachRoutes(app: Express) {
     }
   });
 
+  // Tenant-wide list of outreach drafts awaiting approval — powers the
+  // cross-area "Needs your attention" inbox. Per-prospect approval still
+  // happens on the campaign page; this is just the roll-up.
+  app.get("/api/sales-outreach/pending-approvals", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const rows = await db
+        .select({
+          id: outreachTouches.id,
+          prospectId: outreachTouches.prospectId,
+          campaignId: outreachTouches.campaignId,
+          channel: outreachTouches.channel,
+          stepNumber: outreachTouches.stepNumber,
+          subject: outreachTouches.subject,
+          createdAt: outreachTouches.createdAt,
+          prospectName: prospects.name,
+          companyName: prospects.companyName,
+          campaignName: outreachCampaigns.name,
+        })
+        .from(outreachTouches)
+        .leftJoin(prospects, eq(prospects.id, outreachTouches.prospectId))
+        .leftJoin(outreachCampaigns, eq(outreachCampaigns.id, outreachTouches.campaignId))
+        .where(and(
+          eq(outreachTouches.tenantDomain, ctx.tenantDomain),
+          eq(outreachTouches.status, "draft_pending_approval"),
+        ))
+        .orderBy(desc(outreachTouches.createdAt))
+        .limit(50);
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[sales-outreach:pending-approvals]", err);
+      res.status(500).json({ error: err.message || "Failed to list pending approvals" });
+    }
+  });
+
   // Add a prospect to a campaign (manual entry; HubSpot/LinkedIn import lands later).
   app.post("/api/sales-outreach/campaigns/:id/prospects", async (req, res) => {
     try {

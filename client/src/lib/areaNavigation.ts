@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Home,
+  Inbox,
   Rocket,
   LayoutDashboard,
   Building2,
@@ -98,6 +99,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       inHeader: false,
       items: [
         { label: "Home", icon: Home, href: "/app", description: "Your company at a glance: signals, summary, and what needs attention." },
+        { label: "Needs Attention", icon: Inbox, href: "/app/inbox", description: "Approvals and alerts that need you, across Marketing, Sales, and Research." },
         { label: "Getting Started", icon: Rocket, href: "/app/getting-started" },
       ],
     },
