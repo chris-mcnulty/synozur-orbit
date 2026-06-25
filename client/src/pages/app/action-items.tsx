@@ -29,6 +29,8 @@ import {
   Clock,
   BarChart2,
   Download,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
@@ -111,6 +113,36 @@ export default function ActionItems() {
   const queryClient = useQueryClient();
   const { user } = useUser();
   const search = useSearch();
+
+  // HubSpot push — surfaces the existing /push-task endpoint so an action item
+  // becomes a Task in the rep's HubSpot workflow.
+  const { data: hubspotStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/integrations/hubspot/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/hubspot/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+  });
+  const hubspotConnected = !!hubspotStatus?.connected;
+
+  const pushTaskMutation = useMutation({
+    mutationFn: async (item: ActionItem) => {
+      const r = await fetch("/api/integrations/hubspot/push-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          subject: item.title.slice(0, 500),
+          body: (item.description || item.title).slice(0, 20000),
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "Failed to create HubSpot task");
+      return data;
+    },
+    onSuccess: () => toast({ title: "HubSpot task created", description: "Added as a Task in HubSpot." }),
+    onError: (e: any) => toast({ title: "HubSpot task failed", description: e.message, variant: "destructive" }),
+  });
   const idFromUrl = new URLSearchParams(search).get("id");
   const isReadOnlyRole = user?.role === "Consultant";
   const [searchQuery, setSearchQuery] = useState("");
@@ -658,6 +690,23 @@ export default function ActionItems() {
                                   readOnly={isReadOnlyRole}
                                 />
                               </>
+                            )}
+                            {hubspotConnected && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-7"
+                                onClick={() => pushTaskMutation.mutate(item)}
+                                disabled={pushTaskMutation.isPending && pushTaskMutation.variables?.id === item.id}
+                                data-testid={`button-hubspot-task-${item.id}`}
+                              >
+                                {pushTaskMutation.isPending && pushTaskMutation.variables?.id === item.id ? (
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Upload className="w-3 h-3 mr-1" />
+                                )}
+                                HubSpot task
+                              </Button>
                             )}
                           </div>
                         </div>

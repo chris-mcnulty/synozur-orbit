@@ -8,8 +8,8 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Swords, Plus, Download, RefreshCw, Target, ArrowRight, 
   CheckCircle, XCircle, MinusCircle, ChevronRight, Loader2,
-  Building2, Sparkles, Copy, FileText, FileDown, MapPin, Calendar, 
-  DollarSign, TrendingUp, Users
+  Building2, Sparkles, Copy, FileText, FileDown, MapPin, Calendar,
+  DollarSign, TrendingUp, Users, Upload
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -97,6 +97,34 @@ const harveyBallToLabel = (value: HarveyBall): string => {
 export default function BattleCardsPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // HubSpot push — surfaces the existing /push-battlecard endpoint so reps can
+  // drop a battlecard onto the matched HubSpot Company as a Note.
+  const { data: hubspotStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/integrations/hubspot/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/hubspot/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+  });
+  const hubspotConnected = !!hubspotStatus?.connected;
+
+  const pushBattlecardMutation = useMutation({
+    mutationFn: async (card: BattleCardData) => {
+      const r = await fetch(`/api/competitors/${card.competitorId}/hubspot/push-battlecard`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ battlecardId: card.id }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "Failed to push to HubSpot");
+      return data;
+    },
+    onSuccess: () => toast({ title: "Pushed to HubSpot", description: "Battlecard attached as a Note on the matched company." }),
+    onError: (e: any) => toast({ title: "HubSpot push failed", description: e.message, variant: "destructive" }),
+  });
+
   const [selectedCompetitor, setSelectedCompetitor] = useState<string>("");
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<BattleCardData | null>(null);
@@ -999,6 +1027,22 @@ export default function BattleCardsPage() {
               )}
             </Button>
             <div className="flex items-center gap-2">
+            {hubspotConnected && selectedCard && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => pushBattlecardMutation.mutate(selectedCard)}
+                disabled={pushBattlecardMutation.isPending}
+                data-testid="btn-push-battlecard-hubspot"
+              >
+                {pushBattlecardMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4 mr-2" />
+                )}
+                Push to HubSpot
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

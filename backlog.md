@@ -307,10 +307,14 @@ Generate competitive battlecards for sales enablement:
 - [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
 - [x] `competitorAlerts` plan feature gates Pro / Enterprise access
 
-### CRM Integration - HubSpot (Q2)
-- [ ] Competitor sync from HubSpot
-- [ ] Push Orbit insights back to CRM
-- [ ] Lead generation insights
+### CRM Integration - HubSpot (Q2) ✅
+**Status**: Implemented (two-way). `@hubspot/api-client` wired via `hubspot-service.ts` / `hubspot-integration.ts` / `hubspot-timeline.ts` / `hubspot-email-sync.ts`.
+- [x] OAuth connect/callback/disconnect + status (`/api/integrations/hubspot/*`)
+- [x] Competitor sync + suggested competitors from HubSpot
+- [x] Prospect import from HubSpot lists (sales outreach) + per-prospect sync
+- [x] Push Orbit insights back to CRM: Notes (briefing summary, battlecard) and Tasks (`push-note`/`push-task`/`push-briefing`/`push-battlecard`/`push-summary`)
+- [x] UI surfacing: "Push to HubSpot" on briefings, **battlecards**, and "HubSpot task" on **action items** (the last two wired 2026-06 — endpoints predated the buttons)
+- [ ] Lead generation insights (deal/pipeline signals — partial: competitor deal data shown on competitor detail)
 
 ### Advanced AI Features (Q2-Q3)
 - [ ] Sentiment and tone analysis
@@ -322,10 +326,12 @@ Generate competitive battlecards for sales enablement:
 - [ ] Vega integration (recommendations → tasks)
 - [ ] Team usage analytics
 
-### Outcome Metrics & ROI Dashboard (Q4)
-- [ ] Google Analytics integration
-- [ ] Orbit Score / Index
-- [ ] Industry benchmarks
+### Outcome Metrics & ROI Dashboard (Q4) ✅
+**Status**: Implemented. Page at `/app/insights/outcomes`; score engine `server/services/orbit-score.ts`; route `server/routes/insights-outcomes.ts`.
+- [x] Google Analytics (GA4) integration — `ga-client.ts` + `Ga4IntegrationCard` (Settings → Integrations), `analyticsConnections`/`analyticsDaily`
+- [x] Orbit Score / Index — weekly composite of Share of Voice, SEO visibility, publish rate, funnel efficiency (conversions / UTM clicks), with B2B/B2C weighting; `orbitScores`/`orbitScoreBenchmarks`
+- [x] Industry benchmarks (`orbitScoreBenchmarks`)
+- [x] ROI dashboard linking marketing activity (UTM clicks) to GA4 conversions; cross-linked with SEO + Visualizations via the shared analytics switcher
 
 ### Billing Integration
 - [ ] Stripe integration for payment processing
