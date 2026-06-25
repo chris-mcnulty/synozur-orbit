@@ -2099,15 +2099,32 @@ export default function CampaignDetailPage() {
                   Demand-scored briefs that support this campaign's objective, grounded in your messaging framework, competitive gaps, and the selected audience.
                 </p>
               </div>
-              <Button
-                onClick={() => generateBriefsMutation.mutate()}
-                disabled={generateBriefsMutation.isPending}
-                className="gap-2"
-                data-testid="button-generate-briefs"
-              >
-                {generateBriefsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {briefs.length ? "Generate more briefs" : "Generate content briefs"}
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  data-testid="button-linkedin-digest"
+                  onClick={() => {
+                    const calId = contentPlan?.calendar?.id;
+                    const url = calId
+                      ? `/app/marketing/editorial-calendar?calendar=${calId}&openDigest=1`
+                      : `/app/marketing/editorial-calendar?openDigest=1`;
+                    navigate(url);
+                  }}
+                >
+                  <Newspaper className="w-4 h-4" />
+                  LinkedIn Digest
+                </Button>
+                <Button
+                  onClick={() => generateBriefsMutation.mutate()}
+                  disabled={generateBriefsMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-generate-briefs"
+                >
+                  {generateBriefsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  {briefs.length ? "Generate more briefs" : "Generate content briefs"}
+                </Button>
+              </div>
             </div>
 
             {/* Campaign Grounding — personas targeted + news hooks used in the interview */}

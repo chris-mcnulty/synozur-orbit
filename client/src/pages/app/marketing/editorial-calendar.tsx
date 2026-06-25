@@ -847,8 +847,13 @@ export default function EditorialCalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // LinkedIn Digest dialog state
-  const [digestOpen, setDigestOpen] = useState(false);
+  // LinkedIn Digest dialog state — also opened via ?openDigest=1 deep link
+  // (e.g. from the campaign Content Plan tab where the full editorial calendar is not in nav).
+  const [digestOpen, setDigestOpen] = useState(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("openDigest") === "1"
+      : false,
+  );
   // Step 1 inputs
   const [digestProfileUrl, setDigestProfileUrl] = useState("");
   const [digestStartDate, setDigestStartDate] = useState(() => {
