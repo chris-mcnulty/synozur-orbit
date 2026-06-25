@@ -2,6 +2,7 @@ import type { Dispatch, DragEvent as ReactDragEvent, SetStateAction } from "reac
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
+import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1156,6 +1157,7 @@ export default function MarketingCalendarPage() {
               <CalendarRange className="h-6 w-6" /> Content Calendar
             </h1>
             <p className="text-sm text-muted-foreground">The cross-channel overview of every scheduled social post, email, and content piece. Nothing here generates with AI — add and plan by hand.</p>
+            <CalendarViewSwitcher className="mt-3" />
           </div>
           <div className="flex items-center gap-2">
             <Button

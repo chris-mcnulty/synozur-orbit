@@ -75,6 +75,7 @@ import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
 import ComposerPage from "@/pages/app/marketing/composer";
 import CalendarPage from "@/pages/app/marketing/calendar";
 import SendsPage from "@/pages/app/marketing/sends";
+import QueuePage from "@/pages/app/marketing/queue";
 import BrowserExtensionPage from "@/pages/app/marketing/browser-extension";
 import PersonasPage from "@/pages/app/marketing/personas";
 import RefreshCenter from "@/pages/app/refresh-center";
@@ -111,6 +112,14 @@ function ProductFeaturesRedirect() {
 function ProductRoadmapRedirect() {
   const { id } = useParams<{ id: string }>();
   return <Redirect to={`/app/products/${id}?tab=roadmap`} />;
+}
+
+// Marketing Projects was renamed from "Marketing Planner" and moved from
+// /app/marketing-planner into the /app/marketing/* namespace. Redirect the
+// legacy detail path, preserving the plan id.
+function MarketingProjectsDetailRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Redirect to={`/app/marketing/projects/${id}`} />;
 }
 
 function Router() {
@@ -181,6 +190,7 @@ function Router() {
       <Route path="/app/usage" component={UsagePage} />
       <Route path="/app/marketing" component={MarketingLandingPage} />
       <Route path="/app/marketing/pipeline" component={ContentPipelinePage} />
+      <Route path="/app/marketing/queue" component={QueuePage} />
       <Route path="/app/marketing/gtm-plan" component={GtmPlanPage} />
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
@@ -194,7 +204,7 @@ function Router() {
       <Route path="/app/marketing/campaigns">{() => <PageFeatureGate featureKey="campaigns" label="Campaigns" description="Campaign management with asset coordination. Upgrade to unlock this feature."><CampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaign-interview">{() => <PageFeatureGate featureKey="editorialCalendar" label="Content Interview" description="Answer a few questions to generate, curate, and schedule a full content plan. Upgrade to unlock this feature."><CampaignInterviewPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/campaigns/:id" component={CampaignDetailPage} />
-      <Route path="/app/marketing/planning-hub">{() => <PageFeatureGate featureKey="campaigns" label="Planning Hub" description="Plan all marketing for a campaign or theme in one view. Upgrade to unlock this feature."><PlanningHubPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/planning-hub">{() => <PageFeatureGate featureKey="campaigns" label="Themes Hub" description="Plan all marketing for a solution-area theme or campaign in one view. Upgrade to unlock this feature."><PlanningHubPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/conferences">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferencePromotionPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/conferences/:id">{() => <PageFeatureGate featureKey="conferencePromotion" label="Event Promotion" description="Drive coordinated social promotion for an event: anchor posts plus a matched post and graphic for every session. Upgrade to unlock this feature."><ConferenceDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/social-accounts" component={SocialAccountsPage} />
@@ -203,8 +213,11 @@ function Router() {
       <Route path="/app/marketing/sends" component={SendsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
       <Route path="/app/marketing/personas">{() => <PageFeatureGate featureKey="personaBuilder" label="Persona & ICP Builder" description="Define buyer personas and inject audience context. Upgrade to unlock this feature."><PersonasPage /></PageFeatureGate>}</Route>
-      <Route path="/app/marketing-planner" component={MarketingPlannerPage} />
-      <Route path="/app/marketing-planner/:id" component={MarketingPlanDetail} />
+      {/* Marketing Projects (formerly "Marketing Planner" at /app/marketing-planner). */}
+      <Route path="/app/marketing/projects" component={MarketingPlannerPage} />
+      <Route path="/app/marketing/projects/:id" component={MarketingPlanDetail} />
+      <Route path="/app/marketing-planner"><Redirect to="/app/marketing/projects" /></Route>
+      <Route path="/app/marketing-planner/:id" component={MarketingProjectsDetailRedirect} />
       <Route path="/app/refresh-center" component={RefreshCenter} />
       <Route path="/app/action-items" component={ActionItems} />
       <Route path="/app/intelligence">{() => <PageFeatureGate featureKey="intelligenceBriefings" label="Intelligence Briefings" description="AI-synthesized periodic market intelligence reports. Upgrade to unlock this feature."><IntelligenceBriefingPage /></PageFeatureGate>}</Route>

@@ -53,6 +53,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
+import { CampaignLinkClicks } from "@/components/marketing/CampaignLinkClicks";
 import {
   type HubResponse, type ItemType,
   RollupStat, HubItemsList, AttachDialog, CreateActionDialog,
@@ -605,6 +606,27 @@ export default function CampaignDetailPage() {
     [posts],
   );
   const archivedCount = useMemo(() => posts.filter((p) => p.status === "archived").length, [posts]);
+  // Progress funnel for the header summary. Buckets follow the same precedence
+  // as getPostStage() so the summary and the per-post badges always agree.
+  // (Rejected/archived/deleted posts are left out of the funnel.)
+  const postStageCounts = useMemo(() => {
+    const c = { draft: 0, needs_date: 0, orbit: 0, exported: 0, posted: 0, failed: 0, total: 0 };
+    for (const p of posts) {
+      if (p.status === "deleted" || p.status === "archived" || p.status === "rejected") continue;
+      let key: "draft" | "needs_date" | "orbit" | "exported" | "posted" | "failed";
+      if (p.publishedAt || p.status === "published") key = "posted";
+      else if (p.status === "publish_failed" || p.publishError) key = "failed";
+      else if (p.status === "exported" || p.status === "scheduled_external") key = "exported";
+      else if (p.status === "approved") {
+        if (!p.scheduledDate) key = "needs_date";
+        else if (p.deliveryMode === "csv") key = "exported";
+        else key = "orbit";
+      } else key = "draft";
+      c[key]++;
+      c.total++;
+    }
+    return c;
+  }, [posts]);
   const schedulablePlatforms = useMemo(() => {
     const set = new Set<string>();
     posts.forEach((p) => { if (p.status !== "deleted" && p.status !== "rejected") set.add(p.platform); });
@@ -1982,6 +2004,62 @@ export default function CampaignDetailPage() {
           </div>
         )}
 
+        {/* Post progress — where this campaign's posts stand right now.
+            Each cell jumps to the Social Posts tab filtered to that state. */}
+        {postStageCounts.total > 0 && (() => {
+          const goToPosts = (filter: string) => {
+            setPostFilter(filter);
+            setActiveTab("posts");
+            window.history.replaceState(null, "", window.location.pathname + window.location.search + "#posts");
+            setTimeout(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+          };
+          const cells = [
+            { key: "draft", label: "Draft", n: postStageCounts.draft, color: "bg-gray-400", filter: "draft" },
+            { key: "needs_date", label: "Needs a date", n: postStageCounts.needs_date, color: "bg-amber-500", filter: "approved" },
+            { key: "orbit", label: "Orbit-scheduled", n: postStageCounts.orbit, color: "bg-emerald-500", filter: "approved", zap: true },
+            { key: "exported", label: "Exported", n: postStageCounts.exported, color: "bg-blue-500", filter: "exported" },
+            { key: "posted", label: "Posted", n: postStageCounts.posted, color: "bg-green-500", filter: "published" },
+            { key: "failed", label: "Failed", n: postStageCounts.failed, color: "bg-red-500", filter: "publish_failed", alert: true },
+          ];
+          const total = postStageCounts.total;
+          const delivered = postStageCounts.posted + postStageCounts.exported;
+          return (
+            <div className="rounded-lg border bg-card p-4" data-testid="campaign-progress-summary">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-muted-foreground" />
+                  Post progress
+                </h3>
+                <span className="text-xs text-muted-foreground tabular-nums">{delivered} of {total} delivered</span>
+              </div>
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted mb-3" role="img" aria-label={`${delivered} of ${total} posts delivered`}>
+                {cells.filter((c) => c.n > 0).map((c) => (
+                  <div key={c.key} className={c.color} style={{ width: `${(c.n / total) * 100}%` }} />
+                ))}
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-px rounded-md overflow-hidden border bg-border">
+                {cells.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => goToPosts(c.filter)}
+                    disabled={c.n === 0}
+                    className="bg-card px-3 py-2.5 text-left transition-colors hover:bg-muted/60 disabled:opacity-50 disabled:cursor-default disabled:hover:bg-card"
+                    data-testid={`progress-cell-${c.key}`}
+                  >
+                    <div className={`text-xl font-bold tabular-nums ${c.alert && c.n > 0 ? "text-destructive" : ""}`}>{c.n}</div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${c.color}`} />
+                      <span className="truncate">{c.label}</span>
+                      {c.zap && <Zap className="w-2.5 h-2.5 text-emerald-500 shrink-0" />}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         <CampaignNextActions
           campaignId={id}
           onNavigate={(tab) => {
@@ -2307,6 +2385,7 @@ export default function CampaignDetailPage() {
           </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
+            <CampaignLinkClicks campaignId={id!} />
             <LinkBuilderTab campaignId={id!} campaignName={campaign.name} />
           </TabsContent>
 

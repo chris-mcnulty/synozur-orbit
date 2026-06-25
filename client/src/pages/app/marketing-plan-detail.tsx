@@ -692,7 +692,7 @@ export default function MarketingPlanDetail() {
   };
 
   const planBreadcrumbs = [
-    { label: "Marketing Planner", href: "/app/marketing-planner" },
+    { label: "Marketing Projects", href: "/app/marketing/projects" },
     { label: plan?.name || "Loading..." },
   ];
 
@@ -708,11 +708,11 @@ export default function MarketingPlanDetail() {
 
   if (!plan) {
     return (
-      <AppLayout breadcrumbs={[{ label: "Marketing Planner", href: "/app/marketing-planner" }, { label: "Not Found" }]}>
+      <AppLayout breadcrumbs={[{ label: "Marketing Projects", href: "/app/marketing/projects" }, { label: "Not Found" }]}>
         <div className="text-center py-12">
           <h2 className="text-xl font-semibold mb-2">Plan Not Found</h2>
           <p className="text-muted-foreground mb-4">The marketing plan you're looking for doesn't exist.</p>
-          <Button onClick={() => navigate("/app/marketing-planner")}>
+          <Button onClick={() => navigate("/app/marketing/projects")}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Plans
           </Button>
@@ -726,7 +726,7 @@ export default function MarketingPlanDetail() {
       <AppLayout breadcrumbs={planBreadcrumbs}>
         <div className="max-w-3xl mx-auto space-y-6">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing-planner")}>
+            <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing/projects")}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
@@ -1086,7 +1086,7 @@ export default function MarketingPlanDetail() {
         )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing-planner")}>
+            <Button variant="ghost" size="icon" onClick={() => navigate("/app/marketing/projects")}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>

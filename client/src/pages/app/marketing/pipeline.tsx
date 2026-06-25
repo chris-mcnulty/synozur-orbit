@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import AppLayout from "@/components/layout/AppLayout";
+import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -550,6 +551,7 @@ export default function ContentPipelinePage() {
               Every in-flight piece — social posts, emails, and briefs — on one board. Drag between
               columns or use a card's ⋮ menu to change status; click a card to open its editor.
             </p>
+            <CalendarViewSwitcher className="mt-3" />
           </div>
           <div className="flex items-center rounded-lg border border-border p-0.5">
             <Button

@@ -23,6 +23,7 @@ import {
 } from "date-fns";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
+import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -268,23 +269,13 @@ export default function CalendarPage() {
       <div className="p-6 max-w-7xl mx-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <Link
-              href="/app/marketing/marketing-calendar"
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1"
-              data-testid="link-back-to-marketing-calendar"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Back to Content Calendar
-            </Link>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Share2 className="w-6 h-6" /> Social Posts
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Social-only execution view — schedule, reschedule, retry, and add branded graphics for social posts. Part of the{" "}
-              <Link href="/app/marketing/marketing-calendar" className="text-primary underline" data-testid="link-master-calendar">
-                Content Calendar
-              </Link>{" "}
-              overview.
+              Social-only execution view — schedule, reschedule, retry, and add branded graphics for social posts.
             </p>
+            <CalendarViewSwitcher className="mt-3" />
           </div>
           <div className="flex items-center gap-1">
             {campaignOptions.length > 0 && (

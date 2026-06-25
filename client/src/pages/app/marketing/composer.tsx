@@ -8,11 +8,12 @@
  * later, or publishes immediately.
  */
 
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   PencilLine, Send, Calendar as CalendarIcon, Save, AtSign, Lock, Loader2, Hash, X,
+  ImagePlus, Zap, FileDown, Megaphone,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,8 +23,18 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { ObjectUploader } from "@/components/ObjectUploader";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
+
+interface CampaignOption {
+  id: string;
+  name: string;
+}
 
 interface SocialAccount {
   id: string;
@@ -50,6 +61,16 @@ export default function ComposerPage() {
   const [hashtagInputs, setHashtagInputs] = useState<Record<string, string>>({});
   const [scheduledAt, setScheduledAt] = useState<string>(""); // local datetime-input value
   const [submitting, setSubmitting] = useState(false);
+  // Optional campaign + how this post goes out. Default is Orbit-direct; the
+  // CSV-batch option only applies (and only renders) when a campaign is set.
+  const [campaignId, setCampaignId] = useState<string>(""); // "" = standalone
+  const [deliveryMode, setDeliveryMode] = useState<"orbit" | "csv">("orbit");
+  // One shared image applied to every post in this batch.
+  const [attachedImage, setAttachedImage] = useState<{ url: string; name: string } | null>(null);
+  const pendingUploadPathRef = useRef<string | null>(null);
+
+  const effectiveDelivery: "orbit" | "csv" = campaignId ? deliveryMode : "orbit";
+  const isCsv = effectiveDelivery === "csv";
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -72,6 +93,18 @@ export default function ComposerPage() {
     enabled: isAllowed,
   });
 
+  const { data: campaigns = [] } = useQuery<CampaignOption[]>({
+    queryKey: ["/api/campaigns", "composer-options"],
+    queryFn: async () => {
+      const r = await fetch("/api/campaigns?pageSize=200", { credentials: "include" });
+      if (!r.ok) return [];
+      const j = await r.json();
+      const items = Array.isArray(j) ? j : j.items ?? [];
+      return items.map((c: any) => ({ id: c.id, name: c.name }));
+    },
+    enabled: isAllowed,
+  });
+
   const accountsById = useMemo(() => {
     const m = new Map<string, SocialAccount>();
     accounts.forEach(a => m.set(a.id, a));
@@ -89,7 +122,8 @@ export default function ComposerPage() {
   const parseHashtags = (input: string): string[] =>
     input.split(/[,\s]+/).map(h => h.replace(/^#/, "").trim()).filter(Boolean);
 
-  type Action = "draft" | "schedule" | "publish";
+  // "batch" = approve into the campaign for CSV export (Orbit won't post it).
+  type Action = "draft" | "schedule" | "publish" | "batch";
 
   const submit = async (action: Action) => {
     if (selectedAccountIds.length === 0) {
@@ -136,6 +170,7 @@ export default function ComposerPage() {
             socialAccountId: accountId,
             content,
             hashtags,
+            campaignId: campaignId || null,
             scheduledDate: action === "schedule" ? new Date(scheduledAt).toISOString() : null,
           }),
         });
@@ -143,25 +178,25 @@ export default function ComposerPage() {
         const post = await r.json();
         created.push({ id: post.id, accountId, platform: account.platform });
 
-        if (action === "schedule") {
-          // Approve so the worker can pick it up at scheduledDate.
+        // One PATCH carries the attachment, delivery mode, and approval.
+        // Everything but a plain draft is approved (scheduling = implicit
+        // approval); the delivery mode is only meaningful within a campaign.
+        const patch: Record<string, unknown> = {};
+        if (attachedImage) patch.overrideImageUrl = attachedImage.url;
+        if (campaignId) patch.deliveryMode = isCsv ? "csv" : "orbit";
+        if (action !== "draft") patch.status = "approved";
+        if (Object.keys(patch).length > 0) {
           const ar = await fetch(`/api/generated-posts/${post.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({ status: "approved" }),
+            body: JSON.stringify(patch),
           });
-          if (!ar.ok) throw new Error((await ar.json().catch(() => ({}))).error || "Schedule failed");
+          if (!ar.ok) throw new Error((await ar.json().catch(() => ({}))).error || "Save failed");
         }
 
+        // Only Orbit-direct posts actually publish; batch posts wait for CSV export.
         if (action === "publish") {
-          const ar = await fetch(`/api/generated-posts/${post.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ status: "approved" }),
-          });
-          if (!ar.ok) throw new Error((await ar.json().catch(() => ({}))).error || "Approve failed");
           const pr = await fetch(`/api/generated-posts/${post.id}/publish`, {
             method: "POST",
             credentials: "include",
@@ -170,18 +205,19 @@ export default function ComposerPage() {
         }
       }
 
-      if (action === "draft") {
-        toast({ title: `Saved ${created.length} draft${created.length === 1 ? "" : "s"}` });
-      } else if (action === "schedule") {
-        toast({ title: `Scheduled ${created.length} post${created.length === 1 ? "" : "s"}` });
-      } else {
-        toast({ title: `Published ${created.length} post${created.length === 1 ? "" : "s"}` });
-      }
-      // Clear drafts so the user can compose another batch.
+      const n = created.length;
+      const s = n === 1 ? "" : "s";
+      if (action === "draft") toast({ title: `Saved ${n} draft${s}` });
+      else if (action === "schedule") toast({ title: `Scheduled ${n} post${s}` });
+      else if (action === "batch") toast({ title: `Added ${n} post${s} to the campaign batch`, description: "Approved for CSV export — Orbit won't post these." });
+      else toast({ title: `Published ${n} post${s}` });
+      // Clear so the user can compose another batch.
       setDrafts({});
       setHashtagInputs({});
       setSelectedAccountIds([]);
       setScheduledAt("");
+      setAttachedImage(null);
+      pendingUploadPathRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
     } catch (err: any) {
       toast({ title: "Something went wrong", description: err.message, variant: "destructive" });
@@ -317,8 +353,109 @@ export default function ComposerPage() {
             })}
 
             <Card>
-              <CardContent className="pt-6 space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
+              <CardContent className="pt-6 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Attachment — applied to every post in this batch */}
+                  <div>
+                    <Label className="text-xs">Image <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    {attachedImage ? (
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <img src={attachedImage.url} alt="" className="w-12 h-12 rounded object-cover border" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm truncate">{attachedImage.name}</div>
+                          <div className="text-xs text-muted-foreground">Attached to every selected account</div>
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setAttachedImage(null); pendingUploadPathRef.current = null; }} data-testid="composer-remove-image">
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <ObjectUploader
+                          maxNumberOfFiles={1}
+                          maxFileSize={10 * 1024 * 1024}
+                          buttonClassName="h-9 px-3 text-sm gap-1.5 bg-background border border-input text-foreground hover:bg-muted"
+                          onGetUploadParameters={async (file) => {
+                            const res = await fetch("/api/uploads/request-url", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+                            });
+                            const body = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                              throw new Error(body.error || `Couldn't start the upload (${res.status})`);
+                            }
+                            const { uploadURL, objectPath } = body;
+                            pendingUploadPathRef.current = objectPath;
+                            return { method: "PUT" as const, url: uploadURL, headers: { "Content-Type": file.type || "application/octet-stream" } };
+                          }}
+                          onComplete={(result) => {
+                            const f = result.successful?.[0];
+                            if (f && pendingUploadPathRef.current) {
+                              setAttachedImage({ url: pendingUploadPathRef.current, name: f.name || "image" });
+                            }
+                          }}
+                        >
+                          <ImagePlus className="w-4 h-4" /> Attach image
+                        </ObjectUploader>
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground" title="Video posting is coming soon">Video — coming soon</Badge>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Optional campaign */}
+                  <div>
+                    <Label className="text-xs flex items-center gap-1"><Megaphone className="w-3 h-3" /> Campaign <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Select
+                      value={campaignId || "none"}
+                      onValueChange={(v) => { setCampaignId(v === "none" ? "" : v); if (v === "none") setDeliveryMode("orbit"); }}
+                    >
+                      <SelectTrigger className="mt-1.5" data-testid="composer-campaign">
+                        <SelectValue placeholder="No campaign" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No campaign (standalone)</SelectItem>
+                        {campaigns.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Delivery — only meaningful inside a campaign */}
+                {campaignId && (
+                  <div>
+                    <Label className="text-xs">Delivery</Label>
+                    <div className="grid sm:grid-cols-2 gap-2 mt-1.5">
+                      {([
+                        { key: "orbit" as const, Icon: Zap, title: "Orbit posts it", desc: "Published directly to your accounts at the time you choose." },
+                        { key: "csv" as const, Icon: FileDown, title: "Add to campaign batch", desc: "Held for CSV export with the campaign — Orbit won't post it." },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setDeliveryMode(opt.key)}
+                          className={cn(
+                            "text-left rounded-lg border p-3 transition-colors",
+                            deliveryMode === opt.key ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40",
+                          )}
+                          data-testid={`composer-delivery-${opt.key}`}
+                          aria-pressed={deliveryMode === opt.key}
+                        >
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <opt.Icon className={cn("w-4 h-4", opt.key === "orbit" ? "text-emerald-500" : "text-blue-500")} />
+                            {opt.title}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">{opt.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-end gap-3 pt-1">
                   <div className="flex-1 min-w-[200px]">
                     <Label className="text-xs">Schedule for <span className="text-muted-foreground font-normal">(optional)</span></Label>
                     <Input
@@ -328,7 +465,7 @@ export default function ComposerPage() {
                       data-testid="composer-schedule-input"
                     />
                   </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button" variant="outline"
                       onClick={() => submit("draft")}
@@ -347,19 +484,33 @@ export default function ComposerPage() {
                       {submitting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <CalendarIcon className="w-3.5 h-3.5 mr-1" />}
                       Schedule
                     </Button>
-                    <Button
-                      type="button"
-                      onClick={() => submit("publish")}
-                      disabled={submitting}
-                      data-testid="composer-publish"
-                    >
-                      {submitting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
-                      Publish now
-                    </Button>
+                    {isCsv ? (
+                      <Button
+                        type="button"
+                        onClick={() => submit("batch")}
+                        disabled={submitting}
+                        data-testid="composer-add-to-batch"
+                      >
+                        {submitting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <FileDown className="w-3.5 h-3.5 mr-1" />}
+                        Add to batch
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        onClick={() => submit("publish")}
+                        disabled={submitting}
+                        data-testid="composer-publish"
+                      >
+                        {submitting ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
+                        Post now
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Scheduled posts auto-publish when their time arrives, provided the account is connected for direct publishing.
+                  {isCsv
+                    ? "Batch posts are approved and wait in the campaign for CSV export — Orbit won't publish them."
+                    : "Post now publishes immediately; scheduling approves the post and Orbit publishes it at that time (account must be connected)."}
                 </p>
               </CardContent>
             </Card>

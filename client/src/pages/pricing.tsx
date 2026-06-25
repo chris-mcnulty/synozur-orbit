@@ -140,7 +140,7 @@ const featureLabels: { key: string; label: string; category: string }[] = [
   { key: "pdfReports", label: "Branded PDF reports", category: "Competitive Intelligence" },
   { key: "socialMonitoring", label: "Social media monitoring", category: "Competitive Intelligence" },
   { key: "clientProjects", label: "Client projects", category: "Advanced Features" },
-  { key: "marketingPlanner", label: "Marketing Planner", category: "Advanced Features" },
+  { key: "marketingPlanner", label: "Marketing Projects", category: "Advanced Features" },
   { key: "productManagement", label: "Product Management", category: "Advanced Features" },
   { key: "multiMarket", label: "Multi-market support", category: "Advanced Features" },
   { key: "ssoIntegration", label: "Microsoft Entra SSO", category: "Enterprise" },

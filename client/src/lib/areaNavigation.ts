@@ -36,6 +36,7 @@ import {
   Swords,
   FileText,
   Send,
+  Zap,
   Gauge,
   Code,
   Handshake,
@@ -157,32 +158,30 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       inHeader: true,
       items: [
         { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
-        {
-          label: "Content Pipeline",
-          icon: ListChecks,
-          href: "/app/marketing/pipeline",
-          enterprise: true,
-          description: "One board for every piece of in-flight content: social posts, emails, and briefs, draggable between stages.",
-        },
-        { label: "Content Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, description: "Cross-channel overview of every scheduled social post, email, and content piece." },
-        { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework", section: "Plan" },
-        { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan", section: "Plan" },
-        { label: "Personas", icon: UserCircle, href: "/app/marketing/personas", section: "Plan" },
-        { label: "Solution Areas", icon: Layers, href: "/app/marketing/solution-areas", enterprise: true, section: "Plan" },
+        // Calendar: one cluster for the ways to see scheduled work — the
+        // cross-channel Calendar (default), the drag-and-drop Board, the
+        // social-only view, and the Orbit Posting Queue. Each page also shows
+        // a shared view switcher.
+        { label: "Content Calendar", icon: CalendarRange, href: "/app/marketing/marketing-calendar", enterprise: true, section: "Calendar", description: "Cross-channel overview of every scheduled social post, email, and content piece." },
+        { label: "Pipeline Board", icon: ListChecks, href: "/app/marketing/pipeline", enterprise: true, section: "Calendar", indent: true, description: "Every in-flight post, email, and brief on one board, draggable between stages." },
+        { label: "Social Calendar", icon: Share2, href: "/app/marketing/calendar", enterprise: true, section: "Calendar", indent: true, description: "Social-only view to schedule, reschedule, and add graphics to posts." },
+        { label: "Posting Queue", icon: Zap, href: "/app/marketing/queue", enterprise: true, section: "Calendar", indent: true, description: "Everything Orbit is publishing across campaigns, sorted by send time, failures first." },
+        { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework", section: "Plan", description: "AI-generated messaging and positioning built from your competitive gaps." },
+        { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan", section: "Plan", description: "A strategic go-to-market plan derived from your competitive analysis." },
+        { label: "Personas", icon: UserCircle, href: "/app/marketing/personas", section: "Plan", description: "Define buyer personas and ICPs to ground content in your audience." },
+        { label: "Solution Areas", icon: Layers, href: "/app/marketing/solution-areas", enterprise: true, section: "Plan", description: "Organize messaging and content around your core solution themes." },
         ...(isEnterprise
-          ? [{ label: "Marketing Planner", icon: Gem, href: "/app/marketing-planner", enterprise: true, section: "Plan" }]
+          ? [{ label: "Marketing Projects", icon: Gem, href: "/app/marketing/projects", enterprise: true, section: "Plan", description: "Strategic, multi-activity marketing plans across 14 categories." }]
           : []),
         { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true, section: "Create", description: "Coordinate multi-channel campaigns and generate their content." },
-        { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true, section: "Create" },
-        { label: "Content Briefs", icon: ClipboardList, href: "/app/marketing/editorial-calendar", enterprise: true, section: "Create", description: "Plan and draft long-form content briefs grounded in your strategy." },
-        { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true, section: "Create" },
+        { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true, section: "Create", description: "Draft and refine individual social posts with AI assistance." },
+        { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true, section: "Create", description: "AI-generated newsletter content grounded in your intelligence." },
         { label: "Email Sends", icon: Send, href: "/app/marketing/sends", enterprise: true, section: "Create", indent: true, description: "Delivery tracking: recipient lists, send status, and suppressions." },
-        { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true, section: "Create" },
-        { label: "Social Calendar", icon: Share2, href: "/app/marketing/calendar", enterprise: true, section: "Create", description: "Social-only view to schedule, reschedule, and add graphics to posts." },
-        { label: "Planning Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, section: "Create", description: "Plan every piece of marketing for a campaign or theme in one view." },
-        { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true, section: "Libraries" },
-        { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true, section: "Libraries" },
-        { label: "Performance", icon: LineChart, href: "/app/marketing/performance", enterprise: true, section: "Measure" },
+        { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true, section: "Create", description: "Coordinated social promotion for an event: anchor posts plus a post and graphic per session." },
+        { label: "Themes Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, section: "Create", description: "Plan every piece of marketing for a solution-area theme or campaign in one view." },
+        { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true, section: "Libraries", description: "Central repository for URLs, articles, and web-based content." },
+        { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true, section: "Libraries", description: "Manage approved images, logos, and visual brand identity." },
+        { label: "Performance", icon: LineChart, href: "/app/marketing/performance", enterprise: true, section: "Measure", description: "Track link clicks and content performance across channels." },
       ],
     },
     {
@@ -253,6 +252,9 @@ const SALES_PREFIXES = ["/app/sales", "/app/sales/outreach", "/app/battlecards",
 
 const PRODUCT_PREFIXES = ["/app/products"];
 
+// "/app/marketing-planner" is the legacy path for Marketing Projects (now
+// "/app/marketing/projects"); kept here so the redirect still classifies as
+// Marketing.
 const MARKETING_PREFIXES = ["/app/marketing", "/app/marketing-planner"];
 
 const RESEARCH_PREFIXES = [
