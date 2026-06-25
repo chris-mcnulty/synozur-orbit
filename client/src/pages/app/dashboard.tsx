@@ -464,9 +464,10 @@ export default function Dashboard() {
       <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-1">Overview</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-1">Research Overview</h1>
             <p className="text-muted-foreground">
-              Welcome back, {user?.name?.split(" ")[0] || "there"}. Here's your competitive intelligence at a glance.
+              Your competitive intelligence workspace — baseline, competitors, analysis, and signals.{" "}
+              <Link href="/app" className="text-primary hover:underline">Company home</Link> rolls every area up.
             </p>
           </div>
           <div className="flex gap-2">
