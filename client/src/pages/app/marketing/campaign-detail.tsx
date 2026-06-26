@@ -396,6 +396,11 @@ export default function CampaignDetailPage() {
   const [editCampaignThematicBrief, setEditCampaignThematicBrief] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [linkChildOpen, setLinkChildOpen] = useState(false);
+  const [copyBriefOpen, setCopyBriefOpen] = useState(false);
+  const [copyBriefId, setCopyBriefId] = useState<string | null>(null);
+  const [copyMode, setCopyMode] = useState<"existing" | "new">("existing");
+  const [copyTargetCampaignId, setCopyTargetCampaignId] = useState("");
+  const [copyNewCampaignName, setCopyNewCampaignName] = useState("");
   const [linkChildSearch, setLinkChildSearch] = useState("");
   const [archiveWithChildrenOpen, setArchiveWithChildrenOpen] = useState(false);
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
@@ -660,7 +665,7 @@ export default function CampaignDetailPage() {
       const data = r.ok ? await r.json() : [];
       return Array.isArray(data) ? data : data?.items ?? [];
     },
-    enabled: linkChildOpen,
+    enabled: linkChildOpen || copyBriefOpen,
   });
 
   const linkChildMutation = useMutation({
@@ -758,6 +763,30 @@ export default function CampaignDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/content-plan`] });
       toast({ title: "Brief removed" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const copyBriefMutation = useMutation({
+    mutationFn: async ({ briefId, campaignId, newCampaignName }: { briefId: string; campaignId?: string; newCampaignName?: string }) => {
+      const r = await fetch(`/api/content-briefs/${briefId}/copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(campaignId ? { campaignId } : { newCampaignName }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to copy brief");
+      return r.json() as Promise<{ campaignId: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${data.campaignId}/content-plan`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({ title: "Brief copied to campaign" });
+      setCopyBriefOpen(false);
+      setCopyBriefId(null);
+      setCopyTargetCampaignId("");
+      setCopyNewCampaignName("");
+      setCopyMode("existing");
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -2356,6 +2385,16 @@ export default function CampaignDetailPage() {
                               Open in Content Calendar <ExternalLink className="w-3 h-3" />
                             </Button>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            onClick={() => { setCopyBriefId(b.id); setCopyBriefOpen(true); }}
+                            title="Copy this brief to another campaign"
+                            data-testid={`button-copy-brief-${b.id}`}
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -5114,6 +5153,88 @@ export default function CampaignDetailPage() {
               data-testid="button-save-edit-campaign"
             >
               {editCampaignMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Copy brief to campaign */}
+      <Dialog open={copyBriefOpen} onOpenChange={(open) => { setCopyBriefOpen(open); if (!open) { setCopyBriefId(null); setCopyTargetCampaignId(""); setCopyNewCampaignName(""); setCopyMode("existing"); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Copy brief to campaign</DialogTitle>
+            <DialogDescription>Choose an existing campaign or create a new one. The brief will be added to its content plan.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex gap-2">
+              <Button
+                variant={copyMode === "existing" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCopyMode("existing")}
+                className="flex-1"
+              >
+                Existing campaign
+              </Button>
+              <Button
+                variant={copyMode === "new" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCopyMode("new")}
+                className="flex-1"
+              >
+                New campaign
+              </Button>
+            </div>
+
+            {copyMode === "existing" ? (
+              <div className="space-y-1.5">
+                <Label>Campaign</Label>
+                <Select value={copyTargetCampaignId} onValueChange={setCopyTargetCampaignId}>
+                  <SelectTrigger data-testid="select-copy-campaign">
+                    <SelectValue placeholder="Select a campaign…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allCampaigns
+                      .filter((c) => c.id !== id)
+                      .map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    {allCampaigns.filter((c) => c.id !== id).length === 0 && (
+                      <SelectItem value="_none" disabled>No other campaigns</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Campaign name</Label>
+                <Input
+                  placeholder="e.g. Q3 Awareness Push"
+                  value={copyNewCampaignName}
+                  onChange={(e) => setCopyNewCampaignName(e.target.value)}
+                  data-testid="input-new-campaign-name"
+                />
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setCopyBriefOpen(false)}>Cancel</Button>
+            <Button
+              disabled={
+                copyBriefMutation.isPending ||
+                (copyMode === "existing" && !copyTargetCampaignId) ||
+                (copyMode === "new" && !copyNewCampaignName.trim())
+              }
+              onClick={() => {
+                if (!copyBriefId) return;
+                copyBriefMutation.mutate(
+                  copyMode === "existing"
+                    ? { briefId: copyBriefId, campaignId: copyTargetCampaignId }
+                    : { briefId: copyBriefId, newCampaignName: copyNewCampaignName },
+                );
+              }}
+              data-testid="button-confirm-copy-brief"
+            >
+              {copyBriefMutation.isPending ? "Copying…" : "Copy brief"}
             </Button>
           </div>
         </DialogContent>

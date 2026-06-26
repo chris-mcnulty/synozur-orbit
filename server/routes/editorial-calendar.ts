@@ -799,6 +799,142 @@ export function registerEditorialCalendarRoutes(app: Express) {
     }
   });
 
+  // Copy a content brief to an existing or new campaign.
+  // Body: { campaignId } for an existing campaign, or { newCampaignName } to create one.
+  // Returns: { brief, campaignId }
+  app.post("/api/content-briefs/:id/copy", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+      const { campaignId, newCampaignName } = req.body ?? {};
+
+      const [source] = await db
+        .select()
+        .from(contentBriefs)
+        .where(
+          and(
+            eq(contentBriefs.id, req.params.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+          ),
+        );
+      if (!source) return res.status(404).json({ error: "Brief not found" });
+
+      let targetCalendarId: string;
+      let targetCampaignId: string;
+
+      if (campaignId) {
+        // Existing campaign — verify ownership then find or create its calendar.
+        const [campaign] = await db
+          .select({ id: campaigns.id, name: campaigns.name })
+          .from(campaigns)
+          .where(
+            and(
+              eq(campaigns.id, campaignId),
+              eq(campaigns.tenantDomain, ctx.tenantDomain),
+            ),
+          );
+        if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+        targetCampaignId = campaignId;
+
+        const [existingCal] = await db
+          .select({ id: editorialCalendars.id })
+          .from(editorialCalendars)
+          .where(
+            and(
+              eq(editorialCalendars.campaignId, campaignId),
+              eq(editorialCalendars.tenantDomain, ctx.tenantDomain),
+            ),
+          )
+          .limit(1);
+
+        if (existingCal) {
+          targetCalendarId = existingCal.id;
+        } else {
+          const calId = randomUUID();
+          await db.insert(editorialCalendars).values({
+            id: calId,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            name: `${campaign.name} — Content Plan`,
+            campaignId,
+            status: "active",
+            createdBy: ctx.userId,
+          });
+          targetCalendarId = calId;
+        }
+      } else if (typeof newCampaignName === "string" && newCampaignName.trim()) {
+        const newCampaignId = randomUUID();
+        const newCalendarId = randomUUID();
+        const trimmedName = newCampaignName.trim();
+
+        await db.transaction(async (tx) => {
+          await tx.insert(campaigns).values({
+            id: newCampaignId,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
+            name: trimmedName,
+            status: "active",
+            campaignType: "theme",
+            createdBy: ctx.userId,
+          });
+          await tx.insert(editorialCalendars).values({
+            id: newCalendarId,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            name: `${trimmedName} — Content Plan`,
+            campaignId: newCampaignId,
+            status: "active",
+            createdBy: ctx.userId,
+          });
+        });
+
+        targetCampaignId = newCampaignId;
+        targetCalendarId = newCalendarId;
+      } else {
+        return res.status(400).json({ error: "Either campaignId or newCampaignName is required" });
+      }
+
+      const [maxSort] = await db
+        .select({ sortOrder: contentBriefs.sortOrder })
+        .from(contentBriefs)
+        .where(eq(contentBriefs.calendarId, targetCalendarId))
+        .orderBy(desc(contentBriefs.sortOrder))
+        .limit(1);
+
+      const [copied] = await db
+        .insert(contentBriefs)
+        .values({
+          id: randomUUID(),
+          calendarId: targetCalendarId,
+          tenantDomain: ctx.tenantDomain,
+          marketId: source.marketId,
+          title: source.title,
+          format: source.format,
+          targetKeyword: source.targetKeyword,
+          demandSignal: source.demandSignal,
+          funnelStage: source.funnelStage,
+          differentiationAngle: source.differentiationAngle,
+          targetReader: source.targetReader,
+          targetPersonaId: source.targetPersonaId,
+          cta: source.cta,
+          channels: source.channels,
+          estimatedHours: source.estimatedHours,
+          summary: source.summary,
+          formCategories: source.formCategories,
+          status: "suggested",
+          aiGenerated: source.aiGenerated,
+          campaignId: targetCampaignId,
+          sortOrder: (maxSort?.sortOrder ?? -1) + 1,
+        })
+        .returning();
+
+      res.status(201).json({ brief: copied, campaignId: targetCampaignId });
+    } catch (err: any) {
+      console.error("[content-briefs copy]", err);
+      res.status(500).json({ error: err.message || "Failed to copy brief" });
+    }
+  });
+
   // LinkedIn Digest — step 1: fetch posts and return count for UI confirmation.
   // Accepts: { profileUrl, startDate, endDate }
   // Returns: { postCount, posts: [{ text, postedAt }] } or error.
