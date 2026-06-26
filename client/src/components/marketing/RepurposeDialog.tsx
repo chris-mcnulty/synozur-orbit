@@ -122,12 +122,15 @@ export function RepurposeDialog({
   // Polaris podcast outline: optional guest override + the created asset.
   const [podcastGuest, setPodcastGuest] = useState("");
   const [podcastAsset, setPodcastAsset] = useState<{ id: string; title: string } | null>(null);
+  // Full blog post draft — longform path → Content Briefs.
+  const [blogBrief, setBlogBrief] = useState<{ id: string; title: string } | null>(null);
 
   const reset = () => {
     setCounts({});
     setResults(null);
     setPodcastGuest("");
     setPodcastAsset(null);
+    setBlogBrief(null);
   };
 
   const toggle = (def: FormatDef) => {
@@ -196,6 +199,33 @@ export function RepurposeDialog({
         toast.success(`Podcast outline drafted — find it in Content Briefs`);
       } else {
         toast.success(`Created podcast outline: "${data.asset.title}"`);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Full blog post draft — longform path, routes to Content Briefs when calendarId set.
+  const generateBlogDraft = useMutation({
+    mutationFn: async () => {
+      if (!assetId) throw new Error("No source asset");
+      const res = await fetch(`/api/content-assets/${assetId}/repurpose-longform`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          format: "blog_post",
+          ...(calendarId ? { calendarId } : {}),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to generate blog post");
+      return res.json() as Promise<{ asset: { id: string; title: string }; brief?: { id: string } }>;
+    },
+    onSuccess: (data) => {
+      setBlogBrief(data.asset);
+      if (data.brief) {
+        toast.success(`Blog post drafted — find it in Content Briefs`);
+      } else {
+        toast.success(`Blog post draft created: "${data.asset.title}"`);
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -294,6 +324,45 @@ export function RepurposeDialog({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Full blog post draft — longform path → Content Briefs. */}
+            <div className="rounded-lg border border-dashed p-3 space-y-2" data-testid="section-blog-post-draft">
+              <div className="flex items-center gap-1.5">
+                <Newspaper className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium">Full blog post draft</span>
+                <Badge variant="outline" className="text-[10px]">Content Briefs</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A complete, editable blog post written from the source content — lands in Content Briefs for review and approval.
+              </p>
+              {blogBrief ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/40 p-2">
+                  <span className="text-xs truncate">Created "{blogBrief.title}"</span>
+                  {onOpenContentBriefs && (
+                    <Button
+                      variant="outline" size="sm" className="shrink-0"
+                      onClick={() => { onOpenContentBriefs(); handleOpenChange(false); }}
+                      data-testid="button-open-blog-draft"
+                    >
+                      <ExternalLink className="mr-1 h-3 w-3" /> Open in Content Briefs
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => generateBlogDraft.mutate()}
+                  disabled={!assetId || generateBlogDraft.isPending}
+                  data-testid="button-generate-blog-draft"
+                >
+                  {generateBlogDraft.isPending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating…</>
+                  ) : (
+                    <><Newspaper className="mr-2 h-4 w-4" /> Generate blog post draft</>
+                  )}
+                </Button>
+              )}
             </div>
 
             {/* Polaris podcast outline — long-form path (Content Library asset),

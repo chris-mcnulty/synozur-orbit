@@ -60,7 +60,13 @@ export async function repurposeAsset(params: RepurposeParams): Promise<Repurpose
     asset.marketId || undefined,
     params.isDefaultMarket,
   );
-  const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
+  // Strip competitive intel and action items — these sections drown out the
+  // source asset when repurposing. Voice, positioning, and personas are kept.
+  const strategicBlock = formatStrategicContextForPrompt({
+    ...strategicCtx,
+    competitiveIntelligence: "",
+    briefingActionItems: "",
+  });
 
   const sourceBody = (asset.content || asset.aiSummary || asset.description || "").slice(0, 8000);
 
@@ -130,7 +136,13 @@ export async function repurposeToLongForm(
     asset.marketId || undefined,
     params.isDefaultMarket,
   );
-  const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
+  // Strip competitive intel and action items — these sections drown out the
+  // source asset when repurposing. Voice, positioning, and personas are kept.
+  const strategicBlock = formatStrategicContextForPrompt({
+    ...strategicCtx,
+    competitiveIntelligence: "",
+    briefingActionItems: "",
+  });
   const sourceBody = (asset.content || asset.aiSummary || asset.description || "").slice(0, 12000);
 
   const prompt = [
@@ -257,7 +269,13 @@ export async function repurposeMultiFormat(
     asset.marketId || undefined,
     params.isDefaultMarket,
   );
-  const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
+  // Strip competitive intel and action items — these sections drown out the
+  // source asset when repurposing. Voice, positioning, and personas are kept.
+  const strategicBlock = formatStrategicContextForPrompt({
+    ...strategicCtx,
+    competitiveIntelligence: "",
+    briefingActionItems: "",
+  });
   const sourceBody = (asset.content || asset.aiSummary || asset.description || "").slice(0, 10000);
 
   const settled = await Promise.allSettled(
