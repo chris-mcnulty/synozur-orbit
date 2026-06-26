@@ -429,7 +429,7 @@ export default function EditorialCalendarPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
-      toast.success("Finalized — brief approved and its draft saved to the library.");
+      toast.success("Draft approved — brief and content are now active.");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -456,9 +456,9 @@ export default function EditorialCalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       if (failed > 0) {
-        toast.warning(`Finalized ${total - failed} of ${total}; ${failed} could not be finalized.`);
+        toast.warning(`Approved ${total - failed} of ${total}; ${failed} could not be approved.`);
       } else {
-        toast.success(`Finalized ${total} piece${total === 1 ? "" : "s"}.`);
+        toast.success(`Approved ${total} piece${total === 1 ? "" : "s"}.`);
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -484,7 +484,7 @@ export default function EditorialCalendarPage() {
       setDraftImageUrl(data.asset?.leadImageUrl ?? null);
       setDraftDirty(false);
       setRewriteInstr("");
-      toast.success("Draft created and saved to the content library");
+      toast.success("Draft created — click to review and approve");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -575,7 +575,7 @@ export default function EditorialCalendarPage() {
     onSuccess: () => {
       setDraftDirty(false);
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
-      toast.success("Draft saved to the content library");
+      toast.success("Draft saved");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1025,7 +1025,7 @@ export default function EditorialCalendarPage() {
               <div>
                 <p className="font-medium">📋 Content Briefs (here)</p>
                 <p className="text-muted-foreground">
-                  Plan and write the content itself. Briefs become drafts saved to the Content Library; use
+                  Plan and write the content itself. Drafts stay here in Content Briefs for review and approval — use
                   "Repurpose" to spin a draft into social posts, carousels, and more.
                 </p>
               </div>
@@ -1149,7 +1149,7 @@ export default function EditorialCalendarPage() {
                         ) : (
                           <CheckCircle2 className="mr-1 h-4 w-4" />
                         )}
-                        Finalize all drafted ({finalizable.length})
+                        Approve all drafted ({finalizable.length})
                       </Button>
                     </div>
                   );
@@ -1241,13 +1241,25 @@ export default function EditorialCalendarPage() {
                           >
                             {STATUS_LABELS[b.status] ?? b.status}
                           </span>
-                          <span
-                            className={`inline-flex items-center gap-1 text-xs ${b.contentAssetId ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}`}
-                            data-testid={`linked-draft-${b.id}`}
-                          >
-                            <Link2 className="h-3 w-3" />
-                            {b.contentAssetId ? "Draft ready" : "No draft yet"}
-                          </span>
+                          {b.contentAssetId ? (
+                            <button
+                              className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300 underline-offset-2 hover:underline cursor-pointer"
+                              data-testid={`linked-draft-${b.id}`}
+                              onClick={() => openDraft(b)}
+                              title="Open the draft to read and approve it"
+                            >
+                              <Link2 className="h-3 w-3" />
+                              Draft ready — click to review
+                            </button>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                              data-testid={`linked-draft-${b.id}`}
+                            >
+                              <Link2 className="h-3 w-3" />
+                              No draft yet
+                            </span>
+                          )}
                           {b.pushedToPlanner && (
                             <span
                               className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
@@ -1271,7 +1283,7 @@ export default function EditorialCalendarPage() {
                           >
                             <Share2 className="mt-0.5 h-3 w-3 shrink-0" />
                             <span>
-                              Targets social. Drafting saves a document to the Content Library — use{" "}
+                              Targets social. The draft stays here in Content Briefs — use{" "}
                               <span className="font-medium">Repurpose</span> to turn it into a schedulable Social Post.
                             </span>
                           </p>
@@ -1344,7 +1356,7 @@ export default function EditorialCalendarPage() {
                               variant="outline"
                               disabled={draftBrief.isPending && draftBrief.variables === b.id}
                               onClick={() => {
-                                if (confirm("Regenerate the draft? This replaces the current draft text in the content library.")) {
+                                if (confirm("Regenerate the draft? This replaces the current draft text.")) {
                                   draftBrief.mutate(b.id);
                                 }
                               }}
@@ -1391,7 +1403,7 @@ export default function EditorialCalendarPage() {
                             ) : (
                               <CheckCircle2 className="mr-1 h-4 w-4" />
                             )}
-                            Finalize
+                            Approve draft
                           </Button>
                         )}
                         {b.contentAssetId && repurposeAllowed && (
@@ -1796,7 +1808,7 @@ export default function EditorialCalendarPage() {
                           queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
                           setDigestOpen(false);
                           setDigestPreview(null);
-                          toast.success(`LinkedIn Digest created — "${data.draft?.title || "Digest"}" is ready in the Content Library.`);
+                          toast.success(`LinkedIn Digest created — "${data.draft?.title || "Digest"}" is ready to review in Content Briefs.`);
                           // Open the draft immediately if we have it.
                           if (data.brief?.contentAssetId) {
                             try {
@@ -1864,7 +1876,7 @@ export default function EditorialCalendarPage() {
                     From brief: <span className="font-medium">{draftBriefTitle}</span>
                   </span>
                 ) : (
-                  "This draft lives in your Content Library. Edit it here, or open the library for the full editor."
+                  "This draft is linked to a Content Brief. Edit it here, then approve it from the brief card."
                 )}
               </DialogDescription>
             </DialogHeader>
@@ -1965,7 +1977,7 @@ export default function EditorialCalendarPage() {
                 <div className="flex items-start gap-2">
                   <Share2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <span>
-                    This draft lives in the Content Library as a document. To turn it into a schedulable, publishable
+                    This draft is linked to its Content Brief. To turn it into a schedulable, publishable
                     Social Post, use <span className="font-medium">Repurpose</span>.
                   </span>
                 </div>
@@ -2223,7 +2235,7 @@ export default function EditorialCalendarPage() {
             <DialogHeader>
               <DialogTitle>Branded carousel slides</DialogTitle>
               <DialogDescription>
-                One branded image per slide for "{carouselSlides?.title}". Saved with the new asset in the Content Library.
+                One branded image per slide for "{carouselSlides?.title}". Saved with the new asset draft.
               </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
