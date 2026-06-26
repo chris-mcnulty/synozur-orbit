@@ -36,3 +36,4 @@
 - [Interview Plan step expand legs](interview-plan-expand-legs.md) — Plan step = 2 non-idempotent calls (expand-plan docs + expand-social real generatedPosts); track per-leg success client-side or retries duplicate briefs; surface failedConceptIds.
 - [Post generation context injection](post-generation-context.md) — generatePostsAsync must inject campaignBriefs (direct eq(contentBriefs.campaignId)) + briefsContext before foundingSignals or posts drift generic from actionItem bleed.
 - [Apollo person_titles must be atomic](apollo-title-normalization.md) — ICP persona.role is a combined sentence; normalizePersonTitles() splits it; AUM segments must not map to headcount ranges.
+- [Synozur Website Codebase](synozur-website-codebase.md) — website MCP target is Replit project "Synozur-Baseline"; GitHub: github.com/chris-mcnulty/Synozur-WebBase.
