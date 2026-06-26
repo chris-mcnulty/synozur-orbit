@@ -15,9 +15,14 @@ import { encryptSecret } from "../utils/encryption";
 import { isFeatureEnabledAsync } from "../services/plan-policy";
 import { notifications } from "../services/notifications";
 import * as hubspot from "../services/hubspot-integration";
+import * as website from "../services/website-mcp-client";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
 import {
   INTEGRATION_KINDS,
   WEBHOOK_EVENT_CATEGORIES,
+  websiteConnections,
+  contentAssets,
   type IntegrationConfig,
   type InsertIntegrationConfig,
 } from "@shared/schema";
@@ -740,5 +745,151 @@ export function registerIntegrationRoutes(app: Express) {
     } catch (err) {
       res.status(500).json({ error: errorMessage(err) });
     }
+  });
+
+  // ─── Synozur website (www) MCP integration ──────────────────────────────
+  // Per-tenant connection used to publish blog drafts directly to the Insights
+  // site. Admins configure the connection; content authors push drafts.
+  async function loadWebsiteContext(req: Request, res: Response, opts: { requireAdmin?: boolean } = {}) {
+    if (!req.session?.userId) { res.status(401).json({ error: "Not authenticated" }); return null; }
+    const user = await storage.getUser(req.session.userId);
+    if (!user) { res.status(404).json({ error: "User not found" }); return null; }
+    if (opts.requireAdmin && !hasAdminAccess(user.role)) {
+      res.status(403).json({ error: "Access denied - Admin only" });
+      return null;
+    }
+    return { tenantDomain: user.email.split("@")[1], userId: user.id };
+  }
+
+  app.get("/api/integrations/website/status", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const conn = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (!conn) return res.json({ connected: false });
+      // The key is never returned once saved.
+      res.json({
+        connected: conn.enabled,
+        endpoint: conn.endpoint,
+        defaultAuthorId: conn.defaultAuthorId,
+        lastUsedAt: conn.lastUsedAt,
+        lastError: conn.lastError,
+      });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
+  const websiteConnectSchema = z.object({
+    endpoint: z.string().url(),
+    apiKey: z.string().min(1).optional(), // omit on edit to keep the existing key
+    defaultAuthorId: z.string().nullable().optional(),
+  });
+  app.post("/api/integrations/website/connect", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res, { requireAdmin: true }); if (!ctx) return;
+      const parsed = websiteConnectSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+      const existing = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (!existing && !parsed.data.apiKey) return res.status(400).json({ error: "An MCP key is required to connect." });
+
+      if (existing) {
+        const updates: Record<string, unknown> = { endpoint: parsed.data.endpoint, enabled: true, updatedAt: new Date() };
+        if (parsed.data.apiKey) updates.encryptedApiKey = encryptSecret(parsed.data.apiKey);
+        if (parsed.data.defaultAuthorId !== undefined) updates.defaultAuthorId = parsed.data.defaultAuthorId;
+        await db.update(websiteConnections).set(updates).where(eq(websiteConnections.tenantDomain, ctx.tenantDomain));
+      } else {
+        await db.insert(websiteConnections).values({
+          tenantDomain: ctx.tenantDomain,
+          endpoint: parsed.data.endpoint,
+          encryptedApiKey: encryptSecret(parsed.data.apiKey!),
+          defaultAuthorId: parsed.data.defaultAuthorId ?? null,
+          createdBy: ctx.userId,
+        });
+      }
+      // Verify with a lightweight read before declaring success.
+      try {
+        await website.pingWebsite(ctx.tenantDomain);
+      } catch (err) {
+        return res.status(502).json({ error: `Saved, but the connection test failed: ${errorMessage(err)}` });
+      }
+      console.log(`[Website] Tenant ${ctx.tenantDomain} connected by user=${ctx.userId}`);
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
+  app.post("/api/integrations/website/disconnect", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res, { requireAdmin: true }); if (!ctx) return;
+      await db.delete(websiteConnections).where(eq(websiteConnections.tenantDomain, ctx.tenantDomain));
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
+  // Taxonomy proxies for the publish dialog.
+  app.get("/api/integrations/website/authors", async (req, res) => {
+    try { const ctx = await loadWebsiteContext(req, res); if (!ctx) return; res.json(await website.listAuthors(ctx.tenantDomain)); }
+    catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+  app.get("/api/integrations/website/categories", async (req, res) => {
+    try { const ctx = await loadWebsiteContext(req, res); if (!ctx) return; res.json(await website.listCategories(ctx.tenantDomain)); }
+    catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+  app.get("/api/integrations/website/tags", async (req, res) => {
+    try { const ctx = await loadWebsiteContext(req, res); if (!ctx) return; res.json(await website.listTags(ctx.tenantDomain)); }
+    catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  // Push a blog draft to the website. Pulls title + Markdown body from an Orbit
+  // content asset (when assetId is given) with optional overrides; authorId
+  // falls back to the connection default. Records the returned id/slug on the
+  // asset so Orbit knows it's been published as a draft.
+  const websitePushDraftSchema = z.object({
+    assetId: z.string().optional(),
+    title: z.string().optional(),
+    bodyMarkdown: z.string().optional(),
+    authorId: z.string().optional(),
+    excerpt: z.string().optional(),
+    categoryIds: z.array(z.string()).optional(),
+    tagIds: z.array(z.string()).optional(),
+    seoTitle: z.string().optional(),
+    seoDescription: z.string().optional(),
+  });
+  app.post("/api/integrations/website/push-draft", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const parsed = websitePushDraftSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+      const conn = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (!conn || !conn.enabled) return res.status(400).json({ error: "Website not connected." });
+
+      let asset: typeof contentAssets.$inferSelect | undefined;
+      if (parsed.data.assetId) {
+        [asset] = await db.select().from(contentAssets).where(eq(contentAssets.id, parsed.data.assetId));
+        if (!asset || asset.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Asset not found." });
+      }
+      const title = parsed.data.title ?? asset?.title;
+      const bodyMarkdown = parsed.data.bodyMarkdown ?? asset?.content ?? undefined;
+      const authorId = parsed.data.authorId ?? conn.defaultAuthorId ?? undefined;
+      if (!title) return res.status(400).json({ error: "A title is required." });
+      if (!bodyMarkdown) return res.status(400).json({ error: "Post body (Markdown) is required." });
+      if (!authorId) return res.status(400).json({ error: "An author is required — pick one or set a default on the connection." });
+
+      const created = await website.createDraftPost(ctx.tenantDomain, {
+        title,
+        bodyMarkdown,
+        authorId,
+        excerpt: parsed.data.excerpt ?? asset?.description ?? undefined,
+        categoryIds: parsed.data.categoryIds,
+        tagIds: parsed.data.tagIds,
+        seoTitle: parsed.data.seoTitle ?? undefined,
+        seoDescription: parsed.data.seoDescription ?? undefined,
+      });
+
+      if (asset) {
+        await db.update(contentAssets)
+          .set({ websitePostId: created.id, websitePostSlug: created.slug, updatedAt: new Date() })
+          .where(eq(contentAssets.id, asset.id));
+      }
+      console.log(`[Website] Draft pushed tenant=${ctx.tenantDomain} asset=${asset?.id ?? "adhoc"} slug=${created.slug}`);
+      res.json({ success: true, post: created });
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
   });
 }

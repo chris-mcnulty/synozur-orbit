@@ -1,0 +1,141 @@
+/**
+ * Client for the Synozur Insights website ("www") MCP server, configured per
+ * tenant (see `website_connections`). The server speaks MCP over Streamable
+ * HTTP and is stateless — one POST per call, no initialize handshake — so each
+ * tool call is a single JSON-RPC 2.0 `tools/call` request authenticated with
+ * the tenant's `Bearer syn_<key>`.
+ *
+ * v1 surfaces only what the "direct-post blog drafts" flow needs (taxonomy
+ * reads + create_draft_post), plus a connection test; the rest of the catalogue
+ * can be added the same way.
+ */
+import { randomUUID } from "crypto";
+import { eq } from "drizzle-orm";
+import { db } from "../db";
+import { websiteConnections, type WebsiteConnection } from "@shared/schema";
+import { decryptSecret } from "../utils/encryption";
+
+export class WebsiteNotConnectedError extends Error {
+  constructor() {
+    super("This tenant has not connected the Synozur website. Configure it in Settings → Integrations.");
+    this.name = "WebsiteNotConnectedError";
+  }
+}
+
+export async function getWebsiteConnection(tenantDomain: string): Promise<WebsiteConnection | null> {
+  const [row] = await db.select().from(websiteConnections).where(eq(websiteConnections.tenantDomain, tenantDomain));
+  return row ?? null;
+}
+
+/** Extract the tool payload from an MCP tools/call result, tolerating either
+ *  structuredContent or a JSON string inside the first text content block. */
+function unwrapToolResult(result: any): any {
+  if (result == null) return null;
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  const block = Array.isArray(result.content) ? result.content.find((c: any) => c?.type === "text") : null;
+  if (block?.text) {
+    try { return JSON.parse(block.text); } catch { return block.text; }
+  }
+  return result;
+}
+
+/** Parse a Streamable-HTTP response body that is either a plain JSON-RPC
+ *  message or an SSE stream carrying one. */
+async function parseMcpResponse(res: Response): Promise<any> {
+  const text = await res.text();
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("text/event-stream")) {
+    // Concatenate the JSON from `data:` lines; the tool reply is the message
+    // that carries a `result` or `error`.
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const msg = JSON.parse(payload);
+        if (msg.result !== undefined || msg.error !== undefined) return msg;
+      } catch { /* keep scanning */ }
+    }
+    return {};
+  }
+  try { return JSON.parse(text); } catch { return { error: { message: text.slice(0, 500) } }; }
+}
+
+/** Call a single tool on the tenant's website MCP server. Throws on transport,
+ *  auth, or tool errors; records lastUsedAt / lastError on the connection. */
+export async function callWebsiteTool<T = any>(
+  tenantDomain: string,
+  tool: string,
+  args: Record<string, unknown> = {},
+): Promise<T> {
+  const conn = await getWebsiteConnection(tenantDomain);
+  if (!conn || !conn.enabled) throw new WebsiteNotConnectedError();
+
+  const apiKey = decryptSecret(conn.encryptedApiKey);
+  let result: T;
+  try {
+    const res = await fetch(conn.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: randomUUID(),
+        method: "tools/call",
+        params: { name: tool, arguments: args },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Website MCP ${tool} failed (HTTP ${res.status})${body ? `: ${body.slice(0, 300)}` : ""}`);
+    }
+    const msg = await parseMcpResponse(res);
+    if (msg?.error) throw new Error(msg.error.message || `Website MCP ${tool} returned an error`);
+    if (msg?.result?.isError) {
+      const detail = unwrapToolResult(msg.result);
+      throw new Error(typeof detail === "string" ? detail : `Website MCP ${tool} returned an error`);
+    }
+    result = unwrapToolResult(msg?.result) as T;
+  } catch (err) {
+    await db.update(websiteConnections)
+      .set({ lastError: (err as Error).message?.slice(0, 500) ?? "Unknown error", updatedAt: new Date() })
+      .where(eq(websiteConnections.tenantDomain, tenantDomain));
+    throw err;
+  }
+
+  await db.update(websiteConnections)
+    .set({ lastUsedAt: new Date(), lastError: null, updatedAt: new Date() })
+    .where(eq(websiteConnections.tenantDomain, tenantDomain));
+  return result;
+}
+
+// ─── Typed helpers (v1 subset) ───────────────────────────────────────────────
+
+export interface WebsiteAuthor { id: string; displayName: string; avatarUrl?: string; bio?: string }
+export interface WebsiteTaxonomy { id: string; name: string; slug: string }
+export interface CreateDraftPostParams {
+  title: string;
+  bodyMarkdown: string;
+  authorId: string;
+  excerpt?: string;
+  categoryIds?: string[];
+  tagIds?: string[];
+  heroImageId?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+}
+export interface CreatedDraftPost { id: string; slug: string; status: string; title: string }
+
+export const listAuthors = (tenant: string) => callWebsiteTool<WebsiteAuthor[]>(tenant, "list_authors");
+export const listCategories = (tenant: string) => callWebsiteTool<WebsiteTaxonomy[]>(tenant, "list_categories");
+export const listTags = (tenant: string) => callWebsiteTool<WebsiteTaxonomy[]>(tenant, "list_tags");
+export const createDraftPost = (tenant: string, params: CreateDraftPostParams) =>
+  callWebsiteTool<CreatedDraftPost>(tenant, "create_draft_post", params as unknown as Record<string, unknown>);
+
+/** Lightweight read used to verify a freshly-saved connection works. */
+export const pingWebsite = (tenant: string) =>
+  callWebsiteTool(tenant, "search_posts", { pageSize: 1 });

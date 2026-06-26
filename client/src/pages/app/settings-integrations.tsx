@@ -1,5 +1,6 @@
 import { Helmet } from "react-helmet-async";
 import { Ga4IntegrationCard } from "@/components/Ga4IntegrationCard";
+import { WebsiteIntegrationCard } from "@/components/WebsiteIntegrationCard";
 import { useUser } from "@/lib/userContext";
 import AppLayout from "@/components/layout/AppLayout";
 import { Shield } from "lucide-react";
@@ -32,6 +33,7 @@ export default function SettingsIntegrationsPage() {
         </div>
 
         <Ga4IntegrationCard />
+        <WebsiteIntegrationCard />
       </div>
     </AppLayout>
   );

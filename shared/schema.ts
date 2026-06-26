@@ -2509,6 +2509,11 @@ export const contentAssets = pgTable("content_assets", {
   // Whether the asset originated outside Orbit (e.g. an existing blog post or
   // webinar) vs. produced in Orbit. Drives campaign reporting attribution.
   isExternal: boolean("is_external").notNull().default(false),
+  // When this asset has been posted to the Synozur website as a draft via the
+  // website MCP, the returned post id/slug are recorded here — marks it pushed
+  // and is the key for future get_post_performance traffic pulls.
+  websitePostId: text("website_post_id"),
+  websitePostSlug: text("website_post_slug"),
   // WS3: headline SEO/AEO fields persisted back from the optimizer so they are
   // usable inline on the asset (deeper AEO data — answer blocks, FAQ, gaps —
   // continues to live in content_optimizations, keyed by contentAssetId).
@@ -3792,6 +3797,24 @@ export const HUBSPOT_EMAIL_SYNC_SCOPES = [
   "communication_preferences.read_write",
   "timeline",
 ] as const;
+
+// Per-tenant connection to the Synozur Insights website ("www") MCP server.
+// Stores the MCP endpoint and an encrypted mcp.write key so Orbit can post
+// blog drafts directly to the site. One row per tenant.
+export const websiteConnections = pgTable("website_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull().unique(),
+  endpoint: text("endpoint").notNull(),
+  encryptedApiKey: text("encrypted_api_key").notNull(),
+  defaultAuthorId: text("default_author_id"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at"),
+  lastError: text("last_error"),
+});
+export type WebsiteConnection = typeof websiteConnections.$inferSelect;
 
 export const hubspotConnections = pgTable("hubspot_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -56,6 +56,8 @@ interface ContentAsset {
   repurposedFromAssetId?: string | null;
   assetDate?: string | null;
   isExternal?: boolean;
+  websitePostId?: string | null;
+  websitePostSlug?: string | null;
   createdAt: string;
 }
 
@@ -447,6 +449,36 @@ export default function ContentLibraryPage() {
       toast({ title: "Asset updated" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  // Synozur website (www) — push the asset as a blog draft via the per-tenant
+  // MCP connection. Button only shows when the website is connected.
+  const { data: websiteStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+  });
+  const websiteConnected = !!websiteStatus?.connected;
+
+  const pushToWebsite = useMutation({
+    mutationFn: async (assetId: string) => {
+      const r = await fetch("/api/integrations/website/push-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ assetId }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "Failed to push to website");
+      return data.post as { slug: string };
+    },
+    onSuccess: (post) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({ title: "Draft posted to website", description: `Created as a draft (/${post.slug}). Publish it from the Insights admin.` });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't post to website", description: err.message, variant: "destructive" }),
   });
 
   const downloadDocx = async (asset: ContentAsset) => {
@@ -2179,6 +2211,19 @@ export default function ContentLibraryPage() {
                     >
                       <Download className="w-4 h-4" /> {downloadingDocx ? "Preparing..." : "Download Word"}
                     </Button>
+                    {websiteConnected && (
+                      <Button
+                        variant="outline"
+                        className="flex-1 gap-2"
+                        disabled={pushToWebsite.isPending || !editForm.content?.trim()}
+                        onClick={() => pushToWebsite.mutate(detailAsset.id)}
+                        data-testid="button-push-website"
+                        title={detailAsset.websitePostSlug ? "Already posted as a draft — posts again as a new draft" : undefined}
+                      >
+                        {pushToWebsite.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                        {detailAsset.websitePostSlug ? "On website ✓" : "Post draft to website"}
+                      </Button>
+                    )}
                     <Button
                       className="flex-1"
                       disabled={!editForm.title.trim() || editMutation.isPending}
