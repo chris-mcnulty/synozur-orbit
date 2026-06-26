@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
+import { AnalyticsViewSwitcher } from "@/components/marketing/AnalyticsViewSwitcher";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -286,6 +287,7 @@ export default function InsightsVisualizationsPage() {
             <p className="text-muted-foreground mt-1">
               Engagement, posting, sentiment, and pricing trends across your tracked competitors.
             </p>
+            <AnalyticsViewSwitcher className="mt-3" />
           </div>
           <div className="flex flex-wrap gap-2">
             <Select value={range} onValueChange={(v) => setRange(v as Range)}>

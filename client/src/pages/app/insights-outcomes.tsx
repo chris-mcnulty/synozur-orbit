@@ -13,6 +13,7 @@ import {
 import { Download, FileText, RefreshCw, Plug, AlertTriangle, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import AppLayout from "@/components/layout/AppLayout";
+import { AnalyticsViewSwitcher } from "@/components/marketing/AnalyticsViewSwitcher";
 import { useUser } from "@/lib/userContext";
 
 interface OutcomesPayload {
@@ -123,6 +124,7 @@ export default function InsightsOutcomesPage() {
         <div>
           <h1 className="text-3xl font-bold" data-testid="text-page-title">Outcomes & Orbit Score</h1>
           <p className="text-muted-foreground">ROI dashboard linking marketing activity to business outcomes.</p>
+          <AnalyticsViewSwitcher className="mt-3" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="w-40" data-testid="input-start-date" />

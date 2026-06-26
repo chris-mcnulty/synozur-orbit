@@ -34,6 +34,7 @@ import ProfileCompletionDialog from "@/components/onboarding/ProfileCompletionDi
 import ContextBar from "@/components/layout/ContextBar";
 import RefreshStatusIndicator from "@/components/layout/RefreshStatusIndicator";
 import NotificationCentre from "@/components/layout/NotificationCentre";
+import { JobActivityIndicator } from "@/components/layout/JobActivityIndicator";
 import CommandPalette from "@/components/CommandPalette";
 import SmartSuggestions from "@/components/SmartSuggestions";
 import WhatsNewModal from "@/components/WhatsNewModal";
@@ -745,6 +746,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
             })}
           </nav>
           <div className="flex items-center gap-1">
+          {!isMobile && <JobActivityIndicator />}
           {!isMobile && <NotificationCentre />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

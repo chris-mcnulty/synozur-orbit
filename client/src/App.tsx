@@ -82,6 +82,7 @@ import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
 import GettingStartedPage from "@/pages/app/getting-started";
+import InboxPage from "@/pages/app/inbox";
 import Pricing from "@/pages/pricing";
 import AdminOrganizationsPage from "@/pages/app/admin/organizations";
 import AISettingsPage from "@/pages/app/admin/ai-settings";
@@ -222,6 +223,7 @@ function Router() {
       <Route path="/app/action-items" component={ActionItems} />
       <Route path="/app/intelligence">{() => <PageFeatureGate featureKey="intelligenceBriefings" label="Intelligence Briefings" description="AI-synthesized periodic market intelligence reports. Upgrade to unlock this feature."><IntelligenceBriefingPage /></PageFeatureGate>}</Route>
       <Route path="/app/getting-started" component={GettingStartedPage} />
+      <Route path="/app/inbox" component={InboxPage} />
       <Route path="/app/positioning-map" component={PositioningMapPage} />
       <Route path="/app/seo-dashboard">{() => <PageFeatureGate featureKey="seoTracking" label="SEO &amp; Share of Voice" description="Track keyword rankings and competitive share-of-voice. Upgrade to unlock this feature."><SeoDashboard /></PageFeatureGate>}</Route>
       <Route path="/app/insights/outcomes">{() => <PageFeatureGate featureKey="outcomeMetrics" label="Outcome Metrics & Orbit Score" description="ROI dashboard with Orbit Score, GA4 analytics, and outcome trend charts. Upgrade to unlock this feature."><InsightsOutcomesPage /></PageFeatureGate>}</Route>

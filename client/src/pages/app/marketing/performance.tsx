@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
+import { AnalyticsViewSwitcher } from "@/components/marketing/AnalyticsViewSwitcher";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -129,6 +130,7 @@ export default function MarketingPerformancePage() {
               <p className="text-sm text-muted-foreground">
                 Conversion-first content report. Recommendations flow back into the editorial calendar — closing the loop.
               </p>
+              <AnalyticsViewSwitcher className="mt-3" />
             </div>
             <Button onClick={() => generate.mutate()} disabled={generate.isPending} data-testid="button-generate-report">
               {generate.isPending ? (

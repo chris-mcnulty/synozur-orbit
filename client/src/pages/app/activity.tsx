@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { cleanSignalSummary } from "@/lib/utils";
 import AppLayout from "@/components/layout/AppLayout";
+import { ActOnThisMenu } from "@/components/ActOnThisMenu";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -374,17 +375,23 @@ export default function Activity() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm leading-relaxed">{cleanSignalSummary(change.summary, change.description)}</p>
-                    {change.details?.changeScore && (
-                      <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3" />
-                          {change.details.changeScore}% content change
-                        </span>
-                        {change.details.pagesMonitored && (
+                    <div className="mt-3 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        {change.details?.changeScore && (
+                          <span className="flex items-center gap-1">
+                            <TrendingUp className="h-3 w-3" />
+                            {change.details.changeScore}% content change
+                          </span>
+                        )}
+                        {change.details?.pagesMonitored && (
                           <span>{change.details.pagesMonitored} pages monitored</span>
                         )}
                       </div>
-                    )}
+                      <ActOnThisMenu
+                        variant="ghost"
+                        context={`${change.competitorName}: ${cleanSignalSummary(change.summary, change.description)}`}
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               ))}

@@ -307,10 +307,14 @@ Generate competitive battlecards for sales enablement:
 - [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
 - [x] `competitorAlerts` plan feature gates Pro / Enterprise access
 
-### CRM Integration - HubSpot (Q2)
-- [ ] Competitor sync from HubSpot
-- [ ] Push Orbit insights back to CRM
-- [ ] Lead generation insights
+### CRM Integration - HubSpot (Q2) ✅
+**Status**: Implemented (two-way). `@hubspot/api-client` wired via `hubspot-service.ts` / `hubspot-integration.ts` / `hubspot-timeline.ts` / `hubspot-email-sync.ts`.
+- [x] OAuth connect/callback/disconnect + status (`/api/integrations/hubspot/*`)
+- [x] Competitor sync + suggested competitors from HubSpot
+- [x] Prospect import from HubSpot lists (sales outreach) + per-prospect sync
+- [x] Push Orbit insights back to CRM: Notes (briefing summary, battlecard) and Tasks (`push-note`/`push-task`/`push-briefing`/`push-battlecard`/`push-summary`)
+- [x] UI surfacing: "Push to HubSpot" on briefings, **battlecards**, and "HubSpot task" on **action items** (the last two wired 2026-06 — endpoints predated the buttons)
+- [ ] Lead generation insights (deal/pipeline signals — partial: competitor deal data shown on competitor detail)
 
 ### Advanced AI Features (Q2-Q3)
 - [ ] Sentiment and tone analysis
@@ -322,10 +326,12 @@ Generate competitive battlecards for sales enablement:
 - [ ] Vega integration (recommendations → tasks)
 - [ ] Team usage analytics
 
-### Outcome Metrics & ROI Dashboard (Q4)
-- [ ] Google Analytics integration
-- [ ] Orbit Score / Index
-- [ ] Industry benchmarks
+### Outcome Metrics & ROI Dashboard (Q4) ✅
+**Status**: Implemented. Page at `/app/insights/outcomes`; score engine `server/services/orbit-score.ts`; route `server/routes/insights-outcomes.ts`.
+- [x] Google Analytics (GA4) integration — `ga-client.ts` + `Ga4IntegrationCard` (Settings → Integrations), `analyticsConnections`/`analyticsDaily`
+- [x] Orbit Score / Index — weekly composite of Share of Voice, SEO visibility, publish rate, funnel efficiency (conversions / UTM clicks), with B2B/B2C weighting; `orbitScores`/`orbitScoreBenchmarks`
+- [x] Industry benchmarks (`orbitScoreBenchmarks`)
+- [x] ROI dashboard linking marketing activity (UTM clicks) to GA4 conversions; cross-linked with SEO + Visualizations via the shared analytics switcher
 
 ### Billing Integration
 - [ ] Stripe integration for payment processing
@@ -705,3 +711,24 @@ The items below are new candidates for the backlog aimed at broadening Orbit's r
 - [ ] Full-tenant export bundle (JSON + assets) triggered from Settings, delivered via signed URL
 - [ ] Right-to-erasure workflow for individual users with admin confirmation
 **Effort**: Medium-High
+
+### User Journey Enhancements
+
+_Proposed 2026-06 alongside the cross-area UX work (calendar unification, posting queue, link clicks, attention inbox, job tracking). #1–#3 of that set are being built; #4–#5 deferred here._
+
+#### Guided First-Value Onboarding
+**Status**: Proposed
+**Why**: The onboarding checklist (now single-sourced via `useOnboardingSteps`) is passive — six links. New users hit a drop-off cliff between "added a competitor" and "saw their first insight." Activating the path shortens time-to-first-value, the main activation/retention lever.
+- [ ] Detect step completion live and celebrate it (the hook already computes `complete`/`nextStep`)
+- [ ] Present the next step's CTA with context ("You're tracking 2 competitors — run your first analysis →")
+- [ ] After the first analysis completes, surface the first concrete insight prominently instead of returning the user to a list
+- [ ] Optional: collapse completed steps so the path always foregrounds "what's next"
+**Effort**: Medium
+
+#### Persistent & Saved Views
+**Status**: Proposed
+**Why**: No list in the app persists its filter/sort state — the prospect list (score/state/source), campaign status filter, and calendar channel filter all reset on every visit. Returning to a working context is pure repeated friction.
+- [ ] Persist last-used filters/sort per surface (localStorage), restored on return
+- [ ] Let users name and save a segment (e.g. "High-score CA prospects", "Failed posts")
+- [ ] Optional: pin saved views to the sidebar; shareable view links
+**Effort**: Low (persistence) to Medium (named/saved segments)

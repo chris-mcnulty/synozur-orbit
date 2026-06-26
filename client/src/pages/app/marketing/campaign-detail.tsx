@@ -52,6 +52,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { LinkBuilderTab } from "@/components/marketing/LinkBuilderTab";
 import { CampaignLinkClicks } from "@/components/marketing/CampaignLinkClicks";
 import {
@@ -250,6 +251,8 @@ interface ContentAsset {
   leadImageUrl?: string;
   assetType?: string;
   categoryId?: string | null;
+  assetDate?: string | null;
+  isExternal?: boolean;
 }
 
 interface SocialAccount {
@@ -1388,6 +1391,26 @@ export default function CampaignDetailPage() {
       if (!r.ok) throw new Error("Failed to remove asset");
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
+  });
+
+  // Date / external are asset-level; editing them here PATCHes the shared
+  // content asset so the value matches the Content Library.
+  const updateAssetMetaMutation = useMutation({
+    mutationFn: async ({ assetId, assetDate, isExternal }: { assetId: string; assetDate?: string | null; isExternal?: boolean }) => {
+      const r = await fetch(`/api/content-assets/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          ...(assetDate !== undefined ? { assetDate: assetDate ? new Date(assetDate).toISOString() : null } : {}),
+          ...(isExternal !== undefined ? { isExternal } : {}),
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update asset");
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] }),
+    onError: (e: any) => toast({ title: "Couldn't update asset", description: e.message, variant: "destructive" }),
   });
 
   const addBrandAssetMutation = useMutation({
@@ -3665,10 +3688,55 @@ export default function CampaignDetailPage() {
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">{ca.overrideTitle ?? asset?.title ?? ca.assetId}</p>
-                            {asset?.description && <p className="text-xs text-muted-foreground truncate">{asset.description}</p>}
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              {asset?.isExternal && (
+                                <Badge variant="outline" className="text-[10px] gap-1 border-blue-300 text-blue-600 dark:text-blue-400" data-testid={`badge-external-${ca.assetId}`}>
+                                  <ExternalLink className="w-2.5 h-2.5" /> External
+                                </Badge>
+                              )}
+                              {asset?.assetDate ? (
+                                <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                                  <Calendar className="w-2.5 h-2.5" />{new Date(asset.assetDate).toLocaleDateString()}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground/60">No date</span>
+                              )}
+                              {asset?.description && <span className="text-xs text-muted-foreground truncate">· {asset.description}</span>}
+                            </div>
                           </div>
                           {asset?.assetType && (
                             <Badge variant="outline" className="shrink-0 text-xs">{asset.assetType}</Badge>
+                          )}
+                          {/* Inline date + source edit — writes to the shared asset. */}
+                          {asset && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8 text-muted-foreground" data-testid={`button-edit-asset-meta-${ca.assetId}`} title="Date & source">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-64 space-y-3">
+                                <div>
+                                  <label className="text-xs font-medium text-muted-foreground">Date</label>
+                                  <input
+                                    type="date"
+                                    defaultValue={asset.assetDate ? asset.assetDate.slice(0, 10) : ""}
+                                    onChange={(e) => updateAssetMetaMutation.mutate({ assetId: asset.id, assetDate: e.target.value || null })}
+                                    className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                                    data-testid={`input-asset-date-${ca.assetId}`}
+                                  />
+                                  <p className="text-[11px] text-muted-foreground mt-1">When it went live / published.</p>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm">{asset.isExternal ? "External" : "Created in Orbit"}</span>
+                                  <Switch
+                                    checked={!!asset.isExternal}
+                                    onCheckedChange={(v) => updateAssetMetaMutation.mutate({ assetId: asset.id, isExternal: v })}
+                                    data-testid={`switch-asset-external-${ca.assetId}`}
+                                  />
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           )}
                           <Button
                             variant="ghost"

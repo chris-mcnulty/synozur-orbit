@@ -4,6 +4,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -53,6 +54,8 @@ interface ContentAsset {
   status: string;
   capturedViaExtension: boolean;
   repurposedFromAssetId?: string | null;
+  assetDate?: string | null;
+  isExternal?: boolean;
   createdAt: string;
 }
 
@@ -126,6 +129,7 @@ export default function ContentLibraryPage() {
     categoryId: "", productIds: [] as string[],
     tags: { seasons: [] as string[], topics: [] as string[] },
     aiSummary: "", assetType: "other", solutionAreaIds: [] as string[],
+    assetDate: "", isExternal: false,
   });
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [bulkGenerating, setBulkGenerating] = useState(false);
@@ -430,6 +434,8 @@ export default function ContentLibraryPage() {
           aiSummary: data.aiSummary || null,
           assetType: data.assetType || "other",
           solutionAreaIds: data.solutionAreaIds.length ? data.solutionAreaIds : null,
+          assetDate: data.assetDate ? new Date(data.assetDate).toISOString() : null,
+          isExternal: data.isExternal,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -496,6 +502,8 @@ export default function ContentLibraryPage() {
       aiSummary: asset.aiSummary || "",
       assetType: asset.assetType || "other",
       solutionAreaIds: asset.solutionAreaIds || [],
+      assetDate: asset.assetDate ? asset.assetDate.slice(0, 10) : "",
+      isExternal: !!asset.isExternal,
     });
     setDetailAsset(asset);
     setEditOpen(true);
@@ -1979,6 +1987,29 @@ export default function ContentLibraryPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Date</Label>
+                        <Input
+                          type="date"
+                          value={editForm.assetDate}
+                          onChange={e => setEditForm(f => ({ ...f, assetDate: e.target.value }))}
+                          data-testid="input-edit-content-date"
+                        />
+                        <p className="text-[11px] text-muted-foreground mt-1">When it went live / published.</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Source</Label>
+                        <div className="flex items-center gap-2 h-9">
+                          <Switch
+                            checked={editForm.isExternal}
+                            onCheckedChange={v => setEditForm(f => ({ ...f, isExternal: v }))}
+                            data-testid="switch-edit-content-external"
+                          />
+                          <span className="text-sm">{editForm.isExternal ? "External" : "Created in Orbit"}</span>
+                        </div>
                       </div>
                     </div>
                     <div>
