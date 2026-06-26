@@ -327,21 +327,21 @@ export default function Recommendations() {
               <DropdownMenuContent align="start">
                 <DropdownMenuItem onClick={() => {
                   actionMutation.mutate({ id: rec.id, actionType: "email" });
-                  navigate(`/app/marketing/email-newsletters?recommendation=${encodeURIComponent(`${rec.title}: ${rec.description}`)}`);
+                  navigate(`/app/marketing/email-newsletters?recommendation=${encodeURIComponent(`${rec.title}: ${rec.description}`.slice(0, 500))}`);
                 }}>
                   <Mail className="h-4 w-4 mr-2" />
                   Create Email
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => {
                   actionMutation.mutate({ id: rec.id, actionType: "social_campaign" });
-                  navigate(`/app/marketing/campaigns?recommendation=${encodeURIComponent(`${rec.title}: ${rec.description}`)}`);
+                  navigate(`/app/marketing/campaigns?recommendation=${encodeURIComponent(`${rec.title}: ${rec.description}`.slice(0, 500))}`);
                 }}>
                   <Share2 className="h-4 w-4 mr-2" />
                   Create Social Campaign
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => {
                   actionMutation.mutate({ id: rec.id, actionType: "outreach" });
-                  navigate(`/app/sales/outreach/new?goal=${encodeURIComponent(`${rec.title}: ${rec.description}`)}`);
+                  navigate(`/app/sales/outreach/new?goal=${encodeURIComponent(`${rec.title}: ${rec.description}`.slice(0, 500))}`);
                 }}>
                   <Handshake className="h-4 w-4 mr-2" />
                   Start Sales Outreach

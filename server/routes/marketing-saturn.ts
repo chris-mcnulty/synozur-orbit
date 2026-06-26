@@ -169,6 +169,16 @@ function deriveContentHeadline(
   return firstSentence.slice(0, 100).trim();
 }
 
+/**
+ * Parse a client-supplied asset date into a Date, or null. Rejects non-string
+ * and unparseable values so an "Invalid Date" never reaches the DB.
+ */
+function parseAssetDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // ─── register ────────────────────────────────────────────────────────────────
 
 export function registerSaturnMarketingRoutes(app: Express) {
@@ -603,8 +613,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       assetType: safeAssetType,
       productIds: productIds?.length ? productIds : null,
       tags: tags || null,
-      assetDate: assetDate ? new Date(assetDate) : null,
-      isExternal: typeof isExternal === "boolean" ? isExternal : false,
+      assetDate: parseAssetDate(assetDate),
+      isExternal: isExternal === true,
       status: status === "archived" ? "archived" : "active",
       createdBy: ctx.userId,
     } as InsertContentAsset).returning();
@@ -627,8 +637,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const ctx = await getRequestContext(req);
     const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds, subtitle, overview, postTags, assetDate, isExternal } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
-    if (assetDate !== undefined) updates.assetDate = assetDate ? new Date(assetDate) : null;
-    if (isExternal !== undefined) updates.isExternal = !!isExternal;
+    if (assetDate !== undefined) updates.assetDate = parseAssetDate(assetDate);
+    if (isExternal !== undefined) updates.isExternal = isExternal === true;
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
     if (url !== undefined) updates.url = typeof url === "string" && url.trim() ? url.trim() : null;
