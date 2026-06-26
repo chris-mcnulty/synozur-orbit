@@ -35,6 +35,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
 import { ContentTableSkeleton, ContentCardGridSkeleton } from "@/components/ui/skeletons";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
+import { WebsitePublishDialog } from "@/components/marketing/WebsitePublishDialog";
 
 interface ContentAsset {
   id: string;
@@ -56,6 +57,8 @@ interface ContentAsset {
   repurposedFromAssetId?: string | null;
   assetDate?: string | null;
   isExternal?: boolean;
+  websitePostId?: string | null;
+  websitePostSlug?: string | null;
   createdAt: string;
 }
 
@@ -448,6 +451,18 @@ export default function ContentLibraryPage() {
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  // Synozur website (www) — push the asset as a blog draft via the per-tenant
+  // MCP connection. Button only shows when the website is connected.
+  const { data: websiteStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+  });
+  const websiteConnected = !!websiteStatus?.connected;
+  const [websitePublishOpen, setWebsitePublishOpen] = useState(false);
 
   const downloadDocx = async (asset: ContentAsset) => {
     if (detailAsset && (editForm.title !== detailAsset.title || (editForm.content || "") !== (detailAsset.content || ""))) {
@@ -2179,6 +2194,18 @@ export default function ContentLibraryPage() {
                     >
                       <Download className="w-4 h-4" /> {downloadingDocx ? "Preparing..." : "Download Word"}
                     </Button>
+                    {websiteConnected && (
+                      <Button
+                        variant="outline"
+                        className="flex-1 gap-2"
+                        disabled={!editForm.content?.trim()}
+                        onClick={() => setWebsitePublishOpen(true)}
+                        data-testid="button-push-website"
+                      >
+                        <Globe className="w-4 h-4" />
+                        {detailAsset.websitePostSlug ? "On website ✓" : "Post to website"}
+                      </Button>
+                    )}
                     <Button
                       className="flex-1"
                       disabled={!editForm.title.trim() || editMutation.isPending}
@@ -2193,6 +2220,8 @@ export default function ContentLibraryPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        <WebsitePublishDialog asset={detailAsset} open={websitePublishOpen} onOpenChange={setWebsitePublishOpen} />
 
         {/* Manage Categories Dialog */}
         <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>

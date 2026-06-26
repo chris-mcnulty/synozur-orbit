@@ -15,9 +15,15 @@ import { encryptSecret } from "../utils/encryption";
 import { isFeatureEnabledAsync } from "../services/plan-policy";
 import { notifications } from "../services/notifications";
 import * as hubspot from "../services/hubspot-integration";
+import * as website from "../services/website-mcp-client";
+import { db } from "../db";
+import { and, eq } from "drizzle-orm";
+import { getRequestContext } from "../context";
 import {
   INTEGRATION_KINDS,
   WEBHOOK_EVENT_CATEGORIES,
+  websiteConnections,
+  contentAssets,
   type IntegrationConfig,
   type InsertIntegrationConfig,
 } from "@shared/schema";
@@ -740,5 +746,249 @@ export function registerIntegrationRoutes(app: Express) {
     } catch (err) {
       res.status(500).json({ error: errorMessage(err) });
     }
+  });
+
+  // ─── Synozur website (www) MCP integration ──────────────────────────────
+  // Per-tenant connection used to publish blog drafts directly to the Insights
+  // site. Admins configure the connection; content authors push drafts.
+  async function loadWebsiteContext(req: Request, res: Response, opts: { requireAdmin?: boolean } = {}) {
+    if (!req.session?.userId) { res.status(401).json({ error: "Not authenticated" }); return null; }
+    const user = await storage.getUser(req.session.userId);
+    if (!user) { res.status(404).json({ error: "User not found" }); return null; }
+    if (opts.requireAdmin && !hasAdminAccess(user.role)) {
+      res.status(403).json({ error: "Access denied - Admin only" });
+      return null;
+    }
+    return { tenantDomain: user.email.split("@")[1], userId: user.id };
+  }
+
+  // The active market from the per-tab context, used to scope asset lookups
+  // the same way the content-library routes do (defense-in-depth for the
+  // hypothetical multi-market tenant). Falls back to undefined — the
+  // tenantDomain check still applies — if the context can't be resolved.
+  async function activeMarketId(req: Request): Promise<string | undefined> {
+    try { return (await getRequestContext(req)).marketId || undefined; }
+    catch { return undefined; }
+  }
+
+  app.get("/api/integrations/website/status", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const conn = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (!conn) return res.json({ connected: false });
+      // The key is never returned once saved.
+      res.json({
+        connected: conn.enabled,
+        endpoint: conn.endpoint,
+        defaultAuthorId: conn.defaultAuthorId,
+        lastUsedAt: conn.lastUsedAt,
+        lastError: conn.lastError,
+      });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
+  const websiteConnectSchema = z.object({
+    // HTTPS only — the Bearer key must never travel in plaintext (same bar as
+    // the Slack/Teams webhook URLs above).
+    endpoint: z.string().url().refine((u) => u.toLowerCase().startsWith("https://"), {
+      message: "The MCP endpoint must use https://",
+    }),
+    apiKey: z.string().min(1).optional(), // omit on edit to keep the existing key
+    defaultAuthorId: z.string().nullable().optional(),
+  });
+  app.post("/api/integrations/website/connect", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res, { requireAdmin: true }); if (!ctx) return;
+      const parsed = websiteConnectSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+      const existing = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (!existing && !parsed.data.apiKey) return res.status(400).json({ error: "An MCP key is required to connect." });
+
+      if (existing) {
+        const updates: Record<string, unknown> = { endpoint: parsed.data.endpoint, enabled: true, updatedAt: new Date() };
+        if (parsed.data.apiKey) updates.encryptedApiKey = encryptSecret(parsed.data.apiKey);
+        if (parsed.data.defaultAuthorId !== undefined) updates.defaultAuthorId = parsed.data.defaultAuthorId;
+        await db.update(websiteConnections).set(updates).where(eq(websiteConnections.tenantDomain, ctx.tenantDomain));
+      } else {
+        await db.insert(websiteConnections).values({
+          tenantDomain: ctx.tenantDomain,
+          endpoint: parsed.data.endpoint,
+          encryptedApiKey: encryptSecret(parsed.data.apiKey!),
+          defaultAuthorId: parsed.data.defaultAuthorId ?? null,
+          createdBy: ctx.userId,
+        });
+      }
+      // Verify with a lightweight read before declaring success.
+      try {
+        await website.pingWebsite(ctx.tenantDomain);
+      } catch (err) {
+        return res.status(502).json({ error: `Saved, but the connection test failed: ${errorMessage(err)}` });
+      }
+      console.log(`[Website] Tenant ${ctx.tenantDomain} connected by user=${ctx.userId}`);
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
+  app.post("/api/integrations/website/disconnect", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res, { requireAdmin: true }); if (!ctx) return;
+      await db.delete(websiteConnections).where(eq(websiteConnections.tenantDomain, ctx.tenantDomain));
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
+  // Taxonomy proxies for the publish dialog.
+  app.get("/api/integrations/website/authors", async (req, res) => {
+    try { const ctx = await loadWebsiteContext(req, res); if (!ctx) return; res.json(await website.listAuthors(ctx.tenantDomain)); }
+    catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+  app.get("/api/integrations/website/categories", async (req, res) => {
+    try { const ctx = await loadWebsiteContext(req, res); if (!ctx) return; res.json(await website.listCategories(ctx.tenantDomain)); }
+    catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+  app.get("/api/integrations/website/tags", async (req, res) => {
+    try { const ctx = await loadWebsiteContext(req, res); if (!ctx) return; res.json(await website.listTags(ctx.tenantDomain)); }
+    catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  // Push a blog draft to the website. Pulls title + Markdown body from an Orbit
+  // content asset (when assetId is given) with optional overrides; authorId
+  // falls back to the connection default. Records the returned id/slug on the
+  // asset so Orbit knows it's been published as a draft.
+  const websitePushDraftSchema = z.object({
+    assetId: z.string().optional(),
+    title: z.string().optional(),
+    bodyMarkdown: z.string().optional(),
+    authorId: z.string().optional(),
+    excerpt: z.string().optional(),
+    categoryIds: z.array(z.string()).optional(),
+    tagIds: z.array(z.string()).optional(),
+    seoTitle: z.string().optional(),
+    seoDescription: z.string().optional(),
+    heroImageId: z.string().optional(),
+    useLeadImageAsHero: z.boolean().optional(),
+    scheduledFor: z.string().datetime().optional(),
+  });
+  app.post("/api/integrations/website/push-draft", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const parsed = websitePushDraftSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+      const conn = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (!conn || !conn.enabled) return res.status(400).json({ error: "Website not connected." });
+
+      let asset: typeof contentAssets.$inferSelect | undefined;
+      if (parsed.data.assetId) {
+        const marketId = await activeMarketId(req);
+        const conds = [eq(contentAssets.id, parsed.data.assetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)];
+        if (marketId) conds.push(eq(contentAssets.marketId, marketId));
+        [asset] = await db.select().from(contentAssets).where(and(...conds));
+        if (!asset) return res.status(404).json({ error: "Asset not found in the active market." });
+      }
+      const title = parsed.data.title ?? asset?.title;
+      const bodyMarkdown = parsed.data.bodyMarkdown ?? asset?.content ?? undefined;
+      if (!title) return res.status(400).json({ error: "A title is required." });
+      if (!bodyMarkdown) return res.status(400).json({ error: "Post body (Markdown) is required." });
+
+      // Hero image (best-effort): upload the asset's lead image and use the
+      // returned media id. A failed upload never blocks the post.
+      let heroImageId = parsed.data.heroImageId;
+      if (!heroImageId && parsed.data.useLeadImageAsHero && asset?.leadImageUrl) {
+        const img = await website.fetchImageAsBase64(asset.leadImageUrl);
+        if (img) {
+          try {
+            const media = await website.uploadImage(ctx.tenantDomain, {
+              ...img,
+              altText: title,
+              filename: `orbit-${asset.id}`,
+            });
+            heroImageId = media.id;
+          } catch (e) {
+            console.warn(`[Website] hero upload skipped: ${errorMessage(e)}`);
+          }
+        }
+      }
+
+      // Update the existing draft when we've pushed this asset before;
+      // otherwise create a new one. Keeps re-pushes idempotent (no duplicates).
+      let postId: string;
+      let postSlug: string;
+      let postStatus = "draft";
+      const excerpt = parsed.data.excerpt ?? asset?.description ?? undefined;
+      if (asset?.websitePostId && asset.websitePostSlug) {
+        await website.updateDraftPost(ctx.tenantDomain, {
+          id: asset.websitePostId,
+          title,
+          bodyMarkdown,
+          excerpt,
+          heroImageId: heroImageId ?? undefined,
+          categoryIds: parsed.data.categoryIds,
+          tagIds: parsed.data.tagIds,
+          seoTitle: parsed.data.seoTitle ?? undefined,
+          seoDescription: parsed.data.seoDescription ?? undefined,
+        });
+        postId = asset.websitePostId;
+        postSlug = asset.websitePostSlug;
+        postStatus = asset.websitePostStatus ?? "draft";
+      } else {
+        const authorId = parsed.data.authorId ?? conn.defaultAuthorId ?? undefined;
+        if (!authorId) return res.status(400).json({ error: "An author is required — pick one or set a default on the connection." });
+        const created = await website.createDraftPost(ctx.tenantDomain, {
+          title,
+          bodyMarkdown,
+          authorId,
+          excerpt,
+          heroImageId: heroImageId ?? undefined,
+          categoryIds: parsed.data.categoryIds,
+          tagIds: parsed.data.tagIds,
+          seoTitle: parsed.data.seoTitle ?? undefined,
+          seoDescription: parsed.data.seoDescription ?? undefined,
+        });
+        postId = created.id;
+        postSlug = created.slug;
+        postStatus = created.status ?? "draft";
+      }
+
+      // Optional scheduling.
+      let scheduledFor: Date | null = null;
+      if (parsed.data.scheduledFor) {
+        const sched = await website.schedulePost(ctx.tenantDomain, postId, new Date(parsed.data.scheduledFor).toISOString());
+        postStatus = sched.status ?? "scheduled";
+        scheduledFor = new Date(parsed.data.scheduledFor);
+      }
+
+      if (asset) {
+        await db.update(contentAssets)
+          .set({
+            websitePostId: postId,
+            websitePostSlug: postSlug,
+            websitePostStatus: postStatus,
+            websiteScheduledFor: scheduledFor,
+            updatedAt: new Date(),
+          })
+          .where(eq(contentAssets.id, asset.id));
+      }
+      console.log(`[Website] Draft pushed tenant=${ctx.tenantDomain} asset=${asset?.id ?? "adhoc"} slug=${postSlug} status=${postStatus}`);
+      res.json({ success: true, post: { id: postId, slug: postSlug, status: postStatus, scheduledFor } });
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  // Traffic for a post Orbit pushed — by assetId (preferred) or explicit slug.
+  app.get("/api/integrations/website/performance", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      let slug = typeof req.query.slug === "string" ? req.query.slug : undefined;
+      const assetId = typeof req.query.assetId === "string" ? req.query.assetId : undefined;
+      if (!slug && assetId) {
+        const marketId = await activeMarketId(req);
+        const conds = [eq(contentAssets.id, assetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)];
+        if (marketId) conds.push(eq(contentAssets.marketId, marketId));
+        const [asset] = await db.select().from(contentAssets).where(and(...conds));
+        if (!asset) return res.status(404).json({ error: "Asset not found in the active market." });
+        slug = asset.websitePostSlug ?? undefined;
+      }
+      if (!slug) return res.status(400).json({ error: "This asset hasn't been posted to the website yet." });
+      res.json(await website.getPostPerformance(ctx.tenantDomain, slug));
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
   });
 }

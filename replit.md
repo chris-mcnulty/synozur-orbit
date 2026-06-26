@@ -65,13 +65,68 @@ Interim decision for how each generated content type goes outbound, until the ne
 | Content type | Interim outbound format | Notes |
 | :--- | :--- | :--- |
 | Social posts | SocialPilot CSV | At least the next month, then revisit direct posting. |
-| Blog posts | Branded Word doc | Switch to direct website API once it's available. |
+| Blog posts | **Direct draft to Synozur website** (per-tenant MCP `create_draft_post`); Word doc fallback | The website API is now available — see "Synozur Website (www) MCP Integration" below. |
 | Whitepapers | Branded Word doc | — |
 | Case studies | Branded Word doc | — |
 | Landing page copy | Branded Word doc | Handoff for page build; direct via website API later. |
 | Email newsletters | Email campaign engine | Generation, formatting, and tracking only — the engine does **not** send automatically. |
 | Video scripts | Branded Word doc | — |
 | Podcasts | Branded Word doc outline | Podcasts ("Polaris") are recorded **live** — no AI-generated MP3 audio needed. Outline follows Synozur's standard format: see `docs/polaris-podcast-outline-format.md` (example: `docs/polaris-outline-example.docx`). |
+
+## Synozur Website (www) MCP Integration
+
+Orbit publishes to the Synozur Insights website (the "www" server) through its
+MCP server, configured **per tenant**. This is the "direct website API" the
+interim Word-doc export was waiting for. **v1 scope: direct-post blog drafts**
+(`create_draft_post`); the rest of the catalogue is documented for follow-on work.
+
+- **Per-tenant connection** — `website_connections` table: endpoint + an
+  encrypted `mcp.write` key (`encryptSecret`/`decryptSecret`), optional default
+  author. One row per tenant, configured in Settings → Integrations.
+- **Client** — `server/services/website-mcp-client.ts` calls the remote MCP
+  server over Streamable HTTP (JSON-RPC 2.0 `tools/call`).
+- **Routes** — `server/routes/integrations.ts` → `/api/integrations/website/*`
+  (status, connect, disconnect, authors/categories/tags proxies, push-draft).
+- **Push flow** — an Orbit blog content asset → `create_draft_post`; the
+  returned `{ id, slug }` is recorded on the asset (`websitePostId` /
+  `websitePostSlug`) to mark it published-as-draft and to enable future
+  `get_post_performance` traffic pulls.
+
+### Connection & auth
+- Endpoint (per tenant; stored, not hardcoded): e.g. `https://synozur-baseline.replit.app/api/mcp`
+- Transport: Streamable HTTP, stateless — one POST per call, `Content-Type: application/json`
+- Auth: `Authorization: Bearer syn_<key>`. `mcp.read` unlocks read tools; `mcp.write` adds `create_draft_post`, `update_draft_post`, `schedule_post`, `upload_image`.
+
+### Tool catalogue (reference; `*` = needs `mcp.write`)
+- **Posts**: `search_posts`, `get_post`, `get_post_performance`, `create_draft_post`*, `update_draft_post`*, `schedule_post`*
+- **Taxonomy**: `list_categories`, `list_tags`, `list_authors`
+- **Media**: `list_media`, `upload_image`*
+- **Events**: `list_events`, `list_past_events`, `get_event`
+- **Episodes**: `list_episodes`, `get_episode`
+- **Landing pages**: `list_landing_pages`
+
+`create_draft_post` requires `title`, `bodyMarkdown`, `authorId` (from
+`list_authors`); optional `categoryIds`, `tagIds`, `excerpt`, `heroImageId`,
+`seoTitle`, `seoDescription`. Returns `{ id, slug, status: 'draft', title }`.
+
+### v2 (implemented)
+- **Create-or-update**: re-pushing an asset updates the existing draft via
+  `update_draft_post` (tracked by `website_post_id`) instead of duplicating.
+- **Scheduling**: `schedule_post` from the publish dialog; `website_post_status`
+  / `website_scheduled_for` mirror the site's lifecycle on the asset.
+- **Hero images**: the asset's lead image is uploaded via `upload_image` and
+  set as `heroImageId` (best-effort — a failed upload never blocks the post).
+- **Performance**: `get_post_performance` surfaced in the publish dialog
+  (views, sessions, 30-day trend, top referrers) via
+  `GET /api/integrations/website/performance`.
+- **Full publish dialog**: author / category / tag / excerpt / hero / schedule.
+
+### Roadmap (beyond v2)
+- Feed `get_post_performance` into the Orbit Score funnel component (needs a
+  scoring-weight decision); inbound library sync via `search_posts` /
+  `get_post`; events (`list_events`) into conference promotion; episodes
+  (`list_episodes`) into Polaris. (No social-post or landing-page *create*
+  tools exist — social stays SocialPilot CSV; landing pages stay read-only.)
 
 ## User preferences
 
