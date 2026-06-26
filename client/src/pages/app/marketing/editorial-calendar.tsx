@@ -18,6 +18,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -73,6 +74,7 @@ interface ContentBrief {
   status: string;
   contentAssetId: string | null;
   campaignId: string | null;
+  campaignStatus: string | null;
   solutionAreaId: string | null;
   draftTitle: string | null;
   draftCategoryId: string | null;
@@ -82,6 +84,7 @@ interface ContentBrief {
 interface NamedRow {
   id: string;
   name: string;
+  status?: string;
 }
 
 interface EditorialCalendar {
@@ -251,6 +254,11 @@ export default function EditorialCalendarPage() {
       : null,
   );
   const [formatFilter, setFormatFilter] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  // Copy-to-campaign dialog state
+  const [copyBriefId, setCopyBriefId] = useState<string | null>(null);
+  const [copyTargetCampaignId, setCopyTargetCampaignId] = useState<string>("");
+  const [copyNewCampaignName, setCopyNewCampaignName] = useState<string>("");
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
@@ -302,12 +310,18 @@ export default function EditorialCalendarPage() {
   });
 
   const briefs = allBriefs ?? [];
-  // Apply campaign + format filters when active.
+  // Statuses / campaign statuses considered "closed" — hidden unless showAll=true.
+  const CLOSED_CAMPAIGN_STATUSES = ["completed", "archived", "deleted"];
+  const activeOnly = (b: ContentBrief) =>
+    b.status !== "removed" && !CLOSED_CAMPAIGN_STATUSES.includes(b.campaignStatus ?? "");
+  // Apply default hide-closed filter, then campaign + format filters.
   const visibleBriefs = briefs.filter((b) => {
+    if (!showAll && !activeOnly(b)) return false;
     if (campaignFilter && b.campaignId !== campaignFilter) return false;
     if (formatFilter && b.format !== formatFilter) return false;
     return true;
   });
+  const hiddenCount = briefs.filter((b) => !activeOnly(b)).length;
 
   // Once the deep-linked brief's card is in the DOM, scroll to it and —
   // if the brief already has a drafted asset — open the editor automatically
@@ -335,18 +349,21 @@ export default function EditorialCalendarPage() {
   // These are gated behind their own features; when unavailable the lists are
   // simply empty and the selects show nothing to pick.
   const { data: campaignOptions } = useQuery<NamedRow[]>({
-    // Active campaigns only, deduped by name — archived and duplicate-named
-    // campaigns shouldn't clutter the assignment picker.
-    queryKey: ["/api/campaigns", "active-picker"],
+    // All non-deleted campaigns — used for filter dropdown and assign picker.
+    // Includes draft, active, completed, archived so users can find any brief.
+    queryKey: ["/api/campaigns", "all-picker"],
     queryFn: async () => {
-      const rows: NamedRow[] = (await getJson("/api/campaigns?status=active")) ?? [];
+      const all: NamedRow[] = (await getJson("/api/campaigns")) ?? [];
+      // Exclude deleted; dedupe by name
       const seen = new Set<string>();
-      return rows.filter((c) => {
-        const key = (c.name ?? "").trim().toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      return all
+        .filter((c) => c.status !== "deleted")
+        .filter((c) => {
+          const key = (c.name ?? "").trim().toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
     },
     enabled: allowed,
   });
@@ -832,6 +849,28 @@ export default function EditorialCalendarPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const copyBrief = useMutation({
+    mutationFn: async ({ id, campaignId, newCampaignName }: { id: string; campaignId?: string; newCampaignName?: string }) => {
+      const res = await fetch(`/api/content-briefs/${id}/copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(campaignId ? { campaignId } : { newCampaignName }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to copy brief");
+      return res.json() as Promise<{ campaignId: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${data.campaignId}/content-plan`] });
+      setCopyBriefId(null);
+      setCopyTargetCampaignId("");
+      setCopyNewCampaignName("");
+      toast.success("Brief copied to campaign");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // LinkedIn Digest dialog state — also opened via ?openDigest=1 deep link
   // (e.g. from the campaign Content Plan tab where the full editorial calendar is not in nav).
   const [digestOpen, setDigestOpen] = useState(() =>
@@ -1000,7 +1039,7 @@ export default function EditorialCalendarPage() {
             </CardContent>
           </Card>
 
-          {/* Format filter */}
+          {/* Filters row: format picker + show-all toggle */}
           {briefs.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
               <Select value={formatFilter ?? "__all__"} onValueChange={(v) => setFormatFilter(v === "__all__" ? null : v)}>
@@ -1016,6 +1055,14 @@ export default function EditorialCalendarPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                variant={showAll ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setShowAll((v) => !v)}
+                data-testid="button-show-all"
+              >
+                {showAll ? "Active only" : `Show all${hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}`}
+              </Button>
               {(campaignFilter || formatFilter) && (
                 <Button
                   variant="ghost"
@@ -1045,11 +1092,25 @@ export default function EditorialCalendarPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">All campaigns</SelectItem>
-                      {(campaignOptions ?? []).map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
+                      {(() => {
+                        const active = (campaignOptions ?? []).filter((c) => c.status === "active" || c.status === "draft");
+                        const closed = (campaignOptions ?? []).filter((c) => c.status !== "active" && c.status !== "draft");
+                        return (
+                          <>
+                            {active.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
+                            {active.length > 0 && closed.length > 0 && (
+                              <SelectSeparator />
+                            )}
+                            {closed.map((c) => (
+                              <SelectItem key={c.id} value={c.id} className="text-muted-foreground">
+                                {c.name} ({c.status})
+                              </SelectItem>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </SelectContent>
                   </Select>
                   {campaignFilter && (
@@ -1373,6 +1434,19 @@ export default function EditorialCalendarPage() {
                             <FileDown className="mr-1 h-4 w-4" />
                           )}
                           Word
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setCopyBriefId(b.id);
+                            setCopyTargetCampaignId(b.campaignId ?? "");
+                            setCopyNewCampaignName("");
+                          }}
+                          data-testid={`copy-brief-${b.id}`}
+                        >
+                          <Copy className="mr-1 h-4 w-4" />
+                          Copy to…
                         </Button>
                         <Button
                           size="sm"
@@ -2413,6 +2487,87 @@ export default function EditorialCalendarPage() {
                     Push to Planner
                   </>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Copy brief to campaign dialog */}
+        <Dialog
+          open={!!copyBriefId}
+          onOpenChange={(o) => {
+            if (!o) { setCopyBriefId(null); setCopyTargetCampaignId(""); setCopyNewCampaignName(""); }
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Copy brief to campaign</DialogTitle>
+              <DialogDescription>
+                Choose an existing campaign to copy this brief into, or create a new one.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Existing campaign</Label>
+                <Select
+                  value={copyTargetCampaignId || "__none__"}
+                  onValueChange={(v) => { setCopyTargetCampaignId(v === "__none__" ? "" : v); setCopyNewCampaignName(""); }}
+                >
+                  <SelectTrigger data-testid="select-copy-campaign">
+                    <SelectValue placeholder="Pick a campaign…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None (new campaign below)</SelectItem>
+                    {(() => {
+                      const active = (campaignOptions ?? []).filter((c) => c.status === "active" || c.status === "draft");
+                      const closed = (campaignOptions ?? []).filter((c) => c.status !== "active" && c.status !== "draft");
+                      return (
+                        <>
+                          {active.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                          {active.length > 0 && closed.length > 0 && <SelectSeparator />}
+                          {closed.map((c) => (
+                            <SelectItem key={c.id} value={c.id} className="text-muted-foreground">
+                              {c.name} ({c.status})
+                            </SelectItem>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </SelectContent>
+                </Select>
+              </div>
+              {!copyTargetCampaignId && (
+                <div className="space-y-2">
+                  <Label htmlFor="copy-new-campaign-name">Or create a new campaign named…</Label>
+                  <Input
+                    id="copy-new-campaign-name"
+                    placeholder="Campaign name"
+                    value={copyNewCampaignName}
+                    onChange={(e) => setCopyNewCampaignName(e.target.value)}
+                    data-testid="input-copy-new-campaign"
+                  />
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setCopyBriefId(null); setCopyTargetCampaignId(""); setCopyNewCampaignName(""); }}>
+                Cancel
+              </Button>
+              <Button
+                disabled={(!copyTargetCampaignId && !copyNewCampaignName.trim()) || copyBrief.isPending}
+                onClick={() => {
+                  if (!copyBriefId) return;
+                  copyBrief.mutate({
+                    id: copyBriefId,
+                    ...(copyTargetCampaignId ? { campaignId: copyTargetCampaignId } : { newCampaignName: copyNewCampaignName.trim() }),
+                  });
+                }}
+                data-testid="button-copy-brief-confirm"
+              >
+                {copyBrief.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+                Copy brief
               </Button>
             </DialogFooter>
           </DialogContent>

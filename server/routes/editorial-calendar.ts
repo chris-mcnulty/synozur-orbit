@@ -426,6 +426,17 @@ export function registerEditorialCalendarRoutes(app: Express) {
         }
       }
 
+      // Enrich: campaign status so the client can hide briefs on closed campaigns.
+      const uniqueCampaignIds = [...new Set(rows.map((b) => b.campaignId).filter((id): id is string => !!id))];
+      const campaignStatusMap = new Map<string, string>();
+      if (uniqueCampaignIds.length) {
+        const campaignRows = await db
+          .select({ id: campaigns.id, status: campaigns.status })
+          .from(campaigns)
+          .where(inArray(campaigns.id, uniqueCampaignIds));
+        for (const c of campaignRows) campaignStatusMap.set(c.id, c.status);
+      }
+
       const enriched = rows.map((b) => {
         const asset = b.contentAssetId ? assetMap.get(b.contentAssetId) : undefined;
         return {
@@ -433,6 +444,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
           draftTitle: asset?.title ?? null,
           draftCategoryId: asset?.categoryId ?? null,
           pushedToPlanner: pushedBriefIds.has(b.id),
+          campaignStatus: b.campaignId ? (campaignStatusMap.get(b.campaignId) ?? null) : null,
         };
       });
 
