@@ -89,17 +89,18 @@ function GroupRow({
   href,
 }: {
   group: ActionGroup;
-  onAction?: (tab: string) => void;
+  onAction?: (tab: string, filter?: string) => void;
   href?: string;
 }) {
   const Icon = ACTION_ICON[group.headlineAction];
   const tab = actionTab(group);
+  const filter = group.headlineAction === "fix" ? "publish_failed" : undefined;
   const button = (
     <Button
       size="sm"
       variant="outline"
       className="shrink-0 gap-1.5"
-      onClick={onAction ? () => onAction(tab) : undefined}
+      onClick={onAction ? () => onAction(tab, filter) : undefined}
       data-testid={`next-action-${group.key}`}
     >
       <Icon className="w-3.5 h-3.5" />
@@ -136,13 +137,13 @@ function GroupRow({
   );
 }
 
-/** Scoped to one campaign; `onNavigate(tab)` switches the campaign's tab. */
+/** Scoped to one campaign; `onNavigate(tab, filter?)` switches the campaign's tab. */
 export function CampaignNextActions({
   campaignId,
   onNavigate,
 }: {
   campaignId: string;
-  onNavigate?: (tab: string) => void;
+  onNavigate?: (tab: string, filter?: string) => void;
 }) {
   const { data } = useQuery<{ groups: ActionGroup[] }>({
     queryKey: ["/api/marketing/campaigns", campaignId, "next-actions"],

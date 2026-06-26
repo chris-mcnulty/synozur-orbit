@@ -275,6 +275,8 @@ interface GeneratedPost {
   hashtags: string[];
   status: string;
   deliveryMode?: string | null;
+  postFormat?: string | null;
+  carouselSlides?: unknown[] | null;
   variantGroup?: string;
   generationJobId?: string | null;
   conferenceId?: string | null;
@@ -386,6 +388,7 @@ export default function CampaignDetailPage() {
   const [brandAssetSearch, setBrandAssetSearch] = useState("");
   const [postFilter, setPostFilter] = useState<string>("active");
   const [postAccountFilter, setPostAccountFilter] = useState<string>("all");
+  const [manualPostedAtMap, setManualPostedAtMap] = useState<Record<string, string>>({});
   // WS4: when drilling into one collapsed social batch (its generation run,
   // repurpose group, or event); null shows the batch overview.
   const [batchFilter, setBatchFilter] = useState<string | null>(null);
@@ -1574,12 +1577,12 @@ export default function CampaignDetailPage() {
   // posting existed, or posted by hand). Stamps it Published so it drops out of
   // the pending/export pool without going through the scheduler.
   const markPostedMutation = useMutation({
-    mutationFn: async (postId: string) => {
+    mutationFn: async ({ postId, publishedAt }: { postId: string; publishedAt?: string }) => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status: "published" }),
+        body: JSON.stringify({ status: "published", ...(publishedAt ? { publishedAt } : {}) }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to mark as posted");
       return r.json();
@@ -2159,7 +2162,8 @@ export default function CampaignDetailPage() {
 
         <CampaignNextActions
           campaignId={id}
-          onNavigate={(tab) => {
+          onNavigate={(tab, filter) => {
+            if (filter) setPostFilter(filter);
             setActiveTab(tab as CampaignTab);
             window.history.replaceState(null, "", window.location.pathname + window.location.search + "#" + tab);
             setTimeout(() => tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -3339,7 +3343,7 @@ export default function CampaignDetailPage() {
                                 size="sm"
                                 className="gap-1 text-green-600"
                                 title="This was already posted somewhere else — log it as posted so it's not pending"
-                                onClick={() => markPostedMutation.mutate(post.id)}
+                                onClick={() => markPostedMutation.mutate({ postId: post.id })}
                                 disabled={markPostedMutation.isPending}
                                 data-testid={`button-mark-posted-${post.id}`}
                               >
@@ -3570,12 +3574,45 @@ export default function CampaignDetailPage() {
                             )}
                           </div>
                         )}
-                        {post.publishError && !post.publishedAt && (
+                        {post.publishError && !post.publishedAt && post.postFormat === "carousel" ? (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-2.5" data-testid={`text-publish-error-${post.id}`}>
+                            <p className="text-xs font-medium text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                              Carousel auto-posting failed — post it manually
+                            </p>
+                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                              LinkedIn carousel (PDF) posts require special API permissions that haven't been granted yet. Download the image below, post it directly on LinkedIn, then record the date here.
+                            </p>
+                            {post.publishError && (
+                              <p className="text-[10px] text-red-500 font-mono break-all">{post.publishError}</p>
+                            )}
+                            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                              <label className="text-xs text-muted-foreground shrink-0">When did you post it?</label>
+                              <input
+                                type="datetime-local"
+                                className="text-xs border border-input rounded px-2 py-1 bg-background"
+                                value={manualPostedAtMap[post.id] ?? ""}
+                                onChange={(e) => setManualPostedAtMap(prev => ({ ...prev, [post.id]: e.target.value }))}
+                                data-testid={`input-manual-posted-at-${post.id}`}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 text-green-700 border-green-300 hover:bg-green-50 dark:hover:bg-green-950"
+                                onClick={() => markPostedMutation.mutate({ postId: post.id, publishedAt: manualPostedAtMap[post.id] })}
+                                disabled={markPostedMutation.isPending}
+                                data-testid={`button-mark-posted-carousel-${post.id}`}
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />Mark as posted
+                              </Button>
+                            </div>
+                          </div>
+                        ) : post.publishError && !post.publishedAt ? (
                           <div className="flex items-center gap-1 text-xs text-red-500" data-testid={`text-publish-error-${post.id}`}>
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             Publish failed: {post.publishError}
                           </div>
-                        )}
+                        ) : null}
                         {postImage && (
                           <button
                             type="button"
