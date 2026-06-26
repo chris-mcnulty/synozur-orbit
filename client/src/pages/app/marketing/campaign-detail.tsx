@@ -2379,7 +2379,7 @@ export default function CampaignDetailPage() {
                               variant="outline"
                               size="sm"
                               className="gap-1.5"
-                              onClick={() => navigate(`/app/marketing/editorial-calendar?calendar=${contentPlan.calendar!.id}`)}
+                              onClick={() => navigate(`/app/marketing/editorial-calendar?campaignId=${id}`)}
                               data-testid={`button-open-brief-${b.id}`}
                             >
                               Open in Content Calendar <ExternalLink className="w-3 h-3" />

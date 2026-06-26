@@ -377,16 +377,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
       if (!(await guardFeature(req, res, "editorialCalendar"))) return;
       const ctx = await getRequestContext(req);
       const rows = await db
-        .select({
-          id: contentBriefs.id,
-          title: contentBriefs.title,
-          format: contentBriefs.format,
-          status: contentBriefs.status,
-          campaignId: contentBriefs.campaignId,
-          calendarId: contentBriefs.calendarId,
-          scheduledAt: contentBriefs.scheduledAt,
-          createdAt: contentBriefs.createdAt,
-        })
+        .select()
         .from(contentBriefs)
         .where(
           and(
@@ -399,7 +390,53 @@ export function registerEditorialCalendarRoutes(app: Express) {
           ),
         )
         .orderBy(desc(contentBriefs.createdAt));
-      res.json(rows);
+
+      // Enrich: draft title/category from linked content asset.
+      const assetIds = rows.map((b) => b.contentAssetId).filter((id): id is string => !!id);
+      let assetMap = new Map<string, { title: string; categoryId: string | null }>();
+      if (assetIds.length) {
+        const assets = await db
+          .select({ id: contentAssets.id, title: contentAssets.title, categoryId: contentAssets.categoryId })
+          .from(contentAssets)
+          .where(
+            and(
+              inArray(contentAssets.id, assetIds),
+              eq(contentAssets.tenantDomain, ctx.tenantDomain),
+              eq(contentAssets.marketId, ctx.marketId),
+            ),
+          );
+        assetMap = new Map(assets.map((a) => [a.id, { title: a.title, categoryId: a.categoryId }]));
+      }
+
+      // Enrich: which briefs are already in a marketing plan task.
+      const pushedBriefIds = new Set<string>();
+      if (rows.length) {
+        const pushedTasks = await db
+          .select({ sourceBriefId: marketingTasks.sourceBriefId })
+          .from(marketingTasks)
+          .innerJoin(marketingPlans, eq(marketingTasks.planId, marketingPlans.id))
+          .where(
+            and(
+              inArray(marketingTasks.sourceBriefId, rows.map((b) => b.id)),
+              eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+            ),
+          );
+        for (const t of pushedTasks) {
+          if (t.sourceBriefId) pushedBriefIds.add(t.sourceBriefId);
+        }
+      }
+
+      const enriched = rows.map((b) => {
+        const asset = b.contentAssetId ? assetMap.get(b.contentAssetId) : undefined;
+        return {
+          ...b,
+          draftTitle: asset?.title ?? null,
+          draftCategoryId: asset?.categoryId ?? null,
+          pushedToPlanner: pushedBriefIds.has(b.id),
+        };
+      });
+
+      res.json(enriched);
     } catch (err: any) {
       console.error("[content-briefs list]", err);
       res.status(500).json({ error: err.message || "Failed to list content briefs" });

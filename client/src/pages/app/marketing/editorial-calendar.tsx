@@ -235,12 +235,6 @@ function canFinalizeBrief(b: { contentAssetId?: string | null; status: string })
 export default function EditorialCalendarPage() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  // Honor a ?calendar=<id> deep link (e.g. from a campaign's content plan).
-  const initialCalendarId =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("calendar")
-      : null;
-  const [selectedId, setSelectedId] = useState<string | null>(initialCalendarId);
   // Honor a ?brief=<id> deep link (e.g. "Open editor" from the Master Calendar):
   // once the brief's card renders, scroll to it and briefly highlight it.
   const [focusBriefId, setFocusBriefId] = useState<string | null>(() =>
@@ -256,6 +250,7 @@ export default function EditorialCalendarPage() {
       ? new URLSearchParams(window.location.search).get("campaignId")
       : null,
   );
+  const [formatFilter, setFormatFilter] = useState<string | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [count, setCount] = useState(15);
@@ -300,28 +295,19 @@ export default function EditorialCalendarPage() {
     enabled: distOpen,
   });
 
-  const { data: calendars, isLoading: calendarsLoading } = useQuery<EditorialCalendar[]>({
-    queryKey: ["/api/editorial-calendars"],
-    queryFn: async () => (await getJson("/api/editorial-calendars")) ?? [],
+  const { data: allBriefs, isLoading: briefsLoading } = useQuery<ContentBrief[]>({
+    queryKey: ["/api/content-briefs"],
+    queryFn: async () => (await getJson("/api/content-briefs")) ?? [],
+    enabled: allowed,
   });
 
-  const activeId = selectedId ?? calendars?.[0]?.id ?? null;
-
-  const { data: detail, isLoading: detailLoading } = useQuery<{
-    calendar: EditorialCalendar;
-    briefs: ContentBrief[];
-  } | null>({
-    queryKey: ["/api/editorial-calendars", activeId],
-    queryFn: () => (activeId ? getJson(`/api/editorial-calendars/${activeId}`) : null),
-    enabled: !!activeId,
+  const briefs = allBriefs ?? [];
+  // Apply campaign + format filters when active.
+  const visibleBriefs = briefs.filter((b) => {
+    if (campaignFilter && b.campaignId !== campaignFilter) return false;
+    if (formatFilter && b.format !== formatFilter) return false;
+    return true;
   });
-
-  const briefs = detail?.briefs ?? [];
-  // When a campaign filter is active (deep link or toolbar pick), scope the
-  // cards to that campaign so the page reads as a campaign-scoped review surface.
-  const visibleBriefs = campaignFilter
-    ? briefs.filter((b) => b.campaignId === campaignFilter)
-    : briefs;
 
   // Once the deep-linked brief's card is in the DOM, scroll to it and —
   // if the brief already has a drafted asset — open the editor automatically
@@ -387,8 +373,7 @@ export default function EditorialCalendarPage() {
       return res.json();
     },
     onSuccess: (data: { calendar: EditorialCalendar; warnings?: string[] }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
-      setSelectedId(data.calendar.id);
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       setGenerateOpen(false);
       setFocus("");
       toast.success(`Generated "${data.calendar.name}"`);
@@ -408,7 +393,7 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to update brief");
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] }),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -425,7 +410,7 @@ export default function EditorialCalendarPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       toast.success("Finalized — brief approved and its draft saved to the library.");
     },
@@ -451,7 +436,7 @@ export default function EditorialCalendarPage() {
       return { total: ids.length, failed };
     },
     onSuccess: ({ total, failed }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       if (failed > 0) {
         toast.warning(`Finalized ${total - failed} of ${total}; ${failed} could not be finalized.`);
@@ -475,7 +460,7 @@ export default function EditorialCalendarPage() {
       return res.json();
     },
     onSuccess: (data: { draft: DraftResult; asset?: { id: string; leadImageUrl?: string | null } }, briefId) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       setDraft(data.draft);
       setDraftAssetId(data.asset?.id ?? null);
       setDraftBriefTitle(briefs.find((b) => b.id === briefId)?.title ?? null);
@@ -532,7 +517,7 @@ export default function EditorialCalendarPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -552,7 +537,7 @@ export default function EditorialCalendarPage() {
     onSuccess: (data: { body: string }) => {
       setDraft((d) => (d ? { ...d, body: data.body } : d));
       setRewriteInstr("");
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       toast.success("Draft rewritten");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -796,7 +781,7 @@ export default function EditorialCalendarPage() {
 
   const planDistribution = useMutation({
     mutationFn: async (planId?: string) => {
-      const res = await fetch(`/api/editorial-calendars/${activeId}/distribution-plan`, {
+      const res = await fetch(`/api/editorial-calendars/none/distribution-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -841,7 +826,7 @@ export default function EditorialCalendarPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", activeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       toast.success("Brief deleted");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -931,22 +916,6 @@ export default function EditorialCalendarPage() {
     }
   };
 
-  const deleteCalendar = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/editorial-calendars/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error((await res.json()).error || "Failed to delete calendar");
-      return res.json();
-    },
-    onSuccess: () => {
-      setSelectedId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
-      toast.success("Calendar deleted");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   // Funnel breakdown computed from the current briefs.
   const funnelCounts = visibleBriefs.reduce<Record<string, number>>((acc, b) => {
@@ -1031,71 +1000,34 @@ export default function EditorialCalendarPage() {
             </CardContent>
           </Card>
 
-          {/* Calendar selector */}
-          {calendarsLoading ? (
-            <p className="text-sm text-muted-foreground">Loading calendars…</p>
-          ) : calendars && calendars.length > 0 ? (
+          {/* Format filter */}
+          {briefs.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
-              <Select value={activeId ?? undefined} onValueChange={setSelectedId}>
-                <SelectTrigger className="w-[320px]" data-testid="select-calendar">
-                  <SelectValue placeholder="Select a calendar" />
+              <Select value={formatFilter ?? "__all__"} onValueChange={(v) => setFormatFilter(v === "__all__" ? null : v)}>
+                <SelectTrigger className="w-[220px]" data-testid="select-format-filter">
+                  <SelectValue placeholder="All formats" />
                 </SelectTrigger>
                 <SelectContent>
-                  {calendars.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
+                  <SelectItem value="__all__">All formats</SelectItem>
+                  {Array.from(new Set(briefs.map((b) => b.format))).sort().map((fmt) => (
+                    <SelectItem key={fmt} value={fmt}>
+                      {FORMAT_LABELS[fmt] ?? fmt}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {activeId && distributionAllowed && briefs.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSchedule(null);
-                    setCommittedPlan(null);
-                    setDistPlanId("");
-                    setDistOpen(true);
-                  }}
-                  data-testid="button-suggest-schedule"
-                >
-                  <CalendarDays className="mr-1 h-4 w-4" />
-                  Schedule briefs
-                </Button>
-              )}
-              {activeId && (
+              {(campaignFilter || formatFilter) && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-destructive"
-                  disabled={deleteCalendar.isPending}
-                  onClick={() => {
-                    if (confirm("Delete this calendar and all its briefs?")) deleteCalendar.mutate(activeId);
-                  }}
-                  data-testid="button-delete-calendar"
+                  onClick={() => { setCampaignFilter(null); setFormatFilter(null); }}
+                  data-testid="button-clear-filters"
                 >
-                  <Trash2 className="mr-1 h-4 w-4" />
-                  Delete
+                  <X className="mr-1 h-3 w-3" />
+                  Clear filters
                 </Button>
               )}
             </div>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-                <CalendarDays className="h-10 w-10 text-muted-foreground" />
-                <div>
-                  <p className="font-medium">No calendars yet</p>
-                  <p className="text-sm text-muted-foreground">
-                    Generate your first demand-scored content calendar to get started.
-                  </p>
-                </div>
-                <Button onClick={() => setGenerateOpen(true)}>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate new briefs
-                </Button>
-              </CardContent>
-            </Card>
           )}
 
           {/* Campaign filter + campaign-scoped review surface */}
@@ -1198,14 +1130,30 @@ export default function EditorialCalendarPage() {
           )}
 
           {/* Briefs */}
-          {detailLoading ? (
+          {briefsLoading ? (
             <p className="text-sm text-muted-foreground">Loading briefs…</p>
-          ) : visibleBriefs.length === 0 && campaignFilter ? (
+          ) : briefs.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                <ClipboardList className="h-10 w-10 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">No briefs yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Generate demand-scored briefs or create a LinkedIn Digest to get started.
+                  </p>
+                </div>
+                <Button onClick={() => setGenerateOpen(true)}>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate new briefs
+                </Button>
+              </CardContent>
+            </Card>
+          ) : visibleBriefs.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-                <p className="text-sm font-medium">No briefs for this campaign in this calendar</p>
-                <Button variant="outline" size="sm" onClick={() => setCampaignFilter(null)} data-testid="button-clear-campaign-filter">
-                  Show all campaigns
+                <p className="text-sm font-medium">No briefs match the current filters</p>
+                <Button variant="outline" size="sm" onClick={() => { setCampaignFilter(null); setFormatFilter(null); }} data-testid="button-clear-filters-empty">
+                  Clear filters
                 </Button>
               </CardContent>
             </Card>
@@ -1771,11 +1719,7 @@ export default function EditorialCalendarPage() {
                           });
                           const data = await res.json();
                           if (!res.ok) throw new Error(data.error || "Failed to create digest");
-                          queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars"] });
-                          if (data.calendarId) {
-                            queryClient.invalidateQueries({ queryKey: ["/api/editorial-calendars", data.calendarId] });
-                            setSelectedId(data.calendarId);
-                          }
+                          queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
                           setDigestOpen(false);
                           setDigestPreview(null);
                           toast.success(`LinkedIn Digest created — "${data.draft?.title || "Digest"}" is ready in the Content Library.`);
