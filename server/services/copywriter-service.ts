@@ -70,12 +70,26 @@ export async function draftFromBrief(
 ): Promise<DraftFromBriefResult> {
   const format = coerceFormat(brief.format);
 
+  // When the draft is source-driven (synthesized from existing content, e.g.
+  // a LinkedIn digest or a repurposed asset), competitive intelligence and
+  // briefing action items steer the AI away from the source material and
+  // produce irrelevant output. Strip those sections but keep messaging
+  // framework, GTM plan, personas, and brand identity — those are still
+  // appropriate voice/positioning grounding.
+  const hasSourceContext = !!opts.sourceContext?.trim();
+
   const strategicCtx = await loadStrategicContext(
     brief.tenantDomain,
     brief.marketId || undefined,
     opts.isDefaultMarket,
   );
-  const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
+  // For source-driven drafts, zero out competitive intel and briefing action
+  // items before formatting so they never reach the prompt.
+  const strategicBlock = formatStrategicContextForPrompt(
+    hasSourceContext
+      ? { ...strategicCtx, competitiveIntelligence: "", briefingActionItems: "" }
+      : strategicCtx,
+  );
 
   let personaBlock = "";
   if (brief.targetPersonaId) {
@@ -86,10 +100,11 @@ export async function draftFromBrief(
     if (persona) personaBlock = formatPersonaContextForPrompt([persona as any]);
   }
 
-  // Frozen founding signals from the brief's campaign (if any) — supporting
-  // facts the copywriter may cite. Briefs not tied to a campaign skip this.
+  // Founding signals are also skipped for source-driven drafts — they supply
+  // campaign context that is irrelevant when the output must stay faithful to
+  // the provided source material.
   let foundingSignalsBlock = "";
-  if (brief.campaignId) {
+  if (brief.campaignId && !hasSourceContext) {
     const fs = await loadCampaignFoundingSignals(brief.campaignId);
     foundingSignalsBlock = formatFoundingSignalsForPrompt(fs);
   }

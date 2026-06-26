@@ -31,3 +31,9 @@ drafts vanish from the library with no backfill).
 **How to apply:** if a future flow needs a legitimate library asset with no public
 URL, this rule would hide it — at that point introduce an explicit
 `isSourceAsset`/`origin` flag instead of loosening the url filter.
+
+**Extended rule (confirmed):** long-form repurposed drafts (blog posts, podcast
+outlines, whitepapers, etc.) are in the same category as social post drafts — they
+do NOT go to Content Library. Repurposed long-form → Content Briefs (drafted
+brief + linked asset). Only a human-curated decision to add a URL elevates something
+into the Library. Even published podcasts are only 10-20% Library-worthy.

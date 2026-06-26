@@ -91,12 +91,16 @@ interface BatchResponse {
 interface RepurposeDialogProps {
   assetId: string | null;
   assetTitle?: string;
+  /** If set, long-form repurposed drafts are attached to a new Content Brief in this calendar. */
+  calendarId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Where to send the user to open a generated library snippet. */
   onOpenLibraryAsset?: (assetId: string) => void;
   /** Where to send the user to see the generated social drafts. */
   onViewPosts?: () => void;
+  /** Where to send the user to see the generated Content Briefs (long-form drafts). */
+  onOpenContentBriefs?: () => void;
   /** Fired once a batch has been generated, e.g. to refresh lists. */
   onGenerated?: (result: BatchResponse) => void;
 }
@@ -104,10 +108,12 @@ interface RepurposeDialogProps {
 export function RepurposeDialog({
   assetId,
   assetTitle,
+  calendarId,
   open,
   onOpenChange,
   onOpenLibraryAsset,
   onViewPosts,
+  onOpenContentBriefs,
   onGenerated,
 }: RepurposeDialogProps) {
   // selection state: format → count (absent = not selected)
@@ -165,8 +171,8 @@ export function RepurposeDialog({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Polaris podcast outline goes through the long-form repurpose path (it
-  // becomes a Content Library asset), not the batch path of social snippets.
+  // Long-form repurpose path — produces a Content Brief (drafted) when calendarId
+  // is provided, so the result surfaces in Content Briefs, not Content Library.
   const generatePodcast = useMutation({
     mutationFn: async () => {
       if (!assetId) throw new Error("No source asset");
@@ -175,14 +181,22 @@ export function RepurposeDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(guest ? { format: "podcast_outline", guest } : { format: "podcast_outline" }),
+        body: JSON.stringify({
+          format: "podcast_outline",
+          ...(guest ? { guest } : {}),
+          ...(calendarId ? { calendarId } : {}),
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error || "Failed to generate outline");
-      return res.json() as Promise<{ asset: { id: string; title: string } }>;
+      return res.json() as Promise<{ asset: { id: string; title: string }; brief?: { id: string } }>;
     },
     onSuccess: (data) => {
       setPodcastAsset(data.asset);
-      toast.success(`Created "${data.asset.title}" in the Content Library`);
+      if (data.brief) {
+        toast.success(`Podcast outline drafted — find it in Content Briefs`);
+      } else {
+        toast.success(`Created podcast outline: "${data.asset.title}"`);
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -213,9 +227,10 @@ export function RepurposeDialog({
               data-testid="repurpose-destination-note"
             >
               <span className="font-medium text-foreground">Posts pipeline</span> outputs (LinkedIn / Twitter posts and
-              carousels) become schedulable, publishable drafts in your <span className="font-medium">Social Posts</span>{" "}
-              calendar. <span className="font-medium text-foreground">Content Library</span> outputs (documents and
-              snippets) stay in the library for editing and export.
+              carousels) become schedulable drafts in your <span className="font-medium">Social Posts</span>{" "}
+              calendar. <span className="font-medium text-foreground">Long-form drafts</span> (documents and snippets)
+              land as drafted briefs in <span className="font-medium">Content Briefs</span> for editing and approval.
+              Neither goes to the Content Library — that's for curated live assets only.
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">

@@ -271,7 +271,7 @@ export default function EditorialCalendarPage() {
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
-  const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string } | null>(null);
+  const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string; calendarId?: string } | null>(null);
   // Per-brief "Do you have a guest in mind?" override for podcast outlines.
   const [podcastGuest, setPodcastGuest] = useState<Record<string, string>>({});
   const [carouselSlides, setCarouselSlides] = useState<{ assetId: string; title: string; slides: CarouselSlideImage[] } | null>(null);
@@ -708,7 +708,7 @@ export default function EditorialCalendarPage() {
         setCarouselSlides({ assetId: data.asset.id, title: data.asset.title, slides: data.slideImages });
         toast.success(`Created "${data.asset.title}" with ${data.slideImages.length} branded slides`);
       } else {
-        toast.success(`Created "${data.asset.title}" in the Content Library`);
+        toast.success(`Draft created: "${data.asset.title}"${data.brief ? " — added to Content Briefs" : ""}`);
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -1398,7 +1398,7 @@ export default function EditorialCalendarPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => setRepurposeTarget({ id: b.contentAssetId!, title: b.title })}
+                            onClick={() => setRepurposeTarget({ id: b.contentAssetId!, title: b.title, calendarId: b.calendarId })}
                             data-testid={`repurpose-${b.id}`}
                           >
                             <Share2 className="mr-1 h-4 w-4" />
@@ -2152,10 +2152,12 @@ export default function EditorialCalendarPage() {
         <RepurposeDialog
           assetId={repurposeTarget?.id ?? null}
           assetTitle={repurposeTarget?.title}
+          calendarId={repurposeTarget?.calendarId}
           open={!!repurposeTarget}
           onOpenChange={(o) => !o && setRepurposeTarget(null)}
           onOpenLibraryAsset={(id) => navigate(`/app/marketing/content-library?asset=${id}`)}
           onViewPosts={() => navigate("/app/marketing/calendar")}
+          onOpenContentBriefs={() => navigate(`/app/marketing/editorial-calendar?calendarId=${repurposeTarget?.calendarId ?? ""}`)}
         />
 
         {/* Repurpose results (social-only legacy path) */}

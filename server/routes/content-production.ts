@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { contentAssets, contentOptimizations, generatedPosts, contentBriefs } from "@shared/schema";
+import { contentAssets, contentOptimizations, generatedPosts, contentBriefs, editorialCalendars } from "@shared/schema";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
@@ -320,7 +320,47 @@ export function registerContentProductionRoutes(app: Express) {
         })
         .returning();
 
-      res.status(201).json({ asset: created, slideImages, usage, model });
+      // Formats that map 1:1 to Content Brief formats land in the Content Briefs
+      // workflow as a drafted brief (same model as social posts → posts pipeline).
+      // Carousels stay as bare assets. calendarId must belong to this tenant.
+      const LONGFORM_TO_BRIEF_FORMAT: Partial<Record<LongformRepurposeFormat, string>> = {
+        blog_post: "blog_post",
+        newsletter: "newsletter",
+        whitepaper: "whitepaper",
+        podcast_outline: "podcast_outline",
+        video_script: "video_script",
+      };
+      const calendarId = typeof req.body?.calendarId === "string" ? req.body.calendarId.trim() : null;
+      const briefFormat = LONGFORM_TO_BRIEF_FORMAT[fmt];
+      let brief: typeof contentBriefs.$inferSelect | null = null;
+
+      if (calendarId && briefFormat) {
+        const [calendar] = await db
+          .select()
+          .from(editorialCalendars)
+          .where(and(eq(editorialCalendars.id, calendarId), eq(editorialCalendars.tenantDomain, ctx.tenantDomain)))
+          .limit(1);
+        if (calendar) {
+          const [newBrief] = await db
+            .insert(contentBriefs)
+            .values({
+              id: randomUUID(),
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId || null,
+              calendarId: calendar.id,
+              campaignId: calendar.campaignId ?? null,
+              title,
+              format: briefFormat,
+              status: "drafted",
+              contentAssetId: created.id,
+              funnelStage: "awareness",
+            })
+            .returning();
+          brief = newBrief ?? null;
+        }
+      }
+
+      res.status(201).json({ asset: created, brief: brief ?? undefined, slideImages, usage, model });
     } catch (err: any) {
       console.error("[content repurpose-longform]", err);
       res.status(500).json({ error: err.message || "Failed to repurpose content" });
