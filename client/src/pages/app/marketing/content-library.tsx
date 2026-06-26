@@ -35,6 +35,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
 import { ContentTableSkeleton, ContentCardGridSkeleton } from "@/components/ui/skeletons";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
+import { WebsitePublishDialog } from "@/components/marketing/WebsitePublishDialog";
 
 interface ContentAsset {
   id: string;
@@ -461,25 +462,7 @@ export default function ContentLibraryPage() {
     },
   });
   const websiteConnected = !!websiteStatus?.connected;
-
-  const pushToWebsite = useMutation({
-    mutationFn: async (assetId: string) => {
-      const r = await fetch("/api/integrations/website/push-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ assetId }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || "Failed to push to website");
-      return data.post as { slug: string };
-    },
-    onSuccess: (post) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
-      toast({ title: "Draft posted to website", description: `Created as a draft (/${post.slug}). Publish it from the Insights admin.` });
-    },
-    onError: (err: Error) => toast({ title: "Couldn't post to website", description: err.message, variant: "destructive" }),
-  });
+  const [websitePublishOpen, setWebsitePublishOpen] = useState(false);
 
   const downloadDocx = async (asset: ContentAsset) => {
     if (detailAsset && (editForm.title !== detailAsset.title || (editForm.content || "") !== (detailAsset.content || ""))) {
@@ -2215,13 +2198,12 @@ export default function ContentLibraryPage() {
                       <Button
                         variant="outline"
                         className="flex-1 gap-2"
-                        disabled={pushToWebsite.isPending || !editForm.content?.trim()}
-                        onClick={() => pushToWebsite.mutate(detailAsset.id)}
+                        disabled={!editForm.content?.trim()}
+                        onClick={() => setWebsitePublishOpen(true)}
                         data-testid="button-push-website"
-                        title={detailAsset.websitePostSlug ? "Already posted as a draft — posts again as a new draft" : undefined}
                       >
-                        {pushToWebsite.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
-                        {detailAsset.websitePostSlug ? "On website ✓" : "Post draft to website"}
+                        <Globe className="w-4 h-4" />
+                        {detailAsset.websitePostSlug ? "On website ✓" : "Post to website"}
                       </Button>
                     )}
                     <Button
@@ -2238,6 +2220,8 @@ export default function ContentLibraryPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        <WebsitePublishDialog asset={detailAsset} open={websitePublishOpen} onOpenChange={setWebsitePublishOpen} />
 
         {/* Manage Categories Dialog */}
         <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>

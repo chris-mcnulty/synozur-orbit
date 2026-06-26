@@ -129,13 +129,57 @@ export interface CreateDraftPostParams {
   seoDescription?: string;
 }
 export interface CreatedDraftPost { id: string; slug: string; status: string; title: string }
+export interface UpdateDraftPostParams {
+  id: string;
+  title?: string;
+  bodyMarkdown?: string;
+  excerpt?: string;
+  heroImageId?: string | null;
+  categoryIds?: string[];
+  tagIds?: string[];
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+}
+export interface PostPerformance {
+  totalViews: number;
+  uniqueSessions: number;
+  viewsByDay: { date: string; views: number }[];
+  topReferrers: { host: string; count: number }[];
+}
+export interface UploadedMedia { id: string; publicUrl: string; altText: string; mime: string }
 
 export const listAuthors = (tenant: string) => callWebsiteTool<WebsiteAuthor[]>(tenant, "list_authors");
 export const listCategories = (tenant: string) => callWebsiteTool<WebsiteTaxonomy[]>(tenant, "list_categories");
 export const listTags = (tenant: string) => callWebsiteTool<WebsiteTaxonomy[]>(tenant, "list_tags");
 export const createDraftPost = (tenant: string, params: CreateDraftPostParams) =>
   callWebsiteTool<CreatedDraftPost>(tenant, "create_draft_post", params as unknown as Record<string, unknown>);
+export const updateDraftPost = (tenant: string, params: UpdateDraftPostParams) =>
+  callWebsiteTool<{ id: string; updated: boolean }>(tenant, "update_draft_post", params as unknown as Record<string, unknown>);
+export const schedulePost = (tenant: string, id: string, scheduledFor: string) =>
+  callWebsiteTool<{ id: string; status: string; scheduledFor: string }>(tenant, "schedule_post", { id, scheduledFor });
+export const getPostPerformance = (tenant: string, slug: string) =>
+  callWebsiteTool<PostPerformance>(tenant, "get_post_performance", { slug });
+export const uploadImage = (
+  tenant: string,
+  params: { imageData: string; mimeType: string; altText: string; filename?: string; categoryId?: string },
+) => callWebsiteTool<UploadedMedia>(tenant, "upload_image", params as unknown as Record<string, unknown>);
 
 /** Lightweight read used to verify a freshly-saved connection works. */
 export const pingWebsite = (tenant: string) =>
   callWebsiteTool(tenant, "search_posts", { pageSize: 1 });
+
+/** Fetch an image URL and return base64 bytes + mime, for upload_image. Returns
+ *  null if the URL can't be fetched or isn't an image (hero upload is best-effort). */
+export async function fetchImageAsBase64(url: string): Promise<{ imageData: string; mimeType: string } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const mimeType = res.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
+    if (!mimeType.startsWith("image/")) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength === 0 || buf.byteLength > 10 * 1024 * 1024) return null; // skip empty / >10MB
+    return { imageData: buf.toString("base64"), mimeType };
+  } catch {
+    return null;
+  }
+}

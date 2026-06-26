@@ -851,6 +851,9 @@ export function registerIntegrationRoutes(app: Express) {
     tagIds: z.array(z.string()).optional(),
     seoTitle: z.string().optional(),
     seoDescription: z.string().optional(),
+    heroImageId: z.string().optional(),
+    useLeadImageAsHero: z.boolean().optional(),
+    scheduledFor: z.string().datetime().optional(),
   });
   app.post("/api/integrations/website/push-draft", async (req, res) => {
     try {
@@ -867,29 +870,105 @@ export function registerIntegrationRoutes(app: Express) {
       }
       const title = parsed.data.title ?? asset?.title;
       const bodyMarkdown = parsed.data.bodyMarkdown ?? asset?.content ?? undefined;
-      const authorId = parsed.data.authorId ?? conn.defaultAuthorId ?? undefined;
       if (!title) return res.status(400).json({ error: "A title is required." });
       if (!bodyMarkdown) return res.status(400).json({ error: "Post body (Markdown) is required." });
-      if (!authorId) return res.status(400).json({ error: "An author is required — pick one or set a default on the connection." });
 
-      const created = await website.createDraftPost(ctx.tenantDomain, {
-        title,
-        bodyMarkdown,
-        authorId,
-        excerpt: parsed.data.excerpt ?? asset?.description ?? undefined,
-        categoryIds: parsed.data.categoryIds,
-        tagIds: parsed.data.tagIds,
-        seoTitle: parsed.data.seoTitle ?? undefined,
-        seoDescription: parsed.data.seoDescription ?? undefined,
-      });
+      // Hero image (best-effort): upload the asset's lead image and use the
+      // returned media id. A failed upload never blocks the post.
+      let heroImageId = parsed.data.heroImageId;
+      if (!heroImageId && parsed.data.useLeadImageAsHero && asset?.leadImageUrl) {
+        const img = await website.fetchImageAsBase64(asset.leadImageUrl);
+        if (img) {
+          try {
+            const media = await website.uploadImage(ctx.tenantDomain, {
+              ...img,
+              altText: title,
+              filename: `orbit-${asset.id}`,
+            });
+            heroImageId = media.id;
+          } catch (e) {
+            console.warn(`[Website] hero upload skipped: ${errorMessage(e)}`);
+          }
+        }
+      }
+
+      // Update the existing draft when we've pushed this asset before;
+      // otherwise create a new one. Keeps re-pushes idempotent (no duplicates).
+      let postId: string;
+      let postSlug: string;
+      let postStatus = "draft";
+      const excerpt = parsed.data.excerpt ?? asset?.description ?? undefined;
+      if (asset?.websitePostId && asset.websitePostSlug) {
+        await website.updateDraftPost(ctx.tenantDomain, {
+          id: asset.websitePostId,
+          title,
+          bodyMarkdown,
+          excerpt,
+          heroImageId: heroImageId ?? undefined,
+          categoryIds: parsed.data.categoryIds,
+          tagIds: parsed.data.tagIds,
+          seoTitle: parsed.data.seoTitle ?? undefined,
+          seoDescription: parsed.data.seoDescription ?? undefined,
+        });
+        postId = asset.websitePostId;
+        postSlug = asset.websitePostSlug;
+        postStatus = asset.websitePostStatus ?? "draft";
+      } else {
+        const authorId = parsed.data.authorId ?? conn.defaultAuthorId ?? undefined;
+        if (!authorId) return res.status(400).json({ error: "An author is required — pick one or set a default on the connection." });
+        const created = await website.createDraftPost(ctx.tenantDomain, {
+          title,
+          bodyMarkdown,
+          authorId,
+          excerpt,
+          heroImageId: heroImageId ?? undefined,
+          categoryIds: parsed.data.categoryIds,
+          tagIds: parsed.data.tagIds,
+          seoTitle: parsed.data.seoTitle ?? undefined,
+          seoDescription: parsed.data.seoDescription ?? undefined,
+        });
+        postId = created.id;
+        postSlug = created.slug;
+        postStatus = created.status ?? "draft";
+      }
+
+      // Optional scheduling.
+      let scheduledFor: Date | null = null;
+      if (parsed.data.scheduledFor) {
+        const sched = await website.schedulePost(ctx.tenantDomain, postId, new Date(parsed.data.scheduledFor).toISOString());
+        postStatus = sched.status ?? "scheduled";
+        scheduledFor = new Date(parsed.data.scheduledFor);
+      }
 
       if (asset) {
         await db.update(contentAssets)
-          .set({ websitePostId: created.id, websitePostSlug: created.slug, updatedAt: new Date() })
+          .set({
+            websitePostId: postId,
+            websitePostSlug: postSlug,
+            websitePostStatus: postStatus,
+            websiteScheduledFor: scheduledFor,
+            updatedAt: new Date(),
+          })
           .where(eq(contentAssets.id, asset.id));
       }
-      console.log(`[Website] Draft pushed tenant=${ctx.tenantDomain} asset=${asset?.id ?? "adhoc"} slug=${created.slug}`);
-      res.json({ success: true, post: created });
+      console.log(`[Website] Draft pushed tenant=${ctx.tenantDomain} asset=${asset?.id ?? "adhoc"} slug=${postSlug} status=${postStatus}`);
+      res.json({ success: true, post: { id: postId, slug: postSlug, status: postStatus, scheduledFor } });
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  // Traffic for a post Orbit pushed — by assetId (preferred) or explicit slug.
+  app.get("/api/integrations/website/performance", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      let slug = typeof req.query.slug === "string" ? req.query.slug : undefined;
+      const assetId = typeof req.query.assetId === "string" ? req.query.assetId : undefined;
+      if (!slug && assetId) {
+        const [asset] = await db.select().from(contentAssets).where(eq(contentAssets.id, assetId));
+        if (!asset || asset.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Asset not found." });
+        slug = asset.websitePostSlug ?? undefined;
+      }
+      if (!slug) return res.status(400).json({ error: "This asset hasn't been posted to the website yet." });
+      res.json(await website.getPostPerformance(ctx.tenantDomain, slug));
     } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
   });
 }

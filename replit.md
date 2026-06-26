@@ -109,10 +109,24 @@ interim Word-doc export was waiting for. **v1 scope: direct-post blog drafts**
 `list_authors`); optional `categoryIds`, `tagIds`, `excerpt`, `heroImageId`,
 `seoTitle`, `seoDescription`. Returns `{ id, slug, status: 'draft', title }`.
 
-### Roadmap (beyond v1)
-- `schedule_post` to mirror Orbit's scheduled state; `get_post_performance` →
-  per-asset traffic feeding the Orbit Score funnel; `upload_image` for hero
-  images; content-library sync via `search_posts` / `get_post`.
+### v2 (implemented)
+- **Create-or-update**: re-pushing an asset updates the existing draft via
+  `update_draft_post` (tracked by `website_post_id`) instead of duplicating.
+- **Scheduling**: `schedule_post` from the publish dialog; `website_post_status`
+  / `website_scheduled_for` mirror the site's lifecycle on the asset.
+- **Hero images**: the asset's lead image is uploaded via `upload_image` and
+  set as `heroImageId` (best-effort — a failed upload never blocks the post).
+- **Performance**: `get_post_performance` surfaced in the publish dialog
+  (views, sessions, 30-day trend, top referrers) via
+  `GET /api/integrations/website/performance`.
+- **Full publish dialog**: author / category / tag / excerpt / hero / schedule.
+
+### Roadmap (beyond v2)
+- Feed `get_post_performance` into the Orbit Score funnel component (needs a
+  scoring-weight decision); inbound library sync via `search_posts` /
+  `get_post`; events (`list_events`) into conference promotion; episodes
+  (`list_episodes`) into Polaris. (No social-post or landing-page *create*
+  tools exist — social stays SocialPilot CSV; landing pages stay read-only.)
 
 ## User preferences
 

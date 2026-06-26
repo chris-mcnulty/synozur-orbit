@@ -2514,6 +2514,10 @@ export const contentAssets = pgTable("content_assets", {
   // and is the key for future get_post_performance traffic pulls.
   websitePostId: text("website_post_id"),
   websitePostSlug: text("website_post_slug"),
+  // Lifecycle of the website draft as Orbit last left it: draft | scheduled |
+  // published. websiteScheduledFor is set when a future publish is scheduled.
+  websitePostStatus: text("website_post_status"),
+  websiteScheduledFor: timestamp("website_scheduled_for"),
   // WS3: headline SEO/AEO fields persisted back from the optimizer so they are
   // usable inline on the asset (deeper AEO data — answer blocks, FAQ, gaps —
   // continues to live in content_optimizations, keyed by contentAssetId).
