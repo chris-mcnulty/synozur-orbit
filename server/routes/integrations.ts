@@ -777,9 +777,12 @@ export function registerIntegrationRoutes(app: Express) {
       const conn = await website.getWebsiteConnection(ctx.tenantDomain);
       if (!conn) return res.json({ connected: false });
       // The key is never returned once saved.
+      // Derive the public site URL by stripping the /api/mcp suffix.
+      const siteUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "");
       res.json({
         connected: conn.enabled,
         endpoint: conn.endpoint,
+        siteUrl,
         defaultAuthorId: conn.defaultAuthorId,
         lastUsedAt: conn.lastUsedAt,
         lastError: conn.lastError,

@@ -277,8 +277,54 @@ export function registerMarketingCalendarRoutes(app: Express) {
         });
       }
 
-      if (false) {
-        // Briefs removed from Content Calendar — they belong in Editorial Calendar.
+      // ── Blog posts published/scheduled to the website ──
+      // Once a blog brief has been pushed to the website (websitePostSlug is set)
+      // it becomes a real dated deliverable and belongs in the Master Calendar.
+      const blogConds: ReturnType<typeof eq>[] = [
+        eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+        eq(contentBriefs.format, "blog_post"),
+        isNotNull(contentAssets.websitePostSlug),
+      ];
+      if (campaignId) blogConds.push(eq(editorialCalendars.campaignId, campaignId) as any);
+      const blogRows = await db
+        .select({
+          id: contentBriefs.id,
+          title: contentBriefs.title,
+          format: contentBriefs.format,
+          contentAssetId: contentBriefs.contentAssetId,
+          websitePostSlug: contentAssets.websitePostSlug,
+          websitePostStatus: contentAssets.websitePostStatus,
+          websiteScheduledFor: contentAssets.websiteScheduledFor,
+          campaignId: editorialCalendars.campaignId,
+        })
+        .from(contentBriefs)
+        .innerJoin(contentAssets, eq(contentAssets.id, contentBriefs.contentAssetId))
+        .leftJoin(editorialCalendars, eq(editorialCalendars.id, contentBriefs.calendarId))
+        .where(and(...(blogConds as any[])))
+        .orderBy(desc(contentAssets.websiteScheduledFor));
+
+      for (const b of blogRows) {
+        const date = b.websiteScheduledFor ?? null;
+        if (!includeByDate(date)) continue;
+        items.push({
+          id: b.id,
+          type: "content",
+          title: b.title || "(untitled blog post)",
+          preview: "",
+          date: date ? date.toISOString() : null,
+          status: b.websitePostStatus ?? "draft",
+          lifecycle:
+            b.websitePostStatus === "published"
+              ? "delivered"
+              : b.websitePostStatus === "scheduled"
+                ? "approved"
+                : "draft",
+          format: b.format,
+          contentAssetId: b.contentAssetId,
+          websitePostSlug: b.websitePostSlug,
+          websitePostStatus: b.websitePostStatus,
+          campaignId: b.campaignId,
+        });
       }
 
       // ── Resolve campaign / theme / event NAMES server-side ──

@@ -52,6 +52,7 @@ import {
   Sparkles,
   Clock,
   Zap,
+  Globe,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -118,6 +119,8 @@ interface CalendarItem {
   solutionAreaName?: string | null;
   conferenceName?: string | null;
   imageUrl?: string | null;
+  websitePostSlug?: string | null;
+  websitePostStatus?: string | null;
   // WS4: when a dense social batch is collapsed into one item.
   isBatch?: boolean;
   batchKey?: string;
@@ -1608,8 +1611,14 @@ function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarIte
         : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.lifecycle === "delivered" ? "bg-green-500" : item.lifecycle === "approved" ? "bg-blue-500" : "bg-gray-400"}`} />}
       {!item.isBatch && <ChannelFormatTag item={item} />}
       <span className="truncate">{item.title}</span>
-      {assignments.length > 0 && (
+      {(assignments.length > 0 || item.websitePostSlug) && (
         <span className="ml-auto flex shrink-0 items-center gap-0.5" data-testid={`assign-dots-${item.id}`}>
+          {item.websitePostSlug && (
+            <Globe
+              className="h-2.5 w-2.5 text-violet-400"
+              title={`On website: ${item.websitePostStatus ?? "draft"}`}
+            />
+          )}
           {assignments.map((a) => (
             <span key={a.kind} className={`h-1.5 w-1.5 rounded-full ${ASSIGN_META[a.kind].dot}`} />
           ))}

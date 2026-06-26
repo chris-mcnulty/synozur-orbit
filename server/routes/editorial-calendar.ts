@@ -340,7 +340,31 @@ export function registerEditorialCalendarRoutes(app: Express) {
         )
         .orderBy(asc(contentBriefs.sortOrder));
 
-      res.json({ calendar, briefs });
+      // Enrich each brief with the linked asset's website publish fields.
+      const assetIds = briefs.map((b) => b.contentAssetId).filter((id): id is string => !!id);
+      const assetWebsiteRows = assetIds.length
+        ? await db
+            .select({
+              id: contentAssets.id,
+              websitePostSlug: contentAssets.websitePostSlug,
+              websitePostStatus: contentAssets.websitePostStatus,
+              websiteScheduledFor: contentAssets.websiteScheduledFor,
+            })
+            .from(contentAssets)
+            .where(inArray(contentAssets.id, assetIds))
+        : [];
+      const assetInfoById = new Map(assetWebsiteRows.map((a) => [a.id, a]));
+      const enrichedBriefs = briefs.map((b) => {
+        const ai = b.contentAssetId ? assetInfoById.get(b.contentAssetId) : undefined;
+        return {
+          ...b,
+          websitePostSlug: ai?.websitePostSlug ?? null,
+          websitePostStatus: ai?.websitePostStatus ?? null,
+          websiteScheduledFor: ai?.websiteScheduledFor ?? null,
+        };
+      });
+
+      res.json({ calendar, briefs: enrichedBriefs });
     } catch (err: any) {
       console.error("[campaigns content-plan]", err);
       res.status(500).json({ error: err.message || "Failed to load content plan" });

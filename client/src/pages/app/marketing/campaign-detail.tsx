@@ -48,6 +48,7 @@ import {
   ImageOff,
   Send,
   FileDown,
+  Globe,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -176,6 +177,10 @@ interface ContentBrief {
   channels?: string[] | null;
   estimatedHours?: number | null;
   ideaSignals?: string[] | null;
+  contentAssetId?: string | null;
+  websitePostSlug?: string | null;
+  websitePostStatus?: string | null;
+  websiteScheduledFor?: string | null;
 }
 
 interface ContentPlanResponse {
@@ -650,6 +655,15 @@ export default function CampaignDetailPage() {
     },
   });
   const briefs = contentPlan?.briefs ?? [];
+
+  const { data: websiteStatus } = useQuery<{ connected: boolean; siteUrl?: string }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+    staleTime: 60_000,
+  });
 
   const { data: linkedEvents = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string; postCount: number }[]>({
     queryKey: [`/api/campaigns/${id}/events`],
@@ -2420,6 +2434,19 @@ export default function CampaignDetailPage() {
                             <Badge variant="outline" className="text-xs">{BRIEF_FORMAT_LABELS[b.format] ?? b.format}</Badge>
                             <Badge variant={FUNNEL_BADGE_VARIANT[b.funnelStage] ?? "secondary"} className="text-xs capitalize">{b.funnelStage}</Badge>
                             <Badge variant="secondary" className="text-xs capitalize">{b.status}</Badge>
+                            {b.format === "blog_post" && b.websitePostSlug && websiteStatus?.siteUrl && (
+                              <a
+                                href={`${websiteStatus.siteUrl}/insights/${b.websitePostSlug}?utm_source=orbit&utm_medium=blog`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-testid={`link-brief-website-${b.id}`}
+                              >
+                                <Badge variant="outline" className="text-xs gap-1 text-violet-600 border-violet-300 hover:bg-violet-50">
+                                  <Globe className="h-3 w-3" />
+                                  {b.websitePostStatus === "published" ? "Live" : b.websitePostStatus === "scheduled" ? "Scheduled" : "Draft"} on website
+                                </Badge>
+                              </a>
+                            )}
                           </div>
                           {b.differentiationAngle && (
                             <p className="text-xs text-muted-foreground mt-1">{b.differentiationAngle}</p>
