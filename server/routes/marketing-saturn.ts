@@ -2136,6 +2136,37 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Refresh founding signals from the current intelligence briefing (no AI cost)
+  app.post("/api/campaigns/:id/refresh-founding-signals", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [existing] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+          ne(campaigns.status, "deleted"),
+        ));
+      if (!existing) return res.status(404).json({ error: "Campaign not found" });
+
+      const foundingSignals = await captureFoundingSignals({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+
+      const [updated] = await db.update(campaigns)
+        .set({ foundingSignals, updatedAt: new Date() })
+        .where(eq(campaigns.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[POST /api/campaigns/:id/refresh-founding-signals]", err);
+      res.status(500).json({ error: "Failed to refresh founding signals", detail: err?.message });
+    }
+  });
+
   // Link a child campaign to this campaign (sets child's parentCampaignId)
   app.post("/api/campaigns/:id/children", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;

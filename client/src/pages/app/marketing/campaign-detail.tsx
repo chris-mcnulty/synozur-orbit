@@ -1071,6 +1071,22 @@ export default function CampaignDetailPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const refreshSignalsMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/refresh-founding-signals`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Failed to refresh signals");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] });
+      toast({ title: "Founding signals refreshed", description: "Pulled from the latest intelligence briefing." });
+    },
+    onError: (err: Error) => toast({ title: "Error refreshing signals", description: err.message, variant: "destructive" }),
+  });
+
   const deleteCampaignMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/campaigns/${id}`, {
@@ -2236,18 +2252,29 @@ export default function CampaignDetailPage() {
               return (
                 <Card data-testid="card-founding-signals" className="border-dashed">
                   <CardHeader className="pb-2 pt-3 px-4">
-                    <button
-                      className="flex items-center justify-between w-full gap-2 text-left"
-                      onClick={() => setFsOpen(o => !o)}
-                      data-testid="button-toggle-founding-signals"
-                    >
-                      <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                        <Sparkles className="w-3.5 h-3.5 text-primary" />
-                        Founding Signals
-                        {capturedLabel && <span className="text-[10px] font-normal">· captured {capturedLabel}</span>}
-                      </span>
-                      <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${fsOpen ? "rotate-180" : ""}`} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="flex items-center justify-between flex-1 gap-2 text-left"
+                        onClick={() => setFsOpen(o => !o)}
+                        data-testid="button-toggle-founding-signals"
+                      >
+                        <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                          <Sparkles className="w-3.5 h-3.5 text-primary" />
+                          Founding Signals
+                          {capturedLabel && <span className="text-[10px] font-normal">· captured {capturedLabel}</span>}
+                        </span>
+                        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${fsOpen ? "rotate-180" : ""}`} />
+                      </button>
+                      <button
+                        className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors p-0.5"
+                        title="Refresh from latest intelligence briefing"
+                        onClick={e => { e.stopPropagation(); refreshSignalsMutation.mutate(); }}
+                        disabled={refreshSignalsMutation.isPending}
+                        data-testid="button-refresh-founding-signals"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${refreshSignalsMutation.isPending ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
                   </CardHeader>
                   {fsOpen && (
                     <CardContent className="pt-0 pb-4 px-4">
