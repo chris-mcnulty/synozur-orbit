@@ -778,7 +778,11 @@ export function registerIntegrationRoutes(app: Express) {
   });
 
   const websiteConnectSchema = z.object({
-    endpoint: z.string().url(),
+    // HTTPS only — the Bearer key must never travel in plaintext (same bar as
+    // the Slack/Teams webhook URLs above).
+    endpoint: z.string().url().refine((u) => u.toLowerCase().startsWith("https://"), {
+      message: "The MCP endpoint must use https://",
+    }),
     apiKey: z.string().min(1).optional(), // omit on edit to keep the existing key
     defaultAuthorId: z.string().nullable().optional(),
   });

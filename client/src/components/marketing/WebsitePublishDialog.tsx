@@ -228,7 +228,9 @@ export function WebsitePublishDialog({
               <Label className="text-xs text-muted-foreground">Categories</Label>
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {categories.map((c) => (
-                  <Badge key={c.id} variant={categoryIds.has(c.id) ? "default" : "outline"} className="cursor-pointer" onClick={() => toggle(categoryIds, c.id, setCategoryIds)} data-testid={`website-category-${c.id}`}>{c.name}</Badge>
+                  <button key={c.id} type="button" aria-pressed={categoryIds.has(c.id)} onClick={() => toggle(categoryIds, c.id, setCategoryIds)} className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid={`website-category-${c.id}`}>
+                    <Badge variant={categoryIds.has(c.id) ? "default" : "outline"} className="cursor-pointer">{c.name}</Badge>
+                  </button>
                 ))}
               </div>
             </div>
@@ -239,7 +241,9 @@ export function WebsitePublishDialog({
               <Label className="text-xs text-muted-foreground">Tags</Label>
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {tags.map((t) => (
-                  <Badge key={t.id} variant={tagIds.has(t.id) ? "default" : "outline"} className="cursor-pointer" onClick={() => toggle(tagIds, t.id, setTagIds)} data-testid={`website-tag-${t.id}`}>{t.name}</Badge>
+                  <button key={t.id} type="button" aria-pressed={tagIds.has(t.id)} onClick={() => toggle(tagIds, t.id, setTagIds)} className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid={`website-tag-${t.id}`}>
+                    <Badge variant={tagIds.has(t.id) ? "default" : "outline"} className="cursor-pointer">{t.name}</Badge>
+                  </button>
                 ))}
               </div>
             </div>

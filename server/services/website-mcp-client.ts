@@ -99,7 +99,13 @@ export async function callWebsiteTool<T = any>(
       const detail = unwrapToolResult(msg.result);
       throw new Error(typeof detail === "string" ? detail : `Website MCP ${tool} returned an error`);
     }
-    result = unwrapToolResult(msg?.result) as T;
+    // No result and no error means we couldn't recognize the reply (e.g. an SSE
+    // body with no JSON-RPC result line). Fail loudly rather than silently
+    // returning null and hiding a protocol mismatch.
+    if (msg?.result === undefined) {
+      throw new Error(`Website MCP ${tool} returned an unrecognized response (no result).`);
+    }
+    result = unwrapToolResult(msg.result) as T;
   } catch (err) {
     await db.update(websiteConnections)
       .set({ lastError: (err as Error).message?.slice(0, 500) ?? "Unknown error", updatedAt: new Date() })
@@ -168,11 +174,27 @@ export const uploadImage = (
 export const pingWebsite = (tenant: string) =>
   callWebsiteTool(tenant, "search_posts", { pageSize: 1 });
 
+/** Reject non-HTTPS and localhost / private / link-local hosts so a server-side
+ *  image fetch can't be turned into an SSRF probe of the internal network. */
+function isSafePublicHttpsUrl(url: string): boolean {
+  let u: URL;
+  try { u = new URL(url); } catch { return false; }
+  if (u.protocol !== "https:") return false;
+  const host = u.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
+  // IPv4 private / loopback / link-local ranges + IPv6 loopback.
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return false;
+  if (host === "::1" || host === "[::1]") return false;
+  return true;
+}
+
 /** Fetch an image URL and return base64 bytes + mime, for upload_image. Returns
- *  null if the URL can't be fetched or isn't an image (hero upload is best-effort). */
+ *  null if the URL is unsafe, can't be fetched, or isn't an image (hero upload
+ *  is best-effort and never blocks the post). */
 export async function fetchImageAsBase64(url: string): Promise<{ imageData: string; mimeType: string } | null> {
+  if (!isSafePublicHttpsUrl(url)) return null;
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { redirect: "error" });
     if (!res.ok) return null;
     const mimeType = res.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
     if (!mimeType.startsWith("image/")) return null;
