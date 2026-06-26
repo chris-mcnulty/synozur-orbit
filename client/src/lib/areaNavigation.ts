@@ -174,6 +174,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
           ? [{ label: "Marketing Projects", icon: Gem, href: "/app/marketing/projects", enterprise: true, section: "Plan", description: "Strategic, multi-activity marketing plans across 14 categories." }]
           : []),
         { label: "Campaigns", icon: LayoutList, href: "/app/marketing/campaigns", enterprise: true, section: "Create", description: "Coordinate multi-channel campaigns and generate their content." },
+        { label: "Content Briefs", icon: FileText, href: "/app/marketing/editorial-calendar", enterprise: true, section: "Create", indent: true, description: "Browse and manage all content briefs across calendars, including LinkedIn Digest briefs." },
         { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true, section: "Create", description: "Draft and refine individual social posts with AI assistance." },
         { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true, section: "Create", description: "AI-generated newsletter content grounded in your intelligence." },
         { label: "Email Sends", icon: Send, href: "/app/marketing/sends", enterprise: true, section: "Create", indent: true, description: "Delivery tracking: recipient lists, send status, and suppressions." },
