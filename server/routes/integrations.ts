@@ -17,7 +17,8 @@ import { notifications } from "../services/notifications";
 import * as hubspot from "../services/hubspot-integration";
 import * as website from "../services/website-mcp-client";
 import { db } from "../db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { getRequestContext } from "../context";
 import {
   INTEGRATION_KINDS,
   WEBHOOK_EVENT_CATEGORIES,
@@ -761,6 +762,15 @@ export function registerIntegrationRoutes(app: Express) {
     return { tenantDomain: user.email.split("@")[1], userId: user.id };
   }
 
+  // The active market from the per-tab context, used to scope asset lookups
+  // the same way the content-library routes do (defense-in-depth for the
+  // hypothetical multi-market tenant). Falls back to undefined — the
+  // tenantDomain check still applies — if the context can't be resolved.
+  async function activeMarketId(req: Request): Promise<string | undefined> {
+    try { return (await getRequestContext(req)).marketId || undefined; }
+    catch { return undefined; }
+  }
+
   app.get("/api/integrations/website/status", async (req, res) => {
     try {
       const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
@@ -869,8 +879,11 @@ export function registerIntegrationRoutes(app: Express) {
 
       let asset: typeof contentAssets.$inferSelect | undefined;
       if (parsed.data.assetId) {
-        [asset] = await db.select().from(contentAssets).where(eq(contentAssets.id, parsed.data.assetId));
-        if (!asset || asset.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Asset not found." });
+        const marketId = await activeMarketId(req);
+        const conds = [eq(contentAssets.id, parsed.data.assetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)];
+        if (marketId) conds.push(eq(contentAssets.marketId, marketId));
+        [asset] = await db.select().from(contentAssets).where(and(...conds));
+        if (!asset) return res.status(404).json({ error: "Asset not found in the active market." });
       }
       const title = parsed.data.title ?? asset?.title;
       const bodyMarkdown = parsed.data.bodyMarkdown ?? asset?.content ?? undefined;
@@ -967,8 +980,11 @@ export function registerIntegrationRoutes(app: Express) {
       let slug = typeof req.query.slug === "string" ? req.query.slug : undefined;
       const assetId = typeof req.query.assetId === "string" ? req.query.assetId : undefined;
       if (!slug && assetId) {
-        const [asset] = await db.select().from(contentAssets).where(eq(contentAssets.id, assetId));
-        if (!asset || asset.tenantDomain !== ctx.tenantDomain) return res.status(404).json({ error: "Asset not found." });
+        const marketId = await activeMarketId(req);
+        const conds = [eq(contentAssets.id, assetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)];
+        if (marketId) conds.push(eq(contentAssets.marketId, marketId));
+        const [asset] = await db.select().from(contentAssets).where(and(...conds));
+        if (!asset) return res.status(404).json({ error: "Asset not found in the active market." });
         slug = asset.websitePostSlug ?? undefined;
       }
       if (!slug) return res.status(400).json({ error: "This asset hasn't been posted to the website yet." });
