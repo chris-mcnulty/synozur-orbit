@@ -2167,6 +2167,48 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Save edited founding signals (after user removes individual items)
+  app.patch("/api/campaigns/:id/founding-signals", async (req, res) => {
+    if (!await guardFeature(req, res, "campaigns")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [existing] = await db.select({ id: campaigns.id, foundingSignals: campaigns.foundingSignals }).from(campaigns)
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+          ne(campaigns.status, "deleted"),
+        ));
+      if (!existing) return res.status(404).json({ error: "Campaign not found" });
+
+      const current = existing.foundingSignals as any;
+      if (!current) return res.status(400).json({ error: "No founding signals to update" });
+
+      const { removeNewsIndex, removeActionIndex, removeIdeaIndex } = req.body;
+      const updated = { ...current };
+
+      if (typeof removeNewsIndex === "number" && Array.isArray(updated.newsArticles)) {
+        updated.newsArticles = updated.newsArticles.filter((_: any, i: number) => i !== removeNewsIndex);
+      }
+      if (typeof removeActionIndex === "number" && Array.isArray(updated.actionItems)) {
+        updated.actionItems = updated.actionItems.filter((_: any, i: number) => i !== removeActionIndex);
+      }
+      if (typeof removeIdeaIndex === "number" && Array.isArray(updated.ideaSignals)) {
+        updated.ideaSignals = updated.ideaSignals.filter((_: any, i: number) => i !== removeIdeaIndex);
+      }
+
+      const [saved] = await db.update(campaigns)
+        .set({ foundingSignals: updated, updatedAt: new Date() })
+        .where(eq(campaigns.id, req.params.id))
+        .returning();
+
+      res.json(saved);
+    } catch (err: any) {
+      console.error("[PATCH /api/campaigns/:id/founding-signals]", err);
+      res.status(500).json({ error: "Failed to update founding signals", detail: err?.message });
+    }
+  });
+
   // Link a child campaign to this campaign (sets child's parentCampaignId)
   app.post("/api/campaigns/:id/children", async (req, res) => {
     if (!await guardFeature(req, res, "campaigns")) return;

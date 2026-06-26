@@ -1087,6 +1087,21 @@ export default function CampaignDetailPage() {
     onError: (err: Error) => toast({ title: "Error refreshing signals", description: err.message, variant: "destructive" }),
   });
 
+  const removeSignalMutation = useMutation({
+    mutationFn: async (body: { removeNewsIndex?: number; removeActionIndex?: number; removeIdeaIndex?: number }) => {
+      const r = await fetch(`/api/campaigns/${id}/founding-signals`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await r.json()).error ?? "Failed to remove signal");
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}`] }),
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const deleteCampaignMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/campaigns/${id}`, {
@@ -2289,18 +2304,28 @@ export default function CampaignDetailPage() {
                               </h4>
                               <ul className="space-y-2">
                                 {fs!.newsArticles.map((n, i) => (
-                                  <li key={i} className="text-sm" data-testid={`founding-news-${i}`}>
-                                    {n.url ? (
-                                      <a href={n.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline inline-flex items-center gap-1">
-                                        {n.title}<ExternalLink className="w-3 h-3 shrink-0" />
-                                      </a>
-                                    ) : <span className="font-medium">{n.title}</span>}
-                                    {(n.source || n.publishedAt) && (
-                                      <span className="text-muted-foreground text-xs ml-1">
-                                        {n.source}{n.source && n.publishedAt ? " · " : ""}{n.publishedAt ? new Date(n.publishedAt).toLocaleDateString() : ""}
-                                      </span>
-                                    )}
-                                    {n.description && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{n.description}</p>}
+                                  <li key={i} className="text-sm group flex items-start gap-1.5" data-testid={`founding-news-${i}`}>
+                                    <div className="flex-1 min-w-0">
+                                      {n.url ? (
+                                        <a href={n.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline inline-flex items-center gap-1">
+                                          {n.title}<ExternalLink className="w-3 h-3 shrink-0" />
+                                        </a>
+                                      ) : <span className="font-medium">{n.title}</span>}
+                                      {(n.source || n.publishedAt) && (
+                                        <span className="text-muted-foreground text-xs ml-1">
+                                          {n.source}{n.source && n.publishedAt ? " · " : ""}{n.publishedAt ? new Date(n.publishedAt).toLocaleDateString() : ""}
+                                        </span>
+                                      )}
+                                      {n.description && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{n.description}</p>}
+                                    </div>
+                                    <button
+                                      className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity mt-0.5"
+                                      title="Remove this signal"
+                                      onClick={() => removeSignalMutation.mutate({ removeNewsIndex: i })}
+                                      data-testid={`remove-news-${i}`}
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
                                   </li>
                                 ))}
                               </ul>
@@ -2313,12 +2338,22 @@ export default function CampaignDetailPage() {
                               </h4>
                               <ul className="space-y-2">
                                 {fs!.actionItems.map((a, i) => (
-                                  <li key={i} className="text-sm" data-testid={`founding-action-${i}`}>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <Badge variant="secondary" className="text-[10px] capitalize">{a.urgency.replace(/_/g, " ")}</Badge>
-                                      <span className="font-medium">{a.title}</span>
+                                  <li key={i} className="text-sm group flex items-start gap-1.5" data-testid={`founding-action-${i}`}>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <Badge variant="secondary" className="text-[10px] capitalize">{a.urgency.replace(/_/g, " ")}</Badge>
+                                        <span className="font-medium">{a.title}</span>
+                                      </div>
+                                      {a.description && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{a.description}</p>}
                                     </div>
-                                    {a.description && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{a.description}</p>}
+                                    <button
+                                      className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity mt-0.5"
+                                      title="Remove this signal"
+                                      onClick={() => removeSignalMutation.mutate({ removeActionIndex: i })}
+                                      data-testid={`remove-action-${i}`}
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
                                   </li>
                                 ))}
                               </ul>
@@ -2327,9 +2362,19 @@ export default function CampaignDetailPage() {
                           {(fs!.ideaSignals?.length ?? 0) > 0 && (
                             <div>
                               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Founding Notes</h4>
-                              <ul className="space-y-1 list-disc pl-5">
+                              <ul className="space-y-1">
                                 {fs!.ideaSignals!.map((s, i) => (
-                                  <li key={i} className="text-sm text-muted-foreground" data-testid={`founding-signal-${i}`}>{s}</li>
+                                  <li key={i} className="text-sm text-muted-foreground group flex items-start gap-1.5" data-testid={`founding-signal-${i}`}>
+                                    <span className="flex-1">· {s}</span>
+                                    <button
+                                      className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                                      title="Remove this signal"
+                                      onClick={() => removeSignalMutation.mutate({ removeIdeaIndex: i })}
+                                      data-testid={`remove-idea-${i}`}
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
