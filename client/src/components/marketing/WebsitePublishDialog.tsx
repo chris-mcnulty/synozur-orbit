@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Globe, Loader2, CalendarClock, MousePointerClick, Users, TrendingUp } from "lucide-react";
+import { Globe, Loader2, CalendarClock, MousePointerClick, Users, TrendingUp, Unlink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -147,6 +147,25 @@ export function WebsitePublishDialog({
     onError: (e: Error) => toast({ title: "Couldn't publish", description: e.message, variant: "destructive" }),
   });
 
+  const unlink = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/integrations/website/unlink-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ assetId: asset!.id }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || "Failed to unlink");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({ title: "Website link removed", description: "Delete the post from the website admin if you no longer need it." });
+      onOpenChange(false);
+    },
+    onError: (e: Error) => toast({ title: "Couldn't unlink", description: e.message, variant: "destructive" }),
+  });
+
   const toggle = (set: Set<string>, id: string, apply: (s: Set<string>) => void) => {
     const next = new Set(set);
     next.has(id) ? next.delete(id) : next.add(id);
@@ -172,10 +191,24 @@ export function WebsitePublishDialog({
             <Badge variant="secondary" className="capitalize">{asset.websitePostStatus ?? "draft"}</Badge>
             <span className="text-muted-foreground font-mono">/{asset.websitePostSlug}</span>
             {asset.websiteScheduledFor && (
-              <span className="ml-auto text-muted-foreground inline-flex items-center gap-1">
+              <span className="text-muted-foreground inline-flex items-center gap-1">
                 <CalendarClock className="w-3 h-3" /> {new Date(asset.websiteScheduledFor).toLocaleString()}
               </span>
             )}
+            <button
+              className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+              title="Remove website link — you'll need to delete the post from the website admin separately"
+              disabled={unlink.isPending}
+              onClick={() => {
+                if (confirm("Remove the website link from this asset?\n\nThis won't delete the post from the website — you'll need to do that from the website admin. After removing the link, the next push will create a fresh new draft.")) {
+                  unlink.mutate();
+                }
+              }}
+              data-testid="button-website-unlink"
+            >
+              {unlink.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3" />}
+              Unlink
+            </button>
           </div>
         )}
 

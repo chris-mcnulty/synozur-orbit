@@ -829,6 +829,24 @@ export function registerIntegrationRoutes(app: Express) {
     } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
   });
 
+  // Clears the website post link from a content asset. Does NOT delete the post
+  // on the website — the user must do that in the website admin manually. After
+  // unlinking, the next push will create a fresh new draft instead of updating.
+  app.post("/api/integrations/website/unlink-post", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const assetId = typeof req.body?.assetId === "string" ? req.body.assetId.trim() : null;
+      if (!assetId) return res.status(400).json({ error: "assetId is required." });
+      const [asset] = await db.select().from(contentAssets)
+        .where(and(eq(contentAssets.id, assetId), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+      if (!asset) return res.status(404).json({ error: "Asset not found." });
+      await db.update(contentAssets)
+        .set({ websitePostId: null, websitePostSlug: null, websitePostStatus: null, websiteScheduledFor: null })
+        .where(eq(contentAssets.id, assetId));
+      res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: errorMessage(err) }); }
+  });
+
   app.post("/api/integrations/website/disconnect", async (req, res) => {
     try {
       const ctx = await loadWebsiteContext(req, res, { requireAdmin: true }); if (!ctx) return;
