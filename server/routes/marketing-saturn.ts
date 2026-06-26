@@ -580,7 +580,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags, status, assetType, solutionAreaIds } = req.body;
+    const { title, description, url, content, categoryId, productTagIds, productIds, aiSummary, leadImageUrl, extractionStatus, tags, status, assetType, solutionAreaIds, assetDate, isExternal } = req.body;
     if (!title?.trim()) return res.status(400).json({ error: "title is required" });
     // Normalize url: blank/whitespace-only becomes null so the library filter
     // (which keeps only url/file-backed source assets) treats it consistently.
@@ -603,6 +603,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       assetType: safeAssetType,
       productIds: productIds?.length ? productIds : null,
       tags: tags || null,
+      assetDate: assetDate ? new Date(assetDate) : null,
+      isExternal: typeof isExternal === "boolean" ? isExternal : false,
       status: status === "archived" ? "archived" : "active",
       createdBy: ctx.userId,
     } as InsertContentAsset).returning();
@@ -623,8 +625,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/content-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds, subtitle, overview, postTags } = req.body;
+    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds, subtitle, overview, postTags, assetDate, isExternal } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
+    if (assetDate !== undefined) updates.assetDate = assetDate ? new Date(assetDate) : null;
+    if (isExternal !== undefined) updates.isExternal = !!isExternal;
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
     if (url !== undefined) updates.url = typeof url === "string" && url.trim() ? url.trim() : null;

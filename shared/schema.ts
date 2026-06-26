@@ -2503,6 +2503,12 @@ export const contentAssets = pgTable("content_assets", {
   categoryId: varchar("category_id").references(() => contentAssetCategories.id, { onDelete: "set null" }),
   assetType: text("asset_type").notNull().default("other"),
   productIds: text("product_ids").array(),
+  // When the asset went live / was published — the date reporting will window
+  // traffic against (distinct from createdAt, when it was added to Orbit).
+  assetDate: timestamp("asset_date"),
+  // Whether the asset originated outside Orbit (e.g. an existing blog post or
+  // webinar) vs. produced in Orbit. Drives campaign reporting attribution.
+  isExternal: boolean("is_external").notNull().default(false),
   // WS3: headline SEO/AEO fields persisted back from the optimizer so they are
   // usable inline on the asset (deeper AEO data — answer blocks, FAQ, gaps —
   // continues to live in content_optimizations, keyed by contentAssetId).
