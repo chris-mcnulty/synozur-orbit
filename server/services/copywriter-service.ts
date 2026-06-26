@@ -134,7 +134,7 @@ Respond with exactly these six sections and nothing else:
 ===OVERVIEW===
 <a compelling summary of the post's core argument, max 480 characters — this is used as a preview blurb>
 ===BODY===
-<the full post — no Markdown heading syntax (#, ##, ###); use **Bold Section Header** for section titles>
+<the full post — use ## for section headings, ### for sub-headings, **bold** for emphasis, and - for bulleted lists; include inline hyperlinks as [text](url) where relevant>
 ===META===
 <a one-sentence meta description, max 155 characters>
 ===TAGS===

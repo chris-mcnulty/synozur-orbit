@@ -1,0 +1,57 @@
+Copilot Navigator (weekly newsletter + blog)
+Chris's recurring LinkedIn newsletter. This skill captures its voice, structure, news requirements, and output format so every issue is consistent. Pair with chris-voice (no em-dashes) and docx-synozur-brand (the Word build).
+
+The spirit (get this right first)
+Chris's mostly supportive, sometimes helpful, occasionally skeptical take on the period's AI / Copilot news and how leaders make it real for business. It is NOT a contrarian op-ed and NOT a scolding. The rhythm of each issue:
+
+Lead with the good news (what shipped, why it helps the reader).
+Give an honest read.
+Add a caution or two ("what a navigator is for").
+Land on a practical "make it real this month."
+Voice: warm, second person ("you," "your team"), business-friendly, ~12th-grade reading level, low jargon, confident but never boastful, every point tied to a business outcome. Audience: business leaders plus some tech leaders. No em-dashes (recast with commas, periods, parentheses, colons).
+
+The canonical prompt (the spec Chris uses)
+Based on the following LinkedIn posts, draft a 750-word article for my byline for my Copilot Navigator newsletter. Also draft a 1250-word blog post with a deeper exploration for the Synozur blog; the LinkedIn article links to the blog post for more detail. Include a recommended post to introduce the article, and relevant hashtags. Lead with any breaking or recent news items or roadmap updates for Copilot, and it is OK to supplement with relevant third-party news or commentary. Audience is business leaders at a 12th-grade level. Both pieces take a humanized, business-friendly second- person voice. Both include graphic placeholders with proposed prompts at the right points. Include a comma-delimited list of tags for the blog post, and a summary of no more than 500 characters.
+
+Defaults: newsletter ~750 words (expand on request, by 50%+ if Chris asks), blog ~1250 words. Chris sometimes asks for a lighter ~600 / ~1100; honor whatever he last stated for the issue.
+
+News requirements (do this every issue)
+Surface the three most significant enterprise AI news pieces of the period. At least one must be Microsoft. Lead with breaking/recent news and roadmap updates.
+Be specific, not vague. "Microsoft announced agents at Build" is too thin. Name the actual substance (e.g., the MAI seven-model family; Microsoft Scout / "Autopilots"; a funding round and valuation; an acquisition and dollar figure).
+Find real URLs via web_search and present them as inline, clickable links in the text, never as footnotes or numbered references. Never fabricate a URL.
+For any Microsoft 365 Public Roadmap item, include the Roadmap ID number and the rollout start date.
+Watch for the structural-economics throughline Chris cares about: usage/variable billing (Cowork), compute consolidation, and debt-financed infrastructure → faster provider ROI pressure → pricing pressure → enterprise buyers must prove ROI as costs rise.
+Cross-link Chris's own prior Synozur posts where relevant (search synozur.com/post/...): e.g. ClawPilot, The Silicon Seven, Why 95% of AI Pilots Never Scale, the AI maturity posts, the AI Maturity Model tool (synozur.com/models/ai-maturity-model).
+Deliverables (every issue)
+Newsletter (LinkedIn Article), Chris's byline, branded "Copilot Navigator | <season/issue>".
+Recommended intro LinkedIn post: leading emoji, short paragraphs, ends "link in the first comment."
+Companion Synozur blog post: deeper dive, headings + subheadings + bulleted lists (Chris wants these for readability), inline clickable links, a subtitle, a comma-delimited tag list, and a summary of <=500 characters. The newsletter links to this post.
+Hashtags for the newsletter.
+Graphics: PROPOSE 2-3 concepts with generative-AI prompts; generate only after Chris confirms. Always photorealistic and Synozur-brand-aligned (purple #810FFB, magenta #E60CB3, deep purple #6003C3 as accent lighting over realistic scenes; landscape; no readable text/logos baked in). Use ImageGenerate at high quality, destination output. Name files newsletter-<topic>.png.
+Branded Word doc (auto-built, see below).
+Workflow
+Confirm the date range and collect Chris's posts/notes for the period (he usually pastes them). 2026 cadence is lighter: he writes ~twice a week, not daily; acknowledge the rhythm in the opener.
+Research in parallel: web_search for the 3 news items (>=1 Microsoft, real URLs); search his prior Synozur posts to cross-link; pull any specific data he references (TechCon findings, his blog numbers) from M365 or the web.
+Draft the newsletter, intro post, and blog per the spec and spirit. Compute any embedded number with a tool before writing it. Run the deliverables self-check.
+Propose graphic concepts (2-3, with prompts). On confirmation, generate them.
+Auto-build the branded Word doc (Chris's standing preference). Once graphics are resolved (generated or skipped), build it.
+Deliver inline drafts in chat too, and tell Chris where the doc is saved.
+Building the Word doc (auto)
+Use docx-synozur-brand. Build the body programmatically by editing the unpacked document.xml (do not use docx-js). Include newsletter + intro post + blog, with inline clickable hyperlinks (add hyperlink relationships in word/_rels/document.xml.rels with TargetMode="External", wrap text in <w:hyperlink r:id=...> using the Hyperlink style) and the confirmed images embedded (copy to word/media/, add image rels, emit <w:drawing> inline, ~6.0in wide). Reuse template styles: Title, Subtitle, Heading1/2/3, Normal, ListParagraph + numPr numId 1 for bullets, Quote / IntenseQuote for the intro post and summary. Keep the logo paragraph and footer.
+
+Two known template gotchas that break validation; fix before packing:
+
+Empty out word/_rels/settings.xml.rels (it carries a stale attachedTemplate path to the author's PC) and strip the matching <w:attachedTemplate .../> from settings.xml.
+Remove word/intelligence2.xml, its relationship in document.xml.rels, and its [Content_Types].xml override (a proprietary cache the validator rejects).
+Then pack.py ... --original <template>, validate.py (must report PASSED), and render to PDF + pdftoppm to eyeball the logo, brand colors, links, bullets, images, and footer before telling Chris it is ready. Confirm the file exists with Glob output/**/*.
+
+Reusable assets / references
+Source archive of prior issues: SharePoint > Marketing > Shared Documents/Projects/2025/ 2025 Month of Copilot/ (weekly docs = the daily posts that fed each newsletter; "Copilot Prompts.docx" = the original prompts).
+Brand template: /mnt/user-config/.claude/skills/docx-synozur-brand/references/synozur-template.docx.
+Credibility note Chris likes to drop as a light victory lap (never boastful): in his Oct 2025 predictions he called the date of Microsoft's June 2026 MAI/Build announcement to the day.
+Self-check before delivering
+Three news items, >=1 Microsoft, each with a real inline link? Roadmap items have ID + date?
+Newsletter, intro post, blog all present? Blog has headings, bullets, subtitle, comma tags, and a <=500-char summary?
+Second person, supportive-but-honest tone, no em-dashes, no fabricated facts/URLs?
+Graphics proposed (and generated only if confirmed), photorealistic + brand?
+Branded Word doc built, validation PASSED, saved to output/, links inline (not footnotes)?

@@ -48,6 +48,7 @@ import {
   X,
   FileText,
   Link2,
+  Globe,
   Mic,
   CheckCircle2,
 } from "lucide-react";
@@ -56,7 +57,45 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
+import { WebsitePublishDialog } from "@/components/marketing/WebsitePublishDialog";
 import { isSocialBriefFormat } from "@shared/schema";
+
+/** Convert Word/browser HTML to Markdown so paste preserves links and headings. */
+function htmlToMarkdown(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  function walk(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "ul") {
+      return Array.from(el.children).filter(c => c.tagName.toLowerCase() === "li")
+        .map(li => `- ${walk(li).trim()}`).join("\n") + "\n\n";
+    }
+    if (tag === "ol") {
+      return Array.from(el.children).filter(c => c.tagName.toLowerCase() === "li")
+        .map((li, i) => `${i + 1}. ${walk(li).trim()}`).join("\n") + "\n\n";
+    }
+    const inner = Array.from(el.childNodes).map(walk).join("");
+    switch (tag) {
+      case "h1": return `# ${inner.trim()}\n\n`;
+      case "h2": return `## ${inner.trim()}\n\n`;
+      case "h3": return `### ${inner.trim()}\n\n`;
+      case "h4": case "h5": case "h6": return `**${inner.trim()}**\n\n`;
+      case "p": return `${inner.trim()}\n\n`;
+      case "br": return "\n";
+      case "strong": case "b": return `**${inner}**`;
+      case "em": case "i": return `*${inner}*`;
+      case "a": { const href = el.getAttribute("href") ?? ""; return href ? `[${inner}](${href})` : inner; }
+      case "code": return `\`${inner}\``;
+      case "pre": return `\`\`\`\n${inner.trim()}\n\`\`\`\n\n`;
+      case "blockquote": return `> ${inner.trim()}\n\n`;
+      case "hr": return `---\n\n`;
+      default: return inner;
+    }
+  }
+  return walk(doc.body).replace(/\n{3,}/g, "\n\n").trim();
+}
 
 interface ContentBrief {
   id: string;
@@ -268,6 +307,11 @@ export default function EditorialCalendarPage() {
   const [openingDraftId, setOpeningDraftId] = useState<string | null>(null);
   const [draftImageUrl, setDraftImageUrl] = useState<string | null>(null);
   const [draftDirty, setDraftDirty] = useState(false);
+  const [draftAssetDescription, setDraftAssetDescription] = useState<string | null>(null);
+  const [draftAssetWebsiteSlug, setDraftAssetWebsiteSlug] = useState<string | null>(null);
+  const [draftAssetWebsiteStatus, setDraftAssetWebsiteStatus] = useState<string | null>(null);
+  const [draftAssetWebsiteScheduledFor, setDraftAssetWebsiteScheduledFor] = useState<string | null>(null);
+  const [websitePublishOpen, setWebsitePublishOpen] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
@@ -511,6 +555,10 @@ export default function EditorialCalendarPage() {
       setDraftAssetId(asset.id);
       setDraftBriefTitle(b.title);
       setDraftImageUrl(asset.leadImageUrl ?? null);
+      setDraftAssetDescription(asset.description ?? null);
+      setDraftAssetWebsiteSlug(asset.websitePostSlug ?? null);
+      setDraftAssetWebsiteStatus(asset.websitePostStatus ?? null);
+      setDraftAssetWebsiteScheduledFor(asset.websiteScheduledFor ?? null);
       setDraftDirty(false);
       setRewriteInstr("");
     } catch {
@@ -1863,6 +1911,11 @@ export default function EditorialCalendarPage() {
               setDraftDirty(false);
               setRewriteInstr("");
               setDraftBriefTitle(null);
+              setDraftAssetDescription(null);
+              setDraftAssetWebsiteSlug(null);
+              setDraftAssetWebsiteStatus(null);
+              setDraftAssetWebsiteScheduledFor(null);
+              setWebsitePublishOpen(false);
             }
           }}
         >
@@ -1944,6 +1997,22 @@ export default function EditorialCalendarPage() {
                     setDraft((d) => (d ? { ...d, body: e.target.value } : d));
                     setDraftDirty(true);
                   }}
+                  onPaste={(e) => {
+                    const html = e.clipboardData.getData("text/html");
+                    if (!html) return;
+                    e.preventDefault();
+                    const md = htmlToMarkdown(html);
+                    const ta = e.currentTarget;
+                    const start = ta.selectionStart ?? 0;
+                    const end = ta.selectionEnd ?? 0;
+                    const current = draft?.body ?? "";
+                    const next = current.slice(0, start) + md + current.slice(end);
+                    setDraft((d) => (d ? { ...d, body: next } : d));
+                    setDraftDirty(true);
+                    requestAnimationFrame(() => {
+                      ta.selectionStart = ta.selectionEnd = start + md.length;
+                    });
+                  }}
                   data-testid="input-draft-body"
                 />
               </div>
@@ -1992,6 +2061,11 @@ export default function EditorialCalendarPage() {
                     setDraftImageUrl(null);
                     setDraftDirty(false);
                     setRewriteInstr("");
+                    setDraftAssetDescription(null);
+                    setDraftAssetWebsiteSlug(null);
+                    setDraftAssetWebsiteStatus(null);
+                    setDraftAssetWebsiteScheduledFor(null);
+                    setWebsitePublishOpen(false);
                     setRepurposeTarget(target);
                   }}
                   data-testid="button-draft-repurpose"
@@ -2108,15 +2182,27 @@ export default function EditorialCalendarPage() {
               </div>
             )}
             <DialogFooter className="flex-wrap gap-2 sm:justify-between">
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/app/marketing/content-library?asset=${draftAssetId}`)}
-                disabled={!draftAssetId}
-                data-testid="button-open-library"
-              >
-                <Library className="mr-2 h-4 w-4" />
-                Open in Content Library
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/app/marketing/content-library?asset=${draftAssetId}`)}
+                  disabled={!draftAssetId}
+                  data-testid="button-open-library"
+                >
+                  <Library className="mr-2 h-4 w-4" />
+                  Open in Library
+                </Button>
+                {draft?.format === "blog_post" && draftAssetId && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setWebsitePublishOpen(true)}
+                    data-testid="button-push-to-website"
+                  >
+                    <Globe className="mr-2 h-4 w-4" />
+                    {draftAssetWebsiteSlug ? "Update on website" : "Push to website"}
+                  </Button>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
@@ -2159,6 +2245,35 @@ export default function EditorialCalendarPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Website publish dialog for blog_post drafts */}
+        {draftAssetId && draft?.format === "blog_post" && (
+          <WebsitePublishDialog
+            asset={{
+              id: draftAssetId,
+              title: draft?.title ?? "",
+              description: draftAssetDescription ?? undefined,
+              leadImageUrl: draftImageUrl ?? undefined,
+              websitePostSlug: draftAssetWebsiteSlug,
+              websitePostStatus: draftAssetWebsiteStatus,
+              websiteScheduledFor: draftAssetWebsiteScheduledFor,
+            }}
+            open={websitePublishOpen}
+            onOpenChange={(o) => {
+              setWebsitePublishOpen(o);
+              if (!o && draftAssetId) {
+                fetch(`/api/content-assets/${draftAssetId}`, { credentials: "include" })
+                  .then((r) => r.json())
+                  .then((a) => {
+                    setDraftAssetWebsiteSlug(a.websitePostSlug ?? null);
+                    setDraftAssetWebsiteStatus(a.websitePostStatus ?? null);
+                    setDraftAssetWebsiteScheduledFor(a.websiteScheduledFor ?? null);
+                  })
+                  .catch(() => {});
+              }
+            }}
+          />
+        )}
 
         {/* Multi-format repurposer */}
         <RepurposeDialog
