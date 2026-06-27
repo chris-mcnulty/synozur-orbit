@@ -340,22 +340,27 @@ export function registerEditorialCalendarRoutes(app: Express) {
         )
         .orderBy(asc(contentBriefs.sortOrder));
 
-      // Enrich each brief with the linked asset's website publish fields.
-      const assetIds = briefs.map((b) => b.contentAssetId).filter((id): id is string => !!id);
-      const assetWebsiteRows = assetIds.length
+      // Enrich each brief with its produced draft's website publish fields. The
+      // asset owns the link (contentAssets.sourceBriefId), so we read from there.
+      const briefIds = briefs.map((b) => b.id);
+      const assetWebsiteRows = briefIds.length
         ? await db
             .select({
-              id: contentAssets.id,
+              sourceBriefId: contentAssets.sourceBriefId,
               websitePostSlug: contentAssets.websitePostSlug,
               websitePostStatus: contentAssets.websitePostStatus,
               websiteScheduledFor: contentAssets.websiteScheduledFor,
             })
             .from(contentAssets)
-            .where(inArray(contentAssets.id, assetIds))
+            .where(inArray(contentAssets.sourceBriefId, briefIds))
         : [];
-      const assetInfoById = new Map(assetWebsiteRows.map((a) => [a.id, a]));
+      const assetInfoByBriefId = new Map(
+        assetWebsiteRows
+          .filter((a): a is typeof a & { sourceBriefId: string } => !!a.sourceBriefId)
+          .map((a) => [a.sourceBriefId, a]),
+      );
       const enrichedBriefs = briefs.map((b) => {
-        const ai = b.contentAssetId ? assetInfoById.get(b.contentAssetId) : undefined;
+        const ai = assetInfoByBriefId.get(b.id);
         return {
           ...b,
           websitePostSlug: ai?.websitePostSlug ?? null,
@@ -415,21 +420,26 @@ export function registerEditorialCalendarRoutes(app: Express) {
         )
         .orderBy(desc(contentBriefs.createdAt));
 
-      // Enrich: draft title/category from linked content asset.
-      const assetIds = rows.map((b) => b.contentAssetId).filter((id): id is string => !!id);
+      // Enrich: draft title/category from the produced asset, keyed off the
+      // asset's sourceBriefId (the asset owns the brief↔draft link).
+      const briefIds = rows.map((b) => b.id);
       let assetMap = new Map<string, { title: string; categoryId: string | null }>();
-      if (assetIds.length) {
+      if (briefIds.length) {
         const assets = await db
-          .select({ id: contentAssets.id, title: contentAssets.title, categoryId: contentAssets.categoryId })
+          .select({ sourceBriefId: contentAssets.sourceBriefId, title: contentAssets.title, categoryId: contentAssets.categoryId })
           .from(contentAssets)
           .where(
             and(
-              inArray(contentAssets.id, assetIds),
+              inArray(contentAssets.sourceBriefId, briefIds),
               eq(contentAssets.tenantDomain, ctx.tenantDomain),
               eq(contentAssets.marketId, ctx.marketId),
             ),
           );
-        assetMap = new Map(assets.map((a) => [a.id, { title: a.title, categoryId: a.categoryId }]));
+        for (const a of assets) {
+          if (a.sourceBriefId && !assetMap.has(a.sourceBriefId)) {
+            assetMap.set(a.sourceBriefId, { title: a.title, categoryId: a.categoryId });
+          }
+        }
       }
 
       // Enrich: which briefs are already in a marketing plan task.
@@ -462,7 +472,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
       }
 
       const enriched = rows.map((b) => {
-        const asset = b.contentAssetId ? assetMap.get(b.contentAssetId) : undefined;
+        const asset = assetMap.get(b.id);
         return {
           ...b,
           draftTitle: asset?.title ?? null,
@@ -510,26 +520,28 @@ export function registerEditorialCalendarRoutes(app: Express) {
       // Enrich briefs that have a generated draft with that draft's current
       // title and category so the calendar can show the brief↔draft link and
       // the draft's library category in one place.
-      const assetIds = briefs
-        .map((b) => b.contentAssetId)
-        .filter((id): id is string => !!id);
+      const briefIds = briefs.map((b) => b.id);
       let assetMap = new Map<string, { title: string; categoryId: string | null }>();
-      if (assetIds.length) {
+      if (briefIds.length) {
         const assets = await db
           .select({
-            id: contentAssets.id,
+            sourceBriefId: contentAssets.sourceBriefId,
             title: contentAssets.title,
             categoryId: contentAssets.categoryId,
           })
           .from(contentAssets)
           .where(
             and(
-              inArray(contentAssets.id, assetIds),
+              inArray(contentAssets.sourceBriefId, briefIds),
               eq(contentAssets.tenantDomain, ctx.tenantDomain),
               eq(contentAssets.marketId, ctx.marketId),
             ),
           );
-        assetMap = new Map(assets.map((a) => [a.id, { title: a.title, categoryId: a.categoryId }]));
+        for (const a of assets) {
+          if (a.sourceBriefId && !assetMap.has(a.sourceBriefId)) {
+            assetMap.set(a.sourceBriefId, { title: a.title, categoryId: a.categoryId });
+          }
+        }
       }
 
       // Which briefs have already been pushed into a marketing plan (via the
@@ -554,7 +566,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
       }
 
       const enriched = briefs.map((b) => {
-        const asset = b.contentAssetId ? assetMap.get(b.contentAssetId) : undefined;
+        const asset = assetMap.get(b.id);
         return {
           ...b,
           draftTitle: asset?.title ?? null,
@@ -748,6 +760,9 @@ export function registerEditorialCalendarRoutes(app: Express) {
             postTags: draft.tags || null,
             assetType: briefFormatToAssetType(draft.format as any),
             status: "active",
+            // Output points back at the brief that motivated it; the brief-side
+            // contentAssetId write below stays in sync for back-compat.
+            sourceBriefId: brief.id,
             createdBy: ctx.userId,
           })
           .returning();
@@ -1198,6 +1213,9 @@ export function registerEditorialCalendarRoutes(app: Express) {
             overview: draft.overview || null,
             assetType: briefFormatToAssetType("linkedin_digest"),
             status: "active",
+            // Output points back at the brief that motivated it; the brief-side
+            // contentAssetId write below stays in sync for back-compat.
+            sourceBriefId: brief.id,
             createdBy: ctx.userId,
           })
           .returning();
