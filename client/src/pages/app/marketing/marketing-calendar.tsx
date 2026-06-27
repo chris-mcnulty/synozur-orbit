@@ -1820,31 +1820,24 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
             {items.map((it) => {
               const k = itemKey(it);
               const checked = selected.has(k);
-              // Briefs are specs, not dated deliverables — they can't be dragged
-              // onto a day. They still show here as ideas and can be opened.
-              const canSchedule = it.type !== "content";
+              // Content briefs can be clicked to open the detail dialog where a
+              // publish date can be set. Dragging is not yet supported for briefs.
+              const canDrag = it.type !== "content";
               return (
                 <div
                   key={k}
-                  draggable={canSchedule}
-                  onDragStart={canSchedule ? (e) => onDragStart(e, it) : undefined}
-                  className={`flex items-center gap-2 rounded border px-2 py-1.5 text-xs ${canSchedule ? "cursor-grab active:cursor-grabbing" : ""} ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
+                  draggable={canDrag}
+                  onDragStart={canDrag ? (e) => onDragStart(e, it) : undefined}
+                  className={`flex items-center gap-2 rounded border px-2 py-1.5 text-xs ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
                   data-testid={`backlog-rail-row-${it.id}`}
-                  title={canSchedule ? undefined : "Briefs are specs — turn into a post or draft to schedule"}
                 >
-                  {canSchedule && <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                  {canDrag && <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-rail-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
                   <ChannelFormatTag item={it} />
-                  {it.type === "content" ? (
-                    <Link href={editorHref(it)} className="flex-1 truncate text-xs hover:underline" data-testid={`button-rail-item-${it.id}`}>
-                      {it.title}
-                    </Link>
-                  ) : (
-                    <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-rail-item-${it.id}`}>
-                      {it.title}
-                    </button>
-                  )}
+                  <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-rail-item-${it.id}`}>
+                    {it.title}
+                  </button>
                   {it.type === "content" && (
                     <Badge variant="outline" className={`shrink-0 px-1 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`} data-testid={`badge-brief-status-${it.id}`}>
                       {it.websitePostSlug ? "Pushed to web" : LIFECYCLE_META[it.lifecycle].label}
@@ -2285,9 +2278,27 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
         })()}
 
         {item.type === "content" ? (
-          <p className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground" data-testid="text-detail-content-note">
-            Briefs aren't scheduled — a brief is a spec you hand off to create the actual content. Turn it into a post or draft to put that on the calendar.
-          </p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2">
+            <Label className="text-xs">Publish date</Label>
+            <Input
+              type="date"
+              value={dateVal}
+              onChange={(e) => {
+                setDateVal(e.target.value);
+                pushSchedule(e.target.value, timeVal);
+              }}
+              data-testid="input-detail-date"
+            />
+          </div>
+          <div className="col-span-2">
+            <DateCrowdingHint
+              date={dateVal}
+              onPick={(d) => { setDateVal(d); pushSchedule(d, timeVal); }}
+              testid="text-detail-crowding"
+            />
+          </div>
+        </div>
         ) : (
         <div className="grid grid-cols-2 gap-2">
           <div>
@@ -2711,53 +2722,28 @@ function BacklogPanel({
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-item-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
                   <ChannelFormatTag item={it} />
-                  {it.type === "content" ? (
-                    <Link
-                      href={editorHref(it)}
-                      className="min-w-0 flex-1 text-left"
-                      data-testid={`button-backlog-item-${it.id}`}
-                    >
-                      <div className="flex min-w-0 items-baseline gap-2">
-                        <span className="truncate font-medium hover:underline">{it.title}</span>
-                        {it.campaignName && (
-                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
-                            {it.campaignName}
-                          </span>
-                        )}
-                        {!it.campaignName && it.conferenceName && (
-                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                            {it.conferenceName}
-                          </span>
-                        )}
-                      </div>
-                      {postPreview && (
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
+                  <button
+                    onClick={() => onSelect(it)}
+                    className="min-w-0 flex-1 text-left"
+                    data-testid={`button-backlog-item-${it.id}`}
+                  >
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate font-medium hover:underline">{it.title}</span>
+                      {it.campaignName && (
+                        <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
+                          {it.campaignName}
+                        </span>
                       )}
-                    </Link>
-                  ) : (
-                    <button
-                      onClick={() => onSelect(it)}
-                      className="min-w-0 flex-1 text-left"
-                      data-testid={`button-backlog-item-${it.id}`}
-                    >
-                      <div className="flex min-w-0 items-baseline gap-2">
-                        <span className="truncate font-medium hover:underline">{it.title}</span>
-                        {it.campaignName && (
-                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
-                            {it.campaignName}
-                          </span>
-                        )}
-                        {!it.campaignName && it.conferenceName && (
-                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                            {it.conferenceName}
-                          </span>
-                        )}
-                      </div>
-                      {postPreview && (
-                        <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
+                      {!it.campaignName && it.conferenceName && (
+                        <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                          {it.conferenceName}
+                        </span>
                       )}
-                    </button>
-                  )}
+                    </div>
+                    {postPreview && (
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
+                    )}
+                  </button>
                   <Badge variant="outline" className={`shrink-0 px-1.5 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
                 </div>
               );
