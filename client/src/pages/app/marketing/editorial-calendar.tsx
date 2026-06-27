@@ -2246,7 +2246,30 @@ export default function EditorialCalendarPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="blog-seo-slug" className="text-xs text-muted-foreground">SEO slug</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="blog-seo-slug" className="text-xs text-muted-foreground">SEO slug</Label>
+                      {!blogSeoSlug && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          data-testid="btn-generate-seo-slug"
+                          onClick={() => {
+                            const title = draft?.title ?? draftBriefTitle ?? "";
+                            if (!title) return;
+                            const slug = title
+                              .toLowerCase()
+                              .normalize("NFD")
+                              .replace(/[\u0300-\u036f]/g, "")
+                              .replace(/[^a-z0-9]+/g, "-")
+                              .replace(/^-+|-+$/g, "");
+                            setBlogSeoSlug(slug);
+                            if (draftAssetId) patchBlogMeta(draftAssetId, { seoSlug: slug });
+                          }}
+                        >
+                          Generate
+                        </button>
+                      )}
+                    </div>
                     <Input
                       id="blog-seo-slug"
                       placeholder="my-post-url-slug"
