@@ -2716,6 +2716,7 @@ export default function CampaignDetailPage() {
                   id={id}
                   onDetach={(item) => hubDetachMutation.mutate(item)}
                   detachPending={hubDetachMutation.isPending}
+                  excludeBlogPostsFromContent
                 />
 
                 {/* Blog Posts section — dedicated list of blog_post format briefs */}

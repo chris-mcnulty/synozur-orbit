@@ -95,20 +95,26 @@ export function HubItemsList({
   id,
   onDetach,
   detachPending,
+  excludeBlogPostsFromContent = false,
 }: {
   hub: HubResponse;
   scope: Scope;
   id: string;
   onDetach: (item: { type: ItemType; id: string }) => void;
   detachPending: boolean;
+  excludeBlogPostsFromContent?: boolean;
 }) {
   const itemsByType = useMemo(() => {
     const map: Record<ItemType, HubItem[]> = { social: [], email: [], content: [] };
-    (hub.items ?? []).forEach((it) => map[it.type].push(it));
+    (hub.items ?? []).forEach((it) => {
+      if (excludeBlogPostsFromContent && it.type === "content" && it.format === "blog_post") return;
+      map[it.type].push(it);
+    });
     return map;
-  }, [hub]);
+  }, [hub, excludeBlogPostsFromContent]);
 
-  if (hub.items.length === 0) {
+  const hasVisibleItems = Object.values(itemsByType).some((list) => list.length > 0);
+  if (!hasVisibleItems) {
     return (
       <Card>
         <CardContent className="py-12 text-center" data-testid="empty-no-items">
