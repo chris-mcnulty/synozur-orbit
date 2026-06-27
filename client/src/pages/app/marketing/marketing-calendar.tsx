@@ -2272,15 +2272,32 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
         <div className="grid grid-cols-2 gap-2">
           <div className="col-span-2">
             <Label className="text-xs">Publish date</Label>
-            <Input
-              type="date"
-              value={dateVal}
-              onChange={(e) => {
-                setDateVal(e.target.value);
-                pushSchedule(e.target.value, timeVal);
-              }}
-              data-testid="input-detail-date"
-            />
+            <div className="flex items-center gap-1">
+              <Input
+                type="date"
+                value={dateVal}
+                onChange={(e) => {
+                  setDateVal(e.target.value);
+                  pushSchedule(e.target.value, timeVal);
+                }}
+                data-testid="input-detail-date"
+              />
+              {dateVal && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  title="Remove scheduled date"
+                  data-testid="button-clear-publish-date"
+                  onClick={() => {
+                    setDateVal("");
+                    pushSchedule("", timeVal);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
           <div className="col-span-2">
             <DateCrowdingHint
