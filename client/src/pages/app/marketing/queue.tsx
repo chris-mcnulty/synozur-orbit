@@ -19,6 +19,7 @@ import {
   PauseCircle,
   ExternalLink,
   Clock,
+  ImageOff,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
@@ -74,15 +75,26 @@ interface CarouselSlide {
 
 interface FullPost {
   id: string;
+  platform: string;
   content: string | null;
   editedContent: string | null;
   publishError: string | null;
   status: string;
   postFormat: string | null;
   scheduledDate: string | null;
+  overrideImageUrl: string | null;
+  leadImageUrl: string | null;
   carouselSlides: CarouselSlide[] | null;
   campaignId: string | null;
 }
+
+const PLATFORM_LABELS: Record<string, string> = {
+  linkedin: "LinkedIn",
+  x: "X (Twitter)",
+  twitter: "X (Twitter)",
+  instagram: "Instagram",
+  facebook: "Facebook",
+};
 
 type Stage = "scheduled" | "failed" | "posted" | "exported" | "missed";
 
@@ -266,9 +278,16 @@ function EditPostDialog({
   const queryClient = useQueryClient();
   const [editedText, setEditedText] = useState<string | null>(null);
   const [scheduledValue, setScheduledValue] = useState<string>("");
+  const [postNow, setPostNow] = useState(false);
   const [slideUrls, setSlideUrls] = useState<Record<number, string>>({});
   const [didInit, setDidInit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const scheduledTooSoon =
+    !postNow && !!scheduledValue &&
+    new Date(scheduledValue).getTime() - Date.now() < ONE_HOUR_MS;
+  const canReschedule = postNow || (!!scheduledValue && !scheduledTooSoon);
 
   const { data: post, isLoading } = useQuery<FullPost>({
     queryKey: ["/api/generated-posts", postId],
@@ -296,7 +315,11 @@ function EditPostDialog({
   // Build the PATCH body from current edits
   function buildPatchBody(extra: Record<string, unknown> = {}): Record<string, unknown> {
     const body: Record<string, unknown> = { editedContent: editedText, ...extra };
-    if (scheduledValue) body.scheduledDate = new Date(scheduledValue).toISOString();
+    if (postNow) {
+      body.scheduledDate = new Date().toISOString();
+    } else if (scheduledValue) {
+      body.scheduledDate = new Date(scheduledValue).toISOString();
+    }
     if (isCarousel && post?.carouselSlides?.length) {
       body.carouselSlides = post.carouselSlides.map((s) => ({
         ...s,
@@ -426,19 +449,104 @@ function EditPostDialog({
               </div>
             )}
 
-            {/* Missed post notice */}
+            {/* Missed post notice + scheduling choice */}
             {isMissed && (
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <Clock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-amber-700 dark:text-amber-400">This post was not sent</p>
-                    <p className="text-amber-700/80 dark:text-amber-400/80 mt-0.5 text-[12px]">
-                      It passed its scheduled date without being published. Choose a new date and time below to
-                      reschedule it — saving with a new date will reactivate it for auto-posting. Or cancel it
-                      if the moment has passed.
-                    </p>
+              <div className="space-y-3">
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Clock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-amber-700 dark:text-amber-400">This post was not sent</p>
+                      <p className="text-amber-700/80 dark:text-amber-400/80 mt-0.5 text-[12px]">
+                        It passed its scheduled date without being published. Choose when to send it below,
+                        or discard it if the moment has passed.
+                      </p>
+                    </div>
                   </div>
+                </div>
+
+                {/* Platform + graphic metadata */}
+                {post && (
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="font-medium">
+                      {PLATFORM_LABELS[post.platform] ?? post.platform}
+                    </span>
+                    {post.overrideImageUrl || post.leadImageUrl ? (
+                      <div className="flex items-center gap-1.5">
+                        <img
+                          src={post.overrideImageUrl ?? post.leadImageUrl ?? ""}
+                          alt="Graphic"
+                          className="w-8 h-8 rounded object-cover border border-border"
+                        />
+                        <span>Graphic attached</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <ImageOff className="w-3.5 h-3.5" />
+                        <span>No graphic</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* When to send */}
+                <div className="space-y-2">
+                  <Label>When should this post go out?</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPostNow(true)}
+                      className={`rounded-md border px-3 py-2.5 text-sm font-medium transition-colors text-left ${
+                        postNow
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground"
+                      }`}
+                      data-testid="reschedule-post-now"
+                      disabled={isBusy}
+                    >
+                      <Zap className="w-3.5 h-3.5 inline mr-1.5 mb-0.5" />
+                      Post now
+                      <p className="text-[11px] font-normal mt-0.5 opacity-70">
+                        Picked up at next worker tick
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPostNow(false)}
+                      className={`rounded-md border px-3 py-2.5 text-sm font-medium transition-colors text-left ${
+                        !postNow
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground"
+                      }`}
+                      data-testid="reschedule-schedule-later"
+                      disabled={isBusy}
+                    >
+                      <Calendar className="w-3.5 h-3.5 inline mr-1.5 mb-0.5" />
+                      Schedule for later
+                      <p className="text-[11px] font-normal mt-0.5 opacity-70">
+                        Must be ≥ 1 hour from now
+                      </p>
+                    </button>
+                  </div>
+
+                  {!postNow && (
+                    <div>
+                      <Input
+                        type="datetime-local"
+                        value={scheduledValue}
+                        onChange={(e) => setScheduledValue(e.target.value)}
+                        min={toDatetimeLocal(new Date(Date.now() + ONE_HOUR_MS))}
+                        className={`w-auto ${scheduledTooSoon ? "border-destructive" : ""}`}
+                        data-testid="edit-dialog-scheduled-date"
+                        disabled={isBusy}
+                      />
+                      {scheduledTooSoon && (
+                        <p className="text-[11px] text-destructive mt-1">
+                          Must be at least 1 hour from now.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -458,8 +566,8 @@ function EditPostDialog({
               />
             </div>
 
-            {/* Scheduled date — editable for scheduled/failed posts */}
-            {!isReadOnly && (
+            {/* Scheduled date — editable for scheduled/failed posts only; missed has its own section above */}
+            {!isReadOnly && !isMissed && (
               <div className="space-y-1.5">
                 <Label htmlFor="edit-post-date" className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-muted-foreground" />
@@ -506,8 +614,8 @@ function EditPostDialog({
               </div>
             )}
 
-            {/* Cancel post — two-step confirm */}
-            {(stage === "scheduled" || stage === "failed" || stage === "missed") && (
+            {/* Cancel post — two-step confirm (missed stage handled by the Discard button in the footer) */}
+            {(stage === "scheduled" || stage === "failed") && (
               <div className="pt-1 border-t">
                 {confirmDelete ? (
                   <div className="flex items-center gap-2">
@@ -549,9 +657,44 @@ function EditPostDialog({
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose} disabled={isBusy} data-testid="edit-dialog-close">
-            {isReadOnly ? "Close" : "Discard"}
-          </Button>
+          {/* Discard for missed = two-step delete; for others = close without saving */}
+          {isMissed ? (
+            confirmDelete ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={isBusy}
+                >
+                  Keep it
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => cancelPostMutation.mutate()}
+                  disabled={isBusy}
+                  data-testid="edit-dialog-confirm-cancel"
+                >
+                  {cancelPostMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                  Yes, remove it
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setConfirmDelete(true)}
+                disabled={isBusy}
+                data-testid="edit-dialog-close"
+              >
+                Discard
+              </Button>
+            )
+          ) : (
+            <Button variant="outline" onClick={onClose} disabled={isBusy} data-testid="edit-dialog-close">
+              {isReadOnly ? "Close" : "Discard"}
+            </Button>
+          )}
+
           {stage === "failed" ? (
             <>
               <Button
@@ -574,15 +717,17 @@ function EditPostDialog({
               </Button>
             </>
           ) : isMissed ? (
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={isBusy || !post || !scheduledValue}
-              data-testid="edit-dialog-save"
-              className="gap-1.5"
-            >
-              {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
-              Reschedule &amp; reactivate
-            </Button>
+            !confirmDelete && (
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={isBusy || !post || !canReschedule}
+                data-testid="edit-dialog-save"
+                className="gap-1.5"
+              >
+                {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+                Reschedule &amp; reactivate
+              </Button>
+            )
           ) : !isReadOnly ? (
             <Button
               onClick={() => saveMutation.mutate()}

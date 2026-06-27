@@ -143,6 +143,49 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
       )
       .limit(MAX_POSTS_PER_TICK);
 
+    // ── Same-minute stagger ─────────────────────────────────────────────────
+    // If two or more posts share the same scheduled minute, spread the 2nd,
+    // 3rd, etc. out by a random 2–6 minutes each (chained, so they never
+    // land on the same minute as each other either). The updated rows are
+    // written back to the DB and skipped this tick — they'll be picked up in
+    // a later tick once their new scheduledDate arrives.
+    {
+      const minuteKey = (d: Date) => Math.floor(d.getTime() / 60_000);
+      // Group by minute bucket
+      const groups = new Map<number, Array<{ postId: string; baseTime: Date }>>();
+      for (const { post } of candidates) {
+        if (!post.scheduledDate) continue;
+        const t = new Date(post.scheduledDate);
+        const key = minuteKey(t);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push({ postId: post.id, baseTime: t });
+      }
+      const staggeredIds = new Set<string>();
+      for (const group of groups.values()) {
+        if (group.length <= 1) continue;
+        let prevTime = group[0].baseTime;
+        for (let i = 1; i < group.length; i++) {
+          const jitterMin = 2 + Math.floor(Math.random() * 5); // 2–6 minutes
+          const newTime = new Date(prevTime.getTime() + jitterMin * 60_000);
+          await db
+            .update(generatedPosts)
+            .set({ scheduledDate: newTime, updatedAt: new Date() })
+            .where(eq(generatedPosts.id, group[i].postId));
+          console.log(
+            `[PublishWorker] Staggered post ${group[i].postId} by +${jitterMin}min → ${newTime.toISOString()}`,
+          );
+          staggeredIds.add(group[i].postId);
+          prevTime = newTime;
+        }
+      }
+      // Remove staggered posts from this tick's work list
+      candidates.splice(
+        0,
+        candidates.length,
+        ...candidates.filter(({ post }) => !staggeredIds.has(post.id)),
+      );
+    }
+
     // Cache plan-gate decisions per tenant for the duration of this tick so
     // we don't re-query for every candidate row. Worker re-checks ensure a
     // tenant downgrade after a post is scheduled is honored before publish.
