@@ -51,6 +51,7 @@ import {
   Globe,
   Mic,
   CheckCircle2,
+  Lightbulb,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1270,106 +1271,261 @@ export default function EditorialCalendarPage() {
             <div className="grid gap-3">
               {visibleBriefs.map((b) => (
                 <Card key={b.id} data-testid={`brief-${b.id}`} className={focusBriefId === b.id ? "ring-2 ring-primary ring-offset-2" : undefined}>
-                  <CardContent className="space-y-3 pt-5">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      {/* Left meta block — fixed order so format / status / draft-state
-                          line up the same way on every card and the list scans cleanly.
-                          Title leads; the key state badges sit on one consistent row;
-                          secondary details (keyword, hours) drop to their own muted line. */}
-                      <div className="min-w-0 space-y-1.5">
-                        <p className="font-medium">{b.title}</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded px-2 py-0.5 text-xs font-medium ${FUNNEL_BADGE[b.funnelStage] ?? ""}`}>
-                            {FUNNEL_LABELS[b.funnelStage] ?? b.funnelStage}
-                          </span>
-                          <Badge variant="secondary">{FORMAT_LABELS[b.format] ?? b.format}</Badge>
-                          <span
-                            className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[b.status] ?? STATUS_BADGE.suggested}`}
-                            data-testid={`status-badge-${b.id}`}
+                  <CardContent className="space-y-4 pt-5">
+                    {/* ── PLAN ── The idea/spec: what to make and why, plus
+                        plan-level controls. Kept distinct from the produced
+                        draft (the Draft panel below) so it reads as "the plan,"
+                        never as the artifact. */}
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        {/* Left meta block — fixed order so format / status line up
+                            the same way on every card and the list scans cleanly.
+                            Title leads; the key state badges sit on one consistent
+                            row; secondary details (keyword, hours) drop to their
+                            own muted line. Draft state lives in the Draft panel. */}
+                        <div className="min-w-0 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <Lightbulb className="h-3.5 w-3.5" />
+                            Plan
+                          </div>
+                          <p className="font-medium">{b.title}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded px-2 py-0.5 text-xs font-medium ${FUNNEL_BADGE[b.funnelStage] ?? ""}`}>
+                              {FUNNEL_LABELS[b.funnelStage] ?? b.funnelStage}
+                            </span>
+                            <Badge variant="secondary">{FORMAT_LABELS[b.format] ?? b.format}</Badge>
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[b.status] ?? STATUS_BADGE.suggested}`}
+                              data-testid={`status-badge-${b.id}`}
+                            >
+                              {STATUS_LABELS[b.status] ?? b.status}
+                            </span>
+                            {b.pushedToPlanner && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
+                                data-testid={`in-planner-${b.id}`}
+                              >
+                                <CalendarClock className="h-3 w-3" />
+                                In Planner
+                              </span>
+                            )}
+                          </div>
+                          {(b.targetKeyword || b.estimatedHours != null) && (
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground" data-testid={`brief-meta-${b.id}`}>
+                              {b.targetKeyword && <span>🔑 {b.targetKeyword}</span>}
+                              {b.estimatedHours != null && <span>~{b.estimatedHours}h</span>}
+                            </div>
+                          )}
+                          {isSocialBriefFormat(b.format) && (
+                            <p
+                              className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                              data-testid={`social-signpost-${b.id}`}
+                            >
+                              <Share2 className="mt-0.5 h-3 w-3 shrink-0" />
+                              <span>
+                                Targets social. The draft is produced in the Draft panel below — use{" "}
+                                <span className="font-medium">Repurpose</span> there to turn it into a schedulable Social Post.
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                        {/* Plan-level controls only: format/status of the idea, the
+                            brief export, copy, and delete. Draft actions live in the
+                            Draft panel so the two decisions never sit on one row. */}
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={b.format}
+                            onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { format: v } })}
                           >
-                            {STATUS_LABELS[b.status] ?? b.status}
-                          </span>
+                            <SelectTrigger className="h-8 w-[150px]" data-testid={`format-${b.id}`}>
+                              <SelectValue placeholder="Format" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BRIEF_FORMAT_OPTIONS.map((f) => (
+                                <SelectItem key={f.value} value={f.value}>
+                                  {f.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={STATUS_OPTIONS.includes(b.status) ? b.status : undefined}
+                            onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { status: v } })}
+                          >
+                            <SelectTrigger className="h-8 w-[130px]" data-testid={`status-${b.id}`}>
+                              <SelectValue placeholder={b.status} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {STATUS_OPTIONS.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {STATUS_LABELS[s] ?? s}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={downloadingBriefId === b.id}
+                            onClick={() => downloadBriefDocx(b)}
+                            data-testid={`download-brief-${b.id}`}
+                          >
+                            {downloadingBriefId === b.id ? (
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                            ) : (
+                              <FileDown className="mr-1 h-4 w-4" />
+                            )}
+                            Word
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setCopyBriefId(b.id);
+                              setCopyTargetCampaignId(b.campaignId ?? "");
+                              setCopyNewCampaignName("");
+                            }}
+                            data-testid={`copy-brief-${b.id}`}
+                          >
+                            <Copy className="mr-1 h-4 w-4" />
+                            Copy to…
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            disabled={deleteBrief.isPending && deleteBrief.variables === b.id}
+                            onClick={() => {
+                              if (confirm(`Permanently delete the brief "${b.title}"? This cannot be undone.`)) {
+                                deleteBrief.mutate(b.id);
+                              }
+                            }}
+                            data-testid={`delete-brief-${b.id}`}
+                          >
+                            {deleteBrief.isPending && deleteBrief.variables === b.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Polaris podcast outline: optional guest override. Blank =
+                          the AI suggests a guest; a value overrides it throughout. */}
+                      {b.format === "podcast_outline" && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2">
+                          <Mic className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-xs font-medium text-muted-foreground">Do you have a guest in mind?</span>
+                          <Input
+                            value={podcastGuest[b.id] ?? ""}
+                            onChange={(e) => setPodcastGuest((p) => ({ ...p, [b.id]: e.target.value }))}
+                            placeholder="Name, title, company (leave blank to let AI suggest)"
+                            className="h-8 flex-1 min-w-[220px]"
+                            data-testid={`input-podcast-guest-${b.id}`}
+                          />
+                        </div>
+                      )}
+
+                      {/* Plan assignment: campaign + theme live on the brief (the
+                          idea). Category lives on the produced draft, so it moved
+                          into the Draft panel below. */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium uppercase text-muted-foreground">Assign</span>
+                        <Select
+                          value={b.campaignId ?? "__none__"}
+                          onValueChange={(v) =>
+                            updateBrief.mutate({ id: b.id, updates: { campaignId: v === "__none__" ? null : v } })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-campaign-${b.id}`}>
+                            <SelectValue placeholder="Campaign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">No campaign</SelectItem>
+                            {(campaignOptions ?? []).map((c) => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={b.solutionAreaId ?? "__none__"}
+                          onValueChange={(v) =>
+                            updateBrief.mutate({ id: b.id, updates: { solutionAreaId: v === "__none__" ? null : v } })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-theme-${b.id}`}>
+                            <SelectValue placeholder="Theme" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">No theme</SelectItem>
+                            {(themeOptions ?? []).map((t) => (
+                              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                        {b.demandSignal && (
+                          <div>
+                            <dt className="text-xs font-medium uppercase text-muted-foreground">Demand signal</dt>
+                            <dd>{b.demandSignal}</dd>
+                          </div>
+                        )}
+                        {b.differentiationAngle && (
+                          <div>
+                            <dt className="text-xs font-medium uppercase text-muted-foreground">Differentiation</dt>
+                            <dd>{b.differentiationAngle}</dd>
+                          </div>
+                        )}
+                        {b.targetReader && (
+                          <div>
+                            <dt className="text-xs font-medium uppercase text-muted-foreground">Target reader</dt>
+                            <dd>{b.targetReader}</dd>
+                          </div>
+                        )}
+                        {b.cta && (
+                          <div>
+                            <dt className="text-xs font-medium uppercase text-muted-foreground">CTA</dt>
+                            <dd>{b.cta}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </div>
+
+                    {/* ── DRAFT ── The produced output and the actions that operate
+                        on the artifact (review, approve, repurpose, optimize). When
+                        nothing has been produced yet, it's an explicit empty state
+                        with a single "Generate draft" CTA — so "approve the idea"
+                        and "approve the draft" are visibly different decisions. */}
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-3" data-testid={`draft-panel-${b.id}`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <FileText className="h-3.5 w-3.5" />
+                          Draft
                           {b.contentAssetId ? (
-                            <button
-                              className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300 underline-offset-2 hover:underline cursor-pointer"
+                            <span
+                              className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium normal-case text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
                               data-testid={`linked-draft-${b.id}`}
-                              onClick={() => openDraft(b)}
-                              title="Open the draft to read and approve it"
                             >
                               <Link2 className="h-3 w-3" />
-                              Draft ready — click to review
-                            </button>
+                              Ready
+                            </span>
                           ) : (
                             <span
-                              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                              className="ml-1 inline-flex items-center gap-1 text-[10px] font-normal normal-case text-muted-foreground"
                               data-testid={`linked-draft-${b.id}`}
                             >
-                              <Link2 className="h-3 w-3" />
-                              No draft yet
-                            </span>
-                          )}
-                          {b.pushedToPlanner && (
-                            <span
-                              className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20"
-                              data-testid={`in-planner-${b.id}`}
-                            >
-                              <CalendarClock className="h-3 w-3" />
-                              In Planner
+                              Not started
                             </span>
                           )}
                         </div>
-                        {(b.targetKeyword || b.estimatedHours != null) && (
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground" data-testid={`brief-meta-${b.id}`}>
-                            {b.targetKeyword && <span>🔑 {b.targetKeyword}</span>}
-                            {b.estimatedHours != null && <span>~{b.estimatedHours}h</span>}
-                          </div>
-                        )}
-                        {isSocialBriefFormat(b.format) && (
-                          <p
-                            className="flex items-start gap-1.5 text-xs text-muted-foreground"
-                            data-testid={`social-signpost-${b.id}`}
-                          >
-                            <Share2 className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span>
-                              Targets social. The draft stays here in Content Briefs — use{" "}
-                              <span className="font-medium">Repurpose</span> to turn it into a schedulable Social Post.
-                            </span>
-                          </p>
-                        )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Select
-                          value={b.format}
-                          onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { format: v } })}
-                        >
-                          <SelectTrigger className="h-8 w-[150px]" data-testid={`format-${b.id}`}>
-                            <SelectValue placeholder="Format" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {BRIEF_FORMAT_OPTIONS.map((f) => (
-                              <SelectItem key={f.value} value={f.value}>
-                                {f.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          value={STATUS_OPTIONS.includes(b.status) ? b.status : undefined}
-                          onValueChange={(v) => updateBrief.mutate({ id: b.id, updates: { status: v } })}
-                        >
-                          <SelectTrigger className="h-8 w-[130px]" data-testid={`status-${b.id}`}>
-                            <SelectValue placeholder={b.status} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STATUS_OPTIONS.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {STATUS_LABELS[s] ?? s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {b.contentAssetId ? (
-                          <>
+
+                      {b.contentAssetId ? (
+                        <>
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button
                               size="sm"
                               disabled={openingDraftId === b.id}
@@ -1383,6 +1539,22 @@ export default function EditorialCalendarPage() {
                               )}
                               Open draft
                             </Button>
+                            {canFinalizeBrief(b) && (
+                              <Button
+                                size="sm"
+                                disabled={finalizeBrief.isPending && finalizeBrief.variables === b.id}
+                                onClick={() => finalizeBrief.mutate(b.id)}
+                                data-testid={`finalize-${b.id}`}
+                                title="Approve this draft as publish-ready and make it live in the library"
+                              >
+                                {finalizeBrief.isPending && finalizeBrief.variables === b.id ? (
+                                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                                )}
+                                Approve draft
+                              </Button>
+                            )}
                             {!isSocialBriefFormat(b.format) && (
                               <Button
                                 size="sm"
@@ -1417,8 +1589,62 @@ export default function EditorialCalendarPage() {
                               )}
                               Re-draft
                             </Button>
-                          </>
-                        ) : (
+                            {repurposeAllowed && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setRepurposeTarget({ id: b.contentAssetId!, title: b.title, calendarId: b.calendarId })}
+                                data-testid={`repurpose-${b.id}`}
+                              >
+                                <Share2 className="mr-1 h-4 w-4" />
+                                Repurpose
+                              </Button>
+                            )}
+                            {optimizeAllowed && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={optimizeAsset.isPending}
+                                onClick={() => optimizeAsset.mutate(b.contentAssetId!)}
+                                data-testid={`optimize-${b.id}`}
+                              >
+                                {optimizeAsset.isPending && optimizeAsset.variables === b.contentAssetId ? (
+                                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Search className="mr-1 h-4 w-4" />
+                                )}
+                                SEO/AEO
+                              </Button>
+                            )}
+                          </div>
+                          {/* Category belongs to the produced draft, so it lives here. */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-medium uppercase text-muted-foreground">Category</span>
+                            <Select
+                              value={b.draftCategoryId ?? "__none__"}
+                              disabled={assignCategory.isPending}
+                              onValueChange={(v) =>
+                                b.contentAssetId &&
+                                assignCategory.mutate({ assetId: b.contentAssetId, categoryId: v === "__none__" ? null : v })
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-category-${b.id}`}>
+                                <SelectValue placeholder="Category" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">No category</SelectItem>
+                                {(categoryOptions ?? []).map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm text-muted-foreground">
+                            No draft yet. Generate one from this plan when the idea is ready.
+                          </p>
                           <Button
                             size="sm"
                             disabled={draftBrief.isPending && draftBrief.variables === b.id}
@@ -1437,197 +1663,9 @@ export default function EditorialCalendarPage() {
                               </>
                             )}
                           </Button>
-                        )}
-                        {canFinalizeBrief(b) && (
-                          <Button
-                            size="sm"
-                            disabled={finalizeBrief.isPending && finalizeBrief.variables === b.id}
-                            onClick={() => finalizeBrief.mutate(b.id)}
-                            data-testid={`finalize-${b.id}`}
-                            title="Approve the brief and its draft in one step"
-                          >
-                            {finalizeBrief.isPending && finalizeBrief.variables === b.id ? (
-                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="mr-1 h-4 w-4" />
-                            )}
-                            Approve draft
-                          </Button>
-                        )}
-                        {b.contentAssetId && repurposeAllowed && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setRepurposeTarget({ id: b.contentAssetId!, title: b.title, calendarId: b.calendarId })}
-                            data-testid={`repurpose-${b.id}`}
-                          >
-                            <Share2 className="mr-1 h-4 w-4" />
-                            Repurpose
-                          </Button>
-                        )}
-                        {b.contentAssetId && optimizeAllowed && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={optimizeAsset.isPending}
-                            onClick={() => optimizeAsset.mutate(b.contentAssetId!)}
-                            data-testid={`optimize-${b.id}`}
-                          >
-                            {optimizeAsset.isPending && optimizeAsset.variables === b.contentAssetId ? (
-                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                            ) : (
-                              <Search className="mr-1 h-4 w-4" />
-                            )}
-                            SEO/AEO
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={downloadingBriefId === b.id}
-                          onClick={() => downloadBriefDocx(b)}
-                          data-testid={`download-brief-${b.id}`}
-                        >
-                          {downloadingBriefId === b.id ? (
-                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                          ) : (
-                            <FileDown className="mr-1 h-4 w-4" />
-                          )}
-                          Word
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setCopyBriefId(b.id);
-                            setCopyTargetCampaignId(b.campaignId ?? "");
-                            setCopyNewCampaignName("");
-                          }}
-                          data-testid={`copy-brief-${b.id}`}
-                        >
-                          <Copy className="mr-1 h-4 w-4" />
-                          Copy to…
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          disabled={deleteBrief.isPending && deleteBrief.variables === b.id}
-                          onClick={() => {
-                            if (confirm(`Permanently delete the brief "${b.title}"? This cannot be undone.`)) {
-                              deleteBrief.mutate(b.id);
-                            }
-                          }}
-                          data-testid={`delete-brief-${b.id}`}
-                        >
-                          {deleteBrief.isPending && deleteBrief.variables === b.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
+                        </div>
+                      )}
                     </div>
-
-                    {/* Polaris podcast outline: optional guest override. Blank =
-                        the AI suggests a guest; a value overrides it throughout. */}
-                    {b.format === "podcast_outline" && (
-                      <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2">
-                        <Mic className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs font-medium text-muted-foreground">Do you have a guest in mind?</span>
-                        <Input
-                          value={podcastGuest[b.id] ?? ""}
-                          onChange={(e) => setPodcastGuest((p) => ({ ...p, [b.id]: e.target.value }))}
-                          placeholder="Name, title, company (leave blank to let AI suggest)"
-                          className="h-8 flex-1 min-w-[220px]"
-                          data-testid={`input-podcast-guest-${b.id}`}
-                        />
-                      </div>
-                    )}
-
-                    {/* Assignment: campaign, theme, category. Campaign and theme
-                        live on the brief; category lives on the generated draft
-                        (content asset), so it's only enabled once drafted. */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium uppercase text-muted-foreground">Assign</span>
-                      <Select
-                        value={b.campaignId ?? "__none__"}
-                        onValueChange={(v) =>
-                          updateBrief.mutate({ id: b.id, updates: { campaignId: v === "__none__" ? null : v } })
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-campaign-${b.id}`}>
-                          <SelectValue placeholder="Campaign" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">No campaign</SelectItem>
-                          {(campaignOptions ?? []).map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={b.solutionAreaId ?? "__none__"}
-                        onValueChange={(v) =>
-                          updateBrief.mutate({ id: b.id, updates: { solutionAreaId: v === "__none__" ? null : v } })
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-theme-${b.id}`}>
-                          <SelectValue placeholder="Theme" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">No theme</SelectItem>
-                          {(themeOptions ?? []).map((t) => (
-                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={b.draftCategoryId ?? "__none__"}
-                        disabled={!b.contentAssetId || assignCategory.isPending}
-                        onValueChange={(v) =>
-                          b.contentAssetId &&
-                          assignCategory.mutate({ assetId: b.contentAssetId, categoryId: v === "__none__" ? null : v })
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-[180px]" data-testid={`assign-category-${b.id}`}>
-                          <SelectValue placeholder={b.contentAssetId ? "Category" : "Category (draft first)"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">No category</SelectItem>
-                          {(categoryOptions ?? []).map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <dl className="grid gap-2 text-sm sm:grid-cols-2">
-                      {b.demandSignal && (
-                        <div>
-                          <dt className="text-xs font-medium uppercase text-muted-foreground">Demand signal</dt>
-                          <dd>{b.demandSignal}</dd>
-                        </div>
-                      )}
-                      {b.differentiationAngle && (
-                        <div>
-                          <dt className="text-xs font-medium uppercase text-muted-foreground">Differentiation</dt>
-                          <dd>{b.differentiationAngle}</dd>
-                        </div>
-                      )}
-                      {b.targetReader && (
-                        <div>
-                          <dt className="text-xs font-medium uppercase text-muted-foreground">Target reader</dt>
-                          <dd>{b.targetReader}</dd>
-                        </div>
-                      )}
-                      {b.cta && (
-                        <div>
-                          <dt className="text-xs font-medium uppercase text-muted-foreground">CTA</dt>
-                          <dd>{b.cta}</dd>
-                        </div>
-                      )}
-                    </dl>
                   </CardContent>
                 </Card>
               ))}
