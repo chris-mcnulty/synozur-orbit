@@ -249,10 +249,14 @@ export function registerPlanningHubRoutes(app: Express) {
 
       const blank = (): Record<string, number> => ({ draft: 0, scheduled: 0, approved: 0, posted: 0 });
       const byStage = blank();
-      const byType: Record<ItemType, number> = { social: 0, email: 0, content: 0 };
+      const byType: Record<string, number> = { social: 0, email: 0, content: 0, blog_posts: 0 };
       for (const it of items) {
         byStage[it.stage] += 1;
-        byType[it.type as ItemType] += 1;
+        if (it.type === "content" && it.format === "blog_post") {
+          byType.blog_posts += 1;
+        } else {
+          byType[it.type as ItemType] += 1;
+        }
       }
 
       res.json({

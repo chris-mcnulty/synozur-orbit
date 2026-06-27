@@ -48,7 +48,7 @@ export interface HubResponse {
   rollup: {
     total: number;
     byStage: Record<Stage, number>;
-    byType: Record<ItemType, number>;
+    byType: Record<ItemType | "blog_posts", number>;
   };
 }
 
