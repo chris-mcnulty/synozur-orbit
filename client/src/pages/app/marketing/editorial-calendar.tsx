@@ -723,6 +723,7 @@ export default function EditorialCalendarPage() {
     },
     onSuccess: (row: { leadImageUrl: string | null }) => {
       setDraftImageUrl(row.leadImageUrl ?? null);
+      setBlogHeroUrl(row.leadImageUrl ?? "");
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       toast.success("Branded image generated");
     },
@@ -743,6 +744,7 @@ export default function EditorialCalendarPage() {
     },
     onSuccess: () => {
       setDraftImageUrl(null);
+      setBlogHeroUrl("");
       queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
       toast.success("Branded image removed");
     },
