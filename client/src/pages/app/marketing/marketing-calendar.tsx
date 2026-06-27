@@ -1836,9 +1836,15 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-rail-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
                   <ChannelFormatTag item={it} />
-                  <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-rail-item-${it.id}`}>
-                    {it.title}
-                  </button>
+                  {it.type === "content" ? (
+                    <Link href={editorHref(it)} className="flex-1 truncate text-xs hover:underline" data-testid={`button-rail-item-${it.id}`}>
+                      {it.title}
+                    </Link>
+                  ) : (
+                    <button onClick={() => onSelect(it)} className="flex-1 truncate text-left hover:underline" data-testid={`button-rail-item-${it.id}`}>
+                      {it.title}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -2449,6 +2455,11 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
                 <Button variant="outline" size="sm" data-testid="button-social-export"><ExternalLink className="mr-2 h-4 w-4" /> Open in Social Posts</Button>
               </Link>
             )}
+            {item.type === "content" && (
+              <Link href={editorHref(item)}>
+                <Button variant="outline" size="sm" data-testid="button-open-editorial"><ExternalLink className="mr-2 h-4 w-4" /> Open in Editorial Calendar</Button>
+              </Link>
+            )}
           </div>
           <Button variant="ghost" size="sm" className="text-destructive" onClick={() => onDelete(item)} disabled={busy} data-testid="button-delete-item">
             <Trash2 className="mr-2 h-4 w-4" /> Remove
@@ -2695,28 +2706,53 @@ function BacklogPanel({
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-item-${it.id}`} aria-label={`Select ${it.title}`} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${TYPE_META[it.type].dot}`} title={TYPE_META[it.type].label} />
                   <ChannelFormatTag item={it} />
-                  <button
-                    onClick={() => onSelect(it)}
-                    className="min-w-0 flex-1 text-left"
-                    data-testid={`button-backlog-item-${it.id}`}
-                  >
-                    <div className="flex min-w-0 items-baseline gap-2">
-                      <span className="truncate font-medium hover:underline">{it.title}</span>
-                      {it.campaignName && (
-                        <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
-                          {it.campaignName}
-                        </span>
+                  {it.type === "content" ? (
+                    <Link
+                      href={editorHref(it)}
+                      className="min-w-0 flex-1 text-left"
+                      data-testid={`button-backlog-item-${it.id}`}
+                    >
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="truncate font-medium hover:underline">{it.title}</span>
+                        {it.campaignName && (
+                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
+                            {it.campaignName}
+                          </span>
+                        )}
+                        {!it.campaignName && it.conferenceName && (
+                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                            {it.conferenceName}
+                          </span>
+                        )}
+                      </div>
+                      {postPreview && (
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
                       )}
-                      {!it.campaignName && it.conferenceName && (
-                        <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
-                          {it.conferenceName}
-                        </span>
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => onSelect(it)}
+                      className="min-w-0 flex-1 text-left"
+                      data-testid={`button-backlog-item-${it.id}`}
+                    >
+                      <div className="flex min-w-0 items-baseline gap-2">
+                        <span className="truncate font-medium hover:underline">{it.title}</span>
+                        {it.campaignName && (
+                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" data-testid={`badge-backlog-campaign-${it.id}`}>
+                            {it.campaignName}
+                          </span>
+                        )}
+                        {!it.campaignName && it.conferenceName && (
+                          <span className="shrink-0 rounded px-1.5 py-0 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                            {it.conferenceName}
+                          </span>
+                        )}
+                      </div>
+                      {postPreview && (
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
                       )}
-                    </div>
-                    {postPreview && (
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{postPreview}</div>
-                    )}
-                  </button>
+                    </button>
+                  )}
                   <Badge variant="outline" className={`shrink-0 px-1.5 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`}>{LIFECYCLE_META[it.lifecycle].label}</Badge>
                 </div>
               );
