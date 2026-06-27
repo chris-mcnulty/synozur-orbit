@@ -12,6 +12,9 @@ import {
   ListChecks,
   Trash2,
   X,
+  RefreshCw,
+  Loader2,
+  WrenchIcon,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
@@ -19,6 +22,17 @@ import { Button } from "@/components/ui/button";
 import EmptyPageState from "@/components/EmptyPageState";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 // One row per Orbit-managed post, from /api/generated-posts/calendar.
 interface CalendarPost {
@@ -36,11 +50,28 @@ interface CalendarPost {
   publishError: string | null;
 }
 
+interface CarouselSlide {
+  index: number;
+  role: "cover" | "body" | "close";
+  kicker?: string | null;
+  headline: string;
+  supportingLines: string[];
+  imageUrl?: string | null;
+}
+
+interface FullPost {
+  id: string;
+  content: string | null;
+  editedContent: string | null;
+  publishError: string | null;
+  status: string;
+  postFormat: string | null;
+  carouselSlides: CarouselSlide[] | null;
+  campaignId: string | null;
+}
+
 type Stage = "scheduled" | "failed" | "posted" | "exported";
 
-// Map a post onto a queue stage, following the same precedence the campaign
-// view uses. Posts Orbit doesn't manage (drafts, needs-a-date, rejected) and
-// rows we can't place return null and drop out of the queue.
 function queueStage(p: CalendarPost): Stage | null {
   if (p.status === "publish_failed" || p.publishError) return "failed";
   if (p.publishedAt || p.status === "published") return "posted";
@@ -70,7 +101,6 @@ function platformOf(platform: string) {
   return PLATFORM_META[platform?.toLowerCase()] ?? { label: platform || "Social", glyph: "•", bg: "#475569" };
 }
 
-// The time a row sorts and groups by: when it's going out, or when it went out.
 function postTime(p: CalendarPost): Date | null {
   const t = p.scheduledDate ?? p.publishedAt;
   return t ? new Date(t) : null;
@@ -82,9 +112,6 @@ function dayKey(d: Date) {
   return format(d, "EEEE · MMM d");
 }
 
-// Where to go to act on a row. Failed/scheduled posts open in their campaign's
-// Social Posts tab (the existing place to retry, reschedule, or reconnect);
-// standalone posts open the Social Calendar.
 function actionHref(p: CalendarPost) {
   if (p.campaignId) return `/app/marketing/campaigns/${p.campaignId}#posts`;
   return "/app/marketing/calendar";
@@ -98,9 +125,233 @@ const FILTERS: { key: "all" | Stage; label: string }[] = [
   { key: "exported", label: "Exported" },
 ];
 
+// ── Fix Dialog ─────────────────────────────────────────────────────────────
+
+function FixDialog({
+  postId,
+  onClose,
+  onResubmitted,
+}: {
+  postId: string;
+  onClose: () => void;
+  onResubmitted: () => void;
+}) {
+  const { toast } = useToast();
+  const [editedText, setEditedText] = useState<string | null>(null);
+  const [slideUrls, setSlideUrls] = useState<Record<number, string>>({});
+  const [didInit, setDidInit] = useState(false);
+
+  const { data: post, isLoading } = useQuery<FullPost>({
+    queryKey: ["/api/generated-posts", postId],
+    queryFn: async () => {
+      const r = await fetch(`/api/generated-posts/${postId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Could not load post");
+      return r.json();
+    },
+  });
+
+  // Initialise editable state once when post loads (only once).
+  if (post && !didInit) {
+    setEditedText(post.editedContent ?? post.content ?? "");
+    const initUrls: Record<number, string> = {};
+    (post.carouselSlides ?? []).forEach((s) => {
+      initUrls[s.index] = s.imageUrl ?? "";
+    });
+    setSlideUrls(initUrls);
+    setDidInit(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = { editedContent: editedText };
+      // If carousel slides had URL edits, merge them back into carouselSlides.
+      if (post?.postFormat === "carousel" && post.carouselSlides?.length) {
+        const merged = post.carouselSlides.map((s) => ({
+          ...s,
+          imageUrl: slideUrls[s.index] !== undefined ? slideUrls[s.index] : s.imageUrl,
+        }));
+        body.carouselSlides = merged;
+      }
+      const r = await fetch(`/api/generated-posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Save failed");
+      return r.json();
+    },
+    onSuccess: () => toast({ title: "Edits saved" }),
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  const resubmitMutation = useMutation({
+    mutationFn: async () => {
+      // Save edits first (if the text changed from original).
+      const original = post?.editedContent ?? post?.content ?? "";
+      const textChanged = editedText !== null && editedText !== original;
+      const hasSlideChanges = post?.postFormat === "carousel" &&
+        post?.carouselSlides?.some((s) => slideUrls[s.index] !== undefined && slideUrls[s.index] !== (s.imageUrl ?? ""));
+
+      if (textChanged || hasSlideChanges) {
+        const saveBody: Record<string, unknown> = { editedContent: editedText };
+        if (post?.postFormat === "carousel" && post.carouselSlides?.length) {
+          saveBody.carouselSlides = post.carouselSlides.map((s) => ({
+            ...s,
+            imageUrl: slideUrls[s.index] !== undefined ? slideUrls[s.index] : s.imageUrl,
+          }));
+        }
+        const saveRes = await fetch(`/api/generated-posts/${postId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(saveBody),
+        });
+        if (!saveRes.ok) throw new Error((await saveRes.json().catch(() => ({}))).error || "Save failed");
+      }
+
+      // Now trigger publish.
+      const r = await fetch(`/api/generated-posts/${postId}/publish`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Resubmit failed");
+      return r.json() as Promise<{ publishedUrl?: string }>;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Resubmitted!",
+        description: data.publishedUrl ? `Live at ${data.publishedUrl}` : "Post sent for publishing.",
+      });
+      onResubmitted();
+    },
+    onError: (err: Error) =>
+      toast({ title: "Resubmit failed", description: err.message, variant: "destructive" }),
+  });
+
+  const isCarousel = post?.postFormat === "carousel";
+  const slides = post?.carouselSlides ?? [];
+  const isBusy = saveMutation.isPending || resubmitMutation.isPending;
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <WrenchIcon className="w-4 h-4 text-destructive" />
+            Fix failed post
+          </DialogTitle>
+          <DialogDescription>
+            Edit the post content below, then resubmit to try publishing again.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : post ? (
+          <div className="space-y-4">
+            {/* Failure reason */}
+            {post.publishError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-destructive">Why it failed</p>
+                    <p className="text-destructive/80 mt-0.5 font-mono text-xs break-all">{post.publishError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Post text */}
+            <div className="space-y-1.5">
+              <Label htmlFor="fix-post-content">Post text</Label>
+              <Textarea
+                id="fix-post-content"
+                value={editedText ?? ""}
+                onChange={(e) => setEditedText(e.target.value)}
+                rows={8}
+                className="resize-y font-mono text-sm"
+                data-testid="fix-dialog-content"
+                disabled={isBusy}
+              />
+            </div>
+
+            {/* Carousel slide image URLs (if applicable) */}
+            {isCarousel && slides.length > 0 && (
+              <div className="space-y-2">
+                <Label>Slide image URLs</Label>
+                <p className="text-xs text-muted-foreground">
+                  Update any broken image URLs below. Each URL must be publicly reachable.
+                </p>
+                <div className="space-y-2">
+                  {slides.map((slide) => (
+                    <div key={slide.index} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-16 shrink-0">
+                        Slide {slide.index}
+                        <br />
+                        <span className="text-[10px] opacity-70">{slide.role}</span>
+                      </span>
+                      <Input
+                        value={slideUrls[slide.index] ?? slide.imageUrl ?? ""}
+                        onChange={(e) =>
+                          setSlideUrls((prev) => ({ ...prev, [slide.index]: e.target.value }))
+                        }
+                        placeholder="https://..."
+                        className="font-mono text-xs h-8"
+                        data-testid={`fix-dialog-slide-url-${slide.index}`}
+                        disabled={isBusy}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground py-4">Could not load post details.</p>
+        )}
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={onClose} disabled={isBusy} data-testid="fix-dialog-cancel">
+            Cancel
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => saveMutation.mutate()}
+            disabled={isBusy || !post}
+            data-testid="fix-dialog-save"
+          >
+            {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+            Save edits
+          </Button>
+          <Button
+            onClick={() => resubmitMutation.mutate()}
+            disabled={isBusy || !post}
+            data-testid="fix-dialog-resubmit"
+            className="gap-1.5"
+          >
+            {resubmitMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5" />
+            )}
+            Resubmit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main Page ───────────────────────────────────────────────────────────────
+
 export default function QueuePage() {
   const [filter, setFilter] = useState<"all" | Stage>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [fixPostId, setFixPostId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -146,13 +397,11 @@ export default function QueuePage() {
     },
   });
 
-  // Stage every post, drop the ones Orbit isn't managing, sort by time.
   const items = useMemo(() => {
     return posts
       .map((p) => ({ post: p, stage: queueStage(p), when: postTime(p) }))
       .filter((x): x is { post: CalendarPost; stage: Stage; when: Date | null } => x.stage !== null)
       .sort((a, b) => {
-        // Failures first, then by send time (soonest first; undated last).
         if (a.stage === "failed" && b.stage !== "failed") return -1;
         if (b.stage === "failed" && a.stage !== "failed") return 1;
         const at = a.when?.getTime() ?? Infinity;
@@ -176,7 +425,6 @@ export default function QueuePage() {
 
   const visible = filter === "all" ? items : items.filter((it) => it.stage === filter);
 
-  // Group visible rows by day for scannable headers.
   const groups = useMemo(() => {
     const map = new Map<string, typeof visible>();
     for (const it of visible) {
@@ -186,6 +434,11 @@ export default function QueuePage() {
     }
     return Array.from(map.entries());
   }, [visible]);
+
+  function handleResubmitted() {
+    queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+    setFixPostId(null);
+  }
 
   return (
     <AppLayout breadcrumbs={[{ label: "Marketing", href: "/app/marketing" }, { label: "Posting Queue" }]}>
@@ -359,17 +612,25 @@ export default function QueuePage() {
                             {sm.label}
                           </span>
                           {!isConfirming && (
-                            <Button
-                              asChild
-                              size="sm"
-                              variant={stage === "failed" ? "default" : "outline"}
-                              className={cn(stage === "failed" && "bg-destructive hover:bg-destructive/90")}
-                            >
-                              <Link href={actionHref(post)} data-testid={`queue-action-${post.id}`}>
-                                {stage === "failed" ? "Fix" : stage === "posted" ? "View" : "Edit"}
-                                <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                              </Link>
-                            </Button>
+                            stage === "failed" ? (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="bg-destructive hover:bg-destructive/90 gap-1"
+                                onClick={() => setFixPostId(post.id)}
+                                data-testid={`queue-action-${post.id}`}
+                              >
+                                <WrenchIcon className="w-3.5 h-3.5" />
+                                Fix
+                              </Button>
+                            ) : (
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={actionHref(post)} data-testid={`queue-action-${post.id}`}>
+                                  {stage === "posted" ? "View" : "Edit"}
+                                  <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                                </Link>
+                              </Button>
+                            )
                           )}
                         </div>
                       </div>
@@ -381,6 +642,15 @@ export default function QueuePage() {
           </div>
         )}
       </div>
+
+      {/* Fix dialog — rendered outside the list so it doesn't inherit the row layout */}
+      {fixPostId && (
+        <FixDialog
+          postId={fixPostId}
+          onClose={() => setFixPostId(null)}
+          onResubmitted={handleResubmitted}
+        />
+      )}
     </AppLayout>
   );
 }
