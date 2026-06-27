@@ -3046,6 +3046,11 @@ export const campaigns = pgTable("campaigns", {
   interview: jsonb("interview").$type<CampaignInterview>(),
   thematicBrief: text("thematic_brief"),
   thematicUrl: text("thematic_url"),
+  // When true, post generation uses ONLY the campaign brief/content as source
+  // material — market positioning, competitive intelligence, and founding-signal
+  // news are excluded from the AI prompt. Use for content-specific campaigns
+  // (e.g. promoting a blog post) where broad GTM context would dilute the message.
+  briefOnlyMode: boolean("brief_only_mode").notNull().default(false),
   postGenerationJobId: varchar("post_generation_job_id").references(() => scheduledJobRuns.id, { onDelete: "set null" }),
   // Parent/child hierarchy: a mainline campaign can own child social campaigns.
   // NULL means standalone. On delete set null so archiving the parent does not

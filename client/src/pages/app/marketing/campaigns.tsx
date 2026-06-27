@@ -188,6 +188,7 @@ export default function CampaignsPage() {
     numberOfDays: 7,
     includeSaturday: false,
     includeSunday: false,
+    briefOnlyMode: false,
   });
 
   // Campaign ideation (step 0 assist): scan news + intelligence + grounding to
@@ -411,6 +412,7 @@ export default function CampaignsPage() {
           numberOfDays: form.numberOfDays,
           includeSaturday: form.includeSaturday,
           includeSunday: form.includeSunday,
+          briefOnlyMode: form.briefOnlyMode,
           assetIds: form.selectedAssetIds,
           socialAccountIds: form.selectedSocialIds,
           productIds: form.selectedProductIds,
@@ -727,6 +729,22 @@ export default function CampaignsPage() {
                       onChange={e => setForm(f => ({ ...f, goal: e.target.value }))}
                       placeholder="Measurable target, e.g. 200 webinar registrations"
                       data-testid="input-campaign-goal"
+                    />
+                  </div>
+                  <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+                    <div className="flex-1 min-w-0">
+                      <Label htmlFor="brief-only-mode" className="font-medium cursor-pointer">Focus on campaign content only</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        When on, posts are generated exclusively from this campaign's brief and attached content.
+                        Market positioning, competitive intelligence, and news signals are excluded.
+                        Use this when promoting a specific piece of content like a blog post.
+                      </p>
+                    </div>
+                    <Switch
+                      id="brief-only-mode"
+                      checked={form.briefOnlyMode}
+                      onCheckedChange={v => setForm(f => ({ ...f, briefOnlyMode: v }))}
+                      data-testid="switch-campaign-brief-only"
                     />
                   </div>
                   <div>

@@ -1956,7 +1956,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "campaigns")) return;
     try {
       const ctx = await getRequestContext(req);
-      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, assetIds, socialAccountIds, productIds, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, foundingSignalsInput } = req.body;
+      const { name, description, startDate, endDate, numberOfDays, includeSaturday, includeSunday, briefOnlyMode, assetIds, socialAccountIds, productIds, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, foundingSignalsInput } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
       const resolvedCampaignType: CampaignType = CAMPAIGN_TYPES.includes(campaignType)
@@ -2013,6 +2013,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           numberOfDays: numberOfDays ?? null,
           includeSaturday: includeSaturday ?? false,
           includeSunday: includeSunday ?? false,
+          briefOnlyMode: briefOnlyMode === true,
           productIds: Array.isArray(productIds) ? productIds : null,
           foundingSignals,
           createdBy: ctx.userId,
@@ -4619,11 +4620,14 @@ async function generatePostsAsync(
       ? allLinkedAccounts.filter(a => requestedAccountIds.includes(a.id))
       : allLinkedAccounts;
 
+    // In brief-only mode, skip market positioning + intelligence so posts draw
+    // exclusively from the campaign content (briefs, thematic brief, pool assets).
+    const briefOnlyMode = !!campaignRow.briefOnlyMode;
     const [groundingContext, strategicCtx] = await Promise.all([
       loadGroundingContext(tenantDomain, marketId),
-      loadStrategicContext(tenantDomain, marketId),
+      briefOnlyMode ? Promise.resolve(null) : loadStrategicContext(tenantDomain, marketId),
     ]);
-    const strategicContext = formatStrategicContextForPrompt(strategicCtx);
+    const strategicContext = briefOnlyMode ? "" : formatStrategicContextForPrompt(strategicCtx);
 
     let personaContext = "";
     if (personaIds.length > 0) {
@@ -4698,7 +4702,10 @@ async function generatePostsAsync(
       return `## Campaign mission — what every post MUST be about\nThese posts belong to a specific campaign with a specific message. Ground every variant in this mission and the news items below. Do NOT drift into generic industry commentary or unrelated statistics.\n\n${parts.join("\n\n")}`;
     })();
 
-    const foundingSignalsContext = formatFoundingSignalsForPrompt(campaignRow.foundingSignals ?? null);
+    // Suppress founding-signal news in brief-only mode — those are GTM intel items.
+    const foundingSignalsContext = briefOnlyMode
+      ? ""
+      : formatFoundingSignalsForPrompt(campaignRow.foundingSignals ?? null);
 
     let brandImageAssets: { id: string; fileUrl: string | null; url: string | null; name: string }[] = [];
     if (brandImageIds.length > 0) {
