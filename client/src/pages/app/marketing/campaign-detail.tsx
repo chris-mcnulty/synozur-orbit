@@ -49,6 +49,7 @@ import {
   Send,
   FileDown,
   Globe,
+  Lightbulb,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -2466,6 +2467,10 @@ export default function CampaignDetailPage() {
                     <CardContent className="py-3">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                            <Lightbulb className="h-3.5 w-3.5" />
+                            Plan
+                          </div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium text-sm">{b.title}</span>
                             <Badge variant="outline" className="text-xs">{BRIEF_FORMAT_LABELS[b.format] ?? b.format}</Badge>
