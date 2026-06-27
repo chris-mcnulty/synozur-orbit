@@ -20,7 +20,7 @@
  */
 
 import { db } from "../db";
-import { eq, and, lte, gte, isNotNull, or, isNull, sql, ne } from "drizzle-orm";
+import { eq, and, lte, isNotNull, or, isNull, sql, ne } from "drizzle-orm";
 import {
   generatedPosts,
   socialAccounts,
@@ -65,14 +65,6 @@ function bumpAndCheckDailyCap(tenantDomain: string): boolean {
 
 let inFlight = false;
 
-// How far back the worker will reach for a first-attempt post. If the server
-// was offline longer than this, overdue posts are left untouched rather than
-// firing a catch-up burst. Retries are not subject to this window — they use
-// their own publishNextAttemptAt backoff timing.
-const FIRST_ATTEMPT_STALENESS_MINUTES = Number(
-  process.env.MARKETING_PUBLISH_STALENESS_MINUTES || 60,
-);
-
 export async function tickMarketingPublishWorker(): Promise<{ processed: number; published: number; failed: number }> {
   if (inFlight) return { processed: 0, published: 0, failed: 0 };
   inFlight = true;
@@ -81,11 +73,6 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
   let processed = 0;
   try {
     const now = new Date();
-    // Staleness cutoff: first-attempt posts scheduled before this timestamp are
-    // skipped. This prevents the worker from firing a burst of overdue posts
-    // if the server was offline or the worker missed several ticks.
-    const stalenessCutoff = new Date(now.getTime() - FIRST_ATTEMPT_STALENESS_MINUTES * 60 * 1000);
-
     // Two paths: campaign-linked posts must be on a campaign-social-account
     // link with autoPublish=true; standalone posts (campaignId IS NULL) are
     // self-authorizing — being approved + scheduled is enough.
@@ -108,18 +95,9 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           eq(generatedPosts.status, "approved"),
           isNotNull(generatedPosts.scheduledDate),
           lte(generatedPosts.scheduledDate, now),
-          // First-attempt posts: only within the staleness window to prevent
-          // catch-up bursts after downtime. Retries (publishNextAttemptAt IS NOT
-          // NULL) bypass the staleness check — their backoff already controls timing.
           or(
-            and(
-              isNull(generatedPosts.publishNextAttemptAt),
-              gte(generatedPosts.scheduledDate, stalenessCutoff),
-            ),
-            and(
-              isNotNull(generatedPosts.publishNextAttemptAt),
-              lte(generatedPosts.publishNextAttemptAt, now),
-            ),
+            isNull(generatedPosts.publishNextAttemptAt),
+            lte(generatedPosts.publishNextAttemptAt, now),
           ),
           isNotNull(socialAccounts.encryptedAccessToken),
           eq(socialAccounts.status, "active"),

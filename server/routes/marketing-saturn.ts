@@ -2544,6 +2544,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         id: randomUUID(),
         campaignId: campaign.id,
         socialAccountId,
+        autoPublish: true,
       } as InsertCampaignSocialAccount).returning();
       res.status(201).json(row);
     } catch (err: any) {
