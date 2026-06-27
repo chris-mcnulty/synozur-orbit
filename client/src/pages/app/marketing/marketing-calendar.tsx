@@ -1845,6 +1845,11 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
                       {it.title}
                     </button>
                   )}
+                  {it.type === "content" && (
+                    <Badge variant="outline" className={`shrink-0 px-1 py-0 text-[10px] ${LIFECYCLE_META[it.lifecycle].cls}`} data-testid={`badge-brief-status-${it.id}`}>
+                      {it.websitePostSlug ? "Pushed to web" : LIFECYCLE_META[it.lifecycle].label}
+                    </Badge>
+                  )}
                 </div>
               );
             })}
