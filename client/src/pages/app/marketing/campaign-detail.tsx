@@ -532,6 +532,24 @@ export default function CampaignDetailPage() {
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const hubCreateBlogPostMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/planning-hub/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ scope: "campaign", id, type: "content", format: "blog_post", title: "New blog post" }),
+      });
+      if (!res.ok) throw new Error("Failed to create blog post brief");
+      return res.json() as Promise<{ type: string; id: string }>;
+    },
+    onSuccess: (data) => {
+      refreshHub();
+      navigate(`/app/marketing/editorial-calendar?brief=${data.id}`);
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
   const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
     queryKey: ["/api/strategic-context/summary"],
     queryFn: async () => {
@@ -2684,6 +2702,88 @@ export default function CampaignDetailPage() {
                   onDetach={(item) => hubDetachMutation.mutate(item)}
                   detachPending={hubDetachMutation.isPending}
                 />
+
+                {/* Blog Posts section — dedicated list of blog_post format briefs */}
+                {(() => {
+                  const blogItems = hub.items.filter(
+                    (it) => it.type === "content" && it.format === "blog_post",
+                  );
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                            <Newspaper className="w-3.5 h-3.5" /> Blog Posts
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            Content briefs of format blog post linked to this campaign.
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          disabled={hubCreateBlogPostMutation.isPending}
+                          onClick={() => hubCreateBlogPostMutation.mutate()}
+                          data-testid="button-hub-new-blog-post"
+                        >
+                          {hubCreateBlogPostMutation.isPending ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Plus className="w-3.5 h-3.5" />
+                          )}
+                          New Blog Post
+                        </Button>
+                      </div>
+                      {blogItems.length === 0 ? (
+                        <p className="text-xs text-muted-foreground py-2" data-testid="text-hub-no-blog-posts">
+                          No blog posts yet. Click "New Blog Post" to draft one scoped to this campaign.
+                        </p>
+                      ) : (
+                        <div className="space-y-2" data-testid="list-hub-blog-posts">
+                          {blogItems.map((it) => {
+                            const stageCls = STAGE_META[it.stage]?.className ?? "bg-muted text-muted-foreground";
+                            const stageLabel = STAGE_META[it.stage]?.label ?? it.stage;
+                            const href = it.calendarId
+                              ? `/app/marketing/editorial-calendar?calendar=${it.calendarId}&brief=${it.id}`
+                              : `/app/marketing/editorial-calendar?brief=${it.id}`;
+                            return (
+                              <div
+                                key={it.id}
+                                className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2.5"
+                                data-testid={`row-hub-blog-post-${it.id}`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Newspaper className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="text-sm font-medium truncate">{it.title || "(untitled)"}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {it.date && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {new Date(it.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                    </span>
+                                  )}
+                                  <Badge className={`text-[10px] px-1.5 py-0 ${stageCls}`} data-testid={`badge-blog-stage-${it.id}`}>
+                                    {stageLabel}
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs gap-1"
+                                    onClick={(e) => { e.preventDefault(); navigate(href); }}
+                                    data-testid={`button-open-blog-brief-${it.id}`}
+                                  >
+                                    Open
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : null}
           </TabsContent>
