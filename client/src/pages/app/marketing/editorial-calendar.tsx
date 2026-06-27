@@ -644,6 +644,16 @@ export default function EditorialCalendarPage() {
         setBlogCategoryIds(new Set(asset.websiteCategoryIds ?? []));
         setBlogTagIds(new Set(asset.websiteTagIds ?? []));
         setAiRefOpen(false);
+      } else {
+        setBlogHeroUrl("");
+        setBlogSeoTitle("");
+        setBlogMetaDescription("");
+        setBlogSeoSlug("");
+        setBlogExcerpt("");
+        setBlogAuthorId("");
+        setBlogCategoryIds(new Set());
+        setBlogTagIds(new Set());
+        setDraftHtml("");
       }
       setDraftDirty(false);
       setRewriteInstr("");
