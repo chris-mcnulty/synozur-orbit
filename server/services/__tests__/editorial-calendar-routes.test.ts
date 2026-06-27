@@ -16,8 +16,11 @@ import request from "supertest";
 // vi.hoisted runs BEFORE vi.mock so the objects it returns are usable inside
 // mock factories (which are also hoisted).
 
-const { dbQ, makeMockDb } = vi.hoisted(() => {
+const { dbQ, capturedInserts, makeMockDb } = vi.hoisted(() => {
   const dbQ: any[][] = [];
+  // Records the values passed to .values() so tests can assert on what was
+  // written (e.g. that a produced asset carries its sourceBriefId).
+  const capturedInserts: any[] = [];
 
   function terminal(): any {
     const val = dbQ.shift() ?? [];
@@ -36,7 +39,10 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
       from: () => mkChain(),
       where: terminal,
       set: () => mkChain(),
-      values: terminal,
+      values: (v: any) => {
+        capturedInserts.push(v);
+        return terminal();
+      },
       orderBy: () => Promise.resolve(dbQ.shift() ?? []),
       returning: () => Promise.resolve(dbQ.shift() ?? []),
       limit: () => mkChain(),
@@ -60,7 +66,7 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
     return db;
   }
 
-  return { dbQ, makeMockDb };
+  return { dbQ, capturedInserts, makeMockDb };
 });
 
 // ── Mock all I/O modules used by the route file ───────────────────────────────
@@ -107,6 +113,7 @@ vi.mock("../editorial-calendar-core", () => ({
 import { registerEditorialCalendarRoutes } from "../../routes/editorial-calendar";
 import { getRequestContext } from "../../context";
 import { guardFeature } from "../../routes/helpers";
+import { draftFromBrief } from "../copywriter-service";
 
 // ── Shared test context ───────────────────────────────────────────────────────
 
@@ -138,6 +145,7 @@ describe("editorial-calendar routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dbQ.length = 0;
+    capturedInserts.length = 0;
     vi.mocked(getRequestContext).mockResolvedValue(TEST_CTX as any);
     vi.mocked(guardFeature).mockResolvedValue(true);
     app = buildApp();
@@ -264,6 +272,45 @@ describe("editorial-calendar routes", () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ error: expect.stringMatching(/draft/i) });
+    });
+  });
+
+  // ── POST /api/content-briefs/:id/draft ────────────────────────────────────
+  // The produced asset must carry sourceBriefId so the asset owns the brief↔
+  // draft link (input → output points forward).
+
+  describe("POST /api/content-briefs/:id/draft", () => {
+    const BRIEF = {
+      id: "brief-1",
+      tenantDomain: "acme.com",
+      marketId: "market-1",
+      title: "Q3 Blog Post",
+      format: "blog_post",
+      status: "accepted",
+    };
+
+    it("links the produced asset back to the brief via sourceBriefId", async () => {
+      vi.mocked(draftFromBrief).mockResolvedValue({
+        title: "Q3 Blog Post",
+        body: "A real draft body.",
+        format: "blog_post",
+      } as any);
+
+      // select brief → [BRIEF]
+      pushDb(BRIEF);
+      // tx insert contentAssets → [asset]
+      pushDb({ id: "asset-1", title: "Q3 Blog Post", sourceBriefId: "brief-1" });
+      // tx update contentBriefs → [updatedBrief]
+      pushDb({ ...BRIEF, status: "drafted", contentAssetId: "asset-1" });
+
+      const res = await request(app)
+        .post("/api/content-briefs/brief-1/draft")
+        .send({});
+
+      expect(res.status).toBe(201);
+      // The content_assets insert (first captured insert) carries the link.
+      const assetInsert = capturedInserts[0];
+      expect(assetInsert).toMatchObject({ sourceBriefId: "brief-1" });
     });
   });
 });

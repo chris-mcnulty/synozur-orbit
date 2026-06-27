@@ -2528,6 +2528,11 @@ export const contentAssets = pgTable("content_assets", {
   seoOptimizedAt: timestamp("seo_optimized_at"),
   // WS3: when this asset was produced by repurposing another asset, the source.
   repurposedFromAssetId: varchar("repurposed_from_asset_id").references((): AnyPgColumn => contentAssets.id, { onDelete: "set null" }),
+  // The content brief whose spec motivated this asset, if any. The asset owns
+  // this link (input → output points forward); contentBriefs.contentAssetId is
+  // retained for back-compat until a later phase drops it. One brief may
+  // motivate many assets (blog + social + email).
+  sourceBriefId: varchar("source_brief_id").references((): AnyPgColumn => contentBriefs.id, { onDelete: "set null" }),
   // Multi-format repurposer: Cowork-style metadata (platform/format/core idea/
   // CTA/best posting window) for snippets produced by the batch repurposer.
   repurposeMeta: jsonb("repurpose_meta").$type<RepurposeMeta>(),
@@ -2547,6 +2552,10 @@ export const contentAssetsRelations = relations(contentAssets, ({ one, many }) =
   createdByUser: one(users, {
     fields: [contentAssets.createdBy],
     references: [users.id],
+  }),
+  sourceBrief: one(contentBriefs, {
+    fields: [contentAssets.sourceBriefId],
+    references: [contentBriefs.id],
   }),
   productTagLinks: many(contentAssetProductTags),
   solutionAreaLinks: many(contentAssetSolutionAreas),
