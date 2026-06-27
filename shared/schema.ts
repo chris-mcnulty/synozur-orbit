@@ -2726,6 +2726,9 @@ export const socialAccounts = pgTable("social_accounts", {
   connectedAt: timestamp("connected_at"),
   connectedBy: varchar("connected_by").references(() => users.id, { onDelete: "set null" }),
   lastPublishError: text("last_publish_error"),
+  // When true the auto-publish worker skips all posts on this account.
+  // Lets users pause a runaway account without disconnecting it.
+  publishingPaused: boolean("publishing_paused").notNull().default(false),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

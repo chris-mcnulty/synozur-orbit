@@ -20,7 +20,7 @@
  */
 
 import { db } from "../db";
-import { eq, and, lte, isNotNull, or, isNull, sql, ne } from "drizzle-orm";
+import { eq, and, lte, gte, isNotNull, or, isNull, sql, ne } from "drizzle-orm";
 import {
   generatedPosts,
   socialAccounts,
@@ -79,6 +79,12 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
   let processed = 0;
   try {
     const now = new Date();
+    // Posts scheduled more than 7 days ago are treated as stale — they were
+    // likely already exported to CSV, manually posted, or represent a backlog
+    // from before auto-publish was active. Skipping them prevents surprise
+    // bulk-posting of old content.
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
     // Two paths: campaign-linked posts must be on a campaign-social-account
     // link with autoPublish=true; standalone posts (campaignId IS NULL) are
     // self-authorizing — being approved + scheduled is enough.
@@ -101,12 +107,16 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           eq(generatedPosts.status, "approved"),
           isNotNull(generatedPosts.scheduledDate),
           lte(generatedPosts.scheduledDate, now),
+          // Skip posts older than 7 days — stale backlog, likely already handled.
+          gte(generatedPosts.scheduledDate, sevenDaysAgo),
           or(
             isNull(generatedPosts.publishNextAttemptAt),
             lte(generatedPosts.publishNextAttemptAt, now),
           ),
           isNotNull(socialAccounts.encryptedAccessToken),
           eq(socialAccounts.status, "active"),
+          // Skip accounts where the user has manually paused auto-publishing.
+          eq(socialAccounts.publishingPaused, false),
           // Standalone (no campaign) OR a campaign link with autoPublish=true.
           or(
             isNull(generatedPosts.campaignId),

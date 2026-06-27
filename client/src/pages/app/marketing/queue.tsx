@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import {
@@ -15,6 +15,9 @@ import {
   RefreshCw,
   Loader2,
   WrenchIcon,
+  Pause,
+  Play,
+  PauseCircle,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
@@ -33,6 +36,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 // One row per Orbit-managed post, from /api/generated-posts/calendar.
 interface CalendarPost {
@@ -48,6 +52,15 @@ interface CalendarPost {
   campaignName: string | null;
   deliveryMode: string | null;
   publishError: string | null;
+}
+
+interface SocialAccount {
+  id: string;
+  platform: string;
+  accountName: string;
+  status: string;
+  publishingPaused: boolean;
+  hasAccessToken: boolean;
 }
 
 interface CarouselSlide {
@@ -125,6 +138,107 @@ const FILTERS: { key: "all" | Stage; label: string }[] = [
   { key: "exported", label: "Exported" },
 ];
 
+// ── Account Pause Panel ─────────────────────────────────────────────────────
+
+function AccountPausePanel() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
+    queryKey: ["/api/social-accounts"],
+    queryFn: async () => {
+      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const connected = accounts.filter((a) => a.hasAccessToken && a.status === "active");
+
+  const togglePause = useMutation({
+    mutationFn: async ({ id, pause }: { id: string; pause: boolean }) => {
+      const r = await fetch(`/api/social-accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ publishingPaused: pause }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Update failed");
+      return r.json() as Promise<SocialAccount>;
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({
+        title: updated.publishingPaused ? "Auto-posting paused" : "Auto-posting resumed",
+        description: `${updated.accountName} — ${updated.publishingPaused ? "no posts will be sent until you resume" : "worker will pick up scheduled posts again"}`,
+      });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Couldn't update account", description: err.message, variant: "destructive" }),
+  });
+
+  if (isLoading || connected.length === 0) return null;
+
+  const anyPaused = connected.some((a) => a.publishingPaused);
+
+  return (
+    <div className={cn(
+      "rounded-lg border px-4 py-3",
+      anyPaused ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-card",
+    )}>
+      <div className="flex items-center gap-2 mb-2">
+        <PauseCircle className={cn("w-4 h-4", anyPaused ? "text-amber-500" : "text-muted-foreground")} />
+        <span className="text-sm font-medium">Auto-posting accounts</span>
+        {anyPaused && (
+          <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
+            Paused
+          </Badge>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {connected.map((acct) => {
+          const pm = platformOf(acct.platform);
+          const isPaused = acct.publishingPaused;
+          const isLoading = togglePause.isPending;
+          return (
+            <button
+              key={acct.id}
+              type="button"
+              onClick={() => togglePause.mutate({ id: acct.id, pause: !isPaused })}
+              disabled={isLoading}
+              title={isPaused ? "Resume auto-posting" : "Pause auto-posting"}
+              data-testid={`pause-account-${acct.id}`}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                isPaused
+                  ? "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
+                  : "border-border bg-background hover:bg-muted text-foreground",
+              )}
+            >
+              <span
+                className="inline-grid place-items-center w-4 h-4 rounded text-[9px] font-bold text-white shrink-0"
+                style={{ background: pm.bg }}
+                aria-hidden
+              >
+                {pm.glyph}
+              </span>
+              <span className="max-w-[160px] truncate">{acct.accountName}</span>
+              {isPaused ? (
+                <><Pause className="w-3 h-3 fill-current" /><span className="text-[10px] font-semibold uppercase tracking-wide">Paused</span></>
+              ) : (
+                <Play className="w-3 h-3 text-muted-foreground" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-2">
+        Click an account to pause or resume its auto-posting. Paused accounts won't send until you resume them.
+      </p>
+    </div>
+  );
+}
+
 // ── Fix Dialog ─────────────────────────────────────────────────────────────
 
 function FixDialog({
@@ -150,7 +264,6 @@ function FixDialog({
     },
   });
 
-  // Initialise editable state once when post loads (only once).
   if (post && !didInit) {
     setEditedText(post.editedContent ?? post.content ?? "");
     const initUrls: Record<number, string> = {};
@@ -164,7 +277,6 @@ function FixDialog({
   const saveMutation = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = { editedContent: editedText };
-      // If carousel slides had URL edits, merge them back into carouselSlides.
       if (post?.postFormat === "carousel" && post.carouselSlides?.length) {
         const merged = post.carouselSlides.map((s) => ({
           ...s,
@@ -187,7 +299,6 @@ function FixDialog({
 
   const resubmitMutation = useMutation({
     mutationFn: async () => {
-      // Save edits first (if the text changed from original).
       const original = post?.editedContent ?? post?.content ?? "";
       const textChanged = editedText !== null && editedText !== original;
       const hasSlideChanges = post?.postFormat === "carousel" &&
@@ -210,7 +321,6 @@ function FixDialog({
         if (!saveRes.ok) throw new Error((await saveRes.json().catch(() => ({}))).error || "Save failed");
       }
 
-      // Now trigger publish.
       const r = await fetch(`/api/generated-posts/${postId}/publish`, {
         method: "POST",
         credentials: "include",
@@ -252,7 +362,6 @@ function FixDialog({
           </div>
         ) : post ? (
           <div className="space-y-4">
-            {/* Failure reason */}
             {post.publishError && (
               <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
                 <div className="flex items-start gap-2">
@@ -265,7 +374,6 @@ function FixDialog({
               </div>
             )}
 
-            {/* Post text */}
             <div className="space-y-1.5">
               <Label htmlFor="fix-post-content">Post text</Label>
               <Textarea
@@ -279,7 +387,6 @@ function FixDialog({
               />
             </div>
 
-            {/* Carousel slide image URLs (if applicable) */}
             {isCarousel && slides.length > 0 && (
               <div className="space-y-2">
                 <Label>Slide image URLs</Label>
@@ -352,6 +459,7 @@ export default function QueuePage() {
   const [filter, setFilter] = useState<"all" | Stage>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [fixPostId, setFixPostId] = useState<string | null>(null);
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -453,6 +561,9 @@ export default function QueuePage() {
           <CalendarViewSwitcher className="mt-3" />
         </div>
 
+        {/* Per-account pause controls */}
+        <AccountPausePanel />
+
         {/* Summary strip */}
         <div className="grid grid-cols-3 divide-x divide-border rounded-lg border bg-card">
           <div className="px-5 py-4">
@@ -530,14 +641,23 @@ export default function QueuePage() {
                     const pm = platformOf(post.platform);
                     const overdue = stage === "scheduled" && when && isPast(when);
                     const isConfirming = confirmDeleteId === post.id;
+                    const href = actionHref(post);
+
                     return (
                       <div
                         key={post.id}
                         className={cn(
-                          "relative grid grid-cols-[88px_1fr_auto] items-center gap-3 px-4 py-3",
+                          "relative grid grid-cols-[88px_1fr_auto] items-center gap-3 px-4 py-3 group",
                           stage === "failed" && "bg-destructive/5",
+                          stage !== "failed" && "cursor-pointer hover:bg-muted/40 transition-colors",
                         )}
                         data-testid={`queue-row-${post.id}`}
+                        onClick={(e) => {
+                          // Don't navigate if user clicked a button/link inside the row
+                          if ((e.target as HTMLElement).closest("button,a")) return;
+                          if (stage === "failed") return;
+                          navigate(href);
+                        }}
                       >
                         {stage === "failed" && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-destructive" />}
                         <div className="text-sm font-medium tabular-nums">
@@ -624,8 +744,8 @@ export default function QueuePage() {
                                 Fix
                               </Button>
                             ) : (
-                              <Button asChild size="sm" variant="outline">
-                                <Link href={actionHref(post)} data-testid={`queue-action-${post.id}`}>
+                              <Button asChild size="sm" variant="outline" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Link href={href} data-testid={`queue-action-${post.id}`}>
                                   {stage === "posted" ? "View" : "Edit"}
                                   <ArrowRight className="w-3.5 h-3.5 ml-1" />
                                 </Link>

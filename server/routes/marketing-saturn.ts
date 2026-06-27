@@ -1323,6 +1323,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       connectedAt: socialAccounts.connectedAt,
       tokenExpiresAt: socialAccounts.tokenExpiresAt,
       lastPublishError: socialAccounts.lastPublishError,
+      publishingPaused: socialAccounts.publishingPaused,
       hasAccessToken: sql<boolean>`(${socialAccounts.encryptedAccessToken} IS NOT NULL)`,
     }).from(socialAccounts)
       .where(and(
@@ -1365,9 +1366,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/social-accounts/:id", async (req, res) => {
     if (!await guardFeature(req, res, "socialAccounts")) return;
     const ctx = await getRequestContext(req);
-    const { accountName, accountId, profileUrl, notes, status } = req.body;
+    const { accountName, accountId, profileUrl, notes, status, publishingPaused } = req.body;
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (accountName !== undefined) patch.accountName = accountName;
+    if (accountId !== undefined) patch.accountId = accountId;
+    if (profileUrl !== undefined) patch.profileUrl = profileUrl;
+    if (notes !== undefined) patch.notes = notes;
+    if (status !== undefined) patch.status = status;
+    if (publishingPaused !== undefined) patch.publishingPaused = Boolean(publishingPaused);
     const [row] = await db.update(socialAccounts)
-      .set({ accountName, accountId, profileUrl, notes, status, updatedAt: new Date() })
+      .set(patch)
       .where(and(
         eq(socialAccounts.id, req.params.id),
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
