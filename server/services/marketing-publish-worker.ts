@@ -3,9 +3,10 @@
  *
  * Polls the database for `generated_posts` rows that:
  *   - status = 'approved'
- *   - scheduled_date <= now()
+ *   - scheduled_date <= now() AND >= 7 days ago (stale-backlog guard)
  *   - publish_next_attempt_at IS NULL OR <= now() (for retries)
  *   - belong to a campaign × social_account where auto_publish = true
+ *   - the campaign is still `active` (completed/archived/deleted campaigns excluded)
  *   - the social account is connected (has encrypted_access_token)
  *
  * For each row, dispatches to the appropriate SocialPublisher and persists
@@ -20,11 +21,12 @@
  */
 
 import { db } from "../db";
-import { eq, and, lte, gte, isNotNull, or, isNull, sql, ne } from "drizzle-orm";
+import { eq, and, lte, gte, isNotNull, or, isNull, sql, ne, inArray } from "drizzle-orm";
 import {
   generatedPosts,
   socialAccounts,
   campaignSocialAccounts,
+  campaigns,
   socialPublishAttempts,
   marketingAuditLog,
 } from "@shared/schema";
@@ -102,6 +104,7 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           eq(campaignSocialAccounts.socialAccountId, generatedPosts.socialAccountId),
         ),
       )
+      .leftJoin(campaigns, eq(campaigns.id, generatedPosts.campaignId))
       .where(
         and(
           eq(generatedPosts.status, "approved"),
@@ -126,6 +129,15 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           or(
             isNull(generatedPosts.deliveryMode),
             ne(generatedPosts.deliveryMode, "csv"),
+          ),
+          // Only auto-publish posts from active campaigns. Posts tied to
+          // completed, archived, or deleted campaigns are considered "closed"
+          // and must not be published automatically — they may have already
+          // been exported to CSV or manually posted. Standalone posts
+          // (campaignId IS NULL) are always eligible.
+          or(
+            isNull(generatedPosts.campaignId),
+            eq(campaigns.status, "active"),
           ),
         ),
       )
@@ -440,6 +452,13 @@ export async function publishPostNow(
  */
 export async function sweepMissedPosts(): Promise<{ marked: number }> {
   const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+  // Only mark posts from active campaigns as missed. Posts from completed /
+  // archived / deleted campaigns were intentionally not published — they
+  // should not surface in the "rescue" queue.
+  const activeCampaignIds = db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(eq(campaigns.status, "active"));
   const result = await db
     .update(generatedPosts)
     .set({ status: "missed", updatedAt: new Date() })
@@ -448,6 +467,10 @@ export async function sweepMissedPosts(): Promise<{ marked: number }> {
         eq(generatedPosts.status, "approved"),
         isNotNull(generatedPosts.scheduledDate),
         lte(generatedPosts.scheduledDate, fiveDaysAgo),
+        or(
+          isNull(generatedPosts.campaignId),
+          inArray(generatedPosts.campaignId, activeCampaignIds),
+        ),
       ),
     );
   const marked = (result as any)?.rowCount ?? 0;
