@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import {
   Zap,
@@ -10,12 +10,15 @@ import {
   Calendar,
   ArrowRight,
   ListChecks,
+  Trash2,
+  X,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
 import { Button } from "@/components/ui/button";
 import EmptyPageState from "@/components/EmptyPageState";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 // One row per Orbit-managed post, from /api/generated-posts/calendar.
 interface CalendarPost {
@@ -97,6 +100,9 @@ const FILTERS: { key: "all" | Stage; label: string }[] = [
 
 export default function QueuePage() {
   const [filter, setFilter] = useState<"all" | Stage>("all");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: posts = [], isLoading } = useQuery<CalendarPost[]>({
     queryKey: ["/api/generated-posts/calendar", "orbit-queue"],
@@ -113,6 +119,30 @@ export default function QueuePage() {
       const r = await fetch(`/api/generated-posts/calendar?${params}`, { credentials: "include" });
       if (!r.ok) return [];
       return r.json();
+    },
+  });
+
+  const deletePostMutation = useMutation({
+    mutationFn: async (post: CalendarPost) => {
+      const url = post.campaignId
+        ? `/api/campaigns/${post.campaignId}/generated-posts/${post.id}`
+        : `/api/generated-posts/${post.id}`;
+      const r = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "deleted" }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Delete failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      setConfirmDeleteId(null);
+      toast({ title: "Post deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't delete post", description: err.message, variant: "destructive" });
+      setConfirmDeleteId(null);
     },
   });
 
@@ -246,6 +276,7 @@ export default function QueuePage() {
                     const sm = STAGE_META[stage];
                     const pm = platformOf(post.platform);
                     const overdue = stage === "scheduled" && when && isPast(when);
+                    const isConfirming = confirmDeleteId === post.id;
                     return (
                       <div
                         key={post.id}
@@ -287,22 +318,59 @@ export default function QueuePage() {
                             <p className="text-xs text-destructive mt-0.5">{post.publishError}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Delete: one click to arm, second click confirms */}
+                          {isConfirming ? (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => deletePostMutation.mutate(post)}
+                                disabled={deletePostMutation.isPending}
+                                data-testid={`queue-delete-confirm-${post.id}`}
+                              >
+                                Delete
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                onClick={() => setConfirmDeleteId(null)}
+                                data-testid={`queue-delete-cancel-${post.id}`}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              onClick={() => setConfirmDeleteId(post.id)}
+                              title="Delete this post"
+                              data-testid={`queue-delete-${post.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
                           <span className={cn("hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold", sm.cls)}>
                             <sm.Icon className="w-3.5 h-3.5" />
                             {sm.label}
                           </span>
-                          <Button
-                            asChild
-                            size="sm"
-                            variant={stage === "failed" ? "default" : "outline"}
-                            className={cn(stage === "failed" && "bg-destructive hover:bg-destructive/90")}
-                          >
-                            <Link href={actionHref(post)} data-testid={`queue-action-${post.id}`}>
-                              {stage === "failed" ? "Fix" : stage === "posted" ? "View" : "Edit"}
-                              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                            </Link>
-                          </Button>
+                          {!isConfirming && (
+                            <Button
+                              asChild
+                              size="sm"
+                              variant={stage === "failed" ? "default" : "outline"}
+                              className={cn(stage === "failed" && "bg-destructive hover:bg-destructive/90")}
+                            >
+                              <Link href={actionHref(post)} data-testid={`queue-action-${post.id}`}>
+                                {stage === "failed" ? "Fix" : stage === "posted" ? "View" : "Edit"}
+                                <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                              </Link>
+                            </Button>
+                          )}
                         </div>
                       </div>
                     );
