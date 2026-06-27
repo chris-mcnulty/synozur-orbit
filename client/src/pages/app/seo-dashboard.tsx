@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, RefreshCw, Trash2, Download, Loader2, BarChart2, Lock } from "lucide-react";
+import { Search, Plus, RefreshCw, Trash2, Download, Loader2, BarChart2, Lock, FileText } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Cell } from "recharts";
 import { downloadCSVBlob } from "@/lib/csv-export";
 import { useUser } from "@/lib/userContext";
+import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
 
 interface TrackedKeyword {
   id: string;
@@ -62,6 +63,54 @@ export default function SeoDashboard() {
 
   const [newKeyword, setNewKeyword] = useState("");
   const [newCountry, setNewCountry] = useState("us");
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+  const [pdfJobId, setPdfJobId] = useState<string | null>(null);
+  // Poll the job queue for progress display (percent / phase).
+  const pdfQueueStatus = useJobStatus(pdfJobId ? `seo-report-pdf:${pdfJobId}` : null, isPdfGenerating);
+  const pdfButtonLabel = jobStatusLabel(pdfQueueStatus, "Generating…");
+  // Poll the report-specific status endpoint until the PDF is ready.
+  const pdfStatusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (!isPdfGenerating || !pdfJobId) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/seo/report/status/${pdfJobId}`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json() as { status: string; downloadUrl?: string; message?: string };
+        if (data.status === "complete" && data.downloadUrl) {
+          if (pdfStatusPollRef.current) clearInterval(pdfStatusPollRef.current);
+          setIsPdfGenerating(false);
+          setPdfJobId(null);
+          // Trigger browser download.
+          const dlRes = await fetch(data.downloadUrl, { credentials: "include" });
+          if (!dlRes.ok) throw new Error("Download failed");
+          const blob = await dlRes.blob();
+          const date = new Date().toISOString().split("T")[0];
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `SEO_Share_of_Voice_${date}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          toast({ title: "PDF downloaded" });
+        } else if (data.status === "error") {
+          if (pdfStatusPollRef.current) clearInterval(pdfStatusPollRef.current);
+          setIsPdfGenerating(false);
+          setPdfJobId(null);
+          toast({ title: "PDF generation failed", description: data.message || "Unknown error", variant: "destructive" });
+        }
+      } catch (err) {
+        // Silently retry — polling will continue.
+      }
+    };
+    void poll();
+    pdfStatusPollRef.current = setInterval(poll, 2000);
+    return () => {
+      if (pdfStatusPollRef.current) clearInterval(pdfStatusPollRef.current);
+    };
+  }, [isPdfGenerating, pdfJobId]);
 
   const sov = useQuery<ShareOfVoiceResponse>({
     queryKey: ["/api/seo/share-of-voice"],
@@ -144,6 +193,25 @@ export default function SeoDashboard() {
     }
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      const res = await fetch("/api/seo/report/generate", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to queue PDF generation");
+      }
+      const { jobId } = await res.json() as { jobId: string };
+      setPdfJobId(jobId);
+      setIsPdfGenerating(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "PDF generation failed";
+      toast({ title: "PDF generation failed", description: message, variant: "destructive" });
+    }
+  };
+
   const handleAdd = () => {
     const trimmed = newKeyword.trim();
     if (!trimmed) {
@@ -223,6 +291,15 @@ export default function SeoDashboard() {
               data-testid="button-export-csv"
             >
               <Download className="h-4 w-4 mr-1" /> Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDownloadPdf}
+              disabled={isPdfGenerating || entities.length === 0}
+              data-testid="button-download-pdf"
+            >
+              {isPdfGenerating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
+              {isPdfGenerating ? pdfButtonLabel : "Download PDF"}
             </Button>
             <Button
               onClick={() => refreshMutation.mutate()}

@@ -3070,3 +3070,494 @@ export async function generateRelationshipReportPdf(
   console.log(`[Relationship PDF] Generated in ${Date.now() - startTime}ms`);
   return { pdfBuffer: Buffer.from(pdfBuffer), report };
 }
+
+// ---------------------------------------------------------------------------
+// SEO Share of Voice Report
+// ---------------------------------------------------------------------------
+
+interface SeoEntitySummary {
+  entityId: string;
+  name: string;
+  type: "baseline" | "competitor";
+  domain: string | null;
+  averageRank: number | null;
+  keywordsRanking: number;
+  totalTraffic: number;
+  shareOfVoice: number; // basis points (100 = 1%)
+}
+
+interface SeoMetricRow {
+  keywordId: string;
+  entityId: string | null;
+  entityName: string;
+  rank: number | null;
+}
+
+interface SeoKeyword {
+  id: string;
+  keyword: string;
+  country: string;
+  locale: string;
+}
+
+interface SeoReportData {
+  companyName: string;
+  marketName?: string;
+  tenantDomain: string;
+  generatedAt: Date;
+  entities: SeoEntitySummary[];
+  keywords: SeoKeyword[];
+  metrics: SeoMetricRow[];
+}
+
+const ENTITY_COLORS_PDF = ["#6366f1", "#22d3ee", "#a78bfa", "#f97316", "#10b981", "#f43f5e", "#eab308", "#3b82f6"];
+
+function renderSovBarChartSvg(entities: SeoEntitySummary[]): string {
+  const BAR_HEIGHT = 28;
+  const BAR_GAP = 8;
+  const LEFT_LABEL_WIDTH = 140;
+  const RIGHT_LABEL_WIDTH = 50;
+  const CHART_WIDTH = 560;
+  const BAR_AREA = CHART_WIDTH - LEFT_LABEL_WIDTH - RIGHT_LABEL_WIDTH;
+  const height = entities.length * (BAR_HEIGHT + BAR_GAP) + 10;
+
+  const maxSov = Math.max(...entities.map(e => e.shareOfVoice), 1);
+
+  const bars = entities.map((e, idx) => {
+    const color = e.type === "baseline" ? "#10b981" : ENTITY_COLORS_PDF[idx % ENTITY_COLORS_PDF.length];
+    const sovPct = (e.shareOfVoice / 100).toFixed(1);
+    const barWidth = Math.max((e.shareOfVoice / maxSov) * BAR_AREA, 2);
+    const y = idx * (BAR_HEIGHT + BAR_GAP) + 5;
+
+    const nameLabel = e.name.length > 18 ? e.name.substring(0, 17) + "…" : e.name;
+
+    return `
+      <text x="${LEFT_LABEL_WIDTH - 8}" y="${y + BAR_HEIGHT / 2 + 5}" text-anchor="end" font-size="12" fill="#374151" font-family="Avenir Next LT Pro, sans-serif">${escapeHtml(nameLabel)}</text>
+      <rect x="${LEFT_LABEL_WIDTH}" y="${y}" width="${barWidth}" height="${BAR_HEIGHT}" rx="4" fill="${color}" />
+      <text x="${LEFT_LABEL_WIDTH + barWidth + 6}" y="${y + BAR_HEIGHT / 2 + 5}" font-size="12" fill="#374151" font-family="Avenir Next LT Pro, sans-serif">${sovPct}%</text>
+    `;
+  }).join("");
+
+  return `<svg width="${CHART_WIDTH}" height="${height}" xmlns="http://www.w3.org/2000/svg">${bars}</svg>`;
+}
+
+function generateSeoReportHtml(data: SeoReportData): string {
+  const formattedDate = format(data.generatedAt, "MMMM d, yyyy");
+  const synozurLogo = getSynozurLogoBase64();
+  const orbitLogo = getOrbitLogoBase64();
+  const fontFaces = getFontFacesCss();
+
+  const coverLogo = synozurLogo
+    ? `<img src="${synozurLogo}" alt="Synozur" style="height: 48px; margin-bottom: 32px; filter: brightness(0) invert(1);" />`
+    : `<div style="font-size: 22px; font-weight: 800; letter-spacing: -1px; margin-bottom: 32px;">Orbit</div>`;
+
+  const headerLogo = orbitLogo
+    ? `<img src="${orbitLogo}" alt="Orbit" style="height: 32px;" />`
+    : synozurLogo
+    ? `<img src="${synozurLogo}" alt="Synozur" style="height: 28px;" />`
+    : `<div style="font-weight: 700; color: #6366F1;">Orbit</div>`;
+
+  const contextLabel = data.marketName
+    ? `Market: ${escapeHtml(data.marketName)}`
+    : escapeHtml(data.companyName);
+
+  // SoV bar chart SVG
+  const sovSvg = data.entities.length > 0 ? renderSovBarChartSvg(data.entities) : `<p style="color:#94A3B8;font-size:13px;">No data yet.</p>`;
+
+  // Entity leaderboard rows
+  const leaderboardRows = data.entities.map((e, idx) => {
+    const color = e.type === "baseline" ? "#10b981" : ENTITY_COLORS_PDF[idx % ENTITY_COLORS_PDF.length];
+    const typeBadge = e.type === "baseline"
+      ? `<span style="background:#DCFCE7;color:#059669;padding:2px 7px;border-radius:4px;font-size:11px;">You</span>`
+      : `<span style="background:#F1F5F9;color:#64748B;padding:2px 7px;border-radius:4px;font-size:11px;">Competitor</span>`;
+    return `
+      <tr>
+        <td style="padding:10px 8px;border-bottom:1px solid #E2E8F0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+            <span style="font-weight:600;color:#1E293B;font-size:13px;">${escapeHtml(e.name)}</span>
+          </div>
+          ${e.domain ? `<div style="font-size:11px;color:#94A3B8;margin-left:20px;">${escapeHtml(e.domain)}</div>` : ""}
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid #E2E8F0;text-align:center;">${typeBadge}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid #E2E8F0;text-align:center;color:#1E293B;font-size:13px;">
+          ${e.averageRank !== null ? e.averageRank.toFixed(1) : "<span style='color:#CBD5E1'>—</span>"}
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid #E2E8F0;text-align:center;color:#1E293B;font-size:13px;">
+          ${e.keywordsRanking}
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid #E2E8F0;text-align:center;color:#1E293B;font-size:13px;">
+          ${e.totalTraffic.toLocaleString()}
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid #E2E8F0;text-align:center;font-weight:700;color:#1E293B;font-size:14px;">
+          ${(e.shareOfVoice / 100).toFixed(1)}%
+        </td>
+      </tr>`;
+  }).join("");
+
+  // Keyword × entity rank matrix
+  // Sort entities: baseline first, then competitors by SoV desc
+  const sortedEntities = [...data.entities].sort((a, b) => {
+    if (a.type === "baseline" && b.type !== "baseline") return -1;
+    if (b.type === "baseline" && a.type !== "baseline") return 1;
+    return b.shareOfVoice - a.shareOfVoice;
+  });
+
+  // Build rank map: keywordId → entityId → rank
+  const rankMap = new Map<string, Map<string, number | null>>();
+  for (const m of data.metrics) {
+    if (!m.keywordId || !m.entityId) continue;
+    if (!rankMap.has(m.keywordId)) rankMap.set(m.keywordId, new Map());
+    rankMap.get(m.keywordId)!.set(m.entityId, m.rank);
+  }
+
+  // Sort keywords by best rank
+  const kwRows = data.keywords.map(kw => {
+    const byEntity = rankMap.get(kw.id) ?? new Map<string, number | null>();
+    const ranks = Array.from(byEntity.values()).filter((r): r is number => r !== null && r > 0);
+    const bestRank = ranks.length > 0 ? Math.min(...ranks) : null;
+    return { kw, byEntity, bestRank };
+  });
+  kwRows.sort((a, b) => {
+    if (a.bestRank === null && b.bestRank === null) return a.kw.keyword.localeCompare(b.kw.keyword);
+    if (a.bestRank === null) return 1;
+    if (b.bestRank === null) return -1;
+    return a.bestRank - b.bestRank;
+  });
+
+  const entityHeaderCells = sortedEntities.map((e, idx) => {
+    const color = e.type === "baseline" ? "#10b981" : ENTITY_COLORS_PDF[idx % ENTITY_COLORS_PDF.length];
+    const label = e.name.length > 14 ? e.name.substring(0, 13) + "…" : e.name;
+    return `<th style="padding:8px 6px;border-bottom:2px solid #E2E8F0;text-align:center;font-size:11px;color:#475569;white-space:nowrap;">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:4px;"></span>${escapeHtml(label)}
+    </th>`;
+  }).join("");
+
+  const matrixRows = kwRows.map(({ kw, byEntity, bestRank }) => {
+    const cells = sortedEntities.map(e => {
+      const rank = byEntity.get(e.entityId) ?? null;
+      const isBest = rank !== null && rank > 0 && rank === bestRank;
+      let bg = "transparent";
+      let color = "#CBD5E1";
+      let label = "—";
+      if (rank !== null && rank > 0) {
+        label = `#${rank}`;
+        if (rank <= 3) { bg = "#DCFCE7"; color = "#059669"; }
+        else if (rank <= 10) { bg = "#FEF9C3"; color = "#CA8A04"; }
+        else if (rank <= 20) { bg = "#FEF3C7"; color = "#D97706"; }
+        else { bg = "transparent"; color = "#6B7280"; }
+      }
+      return `<td style="padding:7px 6px;border-bottom:1px solid #F1F5F9;text-align:center;">
+        <span style="display:inline-block;padding:2px 7px;border-radius:4px;background:${bg};color:${color};font-size:12px;font-weight:${isBest ? "700" : "400"};">${label}</span>
+      </td>`;
+    }).join("");
+
+    return `<tr>
+      <td style="padding:7px 8px;border-bottom:1px solid #F1F5F9;">
+        <span style="font-weight:500;color:#1E293B;font-size:12px;">${escapeHtml(kw.keyword)}</span>
+        <span style="font-size:10px;color:#94A3B8;text-transform:uppercase;margin-left:6px;">${escapeHtml(kw.country)}</span>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join("");
+
+  const rankLegend = `
+    <div style="display:flex;gap:16px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+      <span style="font-size:11px;color:#64748B;">Legend:</span>
+      <span style="padding:2px 8px;border-radius:4px;background:#DCFCE7;color:#059669;font-size:11px;">#1–3 Top 3</span>
+      <span style="padding:2px 8px;border-radius:4px;background:#FEF9C3;color:#CA8A04;font-size:11px;">#4–10 Top 10</span>
+      <span style="padding:2px 8px;border-radius:4px;background:#FEF3C7;color:#D97706;font-size:11px;">#11–20 Ranking</span>
+      <span style="font-size:11px;color:#94A3B8;">— Not ranking</span>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    ${fontFaces}
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Avenir Next LT Pro', 'Helvetica Neue', Arial, sans-serif;
+      color: #1E293B;
+      line-height: 1.5;
+    }
+    @page { size: A4; margin: 0; }
+    .cover-page {
+      width: 210mm;
+      min-height: 297mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 48px;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 55%, #312E81 100%);
+      color: white;
+      page-break-after: always;
+    }
+    .cover-eyebrow { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; color: #A5B4FC; margin-bottom: 16px; }
+    .cover-title { font-size: 36px; font-weight: 700; margin-bottom: 12px; line-height: 1.2; }
+    .cover-subtitle { font-size: 20px; color: #C7D2FE; margin-bottom: 8px; }
+    .cover-meta { font-size: 13px; color: #94A3B8; margin-top: 32px; line-height: 1.8; }
+    .content-page { padding: 20px 28px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      border-bottom: 2px solid #F1F5F9;
+      padding-bottom: 14px;
+    }
+    .page-header-right { text-align: right; }
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1E293B;
+      margin-bottom: 4px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #6366F1;
+      display: inline-block;
+    }
+    .section-desc { font-size: 12px; color: #64748B; margin-bottom: 16px; }
+    .stat-row { display: flex; gap: 16px; margin-bottom: 24px; }
+    .stat-box { flex: 1; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; }
+    .stat-label { font-size: 11px; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-value { font-size: 22px; font-weight: 700; color: #1E293B; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .footer {
+      border-top: 1px solid #E2E8F0;
+      margin-top: 24px;
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .footer-text { font-size: 10px; color: #94A3B8; }
+  </style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover-page">
+  ${coverLogo}
+  <div class="cover-eyebrow">SEO Intelligence Report</div>
+  <div class="cover-title">Share of Voice</div>
+  <div class="cover-subtitle">${contextLabel}</div>
+  <div class="cover-meta">
+    <div>Generated: ${formattedDate}</div>
+    <div>${escapeHtml(data.keywords.length.toString())} tracked keywords · ${escapeHtml(data.entities.length.toString())} entities</div>
+  </div>
+</div>
+
+<!-- CONTENT PAGE -->
+<div class="content-page">
+  <div class="page-header">
+    ${headerLogo}
+    <div class="page-header-right">
+      <div style="font-weight:700;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">SEO Share of Voice</div>
+      <div style="font-size:11px;color:#94A3B8;">${formattedDate}</div>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="stat-row">
+    <div class="stat-box">
+      <div class="stat-label">Keywords Tracked</div>
+      <div class="stat-value">${data.keywords.length}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Entities</div>
+      <div class="stat-value">${data.entities.length}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Est. Total Traffic</div>
+      <div class="stat-value">${data.entities.reduce((s, e) => s + e.totalTraffic, 0).toLocaleString()}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Report Date</div>
+      <div class="stat-value" style="font-size:14px;">${formattedDate}</div>
+    </div>
+  </div>
+
+  <!-- Share of Voice Bar Chart -->
+  <div style="margin-bottom:32px;">
+    <div class="section-title">Share of Voice</div>
+    <div class="section-desc">Estimated search visibility across all tracked keywords, weighted by position.</div>
+    <div style="margin-top:12px;">${sovSvg}</div>
+  </div>
+
+  <!-- Entity Leaderboard -->
+  <div style="margin-bottom:32px;page-break-inside:avoid;">
+    <div class="section-title">Entity Leaderboard</div>
+    <div class="section-desc">Ranked by share of voice. Average rank shown for entities with at least one keyword ranking.</div>
+    <table style="margin-top:12px;">
+      <thead>
+        <tr style="background:#F8FAFC;">
+          <th style="padding:10px 8px;border-bottom:2px solid #E2E8F0;text-align:left;font-size:12px;color:#64748B;">Entity</th>
+          <th style="padding:10px 8px;border-bottom:2px solid #E2E8F0;text-align:center;font-size:12px;color:#64748B;">Type</th>
+          <th style="padding:10px 8px;border-bottom:2px solid #E2E8F0;text-align:center;font-size:12px;color:#64748B;">Avg Rank</th>
+          <th style="padding:10px 8px;border-bottom:2px solid #E2E8F0;text-align:center;font-size:12px;color:#64748B;">Keywords Ranking</th>
+          <th style="padding:10px 8px;border-bottom:2px solid #E2E8F0;text-align:center;font-size:12px;color:#64748B;">Est. Traffic</th>
+          <th style="padding:10px 8px;border-bottom:2px solid #E2E8F0;text-align:center;font-size:12px;color:#64748B;">Share of Voice</th>
+        </tr>
+      </thead>
+      <tbody>${leaderboardRows || `<tr><td colspan="6" style="padding:16px;text-align:center;color:#94A3B8;">No data yet.</td></tr>`}</tbody>
+    </table>
+  </div>
+
+  ${kwRows.length > 0 ? `
+  <!-- Keyword Rankings Matrix -->
+  <div style="page-break-before:always;">
+    <div class="page-header">
+      ${headerLogo}
+      <div class="page-header-right">
+        <div style="font-weight:700;font-size:11px;color:#64748B;text-transform:uppercase;letter-spacing:1px;">Keyword Rankings</div>
+        <div style="font-size:11px;color:#94A3B8;">${formattedDate}</div>
+      </div>
+    </div>
+    <div class="section-title">Keyword Rankings Matrix</div>
+    <div class="section-desc">SERP position per keyword, per entity — most recent capture. Lower position = higher on the page.</div>
+    ${rankLegend}
+    <div style="margin-top:16px;overflow-x:auto;">
+      <table>
+        <thead>
+          <tr style="background:#F8FAFC;">
+            <th style="padding:8px 8px;border-bottom:2px solid #E2E8F0;text-align:left;font-size:12px;color:#64748B;min-width:160px;">Keyword</th>
+            ${entityHeaderCells}
+          </tr>
+        </thead>
+        <tbody>${matrixRows}</tbody>
+      </table>
+    </div>
+  </div>` : ""}
+
+  <div class="footer">
+    <div class="footer-text">Generated by Orbit · ${formattedDate}</div>
+    <div class="footer-text">${contextLabel}</div>
+  </div>
+</div>
+
+</body>
+</html>`;
+}
+
+export async function generateSeoReportPdf(
+  tenantDomain: string,
+  marketId: string | undefined,
+  userId: string,
+  reportProgress?: (patch: { phase?: string; percent?: number }) => void,
+): Promise<{ pdfBuffer: Buffer }> {
+  reportProgress?.({ phase: "Loading data", percent: 10 });
+
+  const user = await storage.getUser(userId);
+  if (!user) throw new Error("User not found");
+
+  const tenant = await storage.getTenantByDomain(tenantDomain);
+  if (!tenant) throw new Error("Tenant not found");
+
+  const isDefaultMarket = !marketId;
+  const ctxFilter = {
+    tenantId: tenant.id,
+    tenantDomain,
+    marketId: marketId || "",
+    isDefaultMarket,
+  };
+
+  let marketName: string | undefined;
+  if (marketId) {
+    const market = await storage.getMarket(marketId);
+    marketName = market?.name;
+  }
+
+  const profile = await storage.getCompanyProfileByContext(ctxFilter);
+  const companyName = profile?.companyName || tenant.name || tenantDomain;
+
+  reportProgress?.({ phase: "Fetching SEO metrics", percent: 30 });
+
+  const [keywords, metrics] = await Promise.all([
+    storage.getTrackedKeywordsByContext(ctxFilter),
+    storage.getLatestSeoMetricsByContext(ctxFilter),
+  ]);
+
+  // Build entity summaries (same logic as buildShareOfVoice in seo.ts)
+  const summaryByEntity = new Map<string, SeoEntitySummary>();
+  let totalTraffic = 0;
+
+  for (const m of metrics) {
+    if (!m.entityId) continue;
+    const existing = summaryByEntity.get(m.entityId) || {
+      entityId: m.entityId,
+      name: m.entityName,
+      type: (m.entityType === "baseline" ? "baseline" : "competitor") as "baseline" | "competitor",
+      domain: m.entityDomain,
+      averageRank: null,
+      keywordsRanking: 0,
+      totalTraffic: 0,
+      shareOfVoice: 0,
+    };
+    existing.totalTraffic += m.estimatedTraffic;
+    if (m.rank !== null) existing.keywordsRanking += 1;
+    summaryByEntity.set(m.entityId, existing);
+    totalTraffic += m.estimatedTraffic;
+  }
+
+  const ranksByEntity = new Map<string, number[]>();
+  for (const m of metrics) {
+    if (!m.entityId || m.rank === null) continue;
+    const arr = ranksByEntity.get(m.entityId) || [];
+    arr.push(m.rank);
+    ranksByEntity.set(m.entityId, arr);
+  }
+  for (const [entityId, ranks] of Array.from(ranksByEntity.entries())) {
+    const summary = summaryByEntity.get(entityId);
+    if (!summary || ranks.length === 0) continue;
+    summary.averageRank = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+  }
+  for (const summary of Array.from(summaryByEntity.values())) {
+    summary.shareOfVoice = totalTraffic > 0
+      ? Math.round((summary.totalTraffic / totalTraffic) * 10000)
+      : 0;
+  }
+
+  const entities = Array.from(summaryByEntity.values()).sort((a, b) => b.shareOfVoice - a.shareOfVoice);
+
+  reportProgress?.({ phase: "Rendering report", percent: 60 });
+
+  const html = generateSeoReportHtml({
+    companyName,
+    marketName,
+    tenantDomain,
+    generatedAt: new Date(),
+    entities,
+    keywords,
+    metrics: metrics.map(m => ({
+      keywordId: m.keywordId,
+      entityId: m.entityId,
+      entityName: m.entityName,
+      rank: m.rank,
+    })),
+  });
+
+  reportProgress?.({ phase: "Printing PDF", percent: 80 });
+
+  const startTime = Date.now();
+  const formattedDate = format(new Date(), "MMMM d, yyyy");
+  const pdfBuffer = await withPdfPage(async (page) => {
+    await page.setViewport({ width: 794, height: 1123 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    reportProgress?.({ phase: "Printing PDF", percent: 90 });
+    return await page.pdf({
+      format: "A4",
+      printBackground: true,
+      displayHeaderFooter: true,
+      headerTemplate: "<div></div>",
+      footerTemplate: `<div style="font-family:Arial,sans-serif;font-size:9px;color:#94A3B8;padding:0 12mm;width:100%;display:flex;justify-content:space-between;box-sizing:border-box;"><span>Generated by Orbit \u00b7 ${formattedDate}</span><span><span class="pageNumber"></span>\u00a0/\u00a0<span class="totalPages"></span></span></div>`,
+      margin: { top: "0mm", bottom: "14mm", left: "0mm", right: "0mm" },
+    });
+  });
+
+  reportProgress?.({ phase: "Finalising", percent: 98 });
+  console.log(`[SEO PDF] Generated in ${Date.now() - startTime}ms`);
+  return { pdfBuffer: Buffer.from(pdfBuffer) };
+}

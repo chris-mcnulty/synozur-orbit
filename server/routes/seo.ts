@@ -1,10 +1,31 @@
 import type { Express } from "express";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { storage } from "../storage";
 import { ContextError, getRequestContext, type RequestContext } from "../context";
 import { guardFeature, hasAdminAccess, hasContentAccess, toContextFilter, validateResourceContext, guardManualAction } from "./helpers";
 import { runSerpQuery, normalizeDomain, type SerpQueryEntity } from "../services/seo-provider";
 import type { InsertSeoMetric } from "@shared/schema";
+
+// ---------------------------------------------------------------------------
+// In-memory store for completed (or errored) SEO PDF generations.
+// Results are retained for 30 minutes then evicted on next write.
+// ---------------------------------------------------------------------------
+type SeoReportResult =
+  | { status: "complete"; buffer: Buffer; tenantDomain: string; createdAt: number }
+  | { status: "error"; message: string; tenantDomain: string };
+
+const seoReportResults = new Map<string, SeoReportResult>();
+const SEO_REPORT_TTL_MS = 30 * 60 * 1000;
+
+function evictSeoReportCache() {
+  const cutoff = Date.now() - SEO_REPORT_TTL_MS;
+  for (const [id, entry] of seoReportResults) {
+    if (entry.status === "complete" && entry.createdAt < cutoff) {
+      seoReportResults.delete(id);
+    }
+  }
+}
 
 const createKeywordSchema = z.object({
   keyword: z.string().trim().min(1, "Keyword is required").max(200, "Keyword too long"),
@@ -198,6 +219,106 @@ export function registerSeoRoutes(app: Express) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       const message = error instanceof Error ? error.message : "Internal server error";
       res.status(500).json({ error: message });
+    }
+  });
+
+  // POST /api/seo/report/generate
+  // Enqueues PDF generation and returns a jobId immediately.
+  // The client should poll GET /api/seo/report/status/:jobId and then
+  // trigger GET /api/seo/report/download/:jobId once complete.
+  app.post("/api/seo/report/generate", async (req, res) => {
+    if (!await guardFeature(req, res, "seoTracking")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const jobId = randomUUID();
+      const { generateSeoReportPdf } = await import("../services/pdf-generator");
+      const { enqueuePdf } = await import("../services/job-queue");
+
+      // Fire and forget — store result in seoReportResults when done.
+      enqueuePdf(
+        `seo-report-pdf:${jobId}`,
+        (_signal, reportProgress) => generateSeoReportPdf(
+          ctx.tenantDomain,
+          ctx.isDefaultMarket ? undefined : ctx.marketId,
+          ctx.userId,
+          reportProgress,
+        ),
+        90000,
+        { tenantDomain: ctx.tenantDomain, targetName: "SEO Report" },
+      ).then(({ pdfBuffer }) => {
+        evictSeoReportCache();
+        seoReportResults.set(jobId, {
+          status: "complete",
+          buffer: pdfBuffer,
+          tenantDomain: ctx.tenantDomain,
+          createdAt: Date.now(),
+        });
+      }).catch((err) => {
+        const message = err instanceof Error ? err.message : "PDF generation failed";
+        seoReportResults.set(jobId, { status: "error", message, tenantDomain: ctx.tenantDomain });
+        console.error("[SEO PDF] Background generation failed:", message);
+      });
+
+      res.json({ jobId });
+    } catch (error) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      console.error("[SEO PDF] Enqueue error:", error);
+      const message = error instanceof Error ? error.message : "Internal server error";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // GET /api/seo/report/status/:jobId
+  // Returns { status: "pending"|"complete"|"error", downloadUrl?, message? }
+  app.get("/api/seo/report/status/:jobId", async (req, res) => {
+    if (!await guardFeature(req, res, "seoTracking")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { jobId } = req.params;
+      const entry = seoReportResults.get(jobId);
+
+      if (!entry) {
+        return res.json({ status: "pending" });
+      }
+      if (entry.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (entry.status === "error") {
+        return res.json({ status: "error", message: entry.message });
+      }
+      return res.json({
+        status: "complete",
+        downloadUrl: `/api/seo/report/download/${jobId}`,
+      });
+    } catch (error) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/seo/report/download/:jobId
+  // Streams the cached PDF buffer to the client.
+  app.get("/api/seo/report/download/:jobId", async (req, res) => {
+    if (!await guardFeature(req, res, "seoTracking")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { jobId } = req.params;
+      const entry = seoReportResults.get(jobId);
+
+      if (!entry || entry.status !== "complete") {
+        return res.status(404).json({ error: "Report not found or not yet ready" });
+      }
+      if (entry.tenantDomain !== ctx.tenantDomain) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const date = new Date().toISOString().split("T")[0];
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="SEO_Share_of_Voice_${date}.pdf"`);
+      res.send(entry.buffer);
+    } catch (error) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
