@@ -309,6 +309,7 @@ function EditPostDialog({
 
   const isReadOnly = stage === "posted" || stage === "exported";
   const isMissed = stage === "missed";
+  const isOverdue = stage === "scheduled" && !!post?.scheduledDate && new Date(post.scheduledDate) < new Date();
   const isCarousel = post?.postFormat === "carousel";
   const slides = post?.carouselSlides ?? [];
 
@@ -449,6 +450,22 @@ function EditPostDialog({
               </div>
             )}
 
+            {/* Overdue scheduled notice — post is past its time but still eligible for auto-publish */}
+            {isOverdue && (
+              <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Zap className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-blue-700 dark:text-blue-300">Queued for auto-publishing</p>
+                    <p className="text-blue-700/80 dark:text-blue-300/80 mt-0.5 text-[12px]">
+                      This post passed its scheduled time and will be picked up automatically within the next
+                      few minutes — no action needed. Use Discard below only if you want to skip it entirely.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Missed post notice + scheduling choice */}
             {isMissed && (
               <div className="space-y-3">
@@ -464,30 +481,6 @@ function EditPostDialog({
                     </div>
                   </div>
                 </div>
-
-                {/* Platform + graphic metadata */}
-                {post && (
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span className="font-medium">
-                      {PLATFORM_LABELS[post.platform] ?? post.platform}
-                    </span>
-                    {post.overrideImageUrl || post.leadImageUrl ? (
-                      <div className="flex items-center gap-1.5">
-                        <img
-                          src={post.overrideImageUrl ?? post.leadImageUrl ?? ""}
-                          alt="Graphic"
-                          className="w-8 h-8 rounded object-cover border border-border"
-                        />
-                        <span>Graphic attached</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <ImageOff className="w-3.5 h-3.5" />
-                        <span>No graphic</span>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* When to send */}
                 <div className="space-y-2">
@@ -552,6 +545,39 @@ function EditPostDialog({
             )}
 
             {/* Post text */}
+            {/* Platform + graphic — shown for all stages */}
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-1">
+                  {PLATFORM_LABELS[post.platform] ?? post.platform}
+                </p>
+                {post.overrideImageUrl || post.leadImageUrl ? (
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={post.overrideImageUrl ?? post.leadImageUrl ?? ""}
+                      alt="Post graphic"
+                      className="w-14 h-14 rounded-md object-cover border border-border shrink-0"
+                    />
+                    <span className="text-xs text-muted-foreground">Graphic attached</span>
+                  </div>
+                ) : (
+                  <div className={`rounded-md border px-2.5 py-2 text-xs flex items-start gap-1.5 ${
+                    isMissed
+                      ? "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400"
+                      : "border-border text-muted-foreground"
+                  }`}>
+                    <ImageOff className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      No graphic — this post will publish as text only.
+                      {isMissed && (
+                        <> To attach an image, regenerate the post from its brief.</>
+                      )}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="edit-post-content">Post text</Label>
               <Textarea
@@ -640,14 +666,17 @@ function EditPostDialog({
                     </Button>
                   </div>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setConfirmDelete(true)}
-                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/5 gap-1.5 h-8 px-2"
                     data-testid="edit-dialog-cancel-post"
                   >
+                    <Trash2 className="w-3.5 h-3.5" />
                     Cancel and delete this post
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
