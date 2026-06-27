@@ -448,6 +448,11 @@ export class LinkedInPublisher implements SocialPublisher {
     let imageAssetUrn: string | null = null;
     if (imageUrl) {
       imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
+      if (!imageAssetUrn) {
+        console.warn(`[LinkedIn] Image upload failed for post ${post.id} — posting as text-only. Image URL: ${imageUrl}`);
+      }
+    } else {
+      console.warn(`[LinkedIn] Post ${post.id} has no image (overrideImageUrl + leadImageUrl both null) — posting as text-only.`);
     }
 
     // ----------------------------------------------------------------

@@ -33,8 +33,14 @@ import { encryptSecret } from "../utils/encryption";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
 
-const MAX_POSTS_PER_TICK = 25;
-const MAX_PER_TENANT_PER_DAY = Number(process.env.MARKETING_DAILY_PUBLISH_CAP || 200);
+// LinkedIn and other platforms enforce daily caps and flag rapid-fire posting
+// as spam. Keep per-tick batch small and space posts out within each tick so
+// the pattern looks human-paced. At 3 posts per tick every 2 min = 90/hour
+// max, well under LinkedIn's ~150 posts/day limit and not triggering burst
+// spam detection.
+const MAX_POSTS_PER_TICK = 3;
+const DELAY_BETWEEN_POSTS_MS = 12_000; // 12 seconds between posts within a tick
+const MAX_PER_TENANT_PER_DAY = Number(process.env.MARKETING_DAILY_PUBLISH_CAP || 25);
 const MAX_ATTEMPTS = 5;
 
 // Exponential backoff in minutes for retries (1-indexed by attempt count).
@@ -133,7 +139,12 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
       return gate.allowed;
     };
 
+    const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
     for (const row of candidates) {
+      // Pace posts: wait before each post (except the first) so they go out
+      // 12 seconds apart — looks human, avoids LinkedIn burst-spam detection.
+      if (processed > 0) await sleep(DELAY_BETWEEN_POSTS_MS);
       processed += 1;
       const { post, account } = row;
       if (!await isAllowed(post.tenantDomain)) {
