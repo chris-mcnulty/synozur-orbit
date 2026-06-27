@@ -57,6 +57,7 @@ const ALLOWED_POST_STATUSES: readonly string[] = [
   "rejected",
   "published",
   "publish_failed",
+  "missed",
 ];
 
 function sanitizeFrameworkRefs(input: unknown): VoiceFrameworkRef[] {
@@ -400,6 +401,11 @@ export function registerMarketingPostsRoutes(app: Express) {
             return res.status(400).json({ error: "scheduledDate is not a valid date" });
           }
           updateFields.scheduledDate = parsed;
+          // Rescheduling a missed post reactivates it — operator has reviewed
+          // it and chosen a new send time, so it re-enters the publish queue.
+          if (post.status === "missed" && status === undefined) {
+            updateFields.status = "approved";
+          }
         }
       }
 

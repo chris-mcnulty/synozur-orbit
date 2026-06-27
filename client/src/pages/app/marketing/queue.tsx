@@ -84,9 +84,10 @@ interface FullPost {
   campaignId: string | null;
 }
 
-type Stage = "scheduled" | "failed" | "posted" | "exported";
+type Stage = "scheduled" | "failed" | "posted" | "exported" | "missed";
 
 function queueStage(p: CalendarPost): Stage | null {
+  if (p.status === "missed") return "missed";
   if (p.status === "publish_failed" || p.publishError) return "failed";
   if (p.publishedAt || p.status === "published") return "posted";
   if (p.status === "exported" || p.status === "scheduled_external") return "exported";
@@ -99,6 +100,7 @@ function queueStage(p: CalendarPost): Stage | null {
 const STAGE_META: Record<Stage, { label: string; cls: string; Icon: typeof Zap }> = {
   scheduled: { label: "Orbit-scheduled", cls: "text-emerald-600 dark:text-emerald-400", Icon: Zap },
   failed: { label: "Post failed", cls: "text-destructive", Icon: AlertCircle },
+  missed: { label: "Missed — needs review", cls: "text-amber-600 dark:text-amber-400", Icon: Clock },
   posted: { label: "Posted via Orbit", cls: "text-green-600 dark:text-green-400", Icon: CheckCircle2 },
   exported: { label: "Exported to CSV", cls: "text-blue-600 dark:text-blue-400", Icon: FileDown },
 };
@@ -135,7 +137,8 @@ function toDatetimeLocal(d: Date): string {
 const FILTERS: { key: "all" | Stage; label: string }[] = [
   { key: "all", label: "All" },
   { key: "scheduled", label: "Scheduled" },
-  { key: "failed", label: "Needs attention" },
+  { key: "missed", label: "Missed" },
+  { key: "failed", label: "Failed" },
   { key: "posted", label: "Posted" },
   { key: "exported", label: "Exported" },
 ];
@@ -286,6 +289,7 @@ function EditPostDialog({
   }
 
   const isReadOnly = stage === "posted" || stage === "exported";
+  const isMissed = stage === "missed";
   const isCarousel = post?.postFormat === "carousel";
   const slides = post?.carouselSlides ?? [];
 
@@ -376,6 +380,7 @@ function EditPostDialog({
   const dialogTitle = {
     scheduled: "Edit post",
     failed: "Fix failed post",
+    missed: "Missed post — needs review",
     posted: "Posted",
     exported: "Exported post",
   }[stage];
@@ -386,6 +391,7 @@ function EditPostDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {stage === "failed" && <WrenchIcon className="w-4 h-4 text-destructive" />}
+            {stage === "missed" && <Clock className="w-4 h-4 text-amber-500" />}
             {stage === "posted" && <CheckCircle2 className="w-4 h-4 text-green-500" />}
             {dialogTitle}
             {campaignId && (
@@ -415,6 +421,23 @@ function EditPostDialog({
                   <div>
                     <p className="font-medium text-destructive">Why it failed</p>
                     <p className="text-destructive/80 mt-0.5 font-mono text-xs break-all">{post.publishError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Missed post notice */}
+            {isMissed && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-amber-700 dark:text-amber-400">This post was not sent</p>
+                    <p className="text-amber-700/80 dark:text-amber-400/80 mt-0.5 text-[12px]">
+                      It passed its scheduled date without being published. Choose a new date and time below to
+                      reschedule it — saving with a new date will reactivate it for auto-posting. Or cancel it
+                      if the moment has passed.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -484,7 +507,7 @@ function EditPostDialog({
             )}
 
             {/* Cancel post — two-step confirm */}
-            {(stage === "scheduled" || stage === "failed") && (
+            {(stage === "scheduled" || stage === "failed" || stage === "missed") && (
               <div className="pt-1 border-t">
                 {confirmDelete ? (
                   <div className="flex items-center gap-2">
@@ -550,6 +573,16 @@ function EditPostDialog({
                 Resubmit
               </Button>
             </>
+          ) : isMissed ? (
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={isBusy || !post || !scheduledValue}
+              data-testid="edit-dialog-save"
+              className="gap-1.5"
+            >
+              {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+              Reschedule &amp; reactivate
+            </Button>
           ) : !isReadOnly ? (
             <Button
               onClick={() => saveMutation.mutate()}
@@ -579,7 +612,7 @@ export default function QueuePage() {
     queryKey: ["/api/generated-posts/calendar", "orbit-queue"],
     queryFn: async () => {
       const from = new Date();
-      from.setDate(from.getDate() - 14);
+      from.setDate(from.getDate() - 30);
       const to = new Date();
       to.setDate(to.getDate() + 90);
       const params = new URLSearchParams({
@@ -618,12 +651,15 @@ export default function QueuePage() {
   });
 
   const items = useMemo(() => {
+    // Priority order for sort: failed first, then missed, then by date
+    const stagePriority = (s: Stage) => (s === "failed" ? 0 : s === "missed" ? 1 : 2);
     return posts
       .map((p) => ({ post: p, stage: queueStage(p), when: postTime(p) }))
       .filter((x): x is { post: CalendarPost; stage: Stage; when: Date | null } => x.stage !== null)
       .sort((a, b) => {
-        if (a.stage === "failed" && b.stage !== "failed") return -1;
-        if (b.stage === "failed" && a.stage !== "failed") return 1;
+        const pa = stagePriority(a.stage);
+        const pb = stagePriority(b.stage);
+        if (pa !== pb) return pa - pb;
         const at = a.when?.getTime() ?? Infinity;
         const bt = b.when?.getTime() ?? Infinity;
         return at - bt;
@@ -631,7 +667,7 @@ export default function QueuePage() {
   }, [posts]);
 
   const counts = useMemo(() => {
-    const c = { all: items.length, scheduled: 0, failed: 0, posted: 0, exported: 0 } as Record<string, number>;
+    const c = { all: items.length, scheduled: 0, failed: 0, missed: 0, posted: 0, exported: 0 } as Record<string, number>;
     for (const it of items) c[it.stage]++;
     return c;
   }, [items]);

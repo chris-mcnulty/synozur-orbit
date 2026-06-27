@@ -430,3 +430,29 @@ export async function publishPostNow(
   await markFailed(post.id, account.id, post.platform, post.tenantDomain, result, post.publishAttemptCount ?? 0);
   return { success: false, errorMessage: result.errorMessage };
 }
+
+/**
+ * Sweep for missed posts — runs on a short interval (every 5 min).
+ *
+ * Any `approved` post whose scheduledDate is more than 5 days in the past is
+ * transitioned to `missed`. Missed posts are NOT eligible for auto-publishing
+ * until an operator explicitly reschedules them (which resets status → approved).
+ */
+export async function sweepMissedPosts(): Promise<{ marked: number }> {
+  const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+  const result = await db
+    .update(generatedPosts)
+    .set({ status: "missed", updatedAt: new Date() })
+    .where(
+      and(
+        eq(generatedPosts.status, "approved"),
+        isNotNull(generatedPosts.scheduledDate),
+        lte(generatedPosts.scheduledDate, fiveDaysAgo),
+      ),
+    );
+  const marked = (result as any)?.rowCount ?? 0;
+  if (marked > 0) {
+    console.log(`[Missed Post Sweep] Marked ${marked} overdue post(s) as missed.`);
+  }
+  return { marked };
+}

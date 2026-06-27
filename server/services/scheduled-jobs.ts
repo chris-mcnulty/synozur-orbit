@@ -16,7 +16,7 @@ import {
   getValidGraphToken,
   renewGraphSubscription,
 } from "./planner-graph-client";
-import { tickMarketingPublishWorker } from "./marketing-publish-worker";
+import { tickMarketingPublishWorker, sweepMissedPosts } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
 import { refreshSeoForContext } from "../routes/seo";
@@ -2502,6 +2502,21 @@ export function startScheduledJobs(): void {
       console.error("[Marketing Publish Worker] Tick error:", err?.message || err);
     });
   }, 2 * 60 * 1000);
+
+  // Missed-post sweep — marks approved posts whose scheduledDate is more than
+  // 5 days in the past as "missed" so operators can review them. Runs every
+  // 5 minutes; the update is a no-op when nothing qualifies.
+  setInterval(() => {
+    sweepMissedPosts().catch(err => {
+      console.error("[Missed Post Sweep] Error:", err?.message || err);
+    });
+  }, 5 * 60 * 1000);
+  // Run once on startup to catch anything that aged out while the server was down.
+  setTimeout(() => {
+    sweepMissedPosts().catch(err => {
+      console.error("[Missed Post Sweep] Startup error:", err?.message || err);
+    });
+  }, 10_000);
 
   // Task #97: Email send worker — processes scheduled email_sends rows
   // whose scheduledAt has elapsed. baseUrl is provided lazily so the
