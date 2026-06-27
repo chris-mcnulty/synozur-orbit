@@ -1167,10 +1167,10 @@ export function registerMarketingCalendarRoutes(app: Express) {
             .where(and(eq(generatedEmails.tenantDomain, ctx.tenantDomain), eq(generatedEmails.marketId, ctx.marketId), inArray(generatedEmails.id, byType.email))).returning({ id: generatedEmails.id });
           affected += r.length;
         }
-        // Briefs are specs, not dated deliverables — they can't be scheduled.
-        // Create collateral (a post or draft) from the brief, then schedule that.
         if (byType.content.length) {
-          skipped.push(`${byType.content.length} content brief(s) skipped — briefs are specs, not scheduled items. Create the collateral first, then schedule that.`);
+          const r = await db.update(contentBriefs).set({ scheduledAt: when, updatedAt: new Date() })
+            .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
+          affected += r.length;
         }
       } else if (action === "approve") {
         // Blog/content and email support an Approve gate. Social posts rely on

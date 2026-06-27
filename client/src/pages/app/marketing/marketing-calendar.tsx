@@ -1110,26 +1110,19 @@ export default function MarketingCalendarPage() {
   // and let the user confirm; otherwise schedule straight away.
   const handleDropSchedule = async (descriptors: { type: string; id: string }[], dateKey: string) => {
     if (!descriptors.length || dragScheduleMut.isPending) return;
-    // Briefs are specs, not dated deliverables — they can't be dropped onto a
-    // day. Drop them from the batch and tell the user how to schedule instead.
-    const schedulable = descriptors.filter((d) => d.type !== "content");
-    if (schedulable.length < descriptors.length) {
-      toast({ title: "Briefs can't be scheduled", description: "A brief is a spec to hand off for creating content — turn it into a post or draft, then schedule that." });
-    }
-    if (!schedulable.length) return;
     const tz = new Date().getTimezoneOffset();
     try {
       const advice = await qc.fetchQuery<DateAdvice>({
         queryKey: [`/api/marketing-calendar/date-advice?date=${dateKey}&tzOffset=${tz}`],
       });
       if (advice?.busy) {
-        setPendingDrop({ descriptors: schedulable, dateKey });
+        setPendingDrop({ descriptors, dateKey });
         return;
       }
     } catch {
       // If the advice lookup fails, fall back to scheduling without a warning.
     }
-    scheduleDrop(schedulable, dateKey);
+    scheduleDrop(descriptors, dateKey);
   };
 
   // Dragging an already-scheduled pill onto another day reschedules it; dropping
@@ -1820,9 +1813,7 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
             {items.map((it) => {
               const k = itemKey(it);
               const checked = selected.has(k);
-              // Content briefs can be clicked to open the detail dialog where a
-              // publish date can be set. Dragging is not yet supported for briefs.
-              const canDrag = it.type !== "content";
+              const canDrag = true;
               return (
                 <div
                   key={k}
