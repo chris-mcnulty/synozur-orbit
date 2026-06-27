@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import {
@@ -8,7 +8,6 @@ import {
   AlertCircle,
   FileDown,
   Calendar,
-  ArrowRight,
   ListChecks,
   Trash2,
   X,
@@ -18,6 +17,8 @@ import {
   Pause,
   Play,
   PauseCircle,
+  ExternalLink,
+  Clock,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
@@ -31,7 +32,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -79,6 +79,7 @@ interface FullPost {
   publishError: string | null;
   status: string;
   postFormat: string | null;
+  scheduledDate: string | null;
   carouselSlides: CarouselSlide[] | null;
   campaignId: string | null;
 }
@@ -125,9 +126,10 @@ function dayKey(d: Date) {
   return format(d, "EEEE · MMM d");
 }
 
-function actionHref(p: CalendarPost) {
-  if (p.campaignId) return `/app/marketing/campaigns/${p.campaignId}#posts`;
-  return "/app/marketing/calendar";
+/** Format a Date for a datetime-local input value */
+function toDatetimeLocal(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 const FILTERS: { key: "all" | Stage; label: string }[] = [
@@ -199,13 +201,12 @@ function AccountPausePanel() {
         {connected.map((acct) => {
           const pm = platformOf(acct.platform);
           const isPaused = acct.publishingPaused;
-          const isLoading = togglePause.isPending;
           return (
             <button
               key={acct.id}
               type="button"
               onClick={() => togglePause.mutate({ id: acct.id, pause: !isPaused })}
-              disabled={isLoading}
+              disabled={togglePause.isPending}
               title={isPaused ? "Resume auto-posting" : "Pause auto-posting"}
               data-testid={`pause-account-${acct.id}`}
               className={cn(
@@ -239,21 +240,32 @@ function AccountPausePanel() {
   );
 }
 
-// ── Fix Dialog ─────────────────────────────────────────────────────────────
+// ── Edit / Fix Post Dialog ──────────────────────────────────────────────────
+// Works for any post stage: scheduled (edit + reschedule + cancel),
+// failed (edit + resubmit), posted/exported (read-only preview).
 
-function FixDialog({
+function EditPostDialog({
   postId,
+  stage,
+  campaignId,
+  campaignName,
   onClose,
-  onResubmitted,
+  onChanged,
 }: {
   postId: string;
+  stage: Stage;
+  campaignId: string | null;
+  campaignName: string | null;
   onClose: () => void;
-  onResubmitted: () => void;
+  onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [editedText, setEditedText] = useState<string | null>(null);
+  const [scheduledValue, setScheduledValue] = useState<string>("");
   const [slideUrls, setSlideUrls] = useState<Record<number, string>>({});
   const [didInit, setDidInit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: post, isLoading } = useQuery<FullPost>({
     queryKey: ["/api/generated-posts", postId],
@@ -266,94 +278,127 @@ function FixDialog({
 
   if (post && !didInit) {
     setEditedText(post.editedContent ?? post.content ?? "");
+    setScheduledValue(post.scheduledDate ? toDatetimeLocal(new Date(post.scheduledDate)) : "");
     const initUrls: Record<number, string> = {};
-    (post.carouselSlides ?? []).forEach((s) => {
-      initUrls[s.index] = s.imageUrl ?? "";
-    });
+    (post.carouselSlides ?? []).forEach((s) => { initUrls[s.index] = s.imageUrl ?? ""; });
     setSlideUrls(initUrls);
     setDidInit(true);
   }
 
+  const isReadOnly = stage === "posted" || stage === "exported";
+  const isCarousel = post?.postFormat === "carousel";
+  const slides = post?.carouselSlides ?? [];
+
+  // Build the PATCH body from current edits
+  function buildPatchBody(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    const body: Record<string, unknown> = { editedContent: editedText, ...extra };
+    if (scheduledValue) body.scheduledDate = new Date(scheduledValue).toISOString();
+    if (isCarousel && post?.carouselSlides?.length) {
+      body.carouselSlides = post.carouselSlides.map((s) => ({
+        ...s,
+        imageUrl: slideUrls[s.index] !== undefined ? slideUrls[s.index] : s.imageUrl,
+      }));
+    }
+    return body;
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const body: Record<string, unknown> = { editedContent: editedText };
-      if (post?.postFormat === "carousel" && post.carouselSlides?.length) {
-        const merged = post.carouselSlides.map((s) => ({
-          ...s,
-          imageUrl: slideUrls[s.index] !== undefined ? slideUrls[s.index] : s.imageUrl,
-        }));
-        body.carouselSlides = merged;
-      }
       const r = await fetch(`/api/generated-posts/${postId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildPatchBody()),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Save failed");
       return r.json();
     },
-    onSuccess: () => toast({ title: "Edits saved" }),
+    onSuccess: () => {
+      toast({ title: "Post updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      onChanged();
+    },
     onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  const cancelPostMutation = useMutation({
+    mutationFn: async () => {
+      const url = campaignId
+        ? `/api/campaigns/${campaignId}/generated-posts/${postId}`
+        : `/api/generated-posts/${postId}`;
+      const r = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "deleted" }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Cancel failed");
+    },
+    onSuccess: () => {
+      toast({ title: "Post cancelled" });
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      onChanged();
+    },
+    onError: (err: Error) => toast({ title: "Couldn't cancel post", description: err.message, variant: "destructive" }),
   });
 
   const resubmitMutation = useMutation({
     mutationFn: async () => {
-      const original = post?.editedContent ?? post?.content ?? "";
-      const textChanged = editedText !== null && editedText !== original;
-      const hasSlideChanges = post?.postFormat === "carousel" &&
-        post?.carouselSlides?.some((s) => slideUrls[s.index] !== undefined && slideUrls[s.index] !== (s.imageUrl ?? ""));
-
-      if (textChanged || hasSlideChanges) {
-        const saveBody: Record<string, unknown> = { editedContent: editedText };
-        if (post?.postFormat === "carousel" && post.carouselSlides?.length) {
-          saveBody.carouselSlides = post.carouselSlides.map((s) => ({
-            ...s,
-            imageUrl: slideUrls[s.index] !== undefined ? slideUrls[s.index] : s.imageUrl,
-          }));
-        }
-        const saveRes = await fetch(`/api/generated-posts/${postId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(saveBody),
-        });
-        if (!saveRes.ok) throw new Error((await saveRes.json().catch(() => ({}))).error || "Save failed");
-      }
-
-      const r = await fetch(`/api/generated-posts/${postId}/publish`, {
+      // Save edits first
+      const saveR = await fetch(`/api/generated-posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(buildPatchBody()),
+      });
+      if (!saveR.ok) throw new Error((await saveR.json().catch(() => ({}))).error || "Save failed");
+      // Then publish
+      const pubR = await fetch(`/api/generated-posts/${postId}/publish`, {
         method: "POST",
         credentials: "include",
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Resubmit failed");
-      return r.json() as Promise<{ publishedUrl?: string }>;
+      if (!pubR.ok) throw new Error((await pubR.json().catch(() => ({}))).error || "Resubmit failed");
+      return pubR.json() as Promise<{ publishedUrl?: string }>;
     },
     onSuccess: (data) => {
       toast({
         title: "Resubmitted!",
         description: data.publishedUrl ? `Live at ${data.publishedUrl}` : "Post sent for publishing.",
       });
-      onResubmitted();
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      onChanged();
     },
-    onError: (err: Error) =>
-      toast({ title: "Resubmit failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Resubmit failed", description: err.message, variant: "destructive" }),
   });
 
-  const isCarousel = post?.postFormat === "carousel";
-  const slides = post?.carouselSlides ?? [];
-  const isBusy = saveMutation.isPending || resubmitMutation.isPending;
+  const isBusy = saveMutation.isPending || cancelPostMutation.isPending || resubmitMutation.isPending;
+
+  const dialogTitle = {
+    scheduled: "Edit post",
+    failed: "Fix failed post",
+    posted: "Posted",
+    exported: "Exported post",
+  }[stage];
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <WrenchIcon className="w-4 h-4 text-destructive" />
-            Fix failed post
+            {stage === "failed" && <WrenchIcon className="w-4 h-4 text-destructive" />}
+            {stage === "posted" && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+            {dialogTitle}
+            {campaignId && (
+              <Link
+                href={`/app/marketing/campaigns/${campaignId}#posts`}
+                className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors font-normal"
+                data-testid="edit-dialog-campaign-link"
+              >
+                {campaignName ?? "View campaign"}
+                <ExternalLink className="w-3 h-3" />
+              </Link>
+            )}
           </DialogTitle>
-          <DialogDescription>
-            Edit the post content below, then resubmit to try publishing again.
-          </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
@@ -362,7 +407,8 @@ function FixDialog({
           </div>
         ) : post ? (
           <div className="space-y-4">
-            {post.publishError && (
+            {/* Failure reason */}
+            {stage === "failed" && post.publishError && (
               <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
@@ -374,25 +420,47 @@ function FixDialog({
               </div>
             )}
 
+            {/* Post text */}
             <div className="space-y-1.5">
-              <Label htmlFor="fix-post-content">Post text</Label>
+              <Label htmlFor="edit-post-content">Post text</Label>
               <Textarea
-                id="fix-post-content"
+                id="edit-post-content"
                 value={editedText ?? ""}
                 onChange={(e) => setEditedText(e.target.value)}
                 rows={8}
                 className="resize-y font-mono text-sm"
-                data-testid="fix-dialog-content"
-                disabled={isBusy}
+                data-testid="edit-dialog-content"
+                disabled={isBusy || isReadOnly}
+                readOnly={isReadOnly}
               />
             </div>
 
-            {isCarousel && slides.length > 0 && (
+            {/* Scheduled date — editable for scheduled/failed posts */}
+            {!isReadOnly && (
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-post-date" className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                  Scheduled date &amp; time
+                </Label>
+                <Input
+                  id="edit-post-date"
+                  type="datetime-local"
+                  value={scheduledValue}
+                  onChange={(e) => setScheduledValue(e.target.value)}
+                  className="w-auto"
+                  data-testid="edit-dialog-scheduled-date"
+                  disabled={isBusy}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Change this to reschedule. The worker picks up posts within a few minutes of their scheduled time.
+                </p>
+              </div>
+            )}
+
+            {/* Carousel slide image URLs */}
+            {!isReadOnly && isCarousel && slides.length > 0 && (
               <div className="space-y-2">
                 <Label>Slide image URLs</Label>
-                <p className="text-xs text-muted-foreground">
-                  Update any broken image URLs below. Each URL must be publicly reachable.
-                </p>
                 <div className="space-y-2">
                   {slides.map((slide) => (
                     <div key={slide.index} className="flex items-center gap-2">
@@ -403,17 +471,53 @@ function FixDialog({
                       </span>
                       <Input
                         value={slideUrls[slide.index] ?? slide.imageUrl ?? ""}
-                        onChange={(e) =>
-                          setSlideUrls((prev) => ({ ...prev, [slide.index]: e.target.value }))
-                        }
+                        onChange={(e) => setSlideUrls((prev) => ({ ...prev, [slide.index]: e.target.value }))}
                         placeholder="https://..."
                         className="font-mono text-xs h-8"
-                        data-testid={`fix-dialog-slide-url-${slide.index}`}
+                        data-testid={`edit-dialog-slide-url-${slide.index}`}
                         disabled={isBusy}
                       />
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Cancel post — two-step confirm */}
+            {(stage === "scheduled" || stage === "failed") && (
+              <div className="pt-1 border-t">
+                {confirmDelete ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Cancel and delete this post?</span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => cancelPostMutation.mutate()}
+                      disabled={isBusy}
+                      data-testid="edit-dialog-confirm-cancel"
+                    >
+                      {cancelPostMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      Yes, delete it
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={isBusy}
+                    >
+                      Keep it
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    data-testid="edit-dialog-cancel-post"
+                  >
+                    Cancel and delete this post
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -422,31 +526,40 @@ function FixDialog({
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose} disabled={isBusy} data-testid="fix-dialog-cancel">
-            Cancel
+          <Button variant="outline" onClick={onClose} disabled={isBusy} data-testid="edit-dialog-close">
+            {isReadOnly ? "Close" : "Discard"}
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => saveMutation.mutate()}
-            disabled={isBusy || !post}
-            data-testid="fix-dialog-save"
-          >
-            {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
-            Save edits
-          </Button>
-          <Button
-            onClick={() => resubmitMutation.mutate()}
-            disabled={isBusy || !post}
-            data-testid="fix-dialog-resubmit"
-            className="gap-1.5"
-          >
-            {resubmitMutation.isPending ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5" />
-            )}
-            Resubmit
-          </Button>
+          {stage === "failed" ? (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => saveMutation.mutate()}
+                disabled={isBusy || !post}
+                data-testid="edit-dialog-save"
+              >
+                {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+                Save only
+              </Button>
+              <Button
+                onClick={() => resubmitMutation.mutate()}
+                disabled={isBusy || !post}
+                data-testid="edit-dialog-resubmit"
+                className="gap-1.5"
+              >
+                {resubmitMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Resubmit
+              </Button>
+            </>
+          ) : !isReadOnly ? (
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={isBusy || !post}
+              data-testid="edit-dialog-save"
+            >
+              {saveMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+              Save changes
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -458,8 +571,7 @@ function FixDialog({
 export default function QueuePage() {
   const [filter, setFilter] = useState<"all" | Stage>("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [fixPostId, setFixPostId] = useState<string | null>(null);
-  const [, navigate] = useLocation();
+  const [editPost, setEditPost] = useState<CalendarPost | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -543,11 +655,6 @@ export default function QueuePage() {
     return Array.from(map.entries());
   }, [visible]);
 
-  function handleResubmitted() {
-    queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
-    setFixPostId(null);
-  }
-
   return (
     <AppLayout breadcrumbs={[{ label: "Marketing", href: "/app/marketing" }, { label: "Posting Queue" }]}>
       <div className="p-6 max-w-5xl mx-auto space-y-4">
@@ -556,7 +663,7 @@ export default function QueuePage() {
             <ListChecks className="w-6 h-6" /> Posting Queue
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Everything Orbit is publishing for you, across all campaigns — sorted by send time, with failures first.
+            Click any post to edit, reschedule, or cancel it. Failures appear at the top.
           </p>
           <CalendarViewSwitcher className="mt-3" />
         </div>
@@ -641,25 +748,22 @@ export default function QueuePage() {
                     const pm = platformOf(post.platform);
                     const overdue = stage === "scheduled" && when && isPast(when);
                     const isConfirming = confirmDeleteId === post.id;
-                    const href = actionHref(post);
 
                     return (
                       <div
                         key={post.id}
                         className={cn(
-                          "relative grid grid-cols-[88px_1fr_auto] items-center gap-3 px-4 py-3 group",
-                          stage === "failed" && "bg-destructive/5",
-                          stage !== "failed" && "cursor-pointer hover:bg-muted/40 transition-colors",
+                          "relative grid grid-cols-[88px_1fr_auto] items-center gap-3 px-4 py-3 cursor-pointer group hover:bg-muted/40 transition-colors",
+                          stage === "failed" && "bg-destructive/5 hover:bg-destructive/10",
                         )}
                         data-testid={`queue-row-${post.id}`}
                         onClick={(e) => {
-                          // Don't navigate if user clicked a button/link inside the row
-                          if ((e.target as HTMLElement).closest("button,a")) return;
-                          if (stage === "failed") return;
-                          navigate(href);
+                          if ((e.target as HTMLElement).closest("button")) return;
+                          setEditPost(post);
                         }}
                       >
                         {stage === "failed" && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-destructive" />}
+
                         <div className="text-sm font-medium tabular-nums">
                           {when ? (
                             <>
@@ -670,6 +774,7 @@ export default function QueuePage() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </div>
+
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
                             <span
@@ -688,11 +793,11 @@ export default function QueuePage() {
                           </div>
                           <p className="text-sm truncate">{post.preview || "(no content)"}</p>
                           {stage === "failed" && post.publishError && (
-                            <p className="text-xs text-destructive mt-0.5">{post.publishError}</p>
+                            <p className="text-xs text-destructive mt-0.5 truncate">{post.publishError}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Delete: one click to arm, second click confirms */}
+
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                           {isConfirming ? (
                             <div className="flex items-center gap-1">
                               <Button
@@ -719,7 +824,7 @@ export default function QueuePage() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => setConfirmDeleteId(post.id)}
                               title="Delete this post"
                               data-testid={`queue-delete-${post.id}`}
@@ -731,27 +836,6 @@ export default function QueuePage() {
                             <sm.Icon className="w-3.5 h-3.5" />
                             {sm.label}
                           </span>
-                          {!isConfirming && (
-                            stage === "failed" ? (
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="bg-destructive hover:bg-destructive/90 gap-1"
-                                onClick={() => setFixPostId(post.id)}
-                                data-testid={`queue-action-${post.id}`}
-                              >
-                                <WrenchIcon className="w-3.5 h-3.5" />
-                                Fix
-                              </Button>
-                            ) : (
-                              <Button asChild size="sm" variant="outline" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Link href={href} data-testid={`queue-action-${post.id}`}>
-                                  {stage === "posted" ? "View" : "Edit"}
-                                  <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                                </Link>
-                              </Button>
-                            )
-                          )}
                         </div>
                       </div>
                     );
@@ -763,14 +847,23 @@ export default function QueuePage() {
         )}
       </div>
 
-      {/* Fix dialog — rendered outside the list so it doesn't inherit the row layout */}
-      {fixPostId && (
-        <FixDialog
-          postId={fixPostId}
-          onClose={() => setFixPostId(null)}
-          onResubmitted={handleResubmitted}
-        />
-      )}
+      {/* Edit / Fix dialog */}
+      {editPost && (() => {
+        const stage = queueStage(editPost);
+        return stage ? (
+          <EditPostDialog
+            postId={editPost.id}
+            stage={stage}
+            campaignId={editPost.campaignId}
+            campaignName={editPost.campaignName}
+            onClose={() => setEditPost(null)}
+            onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+              setEditPost(null);
+            }}
+          />
+        ) : null;
+      })()}
     </AppLayout>
   );
 }
