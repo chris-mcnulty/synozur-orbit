@@ -2518,6 +2518,12 @@ export const contentAssets = pgTable("content_assets", {
   // published. websiteScheduledFor is set when a future publish is scheduled.
   websitePostStatus: text("website_post_status"),
   websiteScheduledFor: timestamp("website_scheduled_for"),
+  // Blog-post website metadata saved from the structured editor panel so they
+  // persist across sessions and pre-fill the website publish dialog.
+  websiteExcerpt: text("website_excerpt"),
+  websiteAuthorId: text("website_author_id"),
+  websiteCategoryIds: text("website_category_ids").array(),
+  websiteTagIds: text("website_tag_ids").array(),
   // WS3: headline SEO/AEO fields persisted back from the optimizer so they are
   // usable inline on the asset (deeper AEO data — answer blocks, FAQ, gaps —
   // continues to live in content_optimizations, keyed by contentAssetId).

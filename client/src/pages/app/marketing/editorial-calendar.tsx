@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,8 @@ import {
   Mic,
   CheckCircle2,
   Lightbulb,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -313,6 +315,16 @@ export default function EditorialCalendarPage() {
   const [draftAssetWebsiteStatus, setDraftAssetWebsiteStatus] = useState<string | null>(null);
   const [draftAssetWebsiteScheduledFor, setDraftAssetWebsiteScheduledFor] = useState<string | null>(null);
   const [websitePublishOpen, setWebsitePublishOpen] = useState(false);
+  // Blog-post structured metadata panel state (auto-saved on change)
+  const [blogSeoTitle, setBlogSeoTitle] = useState<string>("");
+  const [blogMetaDescription, setBlogMetaDescription] = useState<string>("");
+  const [blogSeoSlug, setBlogSeoSlug] = useState<string>("");
+  const [blogExcerpt, setBlogExcerpt] = useState<string>("");
+  const [blogHeroUrl, setBlogHeroUrl] = useState<string>("");
+  const [blogAuthorId, setBlogAuthorId] = useState<string>("");
+  const [blogCategoryIds, setBlogCategoryIds] = useState<Set<string>>(new Set());
+  const [blogTagIds, setBlogTagIds] = useState<Set<string>>(new Set());
+  const [aiRefOpen, setAiRefOpen] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
@@ -341,6 +353,51 @@ export default function EditorialCalendarPage() {
   const repurposeAllowed = tenant?.features?.contentRepurposing !== false;
   const optimizeAllowed = tenant?.features?.seoAeoOptimizer !== false;
   const distributionAllowed = tenant?.features?.distributionPlanner !== false;
+
+  const isBlogDraftOpen = !!draft && draft.format === "blog_post";
+
+  const { data: websiteStatus } = useQuery<{ connected: boolean; defaultAuthorId?: string | null }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+    enabled: isBlogDraftOpen,
+  });
+  const websiteConnected = !!websiteStatus?.connected;
+
+  const { data: websiteAuthors = [] } = useQuery<{ id: string; displayName: string }[]>({
+    queryKey: ["/api/integrations/website/authors"],
+    queryFn: async () => (await fetch("/api/integrations/website/authors", { credentials: "include" })).json(),
+    enabled: isBlogDraftOpen && websiteConnected,
+  });
+  const { data: websiteCategories = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/integrations/website/categories"],
+    queryFn: async () => (await fetch("/api/integrations/website/categories", { credentials: "include" })).json(),
+    enabled: isBlogDraftOpen && websiteConnected,
+  });
+  const { data: websiteTags = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/integrations/website/tags"],
+    queryFn: async () => (await fetch("/api/integrations/website/tags", { credentials: "include" })).json(),
+    enabled: isBlogDraftOpen && websiteConnected,
+  });
+
+  // Debounced PATCH for the blog-post metadata panel fields. Fires 300ms after
+  // the last change. Does not require the user to click Save.
+  // useRef keeps the timer stable across re-renders so clearTimeout actually
+  // cancels the previous call (a plain object is recreated each render).
+  const blogMetaPatchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const patchBlogMeta = useCallback((assetId: string, updates: Record<string, unknown>) => {
+    if (blogMetaPatchTimer.current) clearTimeout(blogMetaPatchTimer.current);
+    blogMetaPatchTimer.current = setTimeout(() => {
+      fetch(`/api/content-assets/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(updates),
+      }).catch(() => {});
+    }, 300);
+  }, []);
 
   const { data: marketingPlans } = useQuery<MarketingPlan[]>({
     queryKey: ["/api/marketing-plans"],
@@ -527,6 +584,17 @@ export default function EditorialCalendarPage() {
       setDraftAssetId(data.asset?.id ?? null);
       setDraftBriefTitle(briefs.find((b) => b.id === briefId)?.title ?? null);
       setDraftImageUrl(data.asset?.leadImageUrl ?? null);
+      if (data.draft.format === "blog_post") {
+        setBlogSeoTitle("");
+        setBlogMetaDescription("");
+        setBlogSeoSlug("");
+        setBlogExcerpt("");
+        setBlogHeroUrl(data.asset?.leadImageUrl ?? "");
+        setBlogAuthorId("");
+        setBlogCategoryIds(new Set());
+        setBlogTagIds(new Set());
+        setAiRefOpen(false);
+      }
       setDraftDirty(false);
       setRewriteInstr("");
       toast.success("Draft created — click to review and approve");
@@ -560,6 +628,18 @@ export default function EditorialCalendarPage() {
       setDraftAssetWebsiteSlug(asset.websitePostSlug ?? null);
       setDraftAssetWebsiteStatus(asset.websitePostStatus ?? null);
       setDraftAssetWebsiteScheduledFor(asset.websiteScheduledFor ?? null);
+      // Blog-post metadata panel
+      if (b.format === "blog_post") {
+        setBlogSeoTitle(asset.seoTitle ?? "");
+        setBlogMetaDescription(asset.metaDescription ?? "");
+        setBlogSeoSlug(asset.seoSlug ?? "");
+        setBlogExcerpt(asset.websiteExcerpt ?? "");
+        setBlogHeroUrl(asset.leadImageUrl ?? "");
+        setBlogAuthorId(asset.websiteAuthorId ?? "");
+        setBlogCategoryIds(new Set(asset.websiteCategoryIds ?? []));
+        setBlogTagIds(new Set(asset.websiteTagIds ?? []));
+        setAiRefOpen(false);
+      }
       setDraftDirty(false);
       setRewriteInstr("");
     } catch {
@@ -1954,10 +2034,19 @@ export default function EditorialCalendarPage() {
               setDraftAssetWebsiteStatus(null);
               setDraftAssetWebsiteScheduledFor(null);
               setWebsitePublishOpen(false);
+              setBlogSeoTitle("");
+              setBlogMetaDescription("");
+              setBlogSeoSlug("");
+              setBlogExcerpt("");
+              setBlogHeroUrl("");
+              setBlogAuthorId("");
+              setBlogCategoryIds(new Set());
+              setBlogTagIds(new Set());
+              setAiRefOpen(false);
             }
           }}
         >
-          <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
+          <DialogContent className={`max-h-[90vh] overflow-y-auto ${draft?.format === "blog_post" ? "max-w-5xl" : "max-w-2xl"}`}>
             <DialogHeader>
               <DialogTitle>Edit draft</DialogTitle>
               <DialogDescription>
@@ -1971,107 +2060,427 @@ export default function EditorialCalendarPage() {
                 )}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label htmlFor="draft-title" className="text-xs font-medium uppercase text-muted-foreground">
-                  Title
-                </Label>
-                <Input
-                  id="draft-title"
-                  value={draft?.title ?? ""}
-                  onChange={(e) => {
-                    setDraft((d) => (d ? { ...d, title: e.target.value } : d));
-                    setDraftDirty(true);
-                  }}
-                  data-testid="input-draft-title"
-                />
-              </div>
-              {(draft?.format === "blog_post" || draft?.format === "linkedin_digest") && (
-                <>
+            {/* Two-column layout for blog posts; single column for everything else */}
+            {draft?.format === "blog_post" ? (
+              <div className="flex gap-5 min-h-0">
+                {/* LEFT: title + body + AI reference block */}
+                <div className="flex-1 min-w-0 space-y-3">
                   <div className="space-y-1">
-                    <Label htmlFor="draft-subtitle" className="text-xs font-medium uppercase text-muted-foreground">
-                      Subtitle
+                    <Label htmlFor="draft-title" className="text-xs font-medium uppercase text-muted-foreground">
+                      Title
                     </Label>
                     <Input
-                      id="draft-subtitle"
-                      value={draft?.subtitle ?? ""}
-                      placeholder="A single-sentence subtitle…"
+                      id="draft-title"
+                      value={draft?.title ?? ""}
                       onChange={(e) => {
-                        setDraft((d) => (d ? { ...d, subtitle: e.target.value } : d));
+                        setDraft((d) => (d ? { ...d, title: e.target.value } : d));
                         setDraftDirty(true);
                       }}
-                      data-testid="input-draft-subtitle"
+                      data-testid="input-draft-title"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="draft-overview" className="text-xs font-medium uppercase text-muted-foreground">
-                      Overview <span className="normal-case font-normal">(preview blurb, max 480 chars)</span>
+                    <Label htmlFor="draft-body" className="text-xs font-medium uppercase text-muted-foreground">
+                      Body <span className="normal-case font-normal text-muted-foreground">(Markdown)</span>
                     </Label>
                     <Textarea
-                      id="draft-overview"
-                      className="min-h-[80px] font-sans text-sm leading-relaxed"
-                      maxLength={480}
-                      value={draft?.overview ?? ""}
-                      placeholder="A compelling summary shown as a post preview…"
+                      id="draft-body"
+                      className="min-h-[380px] font-sans text-sm leading-relaxed"
+                      value={draft?.body ?? ""}
                       onChange={(e) => {
-                        setDraft((d) => (d ? { ...d, overview: e.target.value } : d));
+                        setDraft((d) => (d ? { ...d, body: e.target.value } : d));
                         setDraftDirty(true);
                       }}
-                      data-testid="input-draft-overview"
+                      onPaste={(e) => {
+                        const html = e.clipboardData.getData("text/html");
+                        if (!html) return;
+                        e.preventDefault();
+                        const md = htmlToMarkdown(html);
+                        const ta = e.currentTarget;
+                        const start = ta.selectionStart ?? 0;
+                        const end = ta.selectionEnd ?? 0;
+                        const current = draft?.body ?? "";
+                        const next = current.slice(0, start) + md + current.slice(end);
+                        setDraft((d) => (d ? { ...d, body: next } : d));
+                        setDraftDirty(true);
+                        requestAnimationFrame(() => {
+                          ta.selectionStart = ta.selectionEnd = start + md.length;
+                        });
+                      }}
+                      data-testid="input-draft-body"
                     />
-                    <p className="text-right text-xs text-muted-foreground">{(draft?.overview ?? "").length}/480</p>
                   </div>
-                </>
-              )}
-              <div className="space-y-1">
-                <Label htmlFor="draft-body" className="text-xs font-medium uppercase text-muted-foreground">
-                  Body
-                </Label>
-                <Textarea
-                  id="draft-body"
-                  className="min-h-[320px] font-sans text-sm leading-relaxed"
-                  value={draft?.body ?? ""}
-                  onChange={(e) => {
-                    setDraft((d) => (d ? { ...d, body: e.target.value } : d));
-                    setDraftDirty(true);
-                  }}
-                  onPaste={(e) => {
-                    const html = e.clipboardData.getData("text/html");
-                    if (!html) return;
-                    e.preventDefault();
-                    const md = htmlToMarkdown(html);
-                    const ta = e.currentTarget;
-                    const start = ta.selectionStart ?? 0;
-                    const end = ta.selectionEnd ?? 0;
-                    const current = draft?.body ?? "";
-                    const next = current.slice(0, start) + md + current.slice(end);
-                    setDraft((d) => (d ? { ...d, body: next } : d));
-                    setDraftDirty(true);
-                    requestAnimationFrame(() => {
-                      ta.selectionStart = ta.selectionEnd = start + md.length;
-                    });
-                  }}
-                  data-testid="input-draft-body"
-                />
+                  {/* Collapsible AI reference block for subtitle + overview */}
+                  {(draft?.subtitle || draft?.overview) && (
+                    <div className="rounded-md border border-dashed">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setAiRefOpen((o) => !o)}
+                        data-testid="button-ai-ref-toggle"
+                      >
+                        {aiRefOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        AI draft reference — subtitle &amp; overview
+                      </button>
+                      {aiRefOpen && (
+                        <div className="border-t px-3 py-2 space-y-2">
+                          {draft?.subtitle && (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Subtitle</p>
+                              <p className="text-sm text-foreground">{draft.subtitle}</p>
+                            </div>
+                          )}
+                          {draft?.overview && (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Overview</p>
+                              <p className="text-sm text-foreground whitespace-pre-wrap">{draft.overview}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* AI rewrite */}
+                  {draftAssetId && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <Label htmlFor="rewrite-instr" className="text-sm font-medium">
+                        AI rewrite
+                      </Label>
+                      <Textarea
+                        id="rewrite-instr"
+                        placeholder="e.g. Make it punchier, add a stat-led intro, cut to ~600 words"
+                        value={rewriteInstr}
+                        onChange={(e) => setRewriteInstr(e.target.value)}
+                        data-testid="input-rewrite"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
+                        onClick={() => rewriteDraft.mutate()}
+                        data-testid="button-rewrite"
+                      >
+                        {rewriteDraft.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <PenLine className="mr-2 h-4 w-4" />
+                        )}
+                        Rewrite draft
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* RIGHT: metadata panel ~280px */}
+                <div className="w-72 shrink-0 space-y-3 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Metadata</p>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="blog-excerpt" className="text-xs text-muted-foreground">Excerpt</Label>
+                    <Textarea
+                      id="blog-excerpt"
+                      rows={3}
+                      className="text-sm"
+                      placeholder="Short summary for listing cards…"
+                      value={blogExcerpt}
+                      onChange={(e) => {
+                        setBlogExcerpt(e.target.value);
+                        if (draftAssetId) patchBlogMeta(draftAssetId, { websiteExcerpt: e.target.value });
+                      }}
+                      data-testid="input-blog-excerpt"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="blog-hero-url" className="text-xs text-muted-foreground">Hero image URL</Label>
+                    <Input
+                      id="blog-hero-url"
+                      type="url"
+                      placeholder="https://…"
+                      value={blogHeroUrl}
+                      onChange={(e) => {
+                        setBlogHeroUrl(e.target.value);
+                        const url = e.target.value.trim() || null;
+                        if (draftAssetId) patchBlogMeta(draftAssetId, { leadImageUrl: url });
+                        setDraftImageUrl(url);
+                      }}
+                      data-testid="input-blog-hero-url"
+                    />
+                    {draftImageUrl && (
+                      <img src={draftImageUrl} alt="Hero preview" className="mt-1 w-full rounded border object-cover aspect-video" />
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="blog-seo-title" className="text-xs text-muted-foreground">SEO title</Label>
+                    <Input
+                      id="blog-seo-title"
+                      placeholder="≤60 characters"
+                      maxLength={60}
+                      value={blogSeoTitle}
+                      onChange={(e) => {
+                        setBlogSeoTitle(e.target.value);
+                        if (draftAssetId) patchBlogMeta(draftAssetId, { seoTitle: e.target.value });
+                      }}
+                      data-testid="input-blog-seo-title"
+                    />
+                    <p className="text-right text-[11px] text-muted-foreground">{blogSeoTitle.length}/60</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="blog-seo-desc" className="text-xs text-muted-foreground">SEO description</Label>
+                    <Textarea
+                      id="blog-seo-desc"
+                      rows={2}
+                      placeholder="≤155 characters"
+                      maxLength={155}
+                      className="text-sm"
+                      value={blogMetaDescription}
+                      onChange={(e) => {
+                        setBlogMetaDescription(e.target.value);
+                        if (draftAssetId) patchBlogMeta(draftAssetId, { metaDescription: e.target.value });
+                      }}
+                      data-testid="input-blog-seo-desc"
+                    />
+                    <p className="text-right text-[11px] text-muted-foreground">{blogMetaDescription.length}/155</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="blog-seo-slug" className="text-xs text-muted-foreground">SEO slug</Label>
+                    <Input
+                      id="blog-seo-slug"
+                      placeholder="my-post-url-slug"
+                      value={blogSeoSlug}
+                      onChange={(e) => {
+                        setBlogSeoSlug(e.target.value);
+                        if (draftAssetId) patchBlogMeta(draftAssetId, { seoSlug: e.target.value });
+                      }}
+                      data-testid="input-blog-seo-slug"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="blog-tags" className="text-xs text-muted-foreground">Post tags <span className="font-normal">(comma-separated)</span></Label>
+                    <Input
+                      id="blog-tags"
+                      placeholder="AI, SaaS, growth"
+                      value={draft?.tags ?? ""}
+                      onChange={(e) => {
+                        setDraft((d) => (d ? { ...d, tags: e.target.value } : d));
+                        setDraftDirty(true);
+                        if (draftAssetId) patchBlogMeta(draftAssetId, { postTags: e.target.value || null });
+                      }}
+                      data-testid="input-draft-tags"
+                    />
+                  </div>
+
+                  {/* Website-connected fields */}
+                  {websiteConnected ? (
+                    <>
+                      {websiteAuthors.length > 0 && (
+                        <div className="space-y-1">
+                          <Label htmlFor="blog-author" className="text-xs text-muted-foreground">Author</Label>
+                          <Select
+                            value={blogAuthorId || "none"}
+                            onValueChange={(v) => {
+                              const val = v === "none" ? "" : v;
+                              setBlogAuthorId(val);
+                              if (draftAssetId) patchBlogMeta(draftAssetId, { websiteAuthorId: val || null });
+                            }}
+                          >
+                            <SelectTrigger id="blog-author" data-testid="select-blog-author">
+                              <SelectValue placeholder="Choose author…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {websiteAuthors.map((a) => (
+                                <SelectItem key={a.id} value={a.id}>{a.displayName}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {websiteCategories.length > 0 && (
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Categories</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {websiteCategories.map((c) => {
+                              const sel = blogCategoryIds.has(c.id);
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  aria-pressed={sel}
+                                  onClick={() => {
+                                    const next = new Set(blogCategoryIds);
+                                    sel ? next.delete(c.id) : next.add(c.id);
+                                    setBlogCategoryIds(next);
+                                    if (draftAssetId) patchBlogMeta(draftAssetId, { websiteCategoryIds: Array.from(next) });
+                                  }}
+                                  className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  data-testid={`blog-category-${c.id}`}
+                                >
+                                  <Badge variant={sel ? "default" : "outline"} className="cursor-pointer text-xs">{c.name}</Badge>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {websiteTags.length > 0 && (
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Tags (website)</Label>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {websiteTags.map((t) => {
+                              const sel = blogTagIds.has(t.id);
+                              return (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  aria-pressed={sel}
+                                  onClick={() => {
+                                    const next = new Set(blogTagIds);
+                                    sel ? next.delete(t.id) : next.add(t.id);
+                                    setBlogTagIds(next);
+                                    if (draftAssetId) patchBlogMeta(draftAssetId, { websiteTagIds: Array.from(next) });
+                                  }}
+                                  className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  data-testid={`blog-tag-${t.id}`}
+                                >
+                                  <Badge variant={sel ? "default" : "outline"} className="cursor-pointer text-xs">{t.name}</Badge>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground rounded-md border border-dashed p-2">
+                      Connect the Synozur website in Settings → Integrations to pick an author and sync categories and tags.
+                    </p>
+                  )}
+
+                  {/* Branded image section */}
+                  {draftAssetId && (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium">Branded image</Label>
+                        <span className="text-[11px] text-muted-foreground">Optional</span>
+                      </div>
+                      {draftImageUrl ? (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-1">
+                            <Button size="sm" variant="secondary" disabled={generateImage.isPending} onClick={() => generateImage.mutate()} data-testid="button-regenerate-image">
+                              {generateImage.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-destructive" disabled={removeImage.isPending} onClick={() => removeImage.mutate()} data-testid="button-remove-image">
+                              {removeImage.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={downloadImage} data-testid="button-download-image">
+                              <Download className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="secondary" className="w-full" disabled={generateImage.isPending} onClick={() => generateImage.mutate()} data-testid="button-generate-image">
+                          {generateImage.isPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <ImageIcon className="mr-2 h-3 w-3" />}
+                          Generate
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              {draft?.format === "blog_post" && (
+            ) : (
+              /* Original single-column layout for non-blog-post formats */
+              <div className="space-y-3">
                 <div className="space-y-1">
-                  <Label htmlFor="draft-tags" className="text-xs font-medium uppercase text-muted-foreground">
-                    Tags <span className="normal-case font-normal">(comma-delimited)</span>
+                  <Label htmlFor="draft-title" className="text-xs font-medium uppercase text-muted-foreground">
+                    Title
                   </Label>
                   <Input
-                    id="draft-tags"
-                    value={draft?.tags ?? ""}
-                    placeholder="e.g. AI, private equity, value creation"
+                    id="draft-title"
+                    value={draft?.title ?? ""}
                     onChange={(e) => {
-                      setDraft((d) => (d ? { ...d, tags: e.target.value } : d));
+                      setDraft((d) => (d ? { ...d, title: e.target.value } : d));
                       setDraftDirty(true);
                     }}
-                    data-testid="input-draft-tags"
+                    data-testid="input-draft-title"
                   />
                 </div>
-              )}
-            </div>
+                {draft?.format === "linkedin_digest" && (
+                  <>
+                    <div className="space-y-1">
+                      <Label htmlFor="draft-subtitle" className="text-xs font-medium uppercase text-muted-foreground">
+                        Subtitle
+                      </Label>
+                      <Input
+                        id="draft-subtitle"
+                        value={draft?.subtitle ?? ""}
+                        placeholder="A single-sentence subtitle…"
+                        onChange={(e) => {
+                          setDraft((d) => (d ? { ...d, subtitle: e.target.value } : d));
+                          setDraftDirty(true);
+                        }}
+                        data-testid="input-draft-subtitle"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="draft-overview" className="text-xs font-medium uppercase text-muted-foreground">
+                        Overview <span className="normal-case font-normal">(preview blurb, max 480 chars)</span>
+                      </Label>
+                      <Textarea
+                        id="draft-overview"
+                        className="min-h-[80px] font-sans text-sm leading-relaxed"
+                        maxLength={480}
+                        value={draft?.overview ?? ""}
+                        placeholder="A compelling summary shown as a post preview…"
+                        onChange={(e) => {
+                          setDraft((d) => (d ? { ...d, overview: e.target.value } : d));
+                          setDraftDirty(true);
+                        }}
+                        data-testid="input-draft-overview"
+                      />
+                      <p className="text-right text-xs text-muted-foreground">{(draft?.overview ?? "").length}/480</p>
+                    </div>
+                  </>
+                )}
+                <div className="space-y-1">
+                  <Label htmlFor="draft-body" className="text-xs font-medium uppercase text-muted-foreground">
+                    Body
+                  </Label>
+                  <Textarea
+                    id="draft-body"
+                    className="min-h-[320px] font-sans text-sm leading-relaxed"
+                    value={draft?.body ?? ""}
+                    onChange={(e) => {
+                      setDraft((d) => (d ? { ...d, body: e.target.value } : d));
+                      setDraftDirty(true);
+                    }}
+                    onPaste={(e) => {
+                      const html = e.clipboardData.getData("text/html");
+                      if (!html) return;
+                      e.preventDefault();
+                      const md = htmlToMarkdown(html);
+                      const ta = e.currentTarget;
+                      const start = ta.selectionStart ?? 0;
+                      const end = ta.selectionEnd ?? 0;
+                      const current = draft?.body ?? "";
+                      const next = current.slice(0, start) + md + current.slice(end);
+                      setDraft((d) => (d ? { ...d, body: next } : d));
+                      setDraftDirty(true);
+                      requestAnimationFrame(() => {
+                        ta.selectionStart = ta.selectionEnd = start + md.length;
+                      });
+                    }}
+                    data-testid="input-draft-body"
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>AI-generated draft. Review and edit before publishing. Click Save to keep your changes.</span>
@@ -2113,7 +2522,7 @@ export default function EditorialCalendarPage() {
                 </Button>
               </div>
             )}
-            {draftAssetId && (
+            {draft?.format !== "blog_post" && draftAssetId && (
               <div className="space-y-2 rounded-md border p-3">
                 <Label htmlFor="rewrite-instr" className="text-sm font-medium">
                   AI rewrite
@@ -2141,7 +2550,7 @@ export default function EditorialCalendarPage() {
                 </Button>
               </div>
             )}
-            {draftAssetId && (
+            {draft?.format !== "blog_post" && draftAssetId && (
               <div className="space-y-2 rounded-md border p-3">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Branded image</Label>
@@ -2291,10 +2700,14 @@ export default function EditorialCalendarPage() {
               id: draftAssetId,
               title: draft?.title ?? "",
               description: draftAssetDescription ?? undefined,
-              leadImageUrl: draftImageUrl ?? undefined,
+              leadImageUrl: blogHeroUrl || draftImageUrl || undefined,
               websitePostSlug: draftAssetWebsiteSlug,
               websitePostStatus: draftAssetWebsiteStatus,
               websiteScheduledFor: draftAssetWebsiteScheduledFor,
+              websiteExcerpt: blogExcerpt || undefined,
+              websiteAuthorId: blogAuthorId || undefined,
+              websiteCategoryIds: blogCategoryIds.size ? Array.from(blogCategoryIds) : undefined,
+              websiteTagIds: blogTagIds.size ? Array.from(blogTagIds) : undefined,
             }}
             open={websitePublishOpen}
             onOpenChange={(o) => {

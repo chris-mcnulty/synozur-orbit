@@ -27,6 +27,11 @@ interface Asset {
   websitePostSlug?: string | null;
   websitePostStatus?: string | null;
   websiteScheduledFor?: string | null;
+  // Pre-saved metadata from the blog-post structured editor
+  websiteExcerpt?: string | null;
+  websiteAuthorId?: string | null;
+  websiteCategoryIds?: string[] | null;
+  websiteTagIds?: string[] | null;
 }
 interface Author { id: string; displayName: string }
 interface Taxonomy { id: string; name: string }
@@ -105,12 +110,14 @@ export function WebsitePublishDialog({
   });
 
   // Seed the form when the dialog opens.
+  // Prefer pre-saved metadata from the structured blog editor; fall back to
+  // defaults so the dialog is still usable if the user skipped the panel.
   useEffect(() => {
     if (!open || !asset) return;
-    setAuthorId(status?.defaultAuthorId ?? "");
-    setExcerpt(asset.description ?? "");
-    setCategoryIds(new Set());
-    setTagIds(new Set());
+    setAuthorId(asset.websiteAuthorId || status?.defaultAuthorId || "");
+    setExcerpt(asset.websiteExcerpt || asset.description || "");
+    setCategoryIds(new Set(asset.websiteCategoryIds ?? []));
+    setTagIds(new Set(asset.websiteTagIds ?? []));
     setUseHero(!!asset.leadImageUrl);
     setScheduledFor("");
   }, [open, asset, status?.defaultAuthorId]);

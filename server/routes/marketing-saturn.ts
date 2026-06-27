@@ -635,7 +635,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/content-assets/:id", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
-    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds, subtitle, overview, postTags, assetDate, isExternal } = req.body;
+    const { title, description, url, content, categoryId, status, productTagIds, productIds, aiSummary, leadImageUrl, tags, assetType, solutionAreaIds, subtitle, overview, postTags, assetDate, isExternal, seoTitle, metaDescription, seoSlug, websiteExcerpt, websiteAuthorId, websiteCategoryIds, websiteTagIds } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (assetDate !== undefined) updates.assetDate = parseAssetDate(assetDate);
     if (isExternal !== undefined) updates.isExternal = isExternal === true;
@@ -655,6 +655,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (assetType !== undefined && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)) {
       updates.assetType = assetType;
     }
+    if (seoTitle !== undefined) updates.seoTitle = seoTitle || null;
+    if (metaDescription !== undefined) updates.metaDescription = metaDescription || null;
+    if (seoSlug !== undefined) updates.seoSlug = seoSlug || null;
+    if (websiteExcerpt !== undefined) updates.websiteExcerpt = websiteExcerpt || null;
+    if (websiteAuthorId !== undefined) updates.websiteAuthorId = websiteAuthorId || null;
+    if (websiteCategoryIds !== undefined) updates.websiteCategoryIds = Array.isArray(websiteCategoryIds) && websiteCategoryIds.length ? websiteCategoryIds : null;
+    if (websiteTagIds !== undefined) updates.websiteTagIds = Array.isArray(websiteTagIds) && websiteTagIds.length ? websiteTagIds : null;
 
     const [row] = await db.update(contentAssets)
       .set(updates)
