@@ -732,3 +732,16 @@ _Proposed 2026-06 alongside the cross-area UX work (calendar unification, postin
 - [ ] Let users name and save a segment (e.g. "High-score CA prospects", "Failed posts")
 - [ ] Optional: pin saved views to the sidebar; shareable view links
 **Effort**: Low (persistence) to Medium (named/saved segments)
+
+### Website Integration (Round-Trip)
+
+#### Published-Content Round-Trip from Website MCP
+**Status**: Proposed
+**Why**: The per-tenant Website MCP integration (v2) already pushes Orbit-generated drafts to the site and can pull post performance on demand. The long-run goal is a full closed loop: an Orbit-generated blog post published on the site flows *back* into Orbit as a first-class record — carrying its live published URL and accumulating performance data — so the content library and campaign views reflect real published state and traffic without manual reconciliation.
+- [ ] On publish, write the canonical published URL back to the originating `contentAssets` row (today we store slug/post id; capture the final public URL too)
+- [ ] Reconcile status: when a draft pushed from Orbit is published on the site (including edits/publishes made directly on the website), reflect `published` + publish date in Orbit
+- [ ] Scheduled/periodic pull of performance data (views, engagement, referrers) keyed by published URL, stored as time series rather than a one-shot fetch
+- [ ] Surface published URL + performance trend on the content library asset and on the campaign asset rollup
+- [ ] Handle externally-authored posts: allow linking an existing website post (by URL) to an Orbit asset so its performance is tracked even though it didn't originate in Orbit (pairs with the `isExternal` asset flag)
+- [ ] Backfill: one-time import of existing published posts from the site into the content library
+**Effort**: Medium-High (depends on website MCP exposing list/lookup-by-url and a performance endpoint with history)
