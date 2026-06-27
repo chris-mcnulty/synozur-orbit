@@ -310,6 +310,9 @@ function EditPostDialog({
   const isReadOnly = stage === "posted" || stage === "exported";
   const isMissed = stage === "missed";
   const isOverdue = stage === "scheduled" && !!post?.scheduledDate && new Date(post.scheduledDate) < new Date();
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const isStaleOverdue = isOverdue && !!post?.scheduledDate &&
+    new Date(post.scheduledDate) < new Date(Date.now() - SEVEN_DAYS_MS);
   const isCarousel = post?.postFormat === "carousel";
   const slides = post?.carouselSlides ?? [];
 
@@ -450,20 +453,35 @@ function EditPostDialog({
               </div>
             )}
 
-            {/* Overdue scheduled notice — post is past its time but still eligible for auto-publish */}
+            {/* Overdue scheduled notice */}
             {isOverdue && (
-              <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <Zap className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-blue-700 dark:text-blue-300">Queued for auto-publishing</p>
-                    <p className="text-blue-700/80 dark:text-blue-300/80 mt-0.5 text-[12px]">
-                      This post passed its scheduled time and will be picked up automatically within the next
-                      few minutes — no action needed. Use Discard below only if you want to skip it entirely.
-                    </p>
+              isStaleOverdue ? (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Clock className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-amber-700 dark:text-amber-400">Outside the auto-publish window</p>
+                      <p className="text-amber-700/80 dark:text-amber-400/80 mt-0.5 text-[12px]">
+                        This post is more than 7 days past its scheduled date and will not be picked up automatically.
+                        Update the date and time below to a future date, then save — the worker will queue it at the new time.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Zap className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-blue-700 dark:text-blue-300">Queued for auto-publishing</p>
+                      <p className="text-blue-700/80 dark:text-blue-300/80 mt-0.5 text-[12px]">
+                        This post passed its scheduled time and will be picked up automatically within the next
+                        few minutes — no action needed. Use Discard below only if you want to skip it entirely.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
             )}
 
             {/* Missed post notice + scheduling choice */}
