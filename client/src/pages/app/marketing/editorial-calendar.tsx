@@ -610,6 +610,27 @@ export default function EditorialCalendarPage() {
   const openDraft = async (b: ContentBrief) => {
     if (!b.contentAssetId) return;
     setOpeningDraftId(b.id);
+    // Clear all shared draft fields immediately so stale content from a
+    // previously opened draft is never visible while the fetch is in-flight.
+    setDraft(null);
+    setDraftAssetId(null);
+    setDraftBriefTitle(null);
+    setDraftImageUrl(null);
+    setDraftAssetDescription(null);
+    setDraftAssetWebsiteSlug(null);
+    setDraftAssetWebsiteStatus(null);
+    setDraftAssetWebsiteScheduledFor(null);
+    setDraftHtml("");
+    setBlogSeoTitle("");
+    setBlogMetaDescription("");
+    setBlogSeoSlug("");
+    setBlogExcerpt("");
+    setBlogHeroUrl("");
+    setBlogAuthorId("");
+    setBlogCategoryIds(new Set());
+    setBlogTagIds(new Set());
+    setDraftDirty(false);
+    setRewriteInstr("");
     try {
       const asset = await getJson(`/api/content-assets/${b.contentAssetId}`);
       if (!asset) {
@@ -644,19 +665,8 @@ export default function EditorialCalendarPage() {
         setBlogCategoryIds(new Set(asset.websiteCategoryIds ?? []));
         setBlogTagIds(new Set(asset.websiteTagIds ?? []));
         setAiRefOpen(false);
-      } else {
-        setBlogHeroUrl("");
-        setBlogSeoTitle("");
-        setBlogMetaDescription("");
-        setBlogSeoSlug("");
-        setBlogExcerpt("");
-        setBlogAuthorId("");
-        setBlogCategoryIds(new Set());
-        setBlogTagIds(new Set());
-        setDraftHtml("");
       }
-      setDraftDirty(false);
-      setRewriteInstr("");
+      // (non-blog fields were already cleared before the fetch)
     } catch {
       toast.error("Couldn't open the draft.");
     } finally {
