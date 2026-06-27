@@ -625,7 +625,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       }
       if (type === "content") {
         const u: any = { updatedAt: new Date() };
-        // Briefs are specs, not dated deliverables — ignore any date change.
+        if (hasDate) u.scheduledAt = when;
         if ("campaignId" in body) u.campaignId = body.campaignId || null;
         if ("solutionAreaId" in body) u.solutionAreaId = body.solutionAreaId || null;
         if ("conferenceId" in body) u.conferenceId = body.conferenceId || null;

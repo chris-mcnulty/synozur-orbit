@@ -550,6 +550,21 @@ export default function CampaignDetailPage() {
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const hubUpdateBlogDateMutation = useMutation({
+    mutationFn: async ({ briefId, date }: { briefId: string; date: string | null }) => {
+      const res = await fetch(`/api/marketing-calendar/items/content/${briefId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ date: date || null }),
+      });
+      if (!res.ok) throw new Error("Failed to update date");
+      return res.json();
+    },
+    onSuccess: () => refreshHub(),
+    onError: (e: any) => toast({ title: "Failed to update date", description: e.message, variant: "destructive" }),
+  });
+
   const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
     queryKey: ["/api/strategic-context/summary"],
     queryFn: async () => {
@@ -2758,11 +2773,15 @@ export default function CampaignDetailPage() {
                                   <span className="text-sm font-medium truncate">{it.title || "(untitled)"}</span>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  {it.date && (
-                                    <span className="text-xs text-muted-foreground">
-                                      {new Date(it.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                                    </span>
-                                  )}
+                                  <Input
+                                    type="date"
+                                    className="h-6 w-[130px] text-xs px-1.5 py-0"
+                                    value={it.date ? format(new Date(it.date), "yyyy-MM-dd") : ""}
+                                    onChange={(e) =>
+                                      hubUpdateBlogDateMutation.mutate({ briefId: it.id, date: e.target.value || null })
+                                    }
+                                    data-testid={`input-blog-date-${it.id}`}
+                                  />
                                   <Badge className={`text-[10px] px-1.5 py-0 ${stageCls}`} data-testid={`badge-blog-stage-${it.id}`}>
                                     {stageLabel}
                                   </Badge>
