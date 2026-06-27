@@ -18,6 +18,16 @@ import {
 import type { CampaignType } from "@shared/schema";
 import { CONTENT_BRIEF_FORMATS } from "@shared/schema";
 
+// Canonical market scope for shared content_assets rows: default-market data
+// may be stored with the default market id OR NULL (cross-feature convention,
+// mirrors assetMarketScope in content-production.ts), so match both for the
+// default market.
+function assetMarketScope(ctx: { isDefaultMarket: boolean; marketId: string }) {
+  return ctx.isDefaultMarket
+    ? or(eq(contentAssets.marketId, ctx.marketId), isNull(contentAssets.marketId))
+    : eq(contentAssets.marketId, ctx.marketId);
+}
+
 const FORMAT_LABELS: Record<string, string> = {
   blog_post: "Blog post",
   landing_page: "Landing page",
@@ -352,7 +362,13 @@ export function registerEditorialCalendarRoutes(app: Express) {
               websiteScheduledFor: contentAssets.websiteScheduledFor,
             })
             .from(contentAssets)
-            .where(inArray(contentAssets.sourceBriefId, briefIds))
+            .where(
+              and(
+                inArray(contentAssets.sourceBriefId, briefIds),
+                eq(contentAssets.tenantDomain, ctx.tenantDomain),
+                assetMarketScope(ctx),
+              ),
+            )
         : [];
       const assetInfoByBriefId = new Map(
         assetWebsiteRows
@@ -432,7 +448,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
             and(
               inArray(contentAssets.sourceBriefId, briefIds),
               eq(contentAssets.tenantDomain, ctx.tenantDomain),
-              eq(contentAssets.marketId, ctx.marketId),
+              assetMarketScope(ctx),
             ),
           );
         for (const a of assets) {
@@ -534,7 +550,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
             and(
               inArray(contentAssets.sourceBriefId, briefIds),
               eq(contentAssets.tenantDomain, ctx.tenantDomain),
-              eq(contentAssets.marketId, ctx.marketId),
+              assetMarketScope(ctx),
             ),
           );
         for (const a of assets) {
