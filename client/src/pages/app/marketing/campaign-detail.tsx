@@ -416,6 +416,7 @@ export default function CampaignDetailPage() {
   const [linkChildSearch, setLinkChildSearch] = useState("");
   const [archiveWithChildrenOpen, setArchiveWithChildrenOpen] = useState(false);
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
+  const [editCampaignBriefOnly, setEditCampaignBriefOnly] = useState(false);
   const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
   const [editHashtagsValue, setEditHashtagsValue] = useState("");
   // Density: post cards render compact (small thumbnail + clamped text) by
@@ -1104,7 +1105,7 @@ export default function CampaignDetailPage() {
   });
 
   const editCampaignMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; alwaysHashtags?: string[] }) => {
+    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; briefOnlyMode?: boolean; alwaysHashtags?: string[] }) => {
       const r = await fetch(`/api/campaigns/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1182,6 +1183,7 @@ export default function CampaignDetailPage() {
     setEditCampaignSaturday(campaign.includeSaturday || false);
     setEditCampaignSunday(campaign.includeSunday || false);
     setEditCampaignAlwaysHashtags((campaign.alwaysHashtags || []).join(", "));
+    setEditCampaignBriefOnly(campaign.briefOnlyMode || false);
     setEditCampaignThematicUrl(campaign.thematicUrl || "");
     setEditCampaignThematicBrief(campaign.thematicBrief || "");
     setEditCampaignOpen(true);
@@ -1203,6 +1205,7 @@ export default function CampaignDetailPage() {
       numberOfDays: editCampaignDays ? Number(editCampaignDays) : null,
       includeSaturday: editCampaignSaturday,
       includeSunday: editCampaignSunday,
+      briefOnlyMode: editCampaignBriefOnly,
       alwaysHashtags,
       thematicUrl: editCampaignThematicUrl.trim() || null,
       thematicBrief: editCampaignThematicBrief.trim() || null,
@@ -5437,6 +5440,21 @@ export default function CampaignDetailPage() {
                 />
                 Include Sundays
               </label>
+            </div>
+            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+              <div className="flex-1 min-w-0">
+                <Label htmlFor="edit-brief-only-mode" className="font-medium cursor-pointer">Focus on campaign content only</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  When on, posts draw only from this campaign's brief and attached content.
+                  Market positioning, competitive intelligence, and news signals are excluded.
+                </p>
+              </div>
+              <Switch
+                id="edit-brief-only-mode"
+                checked={editCampaignBriefOnly}
+                onCheckedChange={setEditCampaignBriefOnly}
+                data-testid="switch-edit-campaign-brief-only"
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-campaign-hashtags">Always-Include Hashtags</Label>

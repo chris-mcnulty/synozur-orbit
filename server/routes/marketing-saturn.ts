@@ -2074,7 +2074,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       if (!await guardFeature(req, res, "campaigns")) return;
       const ctx = await getRequestContext(req);
-      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, parentCampaignId, thematicUrl, thematicBrief } = req.body;
+      const { name, description, status, startDate, endDate, numberOfDays, includeSaturday, includeSunday, briefOnlyMode, productIds, alwaysHashtags, solutionAreaIds, campaignType, objective, goal, audiencePersonaIds, parentCampaignId, thematicUrl, thematicBrief } = req.body;
       const updateData: any = { updatedAt: new Date() };
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
@@ -2093,6 +2093,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (numberOfDays !== undefined) updateData.numberOfDays = numberOfDays;
       if (includeSaturday !== undefined) updateData.includeSaturday = includeSaturday;
       if (includeSunday !== undefined) updateData.includeSunday = includeSunday;
+      if (briefOnlyMode !== undefined) updateData.briefOnlyMode = briefOnlyMode === true;
       if (productIds !== undefined) updateData.productIds = Array.isArray(productIds) ? productIds : null;
       if (alwaysHashtags !== undefined) updateData.alwaysHashtags = Array.isArray(alwaysHashtags) ? alwaysHashtags : [];
       // Parent/child: allow setting or clearing parentCampaignId
