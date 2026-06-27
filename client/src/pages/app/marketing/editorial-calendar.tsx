@@ -61,7 +61,9 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
 import { WebsitePublishDialog } from "@/components/marketing/WebsitePublishDialog";
+import { RichTextEditor } from "@/components/marketing/RichTextEditor";
 import { isSocialBriefFormat } from "@shared/schema";
+import { marked } from "marked";
 
 /** Convert Word/browser HTML to Markdown so paste preserves links and headings. */
 function htmlToMarkdown(html: string): string {
@@ -309,6 +311,7 @@ export default function EditorialCalendarPage() {
   const [draftBriefTitle, setDraftBriefTitle] = useState<string | null>(null);
   const [openingDraftId, setOpeningDraftId] = useState<string | null>(null);
   const [draftImageUrl, setDraftImageUrl] = useState<string | null>(null);
+  const [draftHtml, setDraftHtml] = useState<string>("");
   const [draftDirty, setDraftDirty] = useState(false);
   const [draftAssetDescription, setDraftAssetDescription] = useState<string | null>(null);
   const [draftAssetWebsiteSlug, setDraftAssetWebsiteSlug] = useState<string | null>(null);
@@ -585,6 +588,7 @@ export default function EditorialCalendarPage() {
       setDraftBriefTitle(briefs.find((b) => b.id === briefId)?.title ?? null);
       setDraftImageUrl(data.asset?.leadImageUrl ?? null);
       if (data.draft.format === "blog_post") {
+        setDraftHtml(String(marked.parse(data.draft.body ?? "")));
         setBlogSeoTitle("");
         setBlogMetaDescription("");
         setBlogSeoSlug("");
@@ -630,6 +634,7 @@ export default function EditorialCalendarPage() {
       setDraftAssetWebsiteScheduledFor(asset.websiteScheduledFor ?? null);
       // Blog-post metadata panel
       if (b.format === "blog_post") {
+        setDraftHtml(String(marked.parse(asset.content ?? "")));
         setBlogSeoTitle(asset.seoTitle ?? "");
         setBlogMetaDescription(asset.metaDescription ?? "");
         setBlogSeoSlug(asset.seoSlug ?? "");
@@ -682,6 +687,9 @@ export default function EditorialCalendarPage() {
     },
     onSuccess: (data: { body: string }) => {
       setDraft((d) => (d ? { ...d, body: data.body } : d));
+      if (draft?.format === "blog_post") {
+        setDraftHtml(String(marked.parse(data.body ?? "")));
+      }
       setRewriteInstr("");
       queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       toast.success("Draft rewritten");
@@ -2028,6 +2036,7 @@ export default function EditorialCalendarPage() {
               setDraft(null);
               setDraftAssetId(null);
               setDraftImageUrl(null);
+              setDraftHtml("");
               setDraftDirty(false);
               setRewriteInstr("");
               setDraftBriefTitle(null);
@@ -2082,32 +2091,15 @@ export default function EditorialCalendarPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="draft-body" className="text-xs font-medium uppercase text-muted-foreground">
-                      Body <span className="normal-case font-normal text-muted-foreground">(Markdown)</span>
+                    <Label className="text-xs font-medium uppercase text-muted-foreground">
+                      Body
                     </Label>
-                    <Textarea
-                      id="draft-body"
-                      className="min-h-[380px] font-sans text-sm leading-relaxed"
-                      value={draft?.body ?? ""}
-                      onChange={(e) => {
-                        setDraft((d) => (d ? { ...d, body: e.target.value } : d));
+                    <RichTextEditor
+                      value={draftHtml}
+                      onChange={({ html, markdown }) => {
+                        setDraftHtml(html);
+                        setDraft((d) => (d ? { ...d, body: markdown } : d));
                         setDraftDirty(true);
-                      }}
-                      onPaste={(e) => {
-                        const html = e.clipboardData.getData("text/html");
-                        if (!html) return;
-                        e.preventDefault();
-                        const md = htmlToMarkdown(html);
-                        const ta = e.currentTarget;
-                        const start = ta.selectionStart ?? 0;
-                        const end = ta.selectionEnd ?? 0;
-                        const current = draft?.body ?? "";
-                        const next = current.slice(0, start) + md + current.slice(end);
-                        setDraft((d) => (d ? { ...d, body: next } : d));
-                        setDraftDirty(true);
-                        requestAnimationFrame(() => {
-                          ta.selectionStart = ta.selectionEnd = start + md.length;
-                        });
                       }}
                       data-testid="input-draft-body"
                     />
