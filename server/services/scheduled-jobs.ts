@@ -2348,6 +2348,18 @@ export async function runStaleDraftCleanupJob(): Promise<{ archived: number; pur
 export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Initializing scheduled jobs...");
 
+  // Keep the Neon compute alive. Neon auto-suspends idle connections after
+  // ~5 minutes; a lightweight ping every 4 minutes prevents that and stops
+  // the "Connection terminated due to administrator command" cascade that
+  // kills every background worker simultaneously.
+  setInterval(async () => {
+    try {
+      await db.execute(sql`SELECT 1`);
+    } catch (err: any) {
+      console.warn("[DB Keepalive] Ping failed (will retry next tick):", err?.message);
+    }
+  }, 4 * 60 * 1000);
+
   if (websiteCrawlInterval) clearInterval(websiteCrawlInterval);
   if (socialMonitorInterval) clearInterval(socialMonitorInterval);
   if (websiteMonitorInterval) clearInterval(websiteMonitorInterval);
