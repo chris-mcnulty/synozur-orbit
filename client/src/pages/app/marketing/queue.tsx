@@ -86,7 +86,28 @@ interface FullPost {
   leadImageUrl: string | null;
   carouselSlides: CarouselSlide[] | null;
   campaignId: string | null;
+  socialAccountId: string | null;
 }
+
+interface CampaignSocialLink {
+  socialAccountId: string;
+  autoPublish: boolean | null;
+}
+
+interface CampaignDetail {
+  id: string;
+  name: string;
+  status: string;
+  socialAccounts: CampaignSocialLink[];
+}
+
+type MissedReason =
+  | { kind: "no_social_account" }
+  | { kind: "auto_publish_off"; campaignId: string; campaignName: string }
+  | { kind: "account_not_linked"; campaignId: string; campaignName: string }
+  | { kind: "campaign_inactive"; campaignName: string }
+  | { kind: "stale_post" }
+  | { kind: "unknown" };
 
 const PLATFORM_LABELS: Record<string, string> = {
   linkedin: "LinkedIn",
@@ -298,6 +319,44 @@ function EditPostDialog({
     },
   });
 
+  // Fetch the campaign only when reviewing a missed post — used to diagnose why it wasn't published.
+  const { data: campaignDetail } = useQuery<CampaignDetail | null>({
+    queryKey: ["/api/campaigns", campaignId, "diagnostic"],
+    queryFn: async () => {
+      if (!campaignId) return null;
+      const r = await fetch(`/api/campaigns/${campaignId}`, { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: stage === "missed" && !!campaignId,
+  });
+
+  // Compute the most actionable reason this post wasn't auto-published.
+  const missedReason: MissedReason | null = (() => {
+    if (stage !== "missed" || !post) return null;
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const isStale = !!post.scheduledDate &&
+      new Date(post.scheduledDate) < new Date(Date.now() - SEVEN_DAYS_MS);
+    if (!post.socialAccountId) return { kind: "no_social_account" };
+    if (!campaignId) {
+      // Standalone post — stale is the only automatic-skip reason
+      return isStale ? { kind: "stale_post" } : { kind: "unknown" };
+    }
+    if (!campaignDetail) return null; // still loading
+    if (campaignDetail.status !== "active") {
+      return { kind: "campaign_inactive", campaignName: campaignDetail.name };
+    }
+    const link = campaignDetail.socialAccounts.find(a => a.socialAccountId === post.socialAccountId);
+    if (!link) {
+      return { kind: "account_not_linked", campaignId, campaignName: campaignDetail.name };
+    }
+    if (!link.autoPublish) {
+      return { kind: "auto_publish_off", campaignId, campaignName: campaignDetail.name };
+    }
+    if (isStale) return { kind: "stale_post" };
+    return { kind: "unknown" };
+  })();
+
   if (post && !didInit) {
     setEditedText(post.editedContent ?? post.content ?? "");
     setScheduledValue(post.scheduledDate ? toDatetimeLocal(new Date(post.scheduledDate)) : "");
@@ -499,6 +558,86 @@ function EditPostDialog({
                     </div>
                   </div>
                 </div>
+
+                {/* Diagnostic: why was it missed? */}
+                {missedReason && (
+                  <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0 text-red-700 dark:text-red-400">
+                        {missedReason.kind === "no_social_account" && (
+                          <>
+                            <p className="font-medium">No social account linked</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              This post has no social account attached, so the auto-publish worker ignores it.
+                              Open the post, pick an account, and reschedule.
+                            </p>
+                          </>
+                        )}
+                        {missedReason.kind === "auto_publish_off" && (
+                          <>
+                            <p className="font-medium">Auto-publish is off for this campaign</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              The campaign <strong>{missedReason.campaignName}</strong> has auto-publish
+                              disabled for this account.{" "}
+                              <a
+                                href={`/app/marketing/campaigns/${missedReason.campaignId}#accounts`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline underline-offset-2 font-medium hover:opacity-70"
+                              >
+                                Turn it on in Campaign → Social Accounts →
+                              </a>
+                            </p>
+                          </>
+                        )}
+                        {missedReason.kind === "account_not_linked" && (
+                          <>
+                            <p className="font-medium">Social account not linked to this campaign</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              The account this post targets isn't connected to campaign <strong>{missedReason.campaignName}</strong>.{" "}
+                              <a
+                                href={`/app/marketing/campaigns/${missedReason.campaignId}#accounts`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline underline-offset-2 font-medium hover:opacity-70"
+                              >
+                                Add it in Campaign → Social Accounts →
+                              </a>
+                            </p>
+                          </>
+                        )}
+                        {missedReason.kind === "campaign_inactive" && (
+                          <>
+                            <p className="font-medium">Campaign is not active</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              The campaign <strong>{missedReason.campaignName}</strong> is not active —
+                              the worker only publishes posts on active campaigns.
+                            </p>
+                          </>
+                        )}
+                        {missedReason.kind === "stale_post" && (
+                          <>
+                            <p className="font-medium">Post is too old</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              The worker skips posts that are more than 7 days past their scheduled date.
+                              Reschedule it to a future time and it will be picked up automatically.
+                            </p>
+                          </>
+                        )}
+                        {missedReason.kind === "unknown" && (
+                          <>
+                            <p className="font-medium">Reason unclear</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              The post appears correctly configured. Check that the social account is
+                              connected and the campaign is active, then reschedule.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* When to send */}
                 <div className="space-y-2">
