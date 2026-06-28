@@ -612,23 +612,70 @@ function EditPostDialog({
 
             {/* Scheduled date — editable for scheduled/failed posts only; missed has its own section above */}
             {!isReadOnly && !isMissed && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="edit-post-date" className="flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                   Scheduled date &amp; time
                 </Label>
-                <Input
-                  id="edit-post-date"
-                  type="datetime-local"
-                  value={scheduledValue}
-                  onChange={(e) => setScheduledValue(e.target.value)}
-                  className="w-auto"
-                  data-testid="edit-dialog-scheduled-date"
-                  disabled={isBusy}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Change this to reschedule. The worker picks up posts within a few minutes of their scheduled time.
-                </p>
+
+                {/* Post now toggle — show for overdue posts as a manual override */}
+                {isOverdue && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPostNow(true)}
+                      className={`rounded-md border px-3 py-2.5 text-sm font-medium transition-colors text-left ${
+                        postNow
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground"
+                      }`}
+                      data-testid="reschedule-post-now"
+                      disabled={isBusy}
+                    >
+                      <Zap className="w-3.5 h-3.5 inline mr-1.5 mb-0.5" />
+                      Post now
+                      <p className="text-[11px] font-normal mt-0.5 opacity-70">
+                        Picked up at next worker tick
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPostNow(false)}
+                      className={`rounded-md border px-3 py-2.5 text-sm font-medium transition-colors text-left ${
+                        !postNow
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 text-muted-foreground"
+                      }`}
+                      data-testid="reschedule-schedule-later"
+                      disabled={isBusy}
+                    >
+                      <Calendar className="w-3.5 h-3.5 inline mr-1.5 mb-0.5" />
+                      Reschedule
+                      <p className="text-[11px] font-normal mt-0.5 opacity-70">
+                        Set a new date &amp; time
+                      </p>
+                    </button>
+                  </div>
+                )}
+
+                {!postNow && (
+                  <>
+                    <Input
+                      id="edit-post-date"
+                      type="datetime-local"
+                      value={scheduledValue}
+                      onChange={(e) => setScheduledValue(e.target.value)}
+                      className="w-auto"
+                      data-testid="edit-dialog-scheduled-date"
+                      disabled={isBusy}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {isOverdue
+                        ? "Set a future date and save to reschedule."
+                        : "Change this to reschedule. The worker picks up posts within a few minutes of their scheduled time."}
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
