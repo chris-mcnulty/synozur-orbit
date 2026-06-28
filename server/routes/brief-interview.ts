@@ -792,6 +792,10 @@ export function registerBriefInterviewRoutes(app: Express) {
                 postTags: draft.tags || null,
                 assetType: briefFormatToAssetType(draft.format as any),
                 status: "active",
+                // Output points back at the brief that motivated it; the
+                // brief-side contentAssetId write below stays in sync for
+                // back-compat (asset-owned link is authoritative).
+                sourceBriefId: brief.id,
                 createdBy: ctx.userId,
               })
               .returning();

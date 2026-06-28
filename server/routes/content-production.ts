@@ -357,6 +357,15 @@ export function registerContentProductionRoutes(app: Express) {
             })
             .returning();
           brief = newBrief ?? null;
+          // The asset owns the brief↔draft link. Because the asset is created
+          // before the brief here, set sourceBriefId once the brief exists
+          // (the brief-side contentAssetId above stays in sync for back-compat).
+          if (newBrief) {
+            await db
+              .update(contentAssets)
+              .set({ sourceBriefId: newBrief.id, updatedAt: new Date() })
+              .where(and(eq(contentAssets.id, created.id), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+          }
         }
       }
 
