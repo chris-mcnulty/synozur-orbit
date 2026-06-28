@@ -319,6 +319,14 @@ function EditPostDialog({
     },
   });
 
+  // These must be declared before the campaignDetail query so they can be used in `enabled`.
+  const isReadOnly = stage === "posted" || stage === "exported";
+  const isMissed = stage === "missed";
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const isOverdue = stage === "scheduled" && !!post?.scheduledDate && new Date(post.scheduledDate) < new Date();
+  const isStaleOverdue = isOverdue && !!post?.scheduledDate &&
+    new Date(post.scheduledDate) < new Date(Date.now() - SEVEN_DAYS_MS);
+
   // Fetch the campaign when reviewing a missed or overdue post — used to diagnose why it wasn't published.
   const { data: campaignDetail } = useQuery<CampaignDetail | null>({
     queryKey: ["/api/campaigns", campaignId, "diagnostic"],
@@ -367,12 +375,6 @@ function EditPostDialog({
     setDidInit(true);
   }
 
-  const isReadOnly = stage === "posted" || stage === "exported";
-  const isMissed = stage === "missed";
-  const isOverdue = stage === "scheduled" && !!post?.scheduledDate && new Date(post.scheduledDate) < new Date();
-  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-  const isStaleOverdue = isOverdue && !!post?.scheduledDate &&
-    new Date(post.scheduledDate) < new Date(Date.now() - SEVEN_DAYS_MS);
   const isCarousel = post?.postFormat === "carousel";
   const slides = post?.carouselSlides ?? [];
 
