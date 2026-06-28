@@ -90,6 +90,8 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
     // Two paths: campaign-linked posts must be on a campaign-social-account
     // link with autoPublish=true; standalone posts (campaignId IS NULL) are
     // self-authorizing — being approved + scheduled is enough.
+    console.log(`[Marketing Publish Worker] Tick started — checking for posts due by ${now.toISOString()}`);
+
     const candidates = await db
       .select({
         post: generatedPosts,
@@ -142,6 +144,15 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
         ),
       )
       .limit(MAX_POSTS_PER_TICK);
+
+    console.log(`[Marketing Publish Worker] Found ${candidates.length} eligible candidate(s)`, candidates.map(c => ({
+      id: c.post.id,
+      platform: c.post.platform,
+      scheduledDate: c.post.scheduledDate,
+      socialAccountId: c.post.socialAccountId,
+      campaignId: c.post.campaignId,
+      deliveryMode: c.post.deliveryMode,
+    })));
 
     // ── Same-minute stagger ─────────────────────────────────────────────────
     // If two or more posts share the same scheduled minute, spread the 2nd,

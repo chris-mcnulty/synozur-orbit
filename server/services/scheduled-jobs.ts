@@ -2390,21 +2390,23 @@ export function startScheduledJobs(): void {
   }, 24 * 60 * 60 * 1000);
 
   // Set up recurring intervals
+  // Hourly sweeps are staggered by 2-3 minutes each so they never all fire
+  // simultaneously and flood the connection pool.
   websiteCrawlInterval = setInterval(() => {
     runWebsiteCrawlJob();
-  }, 60 * 60 * 1000); // Every hour
+  }, 60 * 60 * 1000); // Every hour — anchor, fires at T+0min within each hour
 
   socialMonitorInterval = setInterval(() => {
-    runSocialMonitorJob();
-  }, 60 * 60 * 1000);
+    setTimeout(() => runSocialMonitorJob(), 2 * 60 * 1000);
+  }, 60 * 60 * 1000); // fires at T+2min within each hour
 
   websiteMonitorInterval = setInterval(() => {
-    runWebsiteMonitorJob();
-  }, 60 * 60 * 1000);
+    setTimeout(() => runWebsiteMonitorJob(), 4 * 60 * 1000);
+  }, 60 * 60 * 1000); // fires at T+4min within each hour
 
   productMonitorInterval = setInterval(() => {
-    runProductMonitorJob();
-  }, 60 * 60 * 1000);
+    setTimeout(() => runProductMonitorJob(), 6 * 60 * 1000);
+  }, 60 * 60 * 1000); // fires at T+6min within each hour
 
   // Pricing monitor: check every 6 hours, but each competitor is gated to a
   // minimum 7-day interval inside the job (PRICING_MIN_INTERVAL_MS).
