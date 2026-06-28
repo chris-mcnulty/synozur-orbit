@@ -745,3 +745,27 @@ _Proposed 2026-06 alongside the cross-area UX work (calendar unification, postin
 - [ ] Handle externally-authored posts: allow linking an existing website post (by URL) to an Orbit asset so its performance is tracked even though it didn't originate in Orbit (pairs with the `isExternal` asset flag)
 - [ ] Backfill: one-time import of existing published posts from the site into the content library
 **Effort**: Medium-High (depends on website MCP exposing list/lookup-by-url and a performance endpoint with history)
+
+### Technical Debt — Content Input/Output Separation
+
+_Carved out of the content-model refactor (PR #64 + follow-ups) that separated content inputs (briefs/plans) from outputs (draft assets). The link is now asset-owned (`contentAssets.sourceBriefId`) and authoritative at every creation site, and the UI splits Plan vs Draft. These two heavier pieces were deliberately deferred as tech debt rather than bundled into an unverifiable big-bang change._
+
+#### Unify the three post-creation backends
+**Status**: Proposed (deferred — tech debt)
+**Why**: There are three divergent engines that all ultimately produce `generated_posts`, each with its own request/response shape and mental model: the standalone Composer (manual write-as-is, `POST /api/generated-posts`), the campaign "Generate posts" path (an **async AI job**, `POST /api/campaigns/:id/generate-posts` + status polling), and brief Repurpose (AI variant generation, `POST /api/content-assets/:id/repurpose-batch`). A single front-door UI can route to all three today; the debt is collapsing the backends themselves behind one create-output contract so there's one code path to reason about, test, and extend with new output types.
+- [ ] Define one `createOutput({ source: 'manual' | 'brief' | 'campaign', briefId?, campaignId?, format, ... })` contract
+- [ ] Fold the manual, repurpose, and generate-from-brief/campaign engines behind it (preserve the async-job semantics for the AI batch case)
+- [ ] Normalize the response shape so all paths return the same post/asset envelope
+- [ ] Keep the three UI entry points as thin shortcuts into the unified contract
+- [ ] Regression coverage for each engine before/after (AI generation + async job flow are the high-risk areas)
+**Effort**: High (touches AI generation + async job orchestration; needs a running environment to verify)
+
+#### Drop legacy `content_briefs.content_asset_id` + split the overloaded status machine
+**Status**: Proposed (deferred — tech debt)
+**Why**: `contentAssets.sourceBriefId` is now authoritative, but the legacy brief-side column `content_briefs.content_asset_id` is still written/read in ~15 sites (gates like `if (!brief.contentAssetId)`, API projections, client type fields, `canFinalizeBrief`, draft-count logic). Separately, `content_briefs.status` is overloaded: one column conflates the IDEA phase (suggested/accepted), the DRAFT/PRODUCTION phase (in_progress/drafted/approved), SCHEDULING (scheduled/published), and the soft-delete terminal (removed) — it is read/branched/written in ~20 places across brief-interview, marketing-saturn, marketing-calendar, and planning-hub. Dropping the column is irreversible and the status split changes semantics module-wide, so both were held back until the authoritative-link core soaks.
+- [ ] Migrate the remaining ~15 readers/gates off `brief.contentAssetId` to query/derive from `contentAssets.sourceBriefId` (handle the 1:1 assumption where present)
+- [ ] Stop writing `content_briefs.content_asset_id`, then drop the column in a migration
+- [ ] Split status: keep an IDEA status on the brief (suggested/accepted/dismissed); move DRAFT/PRODUCTION state onto the asset; derive SCHEDULING/published from the calendar/asset rather than the brief
+- [ ] Update all status reads/writes (planning-hub stage mapping, export/convert gates, campaign-complete bulk transitions, client badges/filters/counts) to the new model
+- [ ] Migration + backfill for existing rows; regression coverage on the marketing calendar, planner, and campaign flows
+**Effort**: High (destructive migration + cross-module status semantics; needs a running environment to verify)
