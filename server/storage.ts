@@ -181,7 +181,7 @@ import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
 import { timedQuery } from "./utils/query-timer";
 
-async function withRetry<T>(
+export async function withRetry<T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
   baseDelayMs: number = 100

@@ -10,6 +10,7 @@ import { sendWeeklyDigestEmail, sendScheduledBriefingEmail, type BriefingDigestD
 import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
 import { notifications } from "./notifications";
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
+import { crawlOps } from "./crawl-db";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
 import {
@@ -319,7 +320,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
               return { status: "no_pages", message: `No pages found for ${competitor.name}` };
             }
 
-            await storage.resetCompetitorCrawlFailures(competitor.id);
+            await crawlOps.resetCompetitorCrawlFailures(competitor.id);
 
             const updates: any = {
               crawlData: {
@@ -372,11 +373,11 @@ async function runWebsiteCrawlJob(): Promise<void> {
               }
             }
 
-            await storage.updateCompetitor(competitor.id, updates);
-            await storage.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
+            await crawlOps.updateCompetitor(competitor.id, updates);
+            await crawlOps.updateCompetitorLastCrawl(competitor.id, new Date().toLocaleString());
 
             if (competitor.organizationId) {
-              await storage.updateOrganization(competitor.organizationId, {
+              await crawlOps.updateOrganization(competitor.organizationId, {
                 crawlData: updates.crawlData,
                 lastFullCrawl: updates.lastFullCrawl,
                 lastCrawl: new Date().toISOString(),
@@ -386,9 +387,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
               }).catch(err => console.error(`[Scheduled Job] Org sync failed for ${competitor.name}:`, err.message));
 
               try {
-                const freshOrg = await storage.getOrganization(competitor.organizationId);
+                const freshOrg = await crawlOps.getOrganization(competitor.organizationId);
                 if (freshOrg) {
-                  const siblings = await storage.getCompetitorsByOrganizationId(competitor.organizationId);
+                  const siblings = await crawlOps.getCompetitorsByOrganizationId(competitor.organizationId);
                   for (const sibling of siblings) {
                     if (sibling.id === competitor.id) continue;
                     const siblingSync: any = {};
@@ -402,7 +403,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
                     if (freshOrg.faviconUrl && !sibling.faviconUrl) siblingSync.faviconUrl = freshOrg.faviconUrl;
                     if (freshOrg.screenshotUrl && !sibling.screenshotUrl) siblingSync.screenshotUrl = freshOrg.screenshotUrl;
                     if (Object.keys(siblingSync).length > 0) {
-                      await storage.updateCompetitor(sibling.id, siblingSync);
+                      await crawlOps.updateCompetitor(sibling.id, siblingSync);
                     }
                   }
                   if (siblings.length > 1) {
@@ -464,7 +465,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
                   if (analysis.category) orgEnrichment.category = analysis.category;
                   if (analysis.industry) orgEnrichment.industry = analysis.industry;
                   if (Object.keys(orgEnrichment).length > 0) {
-                    await storage.updateOrganization(competitor.organizationId, orgEnrichment)
+                    await crawlOps.updateOrganization(competitor.organizationId, orgEnrichment)
                       .catch(err => console.error(`[Scheduled Job] Org enrichment failed for ${competitor.name}:`, err.message));
                   }
                 }
@@ -576,10 +577,10 @@ async function runWebsiteCrawlJob(): Promise<void> {
             const combinedContent = getCombinedContent(crawlResult);
             updates.previousWebsiteContent = combinedContent.substring(0, 100000);
 
-            await storage.updateCompanyProfile(profile.id, updates);
+            await crawlOps.updateCompanyProfile(profile.id, updates);
 
             if (profile.organizationId) {
-              await storage.updateOrganization(profile.organizationId, {
+              await crawlOps.updateOrganization(profile.organizationId, {
                 crawlData: updates.crawlData,
                 lastFullCrawl: updates.lastFullCrawl,
                 lastCrawl: updates.lastCrawl,
@@ -619,7 +620,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
                 );
 
                 // Save analysis to company profile
-                await storage.updateCompanyProfile(profile.id, { analysisData: analysis });
+                await crawlOps.updateCompanyProfile(profile.id, { analysisData: analysis });
                 analysisResult = analysis;
               } catch (analysisError: any) {
                 console.error(`[Scheduled Job] AI analysis failed for baseline ${profile.companyName}:`, analysisError.message);
