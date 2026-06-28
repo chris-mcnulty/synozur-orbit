@@ -341,31 +341,36 @@ export function registerContentProductionRoutes(app: Express) {
           .where(and(eq(editorialCalendars.id, calendarId), eq(editorialCalendars.tenantDomain, ctx.tenantDomain)))
           .limit(1);
         if (calendar) {
-          const [newBrief] = await db
-            .insert(contentBriefs)
-            .values({
-              id: randomUUID(),
-              tenantDomain: ctx.tenantDomain,
-              marketId: ctx.marketId || null,
-              calendarId: calendar.id,
-              campaignId: calendar.campaignId ?? null,
-              title,
-              format: briefFormat,
-              status: "drafted",
-              contentAssetId: created.id,
-              funnelStage: "awareness",
-            })
-            .returning();
-          brief = newBrief ?? null;
-          // The asset owns the brief↔draft link. Because the asset is created
-          // before the brief here, set sourceBriefId once the brief exists
-          // (the brief-side contentAssetId above stays in sync for back-compat).
-          if (newBrief) {
-            await db
-              .update(contentAssets)
-              .set({ sourceBriefId: newBrief.id, updatedAt: new Date() })
-              .where(and(eq(contentAssets.id, created.id), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
-          }
+          // Insert the brief and set the asset's sourceBriefId in one
+          // transaction so the two-way link can't end up half-written (brief
+          // pointing at the asset but the asset missing sourceBriefId).
+          brief = await db.transaction(async (tx) => {
+            const [newBrief] = await tx
+              .insert(contentBriefs)
+              .values({
+                id: randomUUID(),
+                tenantDomain: ctx.tenantDomain,
+                marketId: ctx.marketId || null,
+                calendarId: calendar.id,
+                campaignId: calendar.campaignId ?? null,
+                title,
+                format: briefFormat,
+                status: "drafted",
+                contentAssetId: created.id,
+                funnelStage: "awareness",
+              })
+              .returning();
+            // The asset owns the brief↔draft link. Because the asset is created
+            // before the brief here, set sourceBriefId once the brief exists
+            // (the brief-side contentAssetId above stays in sync for back-compat).
+            if (newBrief) {
+              await tx
+                .update(contentAssets)
+                .set({ sourceBriefId: newBrief.id, updatedAt: new Date() })
+                .where(and(eq(contentAssets.id, created.id), eq(contentAssets.tenantDomain, ctx.tenantDomain)));
+            }
+            return newBrief ?? null;
+          });
         }
       }
 
