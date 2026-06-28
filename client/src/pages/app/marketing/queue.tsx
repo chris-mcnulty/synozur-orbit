@@ -319,7 +319,7 @@ function EditPostDialog({
     },
   });
 
-  // Fetch the campaign only when reviewing a missed post — used to diagnose why it wasn't published.
+  // Fetch the campaign when reviewing a missed or overdue post — used to diagnose why it wasn't published.
   const { data: campaignDetail } = useQuery<CampaignDetail | null>({
     queryKey: ["/api/campaigns", campaignId, "diagnostic"],
     queryFn: async () => {
@@ -328,12 +328,13 @@ function EditPostDialog({
       if (!r.ok) return null;
       return r.json();
     },
-    enabled: stage === "missed" && !!campaignId,
+    enabled: (stage === "missed" || isOverdue) && !!campaignId,
   });
 
   // Compute the most actionable reason this post wasn't auto-published.
   const missedReason: MissedReason | null = (() => {
-    if (stage !== "missed" || !post) return null;
+    if (stage !== "missed" && !isOverdue) return null;
+    if (!post) return null;
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
     const isStale = !!post.scheduledDate &&
       new Date(post.scheduledDate) < new Date(Date.now() - SEVEN_DAYS_MS);
@@ -461,7 +462,28 @@ function EditPostDialog({
     onError: (err: Error) => toast({ title: "Resubmit failed", description: err.message, variant: "destructive" }),
   });
 
-  const isBusy = saveMutation.isPending || cancelPostMutation.isPending || resubmitMutation.isPending;
+  // Direct "post now" for overdue posts — sets scheduledDate to now and closes.
+  const postNowMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/generated-posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ editedContent: editedText, scheduledDate: new Date().toISOString() }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Queued for immediate publishing", description: "The worker will pick this up within the next few minutes." });
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      onChanged();
+      onClose();
+    },
+    onError: (err: Error) => toast({ title: "Could not queue post", description: err.message, variant: "destructive" }),
+  });
+
+  const isBusy = saveMutation.isPending || cancelPostMutation.isPending || resubmitMutation.isPending || postNowMutation.isPending;
 
   const dialogTitle = {
     scheduled: "Edit post",
@@ -528,17 +550,71 @@ function EditPostDialog({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-sm">
+                <div className="rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2.5 text-sm space-y-2">
                   <div className="flex items-start gap-2">
                     <Zap className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-blue-700 dark:text-blue-300">Queued for auto-publishing</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <p className="font-medium text-blue-700 dark:text-blue-300">Passed its scheduled time</p>
+                        <button
+                          type="button"
+                          onClick={() => postNowMutation.mutate()}
+                          disabled={isBusy}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"
+                          data-testid="banner-post-now"
+                        >
+                          {postNowMutation.isPending
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Zap className="w-3 h-3" />}
+                          Post now
+                        </button>
+                      </div>
                       <p className="text-blue-700/80 dark:text-blue-300/80 mt-0.5 text-[12px]">
-                        This post passed its scheduled time and will be picked up automatically within the next
-                        few minutes — no action needed. Use Discard below only if you want to skip it entirely.
+                        The auto-publish worker checks every few minutes. If it hasn't picked this up, use
+                        <strong> Post now</strong> to force it, or reschedule below.
                       </p>
                     </div>
                   </div>
+                  {/* Diagnostic: why hasn't the worker picked this up? */}
+                  {missedReason && (
+                    <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0 text-red-700 dark:text-red-400">
+                          {missedReason.kind === "no_social_account" && (
+                            <><p className="font-medium">No social account linked</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">This post has no social account attached — the worker ignores it. Attach an account and reschedule.</p></>
+                          )}
+                          {missedReason.kind === "auto_publish_off" && (
+                            <><p className="font-medium">Auto-publish is off for this campaign</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              The campaign <strong>{missedReason.campaignName}</strong> has auto-publish disabled for this account.{" "}
+                              <a href={`/app/marketing/campaigns/${missedReason.campaignId}#accounts`} target="_blank" rel="noreferrer" className="underline underline-offset-2 font-medium hover:opacity-70">Turn it on in Campaign → Social Accounts →</a>
+                            </p></>
+                          )}
+                          {missedReason.kind === "account_not_linked" && (
+                            <><p className="font-medium">Social account not linked to this campaign</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">
+                              This account isn't connected to campaign <strong>{missedReason.campaignName}</strong>.{" "}
+                              <a href={`/app/marketing/campaigns/${missedReason.campaignId}#accounts`} target="_blank" rel="noreferrer" className="underline underline-offset-2 font-medium hover:opacity-70">Add it in Campaign → Social Accounts →</a>
+                            </p></>
+                          )}
+                          {missedReason.kind === "campaign_inactive" && (
+                            <><p className="font-medium">Campaign is not active</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">Campaign <strong>{missedReason.campaignName}</strong> is not active — the worker only publishes posts on active campaigns.</p></>
+                          )}
+                          {missedReason.kind === "stale_post" && (
+                            <><p className="font-medium">Post is too old to auto-publish</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">Posts more than 7 days past their scheduled date are skipped. Use Post now or reschedule to a future time.</p></>
+                          )}
+                          {missedReason.kind === "unknown" && (
+                            <><p className="font-medium">Configuration looks correct</p>
+                            <p className="text-[12px] mt-0.5 opacity-80">Check that the social account is connected and the campaign is active, then use Post now to force it.</p></>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             )}
@@ -757,64 +833,20 @@ function EditPostDialog({
                   Scheduled date &amp; time
                 </Label>
 
-                {/* Post now toggle — show for overdue posts as a manual override */}
-                {isOverdue && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPostNow(true)}
-                      className={`rounded-md border px-3 py-2.5 text-sm font-medium transition-colors text-left ${
-                        postNow
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border hover:border-primary/50 text-muted-foreground"
-                      }`}
-                      data-testid="reschedule-post-now"
-                      disabled={isBusy}
-                    >
-                      <Zap className="w-3.5 h-3.5 inline mr-1.5 mb-0.5" />
-                      Post now
-                      <p className="text-[11px] font-normal mt-0.5 opacity-70">
-                        Picked up at next worker tick
-                      </p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPostNow(false)}
-                      className={`rounded-md border px-3 py-2.5 text-sm font-medium transition-colors text-left ${
-                        !postNow
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border hover:border-primary/50 text-muted-foreground"
-                      }`}
-                      data-testid="reschedule-schedule-later"
-                      disabled={isBusy}
-                    >
-                      <Calendar className="w-3.5 h-3.5 inline mr-1.5 mb-0.5" />
-                      Reschedule
-                      <p className="text-[11px] font-normal mt-0.5 opacity-70">
-                        Set a new date &amp; time
-                      </p>
-                    </button>
-                  </div>
-                )}
-
-                {!postNow && (
-                  <>
-                    <Input
-                      id="edit-post-date"
-                      type="datetime-local"
-                      value={scheduledValue}
-                      onChange={(e) => setScheduledValue(e.target.value)}
-                      className="w-auto"
-                      data-testid="edit-dialog-scheduled-date"
-                      disabled={isBusy}
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      {isOverdue
-                        ? "Set a future date and save to reschedule."
-                        : "Change this to reschedule. The worker picks up posts within a few minutes of their scheduled time."}
-                    </p>
-                  </>
-                )}
+                <Input
+                  id="edit-post-date"
+                  type="datetime-local"
+                  value={scheduledValue}
+                  onChange={(e) => setScheduledValue(e.target.value)}
+                  className="w-auto"
+                  data-testid="edit-dialog-scheduled-date"
+                  disabled={isBusy}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {isOverdue
+                    ? "Set a future date and save to reschedule, or use Post now above."
+                    : "Change this to reschedule. The worker picks up posts within a few minutes of their scheduled time."}
+                </p>
               </div>
             )}
 
