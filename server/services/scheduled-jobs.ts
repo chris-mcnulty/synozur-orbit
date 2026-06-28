@@ -21,8 +21,8 @@ import { tickMarketingPublishWorker, sweepMissedPosts } from "./marketing-publis
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
 import { refreshSeoForContext } from "../routes/seo";
-import { db } from "../db";
-import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, generatedPosts, type SeoMetric } from "@shared/schema";
+import { db, crawlDb } from "../db";
+import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, generatedPosts, scheduledJobRuns, type SeoMetric } from "@shared/schema";
 import { eq, and, desc, isNull, lt, sql, inArray } from "drizzle-orm";
 import type { SeoMover } from "./webhook-formatters";
 
@@ -74,14 +74,20 @@ async function trackJobStart(
   targetName?: string
 ): Promise<string> {
   try {
-    const jobRun = await storage.createScheduledJobRun({
-      jobType,
-      tenantDomain: tenantDomain || null,
-      targetId: targetId || null,
-      targetName: targetName || null,
-      status: "running",
-      startedAt: new Date(),
-    });
+    // Job-lifecycle telemetry goes through the dedicated crawl pool, never the
+    // primary pool — these writes fire on every scheduled crawl/monitor job and
+    // must not compete with time-sensitive workers (publish/email).
+    const [jobRun] = await crawlDb
+      .insert(scheduledJobRuns)
+      .values({
+        jobType,
+        tenantDomain: tenantDomain || null,
+        targetId: targetId || null,
+        targetName: targetName || null,
+        status: "running",
+        startedAt: new Date(),
+      })
+      .returning();
     return jobRun.id;
   } catch (error) {
     console.error(`[Job Tracking] Failed to track job start:`, error);
@@ -97,12 +103,16 @@ async function trackJobComplete(
 ): Promise<void> {
   if (!jobRunId) return;
   try {
-    const updated = await storage.updateScheduledJobRun(jobRunId, {
-      status,
-      completedAt: new Date(),
-      result: result || null,
-      errorMessage: errorMessage || null,
-    });
+    const [updated] = await crawlDb
+      .update(scheduledJobRuns)
+      .set({
+        status,
+        completedAt: new Date(),
+        result: result || null,
+        errorMessage: errorMessage || null,
+      })
+      .where(eq(scheduledJobRuns.id, jobRunId))
+      .returning();
 
     if (status === "failed" && updated?.tenantDomain) {
       await notifications.dispatch(updated.tenantDomain, "job_failed", {
@@ -120,7 +130,12 @@ async function trackJobComplete(
 // Clean up jobs that have been running for too long (stuck jobs)
 async function cleanupStuckJobs(): Promise<void> {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const stuckJobs = await storage.getRunningJobs();
+  // Read/write stuck-job telemetry through the crawl pool (keeps the primary
+  // pool free for time-sensitive work).
+  const stuckJobs = await crawlDb
+    .select()
+    .from(scheduledJobRuns)
+    .where(eq(scheduledJobRuns.status, "running"));
   
   const jobsToFail = stuckJobs.filter(job => {
     if (!job.startedAt) return true;
@@ -131,12 +146,15 @@ async function cleanupStuckJobs(): Promise<void> {
     console.log(`[Scheduled Jobs] Cleaning up ${jobsToFail.length} stuck job(s)...`);
     for (const job of jobsToFail) {
       try {
-        await storage.updateScheduledJobRun(job.id, {
-          status: "failed",
-          completedAt: new Date(),
-          result: { error: "Job timed out - automatically marked as failed after running too long" },
-          errorMessage: "Job timed out after 1 hour",
-        });
+        await crawlDb
+          .update(scheduledJobRuns)
+          .set({
+            status: "failed",
+            completedAt: new Date(),
+            result: { error: "Job timed out - automatically marked as failed after running too long" },
+            errorMessage: "Job timed out after 1 hour",
+          })
+          .where(eq(scheduledJobRuns.id, job.id));
         console.log(`[Scheduled Jobs] Marked stuck job ${job.id} (${job.jobType}) as failed`);
       } catch (error) {
         console.error(`[Scheduled Jobs] Failed to clean up stuck job ${job.id}:`, error);
@@ -2499,12 +2517,18 @@ export function startScheduledJobs(): void {
   }, 45 * 1000);
 
   // Task #97: Marketing publish worker — picks up approved+scheduled posts on
-  // auto-publish accounts every 2 minutes. Cheap query; safe to run frequently.
-  setInterval(() => {
-    tickMarketingPublishWorker().catch(err => {
-      console.error("[Marketing Publish Worker] Tick error:", err?.message || err);
-    });
-  }, 2 * 60 * 1000);
+  // auto-publish accounts every 2 minutes. First tick delayed to 3.5 minutes
+  // after startup so it doesn't collide with the pricing / HubSpot initial
+  // sweeps that fire at T+2min and saturate the connection pool.
+  setTimeout(() => {
+    const runPublishTick = () => {
+      tickMarketingPublishWorker().catch(err => {
+        console.error("[Marketing Publish Worker] Tick error:", err?.message || err);
+      });
+    };
+    runPublishTick();
+    setInterval(runPublishTick, 2 * 60 * 1000);
+  }, 3.5 * 60 * 1000);
 
   // Missed-post sweep — marks approved posts whose scheduledDate is more than
   // 5 days in the past as "missed" so operators can review them. Runs every
@@ -2522,14 +2546,18 @@ export function startScheduledJobs(): void {
   }, 10_000);
 
   // Task #97: Email send worker — processes scheduled email_sends rows
-  // whose scheduledAt has elapsed. baseUrl is provided lazily so the
-  // worker uses the deployment's PUBLIC_APP_URL or a sensible default.
-  setInterval(() => {
-    const baseUrl = process.env.PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 5000}`;
-    tickEmailSendWorker({ baseUrl }).catch(err => {
-      console.error("[Email Send Worker] Tick error:", err?.message || err);
-    });
-  }, 2 * 60 * 1000);
+  // whose scheduledAt has elapsed. First tick at T+4.5min, staggered from
+  // the publish worker (T+3.5min) to avoid simultaneous pool contention.
+  setTimeout(() => {
+    const runEmailTick = () => {
+      const baseUrl = process.env.PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 5000}`;
+      tickEmailSendWorker({ baseUrl }).catch(err => {
+        console.error("[Email Send Worker] Tick error:", err?.message || err);
+      });
+    };
+    runEmailTick();
+    setInterval(runEmailTick, 2 * 60 * 1000);
+  }, 4.5 * 60 * 1000);
 
   // HubSpot marketing-email sync backfill (Phase 4) — retries pending/errored
   // contact resolution for recent sends, and re-pushes email_sent timeline

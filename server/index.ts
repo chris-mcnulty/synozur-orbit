@@ -12,6 +12,9 @@ import { startScheduledJobs } from "./services/scheduled-jobs";
 import { storage } from "./storage";
 import { setPersistenceHooks } from "./services/job-queue";
 import { runMigrations } from "./db-migrate";
+import { crawlDb } from "./db";
+import { scheduledJobRuns } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import pg from "pg";
 
 const app = express();
@@ -254,18 +257,26 @@ app.use((req, res, next) => {
   //   npm run db:generate   (generates the SQL file under migrations/)
   //   git commit the new file and deploy.
 
-  // Wire job-queue persistence so all queued jobs write lifecycle events to scheduled_job_runs
+  // Wire job-queue persistence so all queued jobs write lifecycle events to
+  // scheduled_job_runs. These writes go through the dedicated crawl pool
+  // (crawlDb), NOT the primary pool. Job-lifecycle telemetry is non-urgent and
+  // high-volume (every crawl/monitor job start + finish), so isolating it from
+  // the primary pool keeps connections free for time-sensitive workers like the
+  // marketing publish worker.
   setPersistenceHooks({
     async onCreate(job) {
       try {
-        const run = await storage.createScheduledJobRun({
-          jobType: job.type,
-          tenantDomain: job.ctx?.tenantDomain || null,
-          targetId: job.ctx?.targetId || null,
-          targetName: job.ctx?.targetName || job.label,
-          status: "running",
-          startedAt: job.startedAt,
-        });
+        const [run] = await crawlDb
+          .insert(scheduledJobRuns)
+          .values({
+            jobType: job.type,
+            tenantDomain: job.ctx?.tenantDomain || null,
+            targetId: job.ctx?.targetId || null,
+            targetName: job.ctx?.targetName || job.label,
+            status: "running",
+            startedAt: job.startedAt,
+          })
+          .returning();
         return run.id;
       } catch (err) {
         console.error("[JobQueue persistence] createScheduledJobRun failed:", err);
@@ -275,11 +286,15 @@ app.use((req, res, next) => {
     async onComplete(dbRowId, status, errorMessage) {
       if (!dbRowId) return;
       try {
-        const updated = await storage.updateScheduledJobRun(dbRowId, {
-          status,
-          completedAt: new Date(),
-          errorMessage: errorMessage || null,
-        });
+        const [updated] = await crawlDb
+          .update(scheduledJobRuns)
+          .set({
+            status,
+            completedAt: new Date(),
+            errorMessage: errorMessage || null,
+          })
+          .where(eq(scheduledJobRuns.id, dbRowId))
+          .returning();
         // Fan-out failed queued jobs (crawl/monitor/analysis/pdf) through
         // the central notifications dispatcher.
         if (status === "failed" && updated?.tenantDomain) {

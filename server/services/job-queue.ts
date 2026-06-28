@@ -124,8 +124,11 @@ const DEFAULT_CONFIG: QueueConfig = {
   maxConcurrent: 4,
   perTypeLimits: {
     pdf: 1,
-    crawl: 2,
-    monitor: 2,
+    // Crawl + monitor are background, non-time-sensitive work. Keep them at 1
+    // concurrent each so they trickle through the dedicated crawl pool rather
+    // than bursting and starving time-sensitive workers (publish/email).
+    crawl: 1,
+    monitor: 1,
     analysis: 1,
     planner: 2,
   },
