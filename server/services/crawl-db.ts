@@ -1,4 +1,5 @@
 import { crawlDb } from "../db";
+import { withRetry } from "../storage";
 import { competitors, organizations, companyProfiles } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import type { Competitor, Organization, CompanyProfile, InsertOrganization } from "@shared/schema";
@@ -11,21 +12,27 @@ import type { Competitor, Organization, CompanyProfile, InsertOrganization } fro
 
 export const crawlOps = {
   async updateCompetitor(id: string, data: Partial<Competitor>): Promise<Competitor> {
-    const [c] = await crawlDb.update(competitors).set(data).where(eq(competitors.id, id)).returning();
-    return c;
+    return withRetry(async () => {
+      const [c] = await crawlDb.update(competitors).set(data).where(eq(competitors.id, id)).returning();
+      return c;
+    });
   },
 
   async updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void> {
-    await crawlDb.update(competitors).set({ lastCrawl }).where(eq(competitors.id, id));
+    return withRetry(async () => {
+      await crawlDb.update(competitors).set({ lastCrawl }).where(eq(competitors.id, id));
+    });
   },
 
   async resetCompetitorCrawlFailures(id: string): Promise<Competitor> {
-    const [c] = await crawlDb
-      .update(competitors)
-      .set({ consecutiveCrawlFailures: 0, crawlFlaggedAt: null })
-      .where(eq(competitors.id, id))
-      .returning();
-    return c;
+    return withRetry(async () => {
+      const [c] = await crawlDb
+        .update(competitors)
+        .set({ consecutiveCrawlFailures: 0, crawlFlaggedAt: null })
+        .where(eq(competitors.id, id))
+        .returning();
+      return c;
+    });
   },
 
   async getOrganization(id: string): Promise<Organization | undefined> {
@@ -38,20 +45,24 @@ export const crawlOps = {
   },
 
   async updateOrganization(id: string, data: Partial<InsertOrganization>): Promise<Organization> {
-    const [org] = await crawlDb
-      .update(organizations)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(organizations.id, id))
-      .returning();
-    return org;
+    return withRetry(async () => {
+      const [org] = await crawlDb
+        .update(organizations)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(organizations.id, id))
+        .returning();
+      return org;
+    });
   },
 
   async updateCompanyProfile(id: string, data: Partial<CompanyProfile>): Promise<CompanyProfile> {
-    const [profile] = await crawlDb
-      .update(companyProfiles)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(companyProfiles.id, id))
-      .returning();
-    return profile;
+    return withRetry(async () => {
+      const [profile] = await crawlDb
+        .update(companyProfiles)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(companyProfiles.id, id))
+        .returning();
+      return profile;
+    });
   },
 };
