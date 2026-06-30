@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
@@ -1019,6 +1019,32 @@ export default function QueuePage() {
   const [editPost, setEditPost] = useState<CalendarPost | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Deep-link: ?postId=<id> navigates here from the pipeline board and opens
+  // that specific post's edit dialog directly — even if it's outside the
+  // normal calendar window (e.g. an old May post).
+  const deepLinkPostId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("postId");
+  }, []);
+
+  const { data: deepLinkPost } = useQuery<CalendarPost | null>({
+    queryKey: ["/api/generated-posts", deepLinkPostId],
+    queryFn: async () => {
+      const r = await fetch(`/api/generated-posts/${deepLinkPostId}`, { credentials: "include" });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!deepLinkPostId,
+  });
+
+  useEffect(() => {
+    if (deepLinkPost && !editPost) {
+      setEditPost(deepLinkPost);
+      // Clean the ?postId= param from the URL without a page reload.
+      window.history.replaceState(null, "", "/app/marketing/queue");
+    }
+  }, [deepLinkPost]);
 
   const { data: posts = [], isLoading } = useQuery<CalendarPost[]>({
     queryKey: ["/api/generated-posts/calendar", "orbit-queue"],
