@@ -1721,12 +1721,14 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
 export const AI_MODELS: Record<string, readonly string[]> = {
   replit_anthropic: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-sonnet-4', 'claude-opus-4'],
   replit_openai: ['gpt-4o', 'gpt-4o-mini'],
-  azure_foundry: ['gpt-5.4', 'gpt-5.2', 'gpt-4o', 'mistral-large', 'cohere-command-r-plus', 'meta-llama-3.1-405b'],
+  azure_foundry: ['gpt-5-5', 'claude-sonnet-4-6', 'gpt-5.4', 'gpt-5.2', 'gpt-4o', 'mistral-large', 'cohere-command-r-plus', 'meta-llama-3.1-405b'],
 } as const;
 
 export type AzureFoundryEndpointType = 'aoai' | 'inference';
 
 export const AZURE_FOUNDRY_MODEL_ENDPOINT: Record<string, AzureFoundryEndpointType> = {
+  'gpt-5-5': 'aoai',
+  'claude-sonnet-4-6': 'aoai',
   'gpt-5.4': 'aoai',
   'gpt-5.2': 'aoai',
   'gpt-4o': 'aoai',
@@ -1745,6 +1747,8 @@ export const AI_MODEL_INFO: Record<string, {
   costPer1kCompletion: number;
   endpointType?: AzureFoundryEndpointType;
 }> = {
+  'gpt-5-5': { name: 'GPT-5.5', description: 'OpenAI flagship — highest capacity (5M TPM)', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015, endpointType: 'aoai' },
+  'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', description: 'Latest Claude Sonnet via Azure Foundry', costTier: 'high', providers: ['azure_foundry'], contextWindow: 200000, costPer1kPrompt: 0.003, costPer1kCompletion: 0.015, endpointType: 'aoai' },
   'gpt-5.4': { name: 'GPT-5.4', description: 'Latest and most capable OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015, endpointType: 'aoai' },
   'gpt-5.2': { name: 'GPT-5.2', description: 'Advanced reasoning OpenAI model', costTier: 'high', providers: ['azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.005, costPer1kCompletion: 0.015, endpointType: 'aoai' },
   'gpt-4o': { name: 'GPT-4o', description: 'Fast multimodal model', costTier: 'medium', providers: ['replit_openai', 'azure_foundry'], contextWindow: 128000, costPer1kPrompt: 0.0025, costPer1kCompletion: 0.01 },
