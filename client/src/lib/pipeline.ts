@@ -116,7 +116,9 @@ export function postToPipelineItem(row: CalendarPostRow): PipelineItem | null {
     scheduledAt: row.scheduledDate,
     imageUrl: row.overrideImageUrl,
     failed,
-    href: row.campaignId ? `/app/marketing/campaigns/${row.campaignId}` : "/app/marketing/composer",
+    // Always open in the queue — the campaign page may not exist (e.g. archived campaigns)
+    // and the queue is the right place to edit, reschedule, or cancel individual posts.
+    href: "/app/marketing/queue",
   };
 }
 

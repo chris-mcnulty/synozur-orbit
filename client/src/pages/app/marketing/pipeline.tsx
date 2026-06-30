@@ -28,12 +28,14 @@ import {
   Rows3 as RowsIcon,
   Search,
   Share2,
+  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import AppLayout from "@/components/layout/AppLayout";
@@ -88,12 +90,14 @@ function PipelineCard({
   overlay,
   onOpen,
   onMove,
+  onDelete,
 }: {
   item: PipelineItem;
   dragging?: boolean;
   overlay?: boolean;
   onOpen?: (item: PipelineItem) => void;
   onMove?: (item: PipelineItem, stage: PipelineStage) => void;
+  onDelete?: (item: PipelineItem) => void;
 }) {
   const Icon = TYPE_ICONS[item.type];
   // The raw status chip only appears when it says more than the column does
@@ -102,6 +106,7 @@ function PipelineCard({
     (item.type === "brief" && ["in_progress", "drafted"].includes(item.sourceStatus)) ||
     item.sourceStatus === "exported";
   const moveTargets = onMove ? allowedDropStages(item) : [];
+  const hasMenu = (onMove && moveTargets.length > 0) || !!onDelete;
   return (
     <div
       role="button"
@@ -132,42 +137,61 @@ function PipelineCard({
               {item.sourceStatus.replace(/_/g, " ")}
             </Badge>
           )}
-          {/* Keyboard/screen-reader/touch-friendly alternative to dragging:
-              every stage a drag could reach is reachable from this menu. */}
-          {onMove && moveTargets.length > 0 && (
+          {/* ⋮ menu: stage moves + remove action. Always shown when any action exists. */}
+          {hasMenu && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  aria-label={`Move ${TYPE_LABELS[item.type].toLowerCase()} to another stage`}
+                  aria-label={`Actions for ${TYPE_LABELS[item.type].toLowerCase()}`}
                   className="h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
-                  data-testid={`pipeline-move-${item.key}`}
+                  data-testid={`pipeline-menu-${item.key}`}
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuLabel className="text-xs">Move to</DropdownMenuLabel>
-                {moveTargets.map((stage) => {
-                  const stageDef = PIPELINE_STAGES.find((s) => s.id === stage)!;
-                  return (
+                {onMove && moveTargets.length > 0 && (
+                  <>
+                    <DropdownMenuLabel className="text-xs">Move to</DropdownMenuLabel>
+                    {moveTargets.map((stage) => {
+                      const stageDef = PIPELINE_STAGES.find((s) => s.id === stage)!;
+                      return (
+                        <DropdownMenuItem
+                          key={stage}
+                          className="text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMove(item, stage);
+                          }}
+                          data-testid={`pipeline-move-${item.key}-${stage}`}
+                        >
+                          <span className={cn("w-2 h-2 rounded-full mr-2", stageDef.dotClass)} />
+                          {stageDef.label}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </>
+                )}
+                {onDelete && (
+                  <>
+                    {onMove && moveTargets.length > 0 && <DropdownMenuSeparator />}
                     <DropdownMenuItem
-                      key={stage}
-                      className="text-xs"
+                      className="text-xs text-destructive focus:text-destructive"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onMove(item, stage);
+                        onDelete(item);
                       }}
-                      data-testid={`pipeline-move-${item.key}-${stage}`}
+                      data-testid={`pipeline-delete-${item.key}`}
                     >
-                      <span className={cn("w-2 h-2 rounded-full mr-2", stageDef.dotClass)} />
-                      {stageDef.label}
+                      <Trash2 className="w-3.5 h-3.5 mr-2" />
+                      Remove from pipeline
                     </DropdownMenuItem>
-                  );
-                })}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -210,10 +234,12 @@ function DraggableCard({
   item,
   onOpen,
   onMove,
+  onDelete,
 }: {
   item: PipelineItem;
   onOpen: (item: PipelineItem) => void;
   onMove: (item: PipelineItem, stage: PipelineStage) => void;
+  onDelete: (item: PipelineItem) => void;
 }) {
   const draggable = item.stage !== "live";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -223,7 +249,7 @@ function DraggableCard({
   });
   return (
     <div ref={setNodeRef} {...listeners} {...attributes} className="touch-manipulation">
-      <PipelineCard item={item} dragging={isDragging} onOpen={onOpen} onMove={onMove} />
+      <PipelineCard item={item} dragging={isDragging} onOpen={onOpen} onMove={onMove} onDelete={onDelete} />
     </div>
   );
 }
@@ -238,6 +264,7 @@ function StageColumn({
   onToggleCollapsed,
   onOpen,
   onMove,
+  onDelete,
 }: {
   stage: PipelineStage;
   label: string;
@@ -248,6 +275,7 @@ function StageColumn({
   onToggleCollapsed: () => void;
   onOpen: (item: PipelineItem) => void;
   onMove: (item: PipelineItem, stage: PipelineStage) => void;
+  onDelete: (item: PipelineItem) => void;
 }) {
   const droppable = !!activeItem && allowedDropStages(activeItem).includes(stage);
   const { setNodeRef, isOver } = useDroppable({ id: stage, disabled: !droppable });
@@ -279,7 +307,7 @@ function StageColumn({
       {!collapsed && (
         <div className="flex-1 space-y-2 px-2 pb-2 overflow-y-auto max-h-[calc(100vh-330px)]">
           {items.map((item) => (
-            <DraggableCard key={item.key} item={item} onOpen={onOpen} onMove={onMove} />
+            <DraggableCard key={item.key} item={item} onOpen={onOpen} onMove={onMove} onDelete={onDelete} />
           ))}
           {droppable && isOver && (
             <div className="rounded-lg border-2 border-dashed border-primary/60 bg-primary/5 p-3 text-center text-[11px] font-medium text-primary">
@@ -481,6 +509,40 @@ export default function ContentPipelinePage() {
     },
   });
 
+  // Delete/archive body per item type. Emails can't be removed from here — they live on the Email page.
+  function deleteBodyFor(item: PipelineItem): Record<string, unknown> | null {
+    if (item.type === "post") return { status: "deleted" };
+    if (item.type === "brief") return { status: "removed" };
+    return null; // email
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: async (item: PipelineItem) => {
+      const body = deleteBodyFor(item);
+      if (!body) throw new Error("Use the Email Newsletters page to remove emails.");
+      const r = await fetch(patchUrlFor(item), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to remove");
+      }
+      return r.json();
+    },
+    onSuccess: (_data, item) => {
+      invalidateSources();
+      toast({ title: "Removed", description: `${TYPE_LABELS[item.type]} removed from pipeline.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Couldn't remove item", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteItem = (item: PipelineItem) => deleteMutation.mutate(item);
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveItem((event.active.data.current?.item as PipelineItem) ?? null);
   };
@@ -644,6 +706,7 @@ export default function ContentPipelinePage() {
                   onToggleCollapsed={() => toggleCollapsed(stage.id)}
                   onOpen={openItem}
                   onMove={moveItem}
+                  onDelete={deleteItem}
                 />
               ))}
             </div>
@@ -662,32 +725,48 @@ export default function ContentPipelinePage() {
               {items.map((item) => {
                 const Icon = TYPE_ICONS[item.type];
                 const stage = PIPELINE_STAGES.find((s) => s.id === item.stage)!;
+                const canDelete = item.type !== "email";
                 return (
-                  <button
+                  <div
                     key={item.key}
-                    type="button"
-                    onClick={() => openItem(item)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/50 transition-colors"
+                    className="flex w-full items-center hover:bg-muted/50 transition-colors"
                     data-testid={`pipeline-row-${item.key}`}
                   >
-                    <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate">{item.title}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {item.subtitle || TYPE_LABELS[item.type]}
-                        {item.scheduledAt && ` · ${format(new Date(item.scheduledAt), "EEE MMM d, HH:mm")}`}
-                      </p>
-                    </div>
-                    {item.failed ? (
-                      <Badge variant="destructive" className="text-[10px] shrink-0">failed</Badge>
-                    ) : (
-                      <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
-                        <span className={cn("w-2 h-2 rounded-full", stage.dotClass)} />
-                        {stage.label}
-                      </span>
+                    <button
+                      type="button"
+                      onClick={() => openItem(item)}
+                      className="flex flex-1 min-w-0 items-center gap-3 px-4 py-2.5 text-left"
+                    >
+                      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate">{item.title}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {item.subtitle || TYPE_LABELS[item.type]}
+                          {item.scheduledAt && ` · ${format(new Date(item.scheduledAt), "EEE MMM d, HH:mm")}`}
+                        </p>
+                      </div>
+                      {item.failed ? (
+                        <Badge variant="destructive" className="text-[10px] shrink-0">failed</Badge>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
+                          <span className={cn("w-2 h-2 rounded-full", stage.dotClass)} />
+                          {stage.label}
+                        </span>
+                      )}
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        title="Remove from pipeline"
+                        onClick={() => deleteItem(item)}
+                        className="mr-3 h-6 w-6 shrink-0 inline-flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                        data-testid={`pipeline-delete-row-${item.key}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
-                    <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
-                  </button>
+                  </div>
                 );
               })}
             </div>
