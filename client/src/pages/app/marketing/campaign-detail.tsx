@@ -431,6 +431,9 @@ export default function CampaignDetailPage() {
       return next;
     });
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [newBlogDialogOpen, setNewBlogDialogOpen] = useState(false);
+  const [blogIdeaText, setBlogIdeaText] = useState("");
+  const [suggestedBlogTitle, setSuggestedBlogTitle] = useState("");
   const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   // null = all campaign accounts (no explicit selection / no pre-selection from brief)
@@ -535,21 +538,39 @@ export default function CampaignDetailPage() {
   });
 
   const hubCreateBlogPostMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (title?: string) => {
       const res = await fetch("/api/planning-hub/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ scope: "campaign", id, type: "content", format: "blog_post", title: "New blog post" }),
+        body: JSON.stringify({ scope: "campaign", id, type: "content", format: "blog_post", title: title?.trim() || "New blog post" }),
       });
       if (!res.ok) throw new Error("Failed to create blog post brief");
       return res.json() as Promise<{ type: string; id: string }>;
     },
     onSuccess: (data) => {
       refreshHub();
+      setNewBlogDialogOpen(false);
+      setBlogIdeaText("");
+      setSuggestedBlogTitle("");
       navigate(`/app/marketing/editorial-calendar?brief=${data.id}`);
     },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const suggestBlogTitleMutation = useMutation({
+    mutationFn: async (idea: string) => {
+      const res = await fetch("/api/planning-hub/suggest-blog-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ campaignId: id, idea }),
+      });
+      if (!res.ok) throw new Error("Failed to suggest title");
+      return res.json() as Promise<{ title: string }>;
+    },
+    onSuccess: (data) => setSuggestedBlogTitle(data.title),
+    onError: (e: any) => toast({ title: "Could not suggest title", description: e.message, variant: "destructive" }),
   });
 
   const hubUpdateBlogDateMutation = useMutation({
@@ -2252,6 +2273,15 @@ export default function CampaignDetailPage() {
                 >
                   <Newspaper className="w-4 h-4" />
                   LinkedIn Digest
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  data-testid="button-new-blog-post"
+                  onClick={() => { setBlogIdeaText(""); setSuggestedBlogTitle(""); setNewBlogDialogOpen(true); }}
+                >
+                  <Plus className="w-4 h-4" />
+                  New Blog Post
                 </Button>
                 <Button
                   onClick={() => generateBriefsMutation.mutate()}
@@ -5851,6 +5881,61 @@ export default function CampaignDetailPage() {
               data-testid="button-confirm-schedule"
             >
               {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Blog Post dialog — idea input + AI title suggestion */}
+      <Dialog open={newBlogDialogOpen} onOpenChange={(o) => { if (!o) { setBlogIdeaText(""); setSuggestedBlogTitle(""); } setNewBlogDialogOpen(o); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Newspaper className="w-4 h-4" /> New Blog Post</DialogTitle>
+            <DialogDescription>Describe your idea and let AI suggest a title, or type one directly.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="blog-idea">Your idea</Label>
+              <Textarea
+                id="blog-idea"
+                placeholder="e.g. how did SpaceX become an AI company — aren't they a rocket company?"
+                className="resize-none min-h-[80px]"
+                value={blogIdeaText}
+                onChange={(e) => setBlogIdeaText(e.target.value)}
+                data-testid="textarea-blog-idea"
+              />
+            </div>
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              disabled={!blogIdeaText.trim() || suggestBlogTitleMutation.isPending}
+              onClick={() => suggestBlogTitleMutation.mutate(blogIdeaText)}
+              data-testid="button-suggest-blog-title"
+            >
+              {suggestBlogTitleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Suggest title with AI
+            </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor="blog-title">Blog post title</Label>
+              <Input
+                id="blog-title"
+                placeholder="Enter or edit the title"
+                value={suggestedBlogTitle}
+                onChange={(e) => setSuggestedBlogTitle(e.target.value)}
+                data-testid="input-blog-title"
+              />
+              <p className="text-xs text-muted-foreground">You can edit the AI suggestion or write your own.</p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setNewBlogDialogOpen(false)} data-testid="button-cancel-new-blog">Cancel</Button>
+            <Button
+              disabled={!suggestedBlogTitle.trim() || hubCreateBlogPostMutation.isPending}
+              onClick={() => hubCreateBlogPostMutation.mutate(suggestedBlogTitle)}
+              data-testid="button-create-blog-post"
+            >
+              {hubCreateBlogPostMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Create brief
             </Button>
           </div>
         </DialogContent>

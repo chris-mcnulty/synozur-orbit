@@ -37,6 +37,7 @@ import { and, asc, desc, eq, inArray, ne, or, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
+import { completeForFeature } from "../services/ai-provider";
 
 type Scope = "campaign" | "theme";
 type ItemType = "social" | "email" | "content";
@@ -456,6 +457,66 @@ export function registerPlanningHubRoutes(app: Express) {
     } catch (err: any) {
       console.error("[planning-hub create item]", err.message);
       res.status(500).json({ error: err.message || "Failed to create item" });
+    }
+  });
+
+  /**
+   * POST /api/planning-hub/suggest-blog-title
+   * Given a rough idea + campaign context, return an AI-polished blog post title.
+   * Body: { campaignId: string; idea: string }
+   */
+  app.post("/api/planning-hub/suggest-blog-title", async (req, res) => {
+    const ctx = await getRequestContext(req);
+    if (!ctx.tenantDomain) return res.status(401).json({ error: "Unauthorized" });
+
+    const { campaignId, idea } = req.body ?? {};
+    if (!campaignId || !idea || !String(idea).trim()) {
+      return res.status(400).json({ error: "campaignId and idea are required" });
+    }
+
+    try {
+      const [campaign] = await db
+        .select()
+        .from(campaigns)
+        .where(and(eq(campaigns.id, campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const existingBriefs = await db
+        .select({ title: contentBriefs.title })
+        .from(contentBriefs)
+        .where(and(eq(contentBriefs.campaignId, campaignId), ne(contentBriefs.status, "removed")))
+        .limit(20);
+
+      const existingTitles = existingBriefs.map((b) => b.title).filter(Boolean).join("\n- ");
+
+      const systemPrompt = `You are a B2B content strategist. Given a user's rough content idea and campaign context, produce ONE polished, punchy blog post title that:
+- Is specific, concrete, and insight-led (not generic)
+- Matches a B2B professional tone
+- Avoids clickbait but creates genuine curiosity
+- Is 8–14 words long
+- Does NOT start with "How to" or "The Ultimate Guide"
+Respond with ONLY the title — no quotes, no explanation, no punctuation at the end.`;
+
+      const userPrompt = `Campaign: "${campaign.name}"
+${campaign.description ? `Campaign description: ${campaign.description}` : ""}
+${existingTitles ? `Existing blog posts in this campaign:\n- ${existingTitles}` : ""}
+
+User's rough idea: "${String(idea).trim()}"
+
+Return one polished blog post title based on this idea in the context of the campaign.`;
+
+      const result = await completeForFeature("contentBriefs", userPrompt, {
+        systemPrompt,
+        tenantDomain: ctx.tenantDomain,
+        maxTokens: 100,
+        temperature: 0.7,
+      });
+
+      const title = result.text.trim().replace(/^["']|["']$/g, "").trim();
+      return res.json({ title });
+    } catch (err: any) {
+      console.error("[planning-hub suggest-blog-title]", err.message);
+      res.status(500).json({ error: err.message || "Failed to suggest title" });
     }
   });
 }
