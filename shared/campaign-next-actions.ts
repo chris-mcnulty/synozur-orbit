@@ -235,3 +235,35 @@ export function singleItemHref(campaignId: string, group: ActionGroup): string |
       return undefined;
   }
 }
+
+// ── Multi-item (batched) group tab routing ──────────────────────────────────
+// Single-item groups deep-link to the exact item (singleItemHref); multi-item
+// groups instead open the right campaign *tab*, optionally pre-filtered. These
+// live here (not in the component) so the tab/filter/href mapping is testable.
+
+/** Which campaign tab a group's headline action should open. */
+export function actionTab(group: ActionGroup): string {
+  if (group.itemType === "email" || group.itemType === "brief") return "plan";
+  // social or mixed:
+  switch (group.headlineAction) {
+    case "approve":
+      return "review";
+    case "generate":
+    case "draft":
+      return "plan";
+    default:
+      return "posts"; // schedule / post / fix
+  }
+}
+
+/** The posts-tab filter a headline action should pre-apply, if any. */
+export function actionFilter(group: ActionGroup): string | undefined {
+  return group.headlineAction === "fix" ? "publish_failed" : undefined;
+}
+
+/** Campaign deep-link for a group: right tab, and (for failures) pre-filtered. */
+export function groupHref(campaignId: string, group: ActionGroup): string {
+  const filter = actionFilter(group);
+  const search = filter ? `?filter=${encodeURIComponent(filter)}` : "";
+  return `/app/marketing/campaigns/${encodeURIComponent(campaignId)}${search}#${actionTab(group)}`;
+}

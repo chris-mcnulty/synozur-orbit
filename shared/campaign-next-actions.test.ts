@@ -7,7 +7,11 @@ import {
   socialPostAction,
   briefAction,
   emailAction,
+  actionTab,
+  actionFilter,
+  groupHref,
   type ActionableItem,
+  type ActionGroup,
   type ContentItemType,
   type NextAction,
 } from "@shared/campaign-next-actions";
@@ -199,4 +203,97 @@ describe("emailAction — email status → next action", () => {
   it("approved → post", () => assert.equal(emailAction("approved"), "post"));
   it("draft → approve", () => assert.equal(emailAction("draft"), "approve"));
   it("unknown status → approve", () => assert.equal(emailAction("whatever"), "approve"));
+});
+
+// A minimal group is all actionTab/actionFilter/groupHref read: itemType +
+// headlineAction. Build them directly so each case is unambiguous.
+function group(itemType: ActionGroup["itemType"], headlineAction: NextAction): ActionGroup {
+  return {
+    key: "g",
+    label: "G",
+    itemType,
+    total: 2,
+    headlineAction,
+    actionCounts: {},
+    statusCounts: {},
+    pending: 2,
+  };
+}
+
+describe("actionTab — batched group opens the right campaign tab", () => {
+  it("brief groups always open the Plan tab, whatever the headline action", () => {
+    for (const a of ["generate", "draft", "approve", "schedule", "post", "fix"] as NextAction[]) {
+      assert.equal(actionTab(group("brief", a)), "plan", `brief/${a}`);
+    }
+  });
+
+  it("email groups always open the Plan tab, whatever the headline action", () => {
+    for (const a of ["approve", "schedule", "post", "fix"] as NextAction[]) {
+      assert.equal(actionTab(group("email", a)), "plan", `email/${a}`);
+    }
+  });
+
+  it("social approve → Review tab", () => {
+    assert.equal(actionTab(group("social", "approve")), "review");
+  });
+
+  it("social generate / draft → Plan tab (content still being made)", () => {
+    assert.equal(actionTab(group("social", "generate")), "plan");
+    assert.equal(actionTab(group("social", "draft")), "plan");
+  });
+
+  it("social schedule / post / fix → Posts tab", () => {
+    assert.equal(actionTab(group("social", "schedule")), "posts");
+    assert.equal(actionTab(group("social", "post")), "posts");
+    assert.equal(actionTab(group("social", "fix")), "posts");
+  });
+
+  it("mixed groups follow the social rules (not the brief/email short-circuit)", () => {
+    assert.equal(actionTab(group("mixed", "approve")), "review");
+    assert.equal(actionTab(group("mixed", "generate")), "plan");
+    assert.equal(actionTab(group("mixed", "schedule")), "posts");
+    assert.equal(actionTab(group("mixed", "fix")), "posts");
+  });
+});
+
+describe("actionFilter — only failures pre-filter the Posts tab", () => {
+  it("returns publish_failed for a fix headline", () => {
+    assert.equal(actionFilter(group("social", "fix")), "publish_failed");
+  });
+
+  it("returns undefined for every non-fix headline action", () => {
+    for (const a of ["generate", "draft", "approve", "schedule", "post", "done"] as NextAction[]) {
+      assert.equal(actionFilter(group("social", a)), undefined, `social/${a}`);
+    }
+  });
+});
+
+describe("groupHref — composes the tab hash and optional ?filter=", () => {
+  it("plain tab link (no filter) for a non-fix group", () => {
+    assert.equal(
+      groupHref("camp-1", group("social", "approve")),
+      "/app/marketing/campaigns/camp-1#review",
+    );
+  });
+
+  it("brief group links to the Plan tab", () => {
+    assert.equal(
+      groupHref("camp-1", group("brief", "approve")),
+      "/app/marketing/campaigns/camp-1#plan",
+    );
+  });
+
+  it("fix group adds the publish_failed filter before the Posts tab hash", () => {
+    assert.equal(
+      groupHref("camp-1", group("social", "fix")),
+      "/app/marketing/campaigns/camp-1?filter=publish_failed#posts",
+    );
+  });
+
+  it("URL-encodes the campaign id", () => {
+    assert.equal(
+      groupHref("camp/A B", group("social", "post")),
+      "/app/marketing/campaigns/camp%2FA%20B#posts",
+    );
+  });
 });

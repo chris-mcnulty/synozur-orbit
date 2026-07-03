@@ -29,6 +29,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   ACTION_LABELS,
   singleItemHref,
+  actionTab,
+  actionFilter,
+  groupHref,
   type ActionGroup,
   type NextAction,
 } from "@shared/campaign-next-actions";
@@ -61,33 +64,6 @@ const ACTION_TONE: Record<NextAction, string> = {
   done: "text-muted-foreground border-muted-foreground/40",
 };
 
-/** Which campaign tab a group's headline action should open. */
-export function actionTab(group: ActionGroup): string {
-  if (group.itemType === "email" || group.itemType === "brief") return "plan";
-  // social or mixed:
-  switch (group.headlineAction) {
-    case "approve":
-      return "review";
-    case "generate":
-    case "draft":
-      return "plan";
-    default:
-      return "posts"; // schedule / post / fix
-  }
-}
-
-/** The posts-tab filter a headline action should pre-apply, if any. */
-export function actionFilter(group: ActionGroup): string | undefined {
-  return group.headlineAction === "fix" ? "publish_failed" : undefined;
-}
-
-/** Campaign deep-link for a group: right tab, and (for failures) pre-filtered. */
-function groupHref(campaignId: string, group: ActionGroup): string {
-  const filter = actionFilter(group);
-  const search = filter ? `?filter=${encodeURIComponent(filter)}` : "";
-  return `/app/marketing/campaigns/${campaignId}${search}#${actionTab(group)}`;
-}
-
 /** Compact "12 approve · 6 schedule" breakdown of the remaining work. */
 function breakdown(group: ActionGroup): string {
   return (Object.entries(group.actionCounts) as [NextAction, number][])
@@ -109,7 +85,7 @@ function GroupRow({
 }) {
   const Icon = ACTION_ICON[group.headlineAction];
   const tab = actionTab(group);
-  const filter = group.headlineAction === "fix" ? "publish_failed" : undefined;
+  const filter = actionFilter(group);
   // A single-item group always deep-links to the exact item (even in the
   // in-page campaign rollup); only multi-item groups fall back to the tab.
   const linkHref = singleItemHref(campaignId, group) ?? href;
