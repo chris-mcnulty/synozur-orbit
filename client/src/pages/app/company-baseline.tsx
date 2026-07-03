@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, Facebook, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal, MessageSquare, Lock, ArrowUp, ArrowDown, ArrowRight, Save, Clock } from "lucide-react";
+import { Building2, Edit2, Loader2, Trash2, RefreshCw, ExternalLink, Globe, FileText, Target, Sparkles, Linkedin, Instagram, Twitter, Facebook, TrendingUp, Calendar, Check, AlertCircle, Upload, Link2, ImageIcon, ClipboardPaste, Rss, MapPin, Users, DollarSign, Briefcase, ChevronDown, Zap, CheckCircle2, XCircle, Search, MoreHorizontal, MessageSquare, Lock, ArrowUp, ArrowDown, ArrowRight, Save, Clock, RotateCcw } from "lucide-react";
 import { useFeatureAccess, UpgradePrompt } from "@/components/UpgradePrompt";
 import {
   LineChart, Line,
@@ -392,6 +392,27 @@ export default function CompanyBaseline() {
         description: error.message,
         variant: "destructive",
       });
+    },
+  });
+
+  const resetBaselineMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/company-profile/reset-website-baseline", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to reset baseline");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Baseline reset", description: "The website snapshot has been cleared. The next monitor run will set a fresh baseline." });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-profile"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Reset failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -975,6 +996,20 @@ export default function CompanyBaseline() {
                           >
                             <ClipboardPaste className="w-4 h-4 mr-2" />
                             Manual Research
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => resetBaselineMutation.mutate()}
+                            disabled={resetBaselineMutation.isPending}
+                            data-testid="button-reset-website-baseline"
+                            className="text-amber-600 focus:text-amber-600"
+                          >
+                            {resetBaselineMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            ) : (
+                              <RotateCcw className="w-4 h-4 mr-2" />
+                            )}
+                            Reset Website Baseline
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem

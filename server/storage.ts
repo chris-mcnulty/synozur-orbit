@@ -3112,13 +3112,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActivityByContext(ctx: ContextFilter): Promise<Activity[]> {
+    // On the default market, also surface rows stored without a marketId
+    // (legacy baseline/competitor activities that pre-date per-market tagging).
+    const marketCondition = ctx.isDefaultMarket
+      ? or(eq(activity.marketId, ctx.marketId), isNull(activity.marketId))
+      : eq(activity.marketId, ctx.marketId);
     return await db.select().from(activity)
-      .where(
-        and(
-          eq(activity.tenantDomain, ctx.tenantDomain),
-          eq(activity.marketId, ctx.marketId)
-        )
-      )
+      .where(and(eq(activity.tenantDomain, ctx.tenantDomain), marketCondition))
       .orderBy(desc(activity.createdAt));
   }
 

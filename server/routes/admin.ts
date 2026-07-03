@@ -877,6 +877,28 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // Update baseline company pricing URL
+  // POST /api/company-profile/reset-website-baseline — clears the stored
+  // website snapshot so the next monitor run treats the current page as the
+  // new baseline (no diff alert will fire until content changes again).
+  app.post("/api/company-profile/reset-website-baseline", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      if (!hasAdminAccess(ctx.userRole)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      const profile = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+      if (!profile) return res.status(404).json({ error: "No company profile found" });
+      await storage.updateCompanyProfile(profile.id, {
+        previousWebsiteContent: null as any,
+        lastWebsiteMonitor: null as any,
+      });
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.put("/api/company-profile/pricing-url", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
