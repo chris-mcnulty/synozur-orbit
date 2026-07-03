@@ -184,10 +184,17 @@ export async function extractContentFromUrl(url: string, groundingContext?: stri
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
 
+  // For Synozur's own website, append Orbit/1.0 so we can identify crawl
+  // traffic in server logs while troubleshooting partial-page responses.
+  const baseUA = getRandomUA();
+  let hostname = "";
+  try { hostname = new URL(safeUrl).hostname.replace(/^www\./, ""); } catch { /* ignore */ }
+  const userAgent = hostname === "synozur.com" ? `${baseUA} Orbit/1.0` : baseUA;
+
   try {
     const response = await fetch(safeUrl, {
       headers: {
-        "User-Agent": getRandomUA(),
+        "User-Agent": userAgent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },
