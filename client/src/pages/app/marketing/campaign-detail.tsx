@@ -558,7 +558,7 @@ export default function CampaignDetailPage() {
       setNewBlogDialogOpen(false);
       setBlogIdeaText("");
       setSuggestedBlogTitle("");
-      navigate(`/app/marketing/editorial-calendar?brief=${data.id}`);
+      navigate(`/app/marketing/editorial-calendar?campaignId=${id}&brief=${data.id}`);
     },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
@@ -2888,8 +2888,8 @@ export default function CampaignDetailPage() {
                           {blogItems.map((it) => {
                             const stageCls = STAGE_META[it.stage]?.className ?? "bg-muted text-muted-foreground";
                             const stageLabel = STAGE_META[it.stage]?.label ?? it.stage;
-                            const href = it.calendarId
-                              ? `/app/marketing/editorial-calendar?calendar=${it.calendarId}&brief=${it.id}`
+                            const href = it.campaignId
+                              ? `/app/marketing/editorial-calendar?campaignId=${it.campaignId}&brief=${it.id}`
                               : `/app/marketing/editorial-calendar?brief=${it.id}`;
                             return (
                               <div
