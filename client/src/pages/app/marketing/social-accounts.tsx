@@ -715,6 +715,85 @@ function VoiceProfileDialog({
 }
 
 
+function PostingBehaviourCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: tenantInfo } = useQuery<{ socialPostingJitterEnabled?: boolean; features?: Record<string, boolean> }>({
+    queryKey: ["/api/tenant/info"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenant/info", { credentials: "include" });
+      return r.ok ? r.json() : {};
+    },
+  });
+
+  const jitterEnabled = tenantInfo?.socialPostingJitterEnabled ?? true;
+
+  const toggleMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const r = await fetch("/api/tenant/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ socialPostingJitterEnabled: enabled }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Update failed");
+      return r.json();
+    },
+    onSuccess: (_data, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/info"] });
+      toast({
+        title: enabled ? "Naturalistic delay enabled" : "Naturalistic delay disabled",
+        description: enabled
+          ? "Posts will be published up to 10 minutes after their scheduled time."
+          : "Posts will go out at exactly their scheduled times.",
+      });
+    },
+    onError: (err: Error) => toast({ title: "Couldn't update setting", description: err.message, variant: "destructive" }),
+  });
+
+  if (!tenantInfo?.features?.socialPosts) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Posting behaviour</CardTitle>
+        <CardDescription>Control how the auto-publish worker times your posts.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1 flex-1">
+            <p className="text-sm font-medium">Naturalistic posting delay</p>
+            <p className="text-[12px] text-muted-foreground">
+              When on, posts go out at a random time within 10 minutes of the scheduled time — so they
+              don't all land at exactly 8:00 AM and look more like human-posted content. Turn this off
+              if every post needs to go at a precise time, or tick <strong>Post at exact time</strong>{" "}
+              on individual posts in the queue to override on a case-by-case basis.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={jitterEnabled}
+            data-testid="toggle-posting-jitter"
+            disabled={toggleMutation.isPending}
+            onClick={() => toggleMutation.mutate(!jitterEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 ${
+              jitterEnabled ? "bg-primary" : "bg-muted-foreground/30"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                jitterEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SocialAccountsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1105,6 +1184,9 @@ export default function SocialAccountsPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Posting behaviour settings */}
+        <PostingBehaviourCard />
 
         {voiceAccount && (
           <VoiceProfileDialog

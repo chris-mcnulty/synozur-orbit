@@ -118,6 +118,13 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
             isNull(generatedPosts.publishNextAttemptAt),
             lte(generatedPosts.publishNextAttemptAt, now),
           ),
+          // Naturalistic delay gate: skip posts that haven't reached their
+          // jitter-deferred time yet. publishNotBefore IS NULL means the worker
+          // hasn't applied jitter yet (handled below on first pick-up).
+          or(
+            isNull(generatedPosts.publishNotBefore),
+            lte(generatedPosts.publishNotBefore, now),
+          ),
           isNotNull(socialAccounts.encryptedAccessToken),
           eq(socialAccounts.status, "active"),
           // Skip accounts where the user has manually paused auto-publishing.
@@ -196,6 +203,54 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
         ...candidates.filter(({ post }) => !staggeredIds.has(post.id)),
       );
     }
+
+    // ── Naturalistic posting delay (jitter) ────────────────────────────────
+    // For posts where publishNotBefore is still null (first pick-up) and the
+    // tenant has jitter enabled and the post doesn't request an exact schedule,
+    // assign a random 0–600 s delay and skip this tick. The post re-enters the
+    // queue once publishNotBefore has passed.
+    const MAX_JITTER_SECONDS = 600;
+    const jitterEnabledCache = new Map<string, boolean>();
+    const isJitterEnabled = async (tenantDomain: string): Promise<boolean> => {
+      const cached = jitterEnabledCache.get(tenantDomain);
+      if (cached !== undefined) return cached;
+      try {
+        const [t] = await db
+          .select({ socialPostingJitterEnabled: tenants.socialPostingJitterEnabled })
+          .from(tenants)
+          .where(eq(tenants.domain, tenantDomain));
+        const enabled = t?.socialPostingJitterEnabled ?? true;
+        jitterEnabledCache.set(tenantDomain, enabled);
+        return enabled;
+      } catch {
+        jitterEnabledCache.set(tenantDomain, true);
+        return true;
+      }
+    };
+
+    const jitteredIds = new Set<string>();
+    for (const { post } of candidates) {
+      if (post.publishNotBefore !== null) continue; // already assigned a slot
+      if ((post as any).exactSchedule) continue;     // user wants exact time
+      if (!await isJitterEnabled(post.tenantDomain)) continue;
+
+      const delaySec = Math.floor(Math.random() * (MAX_JITTER_SECONDS + 1));
+      const publishNotBefore = new Date(now.getTime() + delaySec * 1000);
+      await db
+        .update(generatedPosts)
+        .set({ publishNotBefore, updatedAt: new Date() } as any)
+        .where(eq(generatedPosts.id, post.id));
+      console.log(
+        `[PublishWorker] Jitter: post ${post.id} deferred by +${delaySec}s → publishes at ${publishNotBefore.toISOString()}`,
+      );
+      jitteredIds.add(post.id);
+    }
+    // Remove jittered posts from this tick's work list (they'll be picked up later).
+    candidates.splice(
+      0,
+      candidates.length,
+      ...candidates.filter(({ post }) => !jitteredIds.has(post.id)),
+    );
 
     // Cache plan-gate decisions per tenant for the duration of this tick so
     // we don't re-query for every candidate row. Worker re-checks ensure a

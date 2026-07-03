@@ -350,7 +350,7 @@ export function registerMarketingPostsRoutes(app: Express) {
       const {
         editedContent, hashtags, status, scheduledDate, content,
         overrideImageUrl, overrideBrandAssetId, deliveryMode, carouselSlides,
-        socialAccountId,
+        socialAccountId, exactSchedule,
       } = req.body ?? {};
 
       const updateFields: Partial<GeneratedPost> & { updatedAt: Date } = { updatedAt: new Date() };
@@ -434,6 +434,13 @@ export function registerMarketingPostsRoutes(app: Express) {
           if (!acct) return res.status(404).json({ error: "Social account not found" });
           (updateFields as any).socialAccountId = socialAccountId;
         }
+      }
+
+      if (typeof exactSchedule === "boolean") {
+        (updateFields as any).exactSchedule = exactSchedule;
+        // Clearing exactSchedule back to false also clears any previously-set
+        // publishNotBefore so the worker re-applies jitter on next pick-up.
+        if (!exactSchedule) (updateFields as any).publishNotBefore = null;
       }
 
       // When the user transitions to 'approved' (regardless of campaign vs

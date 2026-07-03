@@ -88,6 +88,8 @@ interface FullPost {
   carouselSlides: CarouselSlide[] | null;
   campaignId: string | null;
   socialAccountId: string | null;
+  exactSchedule: boolean;
+  publishNotBefore: string | null;
 }
 
 interface CampaignSocialLink {
@@ -303,6 +305,7 @@ function EditPostDialog({
   const [postNow, setPostNow] = useState(false);
   const [slideUrls, setSlideUrls] = useState<Record<number, string>>({});
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [exactSchedule, setExactSchedule] = useState(false);
   const [didInit, setDidInit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -381,6 +384,7 @@ function EditPostDialog({
     setEditedText(post.editedContent ?? post.content ?? "");
     setScheduledValue(post.scheduledDate ? toDatetimeLocal(new Date(post.scheduledDate)) : "");
     setSelectedAccountId(post.socialAccountId ?? null);
+    setExactSchedule(post.exactSchedule ?? false);
     const initUrls: Record<number, string> = {};
     (post.carouselSlides ?? []).forEach((s) => { initUrls[s.index] = s.imageUrl ?? ""; });
     setSlideUrls(initUrls);
@@ -400,6 +404,9 @@ function EditPostDialog({
     }
     if (selectedAccountId !== (post?.socialAccountId ?? null)) {
       body.socialAccountId = selectedAccountId;
+    }
+    if (exactSchedule !== (post?.exactSchedule ?? false)) {
+      body.exactSchedule = exactSchedule;
     }
     if (isCarousel && post?.carouselSlides?.length) {
       body.carouselSlides = post.carouselSlides.map((s) => ({
@@ -897,6 +904,19 @@ function EditPostDialog({
                     ? "Set a future date and save to reschedule, or use Post now above."
                     : "Change this to reschedule. The worker picks up posts within a few minutes of their scheduled time."}
                 </p>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none mt-1" data-testid="edit-dialog-exact-schedule">
+                  <input
+                    type="checkbox"
+                    className="rounded border-border accent-primary w-3.5 h-3.5"
+                    checked={exactSchedule}
+                    onChange={(e) => setExactSchedule(e.target.checked)}
+                    disabled={isBusy}
+                  />
+                  <span className="text-[12px] text-muted-foreground">
+                    Post at exact time <span className="opacity-60">(skip naturalistic delay)</span>
+                  </span>
+                </label>
               </div>
             )}
 

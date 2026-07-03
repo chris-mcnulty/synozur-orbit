@@ -135,6 +135,11 @@ export const tenants = pgTable("tenants", {
   // Public/anonymous endpoint rate limit override (requests per minute).
   // NULL falls back to the platform default (10 rpm).
   publicRateLimitPerMinute: integer("public_rate_limit_per_minute"),
+  // Naturalistic posting delay: when true (default) the publish worker adds a
+  // random 0–600 s offset to each post so they don't land at exactly :00.
+  // Tenants can disable this globally; individual posts can override with
+  // exactSchedule = true regardless of this setting.
+  socialPostingJitterEnabled: boolean("social_posting_jitter_enabled").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -3251,6 +3256,13 @@ export const generatedPosts = pgTable("generated_posts", {
   linkLabel: text("link_label"),
   // Brief-origin traceability: the content brief that triggered this post run.
   sourceBriefId: varchar("source_brief_id").references((): AnyPgColumn => contentBriefs.id, { onDelete: "set null" }),
+  // Naturalistic posting delay: when false (default) the worker may add a
+  // random 0–600 s jitter before publishing. Set true to publish at the exact
+  // scheduled time (e.g. news announcements, blog launch posts).
+  exactSchedule: boolean("exact_schedule").notNull().default(false),
+  // Set by the worker when jitter is applied. Post is held until this time.
+  // Null = not yet jittered (or jitter disabled / exact_schedule = true).
+  publishNotBefore: timestamp("publish_not_before"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

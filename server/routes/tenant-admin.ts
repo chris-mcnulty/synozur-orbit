@@ -1005,6 +1005,7 @@ export function registerTenantAdminRoutes(app: Express) {
         // Synozur app; the UI uses this to show "coming soon" instead of a
         // broken Connect button.
         linkedinDirectPublishEnabled: isLinkedInDirectPublishEnabled(),
+        socialPostingJitterEnabled: tenant.socialPostingJitterEnabled ?? true,
         usage: {
           competitorCount,
           monthlyAnalysisCount,
@@ -1159,6 +1160,11 @@ export function registerTenantAdminRoutes(app: Express) {
           return res.status(400).json({ error: "At least one auth provider must be allowed" });
         }
         updateData.allowedAuthProviders = Array.from(new Set(cleaned));
+      }
+
+      const { socialPostingJitterEnabled } = req.body;
+      if (typeof socialPostingJitterEnabled === "boolean") {
+        updateData.socialPostingJitterEnabled = socialPostingJitterEnabled;
       }
 
       if (Object.keys(updateData).length === 0) {
