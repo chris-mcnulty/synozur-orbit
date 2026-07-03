@@ -85,7 +85,22 @@ class ReplitAnthropicProvider implements IAIProvider {
       params.temperature = options.temperature;
     }
 
-    const response = await client.messages.create(params);
+    let response: Anthropic.Message;
+    try {
+      response = await client.messages.create(params);
+    } catch (err: any) {
+      // Replit's Azure-backed Anthropic proxy can return 404 when a model alias
+      // is temporarily remapped to a version not yet available on the endpoint.
+      // Fall back to claude-haiku-4-5 which is on a separate deployment path.
+      const is404 = err?.status === 404 || String(err?.message).includes("404");
+      const fallbackModel = "claude-haiku-4-5";
+      if (is404 && model !== fallbackModel) {
+        console.warn(`[ai-provider] ${model} returned 404 ("${err.message}") — retrying with ${fallbackModel}`);
+        response = await client.messages.create({ ...params, model: fallbackModel });
+      } else {
+        throw err;
+      }
+    }
     const durationMs = Date.now() - startTime;
 
     const textBlock = response.content.find(b => b.type === "text");
