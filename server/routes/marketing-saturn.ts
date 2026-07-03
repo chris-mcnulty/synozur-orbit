@@ -1865,7 +1865,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(
           eq(campaigns.id, req.params.id),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
-          eq(campaigns.marketId, ctx.marketId),
           ne(campaigns.status, "deleted"),
         ));
       if (!campaign) return res.status(404).json({ error: "Not found" });
