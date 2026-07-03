@@ -50,6 +50,8 @@ import {
   FileDown,
   Globe,
   Lightbulb,
+  Upload,
+  CheckCircle2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -464,7 +466,14 @@ export default function CampaignDetailPage() {
   const BRAND_PAGE_SIZE = 12;
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
-  const [pickerTab, setPickerTab] = useState<"brand" | "content">("brand");
+  const [pickerTab, setPickerTab] = useState<"brand" | "content" | "upload">("brand");
+  const [pickerUploadFile, setPickerUploadFile] = useState<File | null>(null);
+  const [pickerUploadPreview, setPickerUploadPreview] = useState<string | null>(null);
+  const [pickerUploadAlt, setPickerUploadAlt] = useState("");
+  const [pickerIsUploading, setPickerIsUploading] = useState(false);
+  const [pickerUploadResult, setPickerUploadResult] = useState<{ url: string; source: "website" | "local" } | null>(null);
+  const [pickerUploadError, setPickerUploadError] = useState<string | null>(null);
+  const pickerFileInputRef = useRef<HTMLInputElement>(null);
   const [pickerShowAll, setPickerShowAll] = useState(false);
   const [pickerContentCategoryFilter, setPickerContentCategoryFilter] = useState<string>("all");
 
@@ -5018,7 +5027,7 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Image Override Picker Dialog — brand assets + content assets */}
-      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerContentCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); setPickerShowAll(false); } }}>
+      <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerContentCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); setPickerShowAll(false); setPickerUploadFile(null); setPickerUploadPreview(null); setPickerUploadAlt(""); setPickerUploadResult(null); setPickerUploadError(null); } }}>
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Choose Image</DialogTitle>
@@ -5069,7 +5078,7 @@ export default function CampaignDetailPage() {
               <X className="w-4 h-4" /> Clear override (use default)
             </Button>
 
-            {/* Tab toggle: brand assets vs content assets */}
+            {/* Tab toggle: brand assets | content assets | upload */}
             <div className="flex rounded-md border overflow-hidden" data-testid="picker-tab-toggle">
               <button
                 className={`flex-1 py-1.5 text-xs font-medium transition-colors ${pickerTab === "brand" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
@@ -5084,6 +5093,13 @@ export default function CampaignDetailPage() {
                 data-testid="button-picker-tab-content"
               >
                 Content Library
+              </button>
+              <button
+                className={`flex-1 py-1.5 text-xs font-medium transition-colors border-l ${pickerTab === "upload" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setPickerTab("upload")}
+                data-testid="button-picker-tab-upload"
+              >
+                Upload
               </button>
             </div>
 
@@ -5311,6 +5327,140 @@ export default function CampaignDetailPage() {
                 </div>
               );
             })()}
+
+            {/* Upload tab */}
+            {pickerTab === "upload" && (
+              <div className="space-y-3">
+                <input
+                  ref={pickerFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  data-testid="input-picker-file"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setPickerUploadFile(f);
+                    setPickerUploadResult(null);
+                    setPickerUploadError(null);
+                    setPickerUploadAlt(f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setPickerUploadPreview(ev.target?.result as string ?? null);
+                    reader.readAsDataURL(f);
+                  }}
+                />
+
+                {!pickerUploadFile ? (
+                  <button
+                    type="button"
+                    className="w-full border-2 border-dashed rounded-lg py-10 flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+                    onClick={() => pickerFileInputRef.current?.click()}
+                    data-testid="button-picker-drop-zone"
+                  >
+                    <Upload className="h-8 w-8" />
+                    <span className="text-sm font-medium">Click to choose an image</span>
+                    <span className="text-xs">PNG, JPG, WebP — max 10 MB</span>
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    {pickerUploadPreview && (
+                      <div className="rounded-lg overflow-hidden border aspect-video bg-muted">
+                        <img src={pickerUploadPreview} alt="Preview" className="w-full h-full object-contain" />
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Alt text</label>
+                      <input
+                        value={pickerUploadAlt}
+                        onChange={(e) => setPickerUploadAlt(e.target.value)}
+                        placeholder="Describe the image…"
+                        className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                        data-testid="input-picker-alt"
+                      />
+                    </div>
+
+                    {pickerUploadResult && (
+                      <div className="flex items-start gap-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span>{pickerUploadResult.source === "website" ? "Uploaded to the Synozur website media library." : "Saved to Orbit media storage."}</span>
+                      </div>
+                    )}
+                    {pickerUploadError && (
+                      <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
+                        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <span>{pickerUploadError}</span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setPickerUploadFile(null); setPickerUploadPreview(null); setPickerUploadResult(null); setPickerUploadError(null); if (pickerFileInputRef.current) pickerFileInputRef.current.value = ""; }}
+                        data-testid="button-picker-upload-clear"
+                      >
+                        Change
+                      </Button>
+                      {!pickerUploadResult ? (
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          disabled={pickerIsUploading}
+                          data-testid="button-picker-upload-submit"
+                          onClick={async () => {
+                            if (!pickerUploadFile) return;
+                            setPickerIsUploading(true);
+                            setPickerUploadError(null);
+                            try {
+                              const formData = new FormData();
+                              formData.append("file", pickerUploadFile);
+                              formData.append("altText", pickerUploadAlt);
+                              const r = await fetch("/api/integrations/website/upload-media", {
+                                method: "POST",
+                                credentials: "include",
+                                body: formData,
+                              });
+                              const data = await r.json();
+                              if (!r.ok) throw new Error(data.error || "Upload failed");
+                              setPickerUploadResult({ url: data.url, source: data.source });
+                            } catch (e: unknown) {
+                              setPickerUploadError(e instanceof Error ? e.message : "Upload failed");
+                            } finally {
+                              setPickerIsUploading(false);
+                            }
+                          }}
+                        >
+                          {pickerIsUploading ? "Uploading…" : "Upload"}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          data-testid="button-picker-upload-insert"
+                          onClick={() => {
+                            if (!imagePickerPostId || !pickerUploadResult) return;
+                            const targets = rvSelectMode && rvSelectedIds.size > 0
+                              ? Array.from(rvSelectedIds)
+                              : postSelectMode && postSelectedIds.size > 0
+                                ? Array.from(postSelectedIds)
+                                : [imagePickerPostId];
+                            targets.forEach(pid => updatePostMutation.mutate({
+                              postId: pid,
+                              overrideImageUrl: pickerUploadResult.url,
+                              overrideBrandAssetId: null,
+                            }));
+                            setImagePickerPostId(null);
+                          }}
+                        >
+                          Use this image
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </DialogContent>
       </Dialog>
