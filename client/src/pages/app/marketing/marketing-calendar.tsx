@@ -64,6 +64,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { itemDeepLinkHref } from "@/lib/marketing-deep-links";
 import { useToast } from "@/hooks/use-toast";
 import { getTabContextHeaders } from "@/lib/tabContext";
 
@@ -2027,18 +2028,18 @@ function AddItemDialog({ open, onOpenChange, filterOpts, onCreated }: {
 }
 
 function editorHref(it: CalendarItem): string {
-  if (it.type === "social") return "/app/marketing/calendar";
-  if (it.type === "email") return "/app/marketing/email-newsletters";
-  // Deep-link straight to this brief so "Open editor" lands on the right draft
-  // instead of dumping the user into the bare briefs list. Pass the calendar id
-  // too so the page selects the right calendar before scrolling to the brief.
-  const params = new URLSearchParams();
-  if (it.calendarId) params.set("calendar", it.calendarId);
-  // Pass the campaign too so the editor opens scoped to this piece's campaign
-  // (a campaign-scoped review view) instead of the calendar's full brief list.
-  if (it.campaignId) params.set("campaignId", it.campaignId);
-  params.set("brief", it.id);
-  return `/app/marketing/editorial-calendar?${params.toString()}`;
+  // Deep-link straight to the exact item so "Open editor" lands on the right
+  // draft / email / post instead of dumping the user into a bare list. Social
+  // keeps its own richer helper (adds the target month); brief + email reuse the
+  // shared deep-link builder.
+  if (it.type === "social") return socialCalendarHref(it);
+  if (it.type === "email") {
+    return itemDeepLinkHref({ itemType: "email", itemId: it.id }) ?? "/app/marketing/email-newsletters";
+  }
+  return (
+    itemDeepLinkHref({ itemType: "brief", itemId: it.id, calendarId: it.calendarId, campaignId: it.campaignId })
+    ?? "/app/marketing/editorial-calendar"
+  );
 }
 
 // A content draft authored for LinkedIn / X is NOT a schedulable social post yet
