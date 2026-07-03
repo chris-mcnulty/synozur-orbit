@@ -238,6 +238,7 @@ export const markets = pgTable("markets", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  lastVisitedAt: timestamp("last_visited_at"),
 });
 
 // Consultant access grants - allows consultants to access specific tenants

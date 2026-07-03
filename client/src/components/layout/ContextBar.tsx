@@ -49,6 +49,8 @@ interface Market {
   status: string;
   baselineCompanyName: string | null;
   baselineCompanyUrl: string | null;
+  createdAt: string | null;
+  lastVisitedAt: string | null;
 }
 
 interface ContextData {
@@ -446,6 +448,15 @@ export default function ContextBar() {
       return next;
     });
 
+  const STALE_DAYS = 90;
+  const isMarketStale = (market: Market): boolean => {
+    const cutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
+    if (market.lastVisitedAt) return new Date(market.lastVisitedAt).getTime() < cutoff;
+    // Never explicitly visited — flag if the market itself is old enough
+    if (market.createdAt) return new Date(market.createdAt).getTime() < cutoff;
+    return false;
+  };
+
   const handleEditMarket = (market: Market, e: React.MouseEvent) => {
     e.stopPropagation();
     setMarketToEdit(market);
@@ -580,7 +591,7 @@ export default function ContextBar() {
                               />
                             )}
                             <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-medium">{market.name}</span>
                                 {market.businessType === "b2c" && (
                                   <Badge variant="outline" className="text-[10px] border-orange-400/50 text-orange-600 dark:text-orange-400">B2C</Badge>
@@ -590,6 +601,11 @@ export default function ContextBar() {
                                 )}
                                 {market.id === context?.activeMarketId && (
                                   <Badge className="text-[10px] bg-primary">Active</Badge>
+                                )}
+                                {isMarketStale(market) && market.id !== context?.activeMarketId && (
+                                  <Badge variant="outline" className="text-[10px] border-amber-400/50 text-amber-600 dark:text-amber-400" title="No activity in the last 90 days — consider archiving">
+                                    90d+ inactive
+                                  </Badge>
                                 )}
                               </div>
                               {market.baselineCompanyName ? (

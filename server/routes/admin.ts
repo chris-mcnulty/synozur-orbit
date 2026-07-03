@@ -6,7 +6,7 @@ import { getRequestContext, ContextError, getActiveTenantId, getActiveMarketId }
 import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, hasCrossTenantReadAccess, logAiUsage, parseManualResearch, switchTenantSchema, switchMarketSchema, createMarketSchema, updateMarketSchema, guardManualAction, guardFeature } from "./helpers";
 import { checkFeatureAccessAsync, getPlanFeaturesAsync, invalidatePlanCache, FEATURE_REGISTRY, FEATURE_CATEGORIES, MANUAL_ACTION_KEYS, MANUAL_ACTION_LABELS, type ManualActionKey } from "../services/plan-policy";
 import { getManualActionUsageSummary, grantManualActionBonus, listManualActionBonuses } from "../services/manual-action-quota";
-import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, analyticsConnections } from "@shared/schema";
+import { insertGroundingDocumentSchema, insertCompanyProfileSchema, insertAssessmentSchema, analyticsConnections, markets } from "@shared/schema";
 import { db } from "../db";
 import { eq, isNull } from "drizzle-orm";
 import { fromError } from "zod-validation-error";
@@ -3190,7 +3190,10 @@ Respond in JSON format:
 
       req.session.activeTenantId = market.tenantId;
       req.session.activeMarketId = marketId;
-      
+
+      // Stamp last_visited_at — fire and forget, never blocks the switch
+      db.update(markets).set({ lastVisitedAt: new Date() }).where(eq(markets.id, marketId)).catch(() => {});
+
       res.json({
         activeTenantId: market.tenantId,
         activeMarketId: marketId,
