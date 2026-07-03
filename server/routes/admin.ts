@@ -892,7 +892,10 @@ export function registerAdminRoutes(app: Express) {
         previousWebsiteContent: null as any,
         lastWebsiteMonitor: null as any,
       });
-      res.json({ success: true });
+      // Also clear any existing website-change alerts for this profile so a
+      // false "content removal" card disappears from the feed immediately.
+      const clearedAlerts = await storage.deleteWebsiteChangeActivitiesByCompanyProfile(profile.id);
+      res.json({ success: true, clearedAlerts });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });

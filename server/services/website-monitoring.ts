@@ -35,6 +35,40 @@ interface WebsiteMonitoringResult {
 const MIN_CHANGE_THRESHOLD = 5;
 const REQUEST_DELAY_MS = 1500;
 
+// Empty/near-empty crawl guard thresholds. A page that comes back essentially
+// empty (a JS-only shell, a temporary outage, a bot block, or a mid-deploy
+// blank page) or that collapses to a tiny fraction of the previously-seen
+// content is treated like an unreachable crawl, so it never produces a false
+// "complete content removal" alert or overwrites a good baseline snapshot.
+const MIN_ABSOLUTE_CONTENT_WORDS = 50; // fewer real words than this = essentially empty
+const MIN_ABSOLUTE_CONTENT_CHARS = 200; // combined content shorter than this = essentially empty
+const MIN_PREV_CONTENT_FOR_COLLAPSE = 500; // only flag a collapse when we had substantial prior content
+const COLLAPSE_FRACTION = 0.15; // new content under this fraction of previous = suspicious collapse
+
+// Returns true when a crawl looks like an unreachable/failed fetch rather than a
+// genuine content change: either it is below a sane absolute size, or it dropped
+// to a tiny fraction of the previously-stored content.
+function isEmptyOrCollapsedCrawl(
+  newContent: string,
+  previousContent: string,
+  totalWordCount: number,
+): boolean {
+  const newLen = newContent.trim().length;
+
+  // Absolute floor: a real site page has more than a few dozen words.
+  if (totalWordCount < MIN_ABSOLUTE_CONTENT_WORDS || newLen < MIN_ABSOLUTE_CONTENT_CHARS) {
+    return true;
+  }
+
+  // Relative collapse: previously had substantial content, now a tiny fraction.
+  const prevLen = previousContent.trim().length;
+  if (prevLen >= MIN_PREV_CONTENT_FOR_COLLAPSE && newLen < prevLen * COLLAPSE_FRACTION) {
+    return true;
+  }
+
+  return false;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -225,11 +259,28 @@ export async function monitorCompetitorWebsite(
       };
     }
     
-    await storage.resetCompetitorCrawlFailures(competitor.id);
-
     const newContent = getCombinedContent(crawlResult);
     const previousContent = competitor.previousWebsiteContent || "";
-    
+
+    // Treat an essentially-empty or collapsed crawl like an unreachable site:
+    // skip change detection + alert creation and leave the stored baseline
+    // untouched so a transient blank fetch never overwrites a good snapshot.
+    if (isEmptyOrCollapsedCrawl(newContent, previousContent, crawlResult.totalWordCount)) {
+      await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+      await storage.updateCompetitor(competitor.id, { lastWebsiteMonitor: now }).catch(() => {});
+      return {
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Crawl returned near-empty content - site may be unavailable",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
+    await storage.resetCompetitorCrawlFailures(competitor.id);
+
     const changeScore = calculateChangeScore(previousContent, newContent);
     const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
     
@@ -399,7 +450,22 @@ export async function monitorCompanyProfileWebsite(
     
     const newContent = getCombinedContent(crawlResult);
     const previousContent = companyProfile.previousWebsiteContent || "";
-    
+
+    // Treat an essentially-empty or collapsed crawl like an unreachable site:
+    // skip change detection + alert creation and leave the stored baseline
+    // untouched so a transient blank fetch never overwrites a good snapshot.
+    if (isEmptyOrCollapsedCrawl(newContent, previousContent, crawlResult.totalWordCount)) {
+      return {
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Crawl returned near-empty content - site may be unavailable",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
     const changeScore = calculateChangeScore(previousContent, newContent);
     const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
     
@@ -598,10 +664,27 @@ export async function monitorProductWebsite(
       };
     }
 
-    await storage.resetProductCrawlFailures(product.id);
-
     const newContent = getCombinedContent(crawlResult);
     const previousContent = product.previousWebsiteContent || "";
+
+    // Treat an essentially-empty or collapsed crawl like an unreachable site:
+    // skip change detection + alert creation and leave the stored baseline
+    // untouched so a transient blank fetch never overwrites a good snapshot.
+    if (isEmptyOrCollapsedCrawl(newContent, previousContent, crawlResult.totalWordCount)) {
+      await storage.incrementProductCrawlFailures(product.id).catch(() => {});
+      await storage.updateProduct(product.id, { lastWebsiteMonitor: now }).catch(() => {});
+      return {
+        productId: product.id,
+        productName: product.name,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Crawl returned near-empty content - site may be unavailable",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
+    await storage.resetProductCrawlFailures(product.id);
 
     const changeScore = calculateChangeScore(previousContent, newContent);
     const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;

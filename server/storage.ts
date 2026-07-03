@@ -266,6 +266,7 @@ export interface IStorage {
   ): Promise<Activity[]>;
   updateActivitySentiment(id: string, fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string }): Promise<void>;
   deleteActivity(id: string, tenantDomain: string): Promise<void>;
+  deleteWebsiteChangeActivitiesByCompanyProfile(companyProfileId: string): Promise<number>;
   getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
   getAnalyzedActivitiesByCompanyProfile(companyProfileId: string, sinceDays?: number): Promise<Activity[]>;
 
@@ -1108,6 +1109,19 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(activity)
       .where(and(eq(activity.id, id), eq(activity.tenantDomain, tenantDomain)));
+  }
+
+  // Remove existing website-change alerts tied to a baseline company profile.
+  // Used by "Reset Website Baseline" so a false "content removal" card
+  // disappears immediately instead of lingering in the feed.
+  async deleteWebsiteChangeActivitiesByCompanyProfile(companyProfileId: string): Promise<number> {
+    const result = await db
+      .delete(activity)
+      .where(and(
+        eq(activity.companyProfileId, companyProfileId),
+        eq(activity.type, "website_update"),
+      ));
+    return result.rowCount ?? 0;
   }
 
   async getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays: number = 90): Promise<Activity[]> {
