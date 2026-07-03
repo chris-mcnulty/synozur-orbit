@@ -85,22 +85,7 @@ class ReplitAnthropicProvider implements IAIProvider {
       params.temperature = options.temperature;
     }
 
-    let response: Anthropic.Message;
-    try {
-      response = await client.messages.create(params);
-    } catch (err: any) {
-      // Replit's Azure-backed Anthropic proxy can return 404 when a model alias
-      // is temporarily remapped to a version not yet available on the endpoint.
-      // Fall back to claude-haiku-4-5 which is on a separate deployment path.
-      const is404 = err?.status === 404 || String(err?.message).includes("404");
-      const fallbackModel = "claude-haiku-4-5";
-      if (is404 && model !== fallbackModel) {
-        console.warn(`[ai-provider] ${model} returned 404 ("${err.message}") — retrying with ${fallbackModel}`);
-        response = await client.messages.create({ ...params, model: fallbackModel });
-      } else {
-        throw err;
-      }
-    }
+    const response = await client.messages.create(params);
     const durationMs = Date.now() - startTime;
 
     const textBlock = response.content.find(b => b.type === "text");
@@ -672,6 +657,30 @@ export async function completeForFeature(
     } catch (err: any) {
       const is429 = err?.status === 429 || err?.statusCode === 429 ||
         (err?.message && /429|rate.?limit|too many requests|high demand/i.test(err.message));
+      const is404 = err?.status === 404 || err?.statusCode === 404 ||
+        (err?.message && /404|not supported|not found/i.test(err.message));
+
+      // 404 from Replit's Anthropic proxy — model alias not available on their
+      // Azure backend. Try Azure Foundry claude-sonnet-4-6 first (same capability
+      // tier), then fall back to claude-haiku-4-5 via Replit as last resort.
+      if (is404) {
+        const foundry = providers[AI_PROVIDERS.AZURE_FOUNDRY];
+        if (foundry?.isModelAvailable?.("claude-sonnet-4-6")) {
+          console.warn(`[ai-provider] ${resolved.model} returned 404 — trying Azure Foundry claude-sonnet-4-6 for ${feature}`);
+          try {
+            return cacheAndReturn(await foundry.complete("claude-sonnet-4-6", userPrompt, opts));
+          } catch (foundryErr: any) {
+            console.warn(`[ai-provider] Azure Foundry claude-sonnet-4-6 also failed (${foundryErr?.message}) — falling back to claude-haiku-4-5`);
+          }
+        }
+        const replitFallback = providers[AI_PROVIDERS.REPLIT_ANTHROPIC];
+        if (replitFallback?.isAvailable()) {
+          console.warn(`[ai-provider] Falling back to claude-haiku-4-5 for ${feature}`);
+          return cacheAndReturn(await replitFallback.complete("claude-haiku-4-5", userPrompt, opts));
+        }
+        throw err;
+      }
+
       if (is429 && attempt < MAX_RETRIES) {
         const delay = Math.min(2000 * Math.pow(2, attempt), 8000);
         console.warn(`[ai-provider] 429 rate limit on attempt ${attempt + 1} for ${feature}, retrying in ${delay}ms...`);
