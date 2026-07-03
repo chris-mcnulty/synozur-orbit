@@ -170,7 +170,44 @@ export const uploadImage = (
   params: { imageData: string; mimeType: string; altText: string; filename?: string; categoryId?: string },
 ) => callWebsiteTool<UploadedMedia>(tenant, "upload_image", params as unknown as Record<string, unknown>);
 
-/** Lightweight read used to verify a freshly-saved connection works. */
+// ─── Media library ───────────────────────────────────────────────────────────
+
+export interface WebsiteMediaCategory { id: string; name: string; slug: string }
+export interface WebsiteMediaItem {
+  id: string;
+  filename: string;
+  altText?: string;
+  type: string;
+  publicUrl: string;
+  optimizedUrl?: string;
+  storageKey?: string;
+  categoryId?: string;
+  createdAt?: string;
+}
+export interface WebsiteMediaList {
+  items: WebsiteMediaItem[];
+  total: number;
+  page: number;
+  perPage: number;
+}
+
+export const listMediaCategories = (tenant: string) =>
+  callWebsiteTool<WebsiteMediaCategory[]>(tenant, "list_media_categories");
+
+export const listMedia = (
+  tenant: string,
+  opts: { categoryId?: string; page?: number; perPage?: number } = {},
+) =>
+  callWebsiteTool<WebsiteMediaList>(tenant, "list_media", {
+    ...(opts.categoryId ? { categoryId: opts.categoryId } : {}),
+    ...(opts.page !== undefined ? { page: opts.page } : {}),
+    ...(opts.perPage !== undefined ? { perPage: opts.perPage } : {}),
+  });
+
+export const getMedia = (tenant: string, id: string) =>
+  callWebsiteTool<WebsiteMediaItem>(tenant, "get_media", { id });
+
+// ─── Lightweight read used to verify a freshly-saved connection works. ────────
 export const pingWebsite = (tenant: string) =>
   callWebsiteTool(tenant, "search_posts", { pageSize: 1 });
 

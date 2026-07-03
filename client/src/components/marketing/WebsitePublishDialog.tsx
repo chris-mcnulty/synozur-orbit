@@ -15,9 +15,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Globe, Loader2, CalendarClock, MousePointerClick, Users, TrendingUp, Unlink } from "lucide-react";
+import { Globe, Loader2, CalendarClock, MousePointerClick, Users, TrendingUp, Unlink, Images } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { WebsiteImagePickerDialog } from "./WebsiteImagePickerDialog";
 
 interface Asset {
   id: string;
@@ -73,6 +74,9 @@ export function WebsitePublishDialog({
   const [tagIds, setTagIds] = useState<Set<string>>(new Set());
   const [useHero, setUseHero] = useState(true);
   const [scheduledFor, setScheduledFor] = useState("");
+  const [heroPickerOpen, setHeroPickerOpen] = useState(false);
+  const [selectedHeroId, setSelectedHeroId] = useState<string | null>(null);
+  const [selectedHeroThumb, setSelectedHeroThumb] = useState<string | null>(null);
 
   const alreadyPosted = !!asset?.websitePostSlug;
 
@@ -130,6 +134,8 @@ export function WebsitePublishDialog({
     setTagIds(new Set(asset.websiteTagIds ?? []));
     setUseHero(!!asset.leadImageUrl);
     setScheduledFor("");
+    setSelectedHeroId(null);
+    setSelectedHeroThumb(null);
   }, [open, asset, status?.defaultAuthorId]);
 
   const push = useMutation({
@@ -144,7 +150,8 @@ export function WebsitePublishDialog({
           excerpt: excerpt || undefined,
           categoryIds: categoryIds.size ? Array.from(categoryIds) : undefined,
           tagIds: tagIds.size ? Array.from(tagIds) : undefined,
-          useLeadImageAsHero: useHero,
+          heroImageId: selectedHeroId || undefined,
+          useLeadImageAsHero: selectedHeroId ? false : useHero,
           scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
         }),
       });
@@ -312,12 +319,49 @@ export function WebsitePublishDialog({
             </div>
           )}
 
-          {asset.leadImageUrl && (
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Use lead image as hero</Label>
-              <Switch checked={useHero} onCheckedChange={setUseHero} data-testid="switch-website-hero" />
+          <div className="space-y-2">
+            {asset.leadImageUrl && (
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Use lead image as hero</Label>
+                <Switch
+                  checked={!selectedHeroId && useHero}
+                  onCheckedChange={(v) => { setUseHero(v); if (v) setSelectedHeroId(null); }}
+                  disabled={!!selectedHeroId}
+                  data-testid="switch-website-hero"
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHeroPickerOpen(true)}
+                className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                data-testid="button-website-hero-pick-library"
+              >
+                <Images className="w-3 h-3" />
+                {selectedHeroId ? "Change website library image" : "Choose from website library"}
+              </button>
+              {selectedHeroId && (
+                <>
+                  {selectedHeroThumb && (
+                    <img
+                      src={selectedHeroThumb}
+                      alt="hero"
+                      className="h-8 w-12 object-cover rounded border"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    onClick={() => { setSelectedHeroId(null); setSelectedHeroThumb(null); }}
+                    data-testid="button-website-hero-clear-library"
+                  >
+                    ✕ Clear
+                  </button>
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           <div>
             <Label className="text-xs text-muted-foreground">Schedule for <span className="font-normal">(optional)</span></Label>
@@ -336,6 +380,16 @@ export function WebsitePublishDialog({
           </Button>
         </div>}
       </DialogContent>
+
+      <WebsiteImagePickerDialog
+        open={heroPickerOpen}
+        onOpenChange={setHeroPickerOpen}
+        onSelect={(item) => {
+          setSelectedHeroId(item.id);
+          setSelectedHeroThumb(item.optimizedUrl || item.publicUrl);
+          setUseHero(false);
+        }}
+      />
     </Dialog>
   );
 }

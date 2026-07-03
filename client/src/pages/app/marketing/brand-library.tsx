@@ -405,6 +405,8 @@ export default function BrandLibraryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [addFontUploading, setAddFontUploading] = useState(false);
   const addFontFileRef = useRef<HTMLInputElement>(null);
+  const [addImageUploading, setAddImageUploading] = useState(false);
+  const addImageFileRef = useRef<HTMLInputElement>(null);
 
   function fontMimeFromExtension(filename: string): string {
     const ext = filename.split(".").pop()?.toLowerCase();
@@ -434,6 +436,30 @@ export default function BrandLibraryPage() {
       toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     } finally {
       setAddFontUploading(false);
+    }
+  };
+
+  const handleAddImageUpload = async (file: File) => {
+    setAddImageUploading(true);
+    try {
+      const contentType = (file.type && file.type !== "application/octet-stream") ? file.type : "application/octet-stream";
+      const reqRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType }),
+      });
+      if (!reqRes.ok) throw new Error((await reqRes.json()).error);
+      const { uploadURL, objectPath } = await reqRes.json();
+      const uploadRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": contentType } });
+      if (!uploadRes.ok) throw new Error("File upload failed");
+      const derivedFileType = file.type.startsWith("image/") ? "image" : "other";
+      setForm(f => ({ ...f, fileUrl: objectPath, fileType: derivedFileType }));
+      toast({ title: "File uploaded successfully" });
+    } catch (err) {
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setAddImageUploading(false);
     }
   };
 
@@ -822,9 +848,34 @@ export default function BrandLibraryPage() {
                       <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Usage notes" data-testid="input-brand-description" />
                     </div>
                     {form.assetType !== "font" && (
-                      <div>
+                      <div className="space-y-2">
                         <Label>URL or File Path</Label>
                         <Input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." data-testid="input-brand-url" />
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={addImageFileRef}
+                            type="file"
+                            accept="image/*,.pdf,.docx,.doc,.txt"
+                            className="hidden"
+                            onChange={e => { if (e.target.files?.[0]) handleAddImageUpload(e.target.files[0]); }}
+                            data-testid="input-add-brand-image-file"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={addImageUploading}
+                            onClick={() => addImageFileRef.current?.click()}
+                            data-testid="button-upload-add-brand-image"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            {addImageUploading ? "Uploading…" : form.fileUrl ? "Replace File" : "Upload File"}
+                          </Button>
+                          {form.fileUrl && !form.fileUrl.startsWith("http") && (
+                            <span className="text-xs text-muted-foreground">File uploaded</span>
+                          )}
+                        </div>
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-3">

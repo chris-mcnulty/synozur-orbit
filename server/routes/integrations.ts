@@ -874,6 +874,37 @@ export function registerIntegrationRoutes(app: Express) {
     catch (err) { res.status(502).json({ error: errorMessage(err) }); }
   });
 
+  // Media library proxies — browse images hosted on the website.
+  app.get("/api/integrations/website/media-categories", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const results = await website.listMediaCategories(ctx.tenantDomain);
+      res.json(Array.isArray(results) ? results : []);
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  app.get("/api/integrations/website/media", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const categoryId = typeof req.query.categoryId === "string" && req.query.categoryId ? req.query.categoryId : undefined;
+      const page = typeof req.query.page === "string" ? (parseInt(req.query.page, 10) || 1) : 1;
+      const perPage = typeof req.query.perPage === "string" ? Math.min(parseInt(req.query.perPage, 10) || 24, 100) : 24;
+      const result = await website.listMedia(ctx.tenantDomain, { categoryId, page, perPage });
+      if (result && Array.isArray(result.items)) {
+        result.items = result.items.filter((item: website.WebsiteMediaItem) => typeof item.type === "string" && item.type.startsWith("image/"));
+      }
+      res.json(result ?? { items: [], total: 0, page, perPage });
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  app.get("/api/integrations/website/media/:id", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const item = await website.getMedia(ctx.tenantDomain, req.params.id);
+      res.json(item);
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
   app.get("/api/integrations/website/posts", async (req, res) => {
     try {
       const ctx = await loadWebsiteContext(req, res);

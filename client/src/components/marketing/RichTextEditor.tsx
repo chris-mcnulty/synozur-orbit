@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { WebsiteImagePickerDialog } from "./WebsiteImagePickerDialog";
 import {
   Dialog,
   DialogContent,
@@ -541,6 +542,17 @@ export function RichTextEditor({ value, onChange, "data-testid": testId }: RichT
 
   const isSettingContent = useRef(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [websitePickerOpen, setWebsitePickerOpen] = useState(false);
+
+  const { data: websiteStatus } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const websiteConnected = websiteStatus?.connected ?? false;
 
   const editor = useEditor({
     extensions: [
@@ -699,6 +711,16 @@ export function RichTextEditor({ value, onChange, "data-testid": testId }: RichT
           >
             <ImageIcon className="h-3.5 w-3.5" />
           </ToolbarButton>
+          {websiteConnected && (
+            <ToolbarButton
+              onClick={() => setWebsitePickerOpen(true)}
+              active={false}
+              title="Browse website images"
+              data-testid="rte-website-image"
+            >
+              <Globe className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          )}
 
           <div className="mx-1 h-4 w-px bg-border" />
 
@@ -732,6 +754,14 @@ export function RichTextEditor({ value, onChange, "data-testid": testId }: RichT
         open={mediaPickerOpen}
         onClose={() => setMediaPickerOpen(false)}
         onInsert={handleInsertImage}
+      />
+      <WebsiteImagePickerDialog
+        open={websitePickerOpen}
+        onOpenChange={setWebsitePickerOpen}
+        onSelect={(item) => {
+          const url = item.optimizedUrl || item.publicUrl;
+          handleInsertImage(url);
+        }}
       />
     </>
   );
