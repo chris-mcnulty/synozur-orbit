@@ -87,6 +87,30 @@ function groupHref(campaignId: string, group: ActionGroup): string {
   return `/app/marketing/campaigns/${campaignId}${search}#${actionTab(group)}`;
 }
 
+/**
+ * Deep-link straight to the one item a single-item group represents, so an
+ * approver lands on the exact brief / email / post instead of a tab full of
+ * cards to hunt through. Returns undefined for multi-item (batched) rollups —
+ * those keep opening the tab.
+ *  - brief  → editorial calendar, editor auto-opened (`?brief=`)
+ *  - email  → email newsletters, viewer auto-opened (`?emailId=`)
+ *  - social → the campaign's Social Posts tab, scrolled to + highlighted (`?post=`)
+ */
+export function singleItemHref(campaignId: string, group: ActionGroup): string | undefined {
+  if (group.total !== 1 || !group.itemId) return undefined;
+  const itemId = encodeURIComponent(group.itemId);
+  switch (group.itemType) {
+    case "brief":
+      return `/app/marketing/editorial-calendar?campaignId=${encodeURIComponent(campaignId)}&brief=${itemId}`;
+    case "email":
+      return `/app/marketing/email-newsletters?emailId=${itemId}`;
+    case "social":
+      return `/app/marketing/campaigns/${encodeURIComponent(campaignId)}?post=${itemId}#posts`;
+    default:
+      return undefined;
+  }
+}
+
 /** Compact "12 approve · 6 schedule" breakdown of the remaining work. */
 function breakdown(group: ActionGroup): string {
   return (Object.entries(group.actionCounts) as [NextAction, number][])
@@ -97,16 +121,21 @@ function breakdown(group: ActionGroup): string {
 
 function GroupRow({
   group,
+  campaignId,
   onAction,
   href,
 }: {
   group: ActionGroup;
+  campaignId: string;
   onAction?: (tab: string, filter?: string) => void;
   href?: string;
 }) {
   const Icon = ACTION_ICON[group.headlineAction];
   const tab = actionTab(group);
   const filter = group.headlineAction === "fix" ? "publish_failed" : undefined;
+  // A single-item group always deep-links to the exact item (even in the
+  // in-page campaign rollup); only multi-item groups fall back to the tab.
+  const linkHref = singleItemHref(campaignId, group) ?? href;
   const button = (
     <Button
       size="sm"
@@ -134,9 +163,9 @@ function GroupRow({
           {group.pending} of {group.total} pending{breakdown(group) ? ` — ${breakdown(group)}` : ""}
         </p>
       </div>
-      {href ? (
+      {linkHref ? (
         <Button size="sm" variant="outline" className="shrink-0 gap-1.5" asChild data-testid={`next-action-${group.key}`}>
-          <Link href={href}>
+          <Link href={linkHref}>
             <Icon className="w-3.5 h-3.5" />
             {ACTION_LABELS[group.headlineAction]}
             <ArrowRight className="w-3 h-3" />
@@ -178,7 +207,7 @@ export function CampaignNextActions({
       </CardHeader>
       <CardContent className="divide-y pt-0">
         {pending.map((g) => (
-          <GroupRow key={g.key} group={g} onAction={onNavigate} />
+          <GroupRow key={g.key} group={g} campaignId={campaignId} onAction={onNavigate} />
         ))}
       </CardContent>
     </Card>
@@ -221,7 +250,7 @@ export function MarketingHubNextActions() {
             </div>
             <div className="divide-y border-l-2 border-muted pl-3">
               {c.groups.map((g) => (
-                <GroupRow key={g.key} group={g} href={groupHref(c.campaignId, g)} />
+                <GroupRow key={g.key} group={g} campaignId={c.campaignId} href={groupHref(c.campaignId, g)} />
               ))}
             </div>
           </div>

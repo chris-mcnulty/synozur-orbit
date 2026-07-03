@@ -67,6 +67,12 @@ export interface ActionGroup {
   statusCounts: Record<string, number>;
   /** How many items still need any action (total − done). */
   pending: number;
+  /**
+   * The single item's id when the group holds exactly one item — lets a nudge
+   * deep-link straight to that brief / email / post instead of just its tab.
+   * Undefined for multi-item (batched) groups.
+   */
+  itemId?: string;
 }
 
 const TYPE_LABELS: Record<ContentItemType, string> = {
@@ -182,6 +188,9 @@ export function groupNextActions(items: ActionableItem[], groupBy: GroupBy = "ba
       g.itemType = "mixed";
     }
     g.total += 1;
+    // Track the lone item's id so a single-item group can deep-link to it;
+    // clear it the moment a second item joins the group.
+    g.itemId = g.total === 1 ? item.id : undefined;
     g.actionCounts[item.action] = (g.actionCounts[item.action] ?? 0) + 1;
     g.statusCounts[item.status] = (g.statusCounts[item.status] ?? 0) + 1;
     if (item.action !== "done") g.pending += 1;

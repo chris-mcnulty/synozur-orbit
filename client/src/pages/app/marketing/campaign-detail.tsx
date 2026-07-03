@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, useSearch } from "wouter";
 import {
   Share2,
   Sparkles,
@@ -391,6 +391,7 @@ export default function CampaignDetailPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const searchStr = useSearch();
   const [activeTab, setActiveTab] = useState<CampaignTab>(getTabFromHash);
   const [fsOpen, setFsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -521,6 +522,9 @@ export default function CampaignDetailPage() {
 
   // Brief source navigation — highlights the source brief in the Content Plan tab
   const [highlightedBriefId, setHighlightedBriefId] = useState<string | null>(null);
+  // Post deep-link (?post=<id>, e.g. from a single-item "Next actions" nudge) —
+  // scrolls the Social Posts tab to that post and briefly highlights it.
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -1871,6 +1875,31 @@ export default function CampaignDetailPage() {
     const f = getFilterFromSearch();
     if (f) setPostFilter(f);
   }, [id]);
+
+  // Deep-link to one post (?post=<id>) — e.g. a single-item "Next actions" nudge.
+  // Wait until the post exists, then open the Social Posts tab with filters
+  // cleared so it can't be hidden, drill into its batch if it belongs to one,
+  // scroll to it, and briefly highlight. Runs reactively so it also fires when
+  // arriving via in-page navigation (no remount).
+  useEffect(() => {
+    const focusPostId = new URLSearchParams(searchStr).get("post");
+    if (!focusPostId) return;
+    const target = posts.find(p => p.id === focusPostId);
+    if (!target) return; // posts not loaded yet — effect re-runs when they arrive
+    setActiveTab("posts");
+    setPostFilter("all");
+    setPostAccountFilter("all");
+    setBatchFilter(batchSourceOf(target) ?? null);
+    setHighlightedPostId(focusPostId);
+    const t1 = setTimeout(() => {
+      const el = document.querySelector(`[data-testid="card-post-${focusPostId}"]`);
+      if (el && "scrollIntoView" in el) {
+        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+    const t2 = setTimeout(() => setHighlightedPostId(null), 2500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [searchStr, posts]);
 
   useEffect(() => {
     const prev = prevJobStatus.current;
@@ -3457,7 +3486,11 @@ export default function CampaignDetailPage() {
                     <Card
                       key={post.id}
                       data-testid={`card-post-${post.id}`}
-                      className={postSelectMode && postSelectedIds.has(post.id) ? "ring-2 ring-primary" : ""}
+                      className={
+                        (postSelectMode && postSelectedIds.has(post.id)) || highlightedPostId === post.id
+                          ? "ring-2 ring-primary transition-shadow"
+                          : ""
+                      }
                     >
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
