@@ -49,6 +49,13 @@ interface MediaAsset {
   url?: string | null;
 }
 
+interface BrandAsset {
+  id: string;
+  name: string;
+  fileUrl?: string | null;
+  url?: string | null;
+}
+
 interface MediaPickerDialogProps {
   open: boolean;
   onClose: () => void;
@@ -57,6 +64,7 @@ interface MediaPickerDialogProps {
 
 function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) {
   const [tab, setTab] = useState<"library" | "url">("library");
+  const [librarySection, setLibrarySection] = useState<"content" | "brand">("content");
   const [search, setSearch] = useState("");
   const [manualUrl, setManualUrl] = useState("");
 
@@ -69,6 +77,15 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
     enabled: open,
   });
 
+  const { data: brandAssets = [], isLoading: isBrandLoading } = useQuery<BrandAsset[]>({
+    queryKey: ["/api/brand-assets"],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open,
+  });
+
   const imageAssets = assets.filter((a) => {
     const hasImage = !!(a.leadImageUrl || a.fileUrl);
     if (!hasImage) return false;
@@ -76,8 +93,23 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
     return (a.title ?? "").toLowerCase().includes(search.toLowerCase());
   });
 
+  const imageBrandAssets = brandAssets.filter((a) => {
+    const hasImage = !!(a.fileUrl || a.url);
+    if (!hasImage) return false;
+    if (!search) return true;
+    return (a.name ?? "").toLowerCase().includes(search.toLowerCase());
+  });
+
   const handlePickAsset = (asset: MediaAsset) => {
     const url = asset.leadImageUrl || asset.fileUrl || "";
+    if (url) {
+      onInsert(url);
+      onClose();
+    }
+  };
+
+  const handlePickBrandAsset = (asset: BrandAsset) => {
+    const url = asset.fileUrl || asset.url || "";
     if (url) {
       onInsert(url);
       onClose();
@@ -95,6 +127,7 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
     setSearch("");
     setManualUrl("");
     setTab("library");
+    setLibrarySection("content");
     onClose();
   };
 
@@ -139,6 +172,34 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
         {/* Library tab */}
         {tab === "library" && (
           <div className="flex flex-col gap-3 overflow-hidden min-h-0">
+            {/* Library sub-tabs */}
+            <div className="flex gap-1 shrink-0" data-testid="media-picker-library-subtabs">
+              <button
+                type="button"
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  librarySection === "content"
+                    ? "bg-primary/10 border-primary text-primary font-medium"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => { setLibrarySection("content"); setSearch(""); }}
+                data-testid="button-media-picker-section-content"
+              >
+                Content Assets
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  librarySection === "brand"
+                    ? "bg-primary/10 border-primary text-primary font-medium"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => { setLibrarySection("brand"); setSearch(""); }}
+                data-testid="button-media-picker-section-brand"
+              >
+                Brand Library
+              </button>
+            </div>
+
             <div className="relative shrink-0">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
@@ -149,52 +210,106 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
                 data-testid="input-media-picker-search"
               />
             </div>
-            <div className="overflow-y-auto flex-1 min-h-0">
-              {isLoading ? (
-                <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
-              ) : imageAssets.length === 0 ? (
-                <div className="text-center py-8 space-y-1">
-                  <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">
-                    {search ? "No matching images found." : "No images found in your asset library."}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Use the &quot;Enter URL&quot; tab to insert by URL instead.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 pb-1">
-                  {imageAssets.map((asset) => {
-                    const imgUrl = asset.leadImageUrl || asset.fileUrl || "";
-                    return (
-                      <button
-                        key={asset.id}
-                        type="button"
-                        className="group border rounded-lg overflow-hidden hover:border-primary transition-colors text-left"
-                        onClick={() => handlePickAsset(asset)}
-                        title={asset.title}
-                        data-testid={`button-media-asset-${asset.id}`}
-                      >
-                        <div className="aspect-video bg-muted overflow-hidden">
-                          <img
-                            src={imgUrl}
-                            alt={asset.title}
-                            className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
-                            loading="lazy"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = "none";
-                            }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-muted-foreground truncate px-1.5 py-1 leading-tight">
-                          {asset.title}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+
+            {/* Content Assets section */}
+            {librarySection === "content" && (
+              <div className="overflow-y-auto flex-1 min-h-0">
+                {isLoading ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
+                ) : imageAssets.length === 0 ? (
+                  <div className="text-center py-8 space-y-1">
+                    <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground">
+                      {search ? "No matching images found." : "No images found in your content library."}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Try Brand Library or use the &quot;Enter URL&quot; tab.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 pb-1">
+                    {imageAssets.map((asset) => {
+                      const imgUrl = asset.leadImageUrl || asset.fileUrl || "";
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          className="group border rounded-lg overflow-hidden hover:border-primary transition-colors text-left"
+                          onClick={() => handlePickAsset(asset)}
+                          title={asset.title}
+                          data-testid={`button-media-asset-${asset.id}`}
+                        >
+                          <div className="aspect-video bg-muted overflow-hidden">
+                            <img
+                              src={imgUrl}
+                              alt={asset.title}
+                              className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground truncate px-1.5 py-1 leading-tight">
+                            {asset.title}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Brand Library section */}
+            {librarySection === "brand" && (
+              <div className="overflow-y-auto flex-1 min-h-0">
+                {isBrandLoading ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
+                ) : imageBrandAssets.length === 0 ? (
+                  <div className="text-center py-8 space-y-1">
+                    <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground">
+                      {search ? "No matching brand images found." : "No images found in your brand library."}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Try Content Assets or use the &quot;Enter URL&quot; tab.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 pb-1">
+                    {imageBrandAssets.map((asset) => {
+                      const imgUrl = asset.fileUrl || asset.url || "";
+                      return (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          className="group border rounded-lg overflow-hidden hover:border-primary transition-colors text-left"
+                          onClick={() => handlePickBrandAsset(asset)}
+                          title={asset.name}
+                          data-testid={`button-brand-asset-${asset.id}`}
+                        >
+                          <div className="aspect-video bg-muted overflow-hidden">
+                            <img
+                              src={imgUrl}
+                              alt={asset.name}
+                              className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground truncate px-1.5 py-1 leading-tight">
+                            {asset.name}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
