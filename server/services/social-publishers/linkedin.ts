@@ -449,6 +449,16 @@ export class LinkedInPublisher implements SocialPublisher {
     if (imageUrl) {
       imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
       if (!imageAssetUrn) {
+        // If the user explicitly set an override image, failing silently produces a
+        // text-only post with no indication something went wrong. Return an error
+        // instead so the post stays in a retryable state and the user can fix the URL.
+        if ((post as any).overrideImageUrl) {
+          return {
+            success: false,
+            errorCode: "image_upload_failed",
+            errorMessage: `Image could not be uploaded to LinkedIn — the image URL may be broken or unreachable. Fix the image on this post and retry. URL: ${imageUrl}`,
+          };
+        }
         console.warn(`[LinkedIn] Image upload failed for post ${post.id} — posting as text-only. Image URL: ${imageUrl}`);
       }
     } else {

@@ -264,6 +264,16 @@ export class TwitterPublisher implements SocialPublisher {
     let mediaId: string | null = null;
     if (imageUrl) {
       mediaId = await this.uploadMedia(accessToken, imageUrl);
+      // If the user explicitly set an override image and the upload failed,
+      // return an error so the post stays retryable rather than being silently
+      // posted as text-only.
+      if (!mediaId && (post as any).overrideImageUrl) {
+        return {
+          success: false,
+          errorCode: "image_upload_failed",
+          errorMessage: `Image could not be uploaded to X — the image URL may be broken or unreachable. Fix the image on this post and retry. URL: ${imageUrl}`,
+        };
+      }
     }
 
     const tweetBody: Record<string, unknown> = { text: finalText };
