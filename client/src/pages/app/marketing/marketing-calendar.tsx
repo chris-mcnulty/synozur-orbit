@@ -1,6 +1,6 @@
 import type { Dispatch, DragEvent as ReactDragEvent, SetStateAction } from "react";
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearch } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
 import { Card, CardContent } from "@/components/ui/card";
@@ -681,8 +681,44 @@ export default function MarketingCalendarPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
+  // Deep-link support: a rollup surface can link here targeting one item via
+  // ?brief= (content), ?emailId= (email), or ?post= (social), with an optional
+  // ?date= to land on the right month. We scroll to + highlight that item's day
+  // and, when it's hidden in a busy day's "+N more" overflow, auto-open the
+  // day-detail panel so the item is actually visible (mirrors the Social Posts
+  // calendar's auto-expand behavior).
+  const searchString = useSearch();
+  const deepLink = useMemo(() => {
+    const p = new URLSearchParams(searchString);
+    const brief = p.get("brief");
+    const emailId = p.get("emailId");
+    const post = p.get("post");
+    const date = p.get("date");
+    let target: { type: ItemType; id: string } | null = null;
+    if (brief) target = { type: "content", id: brief };
+    else if (emailId) target = { type: "email", id: emailId };
+    else if (post) target = { type: "social", id: post };
+    return { target, date };
+  }, [searchString]);
+
   const [view, setView] = useState<"calendar" | "backlog">("calendar");
-  const [anchor, setAnchor] = useState(() => startOfMonth(new Date()));
+  const [anchor, setAnchor] = useState(() => {
+    // Seed the month from the deep-link date so the targeted item's month is
+    // fetched right away when it lives outside the current month.
+    const p = new URLSearchParams(window.location.search);
+    const d = p.get("date");
+    if (d) {
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) return startOfMonth(parsed);
+    }
+    return startOfMonth(new Date());
+  });
+  // Day whose cell should scroll into view + briefly highlight when arriving via
+  // a deep link. Holds a "yyyy-MM-dd" key; cleared after the one-time cue.
+  const [focusDayKey, setFocusDayKey] = useState<string | null>(null);
+  // Once a given deep-link target has been honored, don't re-run it (so closing
+  // the day panel / detail doesn't snap it back open).
+  const [honoredDeepLink, setHonoredDeepLink] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<"month" | "quarter">("month");
   const [groupBy, setGroupBy] = useState<"none" | "campaign" | "theme" | "event">("none");
   const [filters, setFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all" });
@@ -779,6 +815,56 @@ export default function MarketingCalendarPage() {
     }
     return map;
   }, [visibleScheduled]);
+
+  // Deep-link landing: when arriving via ?brief=/?emailId=/?post=, find the
+  // target item, normalize the view so its day cell is on screen, and — if the
+  // item is hidden in that day's "+N more" overflow — open the day-detail panel
+  // so it's actually visible (mirrors the Social Posts calendar's auto-expand).
+  useEffect(() => {
+    const target = deepLink.target;
+    if (!target || isLoading) return;
+    const honorKey = `${target.type}:${target.id}`;
+    if (honoredDeepLink === honorKey) return;
+
+    const match = scheduled.find((i) => i.type === target.type && i.id === target.id);
+    // Not in the loaded month (or collapsed inside a social batch) — leave the
+    // calendar where it is; no error, and retried if the data changes.
+    if (!match) return;
+    const dayKey = localKey(match.date);
+    if (!dayKey) return;
+
+    // Make sure the target's month grid is actually rendered before we try to
+    // locate its day. Apply any needed view changes, then let the effect re-run
+    // once state settles so byDay reflects the correct, unfiltered month.
+    let needsSettle = false;
+    if (view !== "calendar") { setView("calendar"); needsSettle = true; }
+    if (grouping !== "month") { setGrouping("month"); needsSettle = true; }
+    // A type filter would drop the pill from byDay — relax it so it shows.
+    if (!matchesTypeFilter(match, typeFilter)) { setTypeFilter("all"); needsSettle = true; }
+    const monthAnchor = startOfMonth(parseLocalDay(dayKey));
+    if (ymd(monthAnchor) !== ymd(anchor)) { setAnchor(monthAnchor); needsSettle = true; }
+    if (needsSettle) return;
+
+    // Everything is aligned: the item beyond the 4-pill cap lives in "+N more",
+    // so open the day panel to reveal it.
+    const dayList = byDay.get(dayKey) || [];
+    const idx = dayList.findIndex((i) => i.type === match.type && i.id === match.id);
+    if (idx >= 4) setDayDetail(dayKey);
+
+    setFocusDayKey(dayKey);
+    setHonoredDeepLink(honorKey);
+  }, [deepLink, isLoading, scheduled, byDay, honoredDeepLink, view, grouping, typeFilter, anchor]);
+
+  // Once the focused day cell is rendered, scroll it into view and briefly
+  // highlight it so the user can see exactly where the item sits. The highlight
+  // clears after a moment so it's a one-time cue.
+  useEffect(() => {
+    if (!focusDayKey) return;
+    const cell = document.querySelector(`[data-testid="day-cell-${focusDayKey}"]`);
+    cell?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setFocusDayKey(null), 2600);
+    return () => clearTimeout(t);
+  }, [focusDayKey]);
 
   // Content Advisor: review the currently-visible scheduled items (respects the
   // active campaign/type filter) plus the undated backlog. Scope the backlog
@@ -1324,6 +1410,7 @@ export default function MarketingCalendarPage() {
                     anchor={anchor}
                     byDay={byDay}
                     filterOpts={filterOpts}
+                    focusDayKey={focusDayKey}
                     onSelect={handleSelect}
                     onOpenDay={(key) => setDayDetail(key)}
                     onDropSchedule={handleDropSchedule}
@@ -1622,10 +1709,11 @@ function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarIte
   );
 }
 
-function MonthGrid({ anchor, byDay, filterOpts, onSelect, onOpenDay, onDropSchedule, onReschedule }: {
+function MonthGrid({ anchor, byDay, filterOpts, focusDayKey, onSelect, onOpenDay, onDropSchedule, onReschedule }: {
   anchor: Date;
   byDay: Map<string, CalendarItem[]>;
   filterOpts?: FilterOptions;
+  focusDayKey?: string | null;
   onSelect: (i: CalendarItem) => void;
   onOpenDay?: (key: string) => void;
   onDropSchedule?: (descriptors: { type: string; id: string }[], dateKey: string) => void;
@@ -1682,7 +1770,7 @@ function MonthGrid({ anchor, byDay, filterOpts, onSelect, onOpenDay, onDropSched
           return (
             <div
               key={i}
-              className={`min-h-[96px] border-b border-r p-1 ${date ? "" : "bg-muted/20"} ${key === todayKey ? "bg-primary/5" : ""} ${isDragOver ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""}`}
+              className={`min-h-[96px] border-b border-r p-1 ${date ? "" : "bg-muted/20"} ${key === todayKey ? "bg-primary/5" : ""} ${isDragOver ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""} ${key && key === focusDayKey ? "ring-2 ring-inset ring-primary" : ""}`}
               data-testid={key ? `day-cell-${key}` : undefined}
               onDragOver={isDropTarget ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (key !== dragOverKey) setDragOverKey(key); } : undefined}
               onDragLeave={isDropTarget ? (e) => { if (e.currentTarget === e.target && key === dragOverKey) setDragOverKey(null); } : undefined}
