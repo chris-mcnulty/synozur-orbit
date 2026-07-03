@@ -201,6 +201,12 @@ export async function generateBriefing(
       storage.getCompetitorsByContext(ctx),
       storage.getCompanyProfileByContext(ctx).then(p => p || undefined),
     ]);
+  } else if (marketId) {
+    [activities, competitors, baseline] = await Promise.all([
+      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+      storage.getCompetitorsByMarket(tenantDomain, marketId),
+      storage.getCompanyProfileByTenant(tenantDomain),
+    ]);
   } else {
     [activities, competitors, baseline] = await Promise.all([
       storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
@@ -642,6 +648,12 @@ export async function generateBriefingData(
       storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
       storage.getCompetitorsByContext(ctx),
       storage.getCompanyProfileByContext(ctx).then(p => p || undefined),
+    ]);
+  } else if (marketId) {
+    [activities, competitors, baseline] = await Promise.all([
+      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
+      storage.getCompetitorsByMarket(tenantDomain, marketId),
+      storage.getCompanyProfileByTenant(tenantDomain),
     ]);
   } else {
     [activities, competitors, baseline] = await Promise.all([

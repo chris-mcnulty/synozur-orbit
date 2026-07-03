@@ -242,6 +242,7 @@ export interface IStorage {
   getAllCompetitors(): Promise<Competitor[]>;
   getCompetitorsByUserId(userId: string): Promise<Competitor[]>;
   getCompetitorsByTenantDomain(tenantDomain: string): Promise<Competitor[]>;
+  getCompetitorsByMarket(tenantDomain: string, marketId: string): Promise<Competitor[]>;
   createCompetitor(competitor: InsertCompetitor): Promise<Competitor>;
   updateCompetitor(id: string, data: Partial<Competitor>): Promise<Competitor>;
   updateCompetitorLastCrawl(id: string, lastCrawl: string): Promise<void>;
@@ -2830,6 +2831,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Context-aware methods - filter by tenant domain AND market ID
+  async getCompetitorsByMarket(tenantDomain: string, marketId: string): Promise<Competitor[]> {
+    return db.select().from(competitors)
+      .where(
+        and(
+          eq(competitors.tenantDomain, tenantDomain),
+          eq(competitors.marketId, marketId),
+          isNull(competitors.projectId)
+        )
+      )
+      .orderBy(desc(competitors.createdAt));
+  }
+
   async getCompetitorsByContext(ctx: ContextFilter): Promise<Competitor[]> {
     // Get competitors with explicit tenantDomain match
     const marketCompetitors = await db.select().from(competitors)
