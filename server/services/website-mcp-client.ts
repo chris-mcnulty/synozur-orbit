@@ -174,6 +174,22 @@ export const uploadImage = (
 export const pingWebsite = (tenant: string) =>
   callWebsiteTool(tenant, "search_posts", { pageSize: 1 });
 
+export interface WebsitePostSummary {
+  id: string;
+  title: string;
+  slug: string;
+  status: string;
+  publishedAt?: string;
+  excerpt?: string;
+}
+
+/** Search published/draft posts on the tenant's website via MCP. */
+export const searchPosts = (tenant: string, query?: string, pageSize = 30) =>
+  callWebsiteTool<WebsitePostSummary[]>(tenant, "search_posts", {
+    ...(query ? { query } : {}),
+    pageSize,
+  });
+
 /** Reject non-HTTPS and localhost / private / link-local hosts so a server-side
  *  image fetch can't be turned into an SSRF probe of the internal network. */
 function isSafePublicHttpsUrl(url: string): boolean {

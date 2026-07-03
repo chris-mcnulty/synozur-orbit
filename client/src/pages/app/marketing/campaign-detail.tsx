@@ -434,6 +434,11 @@ export default function CampaignDetailPage() {
   const [newBlogDialogOpen, setNewBlogDialogOpen] = useState(false);
   const [blogIdeaText, setBlogIdeaText] = useState("");
   const [suggestedBlogTitle, setSuggestedBlogTitle] = useState("");
+  const [linkPostOpen, setLinkPostOpen] = useState(false);
+  const [linkPostUrl, setLinkPostUrl] = useState("");
+  const [linkPostTitle, setLinkPostTitle] = useState("");
+  const [synozurSearch, setSynozurSearch] = useState("");
+  const [synozurSearchTerm, setSynozurSearchTerm] = useState("");
   const [selectedBrandImageIds, setSelectedBrandImageIds] = useState<string[]>([]);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   // null = all campaign accounts (no explicit selection / no pre-selection from brief)
@@ -571,6 +576,79 @@ export default function CampaignDetailPage() {
     },
     onSuccess: (data) => setSuggestedBlogTitle(data.title),
     onError: (e: any) => toast({ title: "Could not suggest title", description: e.message, variant: "destructive" }),
+  });
+
+  const { data: synozurPosts, isFetching: synozurPostsFetching } = useQuery<{ id: string; title: string; slug: string; status: string; publishedAt?: string }[]>({
+    queryKey: ["/api/integrations/website/posts", synozurSearchTerm],
+    queryFn: async () => {
+      const q = synozurSearchTerm.trim();
+      const url = q ? `/api/integrations/website/posts?q=${encodeURIComponent(q)}` : "/api/integrations/website/posts";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: linkPostOpen,
+    staleTime: 30_000,
+  });
+
+  const linkPostMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/planning-hub/link-website-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          campaignId: id,
+          postId: "url-only",
+          postSlug: linkPostUrl.replace(/.*\//, "") || "linked-post",
+          postTitle: linkPostTitle.trim(),
+          postStatus: "published",
+          siteUrl: null,
+          url: linkPostUrl.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to link post");
+      return res.json();
+    },
+    onSuccess: () => {
+      refreshHub();
+      setLinkPostOpen(false);
+      setLinkPostUrl("");
+      setLinkPostTitle("");
+      setSynozurSearch("");
+      setSynozurSearchTerm("");
+      toast({ title: "Post linked", description: "The blog post has been added to this campaign." });
+    },
+    onError: (e: any) => toast({ title: "Failed to link", description: e.message, variant: "destructive" }),
+  });
+
+  const linkSynozurPostMutation = useMutation({
+    mutationFn: async (post: { id: string; title: string; slug: string; status: string }) => {
+      const siteUrl = (websiteStatus as any)?.siteUrl ?? "";
+      const res = await fetch("/api/planning-hub/link-website-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          campaignId: id,
+          postId: post.id,
+          postSlug: post.slug,
+          postTitle: post.title,
+          postStatus: post.status,
+          siteUrl,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to link post");
+      return res.json();
+    },
+    onSuccess: () => {
+      refreshHub();
+      setLinkPostOpen(false);
+      setSynozurSearch("");
+      setSynozurSearchTerm("");
+      toast({ title: "Post linked", description: "The Synozur post has been added to this campaign." });
+    },
+    onError: (e: any) => toast({ title: "Failed to link", description: e.message, variant: "destructive" }),
   });
 
   const hubUpdateBlogDateMutation = useMutation({
@@ -2773,21 +2851,33 @@ export default function CampaignDetailPage() {
                             Content briefs of format blog post linked to this campaign.
                           </p>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1.5"
-                          disabled={hubCreateBlogPostMutation.isPending}
-                          onClick={() => hubCreateBlogPostMutation.mutate()}
-                          data-testid="button-hub-new-blog-post"
-                        >
-                          {hubCreateBlogPostMutation.isPending ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Plus className="w-3.5 h-3.5" />
-                          )}
-                          New Blog Post
-                        </Button>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5"
+                            onClick={() => setLinkPostOpen(true)}
+                            data-testid="button-hub-link-post"
+                          >
+                            <Link2 className="w-3.5 h-3.5" />
+                            Link existing
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5"
+                            disabled={hubCreateBlogPostMutation.isPending}
+                            onClick={() => hubCreateBlogPostMutation.mutate()}
+                            data-testid="button-hub-new-blog-post"
+                          >
+                            {hubCreateBlogPostMutation.isPending ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="w-3.5 h-3.5" />
+                            )}
+                            New Blog Post
+                          </Button>
+                        </div>
                       </div>
                       {blogItems.length === 0 ? (
                         <p className="text-xs text-muted-foreground py-2" data-testid="text-hub-no-blog-posts">
@@ -5895,36 +5985,36 @@ export default function CampaignDetailPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="blog-idea">Your idea</Label>
+              <Label htmlFor="blog-title">Blog post title</Label>
+              <Input
+                id="blog-title"
+                placeholder="Enter the title"
+                value={suggestedBlogTitle}
+                onChange={(e) => setSuggestedBlogTitle(e.target.value)}
+                autoFocus
+                data-testid="input-blog-title"
+              />
+            </div>
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-xs text-muted-foreground font-medium">Or let AI suggest a title from your idea</p>
               <Textarea
                 id="blog-idea"
                 placeholder="e.g. how did SpaceX become an AI company — aren't they a rocket company?"
-                className="resize-none min-h-[80px]"
+                className="resize-none min-h-[72px]"
                 value={blogIdeaText}
                 onChange={(e) => setBlogIdeaText(e.target.value)}
                 data-testid="textarea-blog-idea"
               />
-            </div>
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              disabled={!blogIdeaText.trim() || suggestBlogTitleMutation.isPending}
-              onClick={() => suggestBlogTitleMutation.mutate(blogIdeaText)}
-              data-testid="button-suggest-blog-title"
-            >
-              {suggestBlogTitleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Suggest title with AI
-            </Button>
-            <div className="space-y-1.5">
-              <Label htmlFor="blog-title">Blog post title</Label>
-              <Input
-                id="blog-title"
-                placeholder="Enter or edit the title"
-                value={suggestedBlogTitle}
-                onChange={(e) => setSuggestedBlogTitle(e.target.value)}
-                data-testid="input-blog-title"
-              />
-              <p className="text-xs text-muted-foreground">You can edit the AI suggestion or write your own.</p>
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                disabled={!blogIdeaText.trim() || suggestBlogTitleMutation.isPending}
+                onClick={() => suggestBlogTitleMutation.mutate(blogIdeaText)}
+                data-testid="button-suggest-blog-title"
+              >
+                {suggestBlogTitleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Suggest title with AI
+              </Button>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -6612,6 +6702,101 @@ export default function CampaignDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Link existing published blog post dialog */}
+      <Dialog open={linkPostOpen} onOpenChange={(o) => {
+        if (!o) { setLinkPostUrl(""); setLinkPostTitle(""); setSynozurSearch(""); setSynozurSearchTerm(""); }
+        setLinkPostOpen(o);
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Link2 className="w-4 h-4" /> Link existing blog post</DialogTitle>
+            <DialogDescription>Paste the published URL of a blog post to track it in this campaign.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="link-post-title">Post title <span className="text-destructive">*</span></Label>
+              <Input
+                id="link-post-title"
+                placeholder="The title of the published post"
+                value={linkPostTitle}
+                onChange={(e) => setLinkPostTitle(e.target.value)}
+                autoFocus
+                data-testid="input-link-post-title"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="link-post-url">Published URL</Label>
+              <Input
+                id="link-post-url"
+                placeholder="https://example.com/insights/my-post"
+                value={linkPostUrl}
+                onChange={(e) => setLinkPostUrl(e.target.value)}
+                data-testid="input-link-post-url"
+              />
+            </div>
+            {(websiteStatus as any)?.connected && (
+              <div className="border-t pt-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Or pick a post from Synozur</p>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Search Synozur posts…"
+                    value={synozurSearch}
+                    onChange={(e) => setSynozurSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") setSynozurSearchTerm(synozurSearch); }}
+                    className="flex-1"
+                    data-testid="input-synozur-search"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSynozurSearchTerm(synozurSearch)}
+                    disabled={synozurPostsFetching}
+                    data-testid="button-synozur-search"
+                  >
+                    {synozurPostsFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
+                  </Button>
+                </div>
+                {synozurPosts && synozurPosts.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto border rounded-md divide-y" data-testid="list-synozur-posts">
+                    {synozurPosts.map((post) => (
+                      <button
+                        key={post.id}
+                        className="w-full text-left px-3 py-2 hover:bg-accent transition-colors text-sm"
+                        onClick={() => {
+                          linkSynozurPostMutation.mutate(post);
+                        }}
+                        disabled={linkSynozurPostMutation.isPending}
+                        data-testid={`button-synozur-post-${post.id}`}
+                      >
+                        <div className="font-medium line-clamp-1">{post.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {post.status}
+                          {post.publishedAt ? ` · ${new Date(post.publishedAt).toLocaleDateString()}` : ""}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {synozurPosts && synozurPosts.length === 0 && synozurSearchTerm && !synozurPostsFetching && (
+                  <p className="text-xs text-muted-foreground">No posts found for "{synozurSearchTerm}".</p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setLinkPostOpen(false)} data-testid="button-cancel-link-post">Cancel</Button>
+            <Button
+              disabled={!linkPostTitle.trim() || linkPostMutation.isPending}
+              onClick={() => linkPostMutation.mutate()}
+              data-testid="button-confirm-link-post"
+            >
+              {linkPostMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+              Link post
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Hub tab dialogs */}
       {id && (

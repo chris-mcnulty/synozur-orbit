@@ -28,6 +28,7 @@ import {
   generatedPosts,
   generatedEmails,
   contentBriefs,
+  contentAssets,
   editorialCalendars,
   campaigns,
   solutionAreas,
@@ -457,6 +458,68 @@ export function registerPlanningHubRoutes(app: Express) {
     } catch (err: any) {
       console.error("[planning-hub create item]", err.message);
       res.status(500).json({ error: err.message || "Failed to create item" });
+    }
+  });
+
+  /**
+   * POST /api/planning-hub/link-website-post
+   * Link an existing published website post into a campaign as a content brief + asset.
+   * Body: { campaignId, postId, postSlug, postTitle, postStatus, siteUrl? }
+   */
+  app.post("/api/planning-hub/link-website-post", async (req, res) => {
+    const ctx = await getRequestContext(req);
+    if (!ctx.tenantDomain) return res.status(401).json({ error: "Unauthorized" });
+    const { campaignId, postId, postSlug, postTitle, postStatus, siteUrl, url } = req.body ?? {};
+    if (!campaignId || !postTitle) {
+      return res.status(400).json({ error: "campaignId and postTitle are required" });
+    }
+    // For URL-paste flow postId/postSlug are optional (derive slug from URL)
+    const resolvedSlug = postSlug || (url ? String(url).replace(/.*\//, "") : null) || "linked-post";
+    const resolvedPostId = postId && postId !== "url-only" ? String(postId) : null;
+    try {
+      const [campaign] = await db.select({ id: campaigns.id })
+        .from(campaigns)
+        .where(and(eq(campaigns.id, campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const calendar = await getOrCreateManualCalendar(ctx);
+      const briefId = randomUUID();
+      await db.insert(contentBriefs).values({
+        id: briefId,
+        calendarId: calendar.id,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        title: String(postTitle).trim(),
+        format: "blog_post",
+        funnelStage: "awareness",
+        status: "approved",
+        aiGenerated: false,
+        campaignId,
+      } as any);
+
+      const assetId = randomUUID();
+      // If siteUrl provided, build from site + slug; else use the direct url field.
+      const postUrl = url || (siteUrl ? `${String(siteUrl).replace(/\/$/, "")}/${resolvedSlug}` : null);
+      await db.insert(contentAssets).values({
+        id: assetId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        title: String(postTitle).trim(),
+        assetType: "blog_post",
+        status: "active",
+        isExternal: true,
+        websitePostId: resolvedPostId || undefined,
+        websitePostSlug: resolvedSlug,
+        websitePostStatus: postStatus || "published",
+        url: postUrl,
+        sourceBriefId: briefId,
+        createdBy: ctx.userId,
+      } as any);
+
+      return res.status(201).json({ briefId, assetId });
+    } catch (err: any) {
+      console.error("[planning-hub link-website-post]", err.message);
+      res.status(500).json({ error: err.message || "Failed to link post" });
     }
   });
 

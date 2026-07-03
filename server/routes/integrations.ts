@@ -872,6 +872,16 @@ export function registerIntegrationRoutes(app: Express) {
     catch (err) { res.status(502).json({ error: errorMessage(err) }); }
   });
 
+  app.get("/api/integrations/website/posts", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res);
+      if (!ctx) return;
+      const q = typeof req.query.q === "string" && req.query.q.trim() ? req.query.q.trim() : undefined;
+      const results = await website.searchPosts(ctx.tenantDomain, q, 30);
+      res.json(Array.isArray(results) ? results : []);
+    } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
   // Push a blog draft to the website. Pulls title + Markdown body from an Orbit
   // content asset (when assetId is given) with optional overrides; authorId
   // falls back to the connection default. Records the returned id/slug on the
