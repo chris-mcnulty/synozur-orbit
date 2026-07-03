@@ -28,7 +28,11 @@ import {
   type IntegrationConfig,
   type InsertIntegrationConfig,
 } from "@shared/schema";
-import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
+import { objectStorageClient, ObjectStorageService } from "../replit_integrations/object_storage/objectStorage";
+
+const objectStorageService = new ObjectStorageService();
+const PUBLIC_SERVE_PREFIX = "/public-objects/";
+const MEDIA_UPLOAD_PREFIX = "media-uploads";
 
 // Slack accepts hooks.slack.com; Teams accepts outlook.office.com,
 // <tenant>.webhook.office.com, prod-*.westus.logic.azure.com (workflows),
@@ -1057,17 +1061,19 @@ export function registerIntegrationRoutes(app: Express) {
       if (file.size > 10 * 1024 * 1024) {
         return res.status(413).json({ error: "Image must be under 10 MB." });
       }
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-      const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
-      if (!BUCKET_ID) {
-        return res.status(500).json({ error: "Object storage is not configured on this server." });
-      }
-      const tenantSlug = ctx.tenantDomain.replace(/[^a-z0-9]/gi, "-");
-      const filename = `${tenantSlug}-media-${crypto.randomUUID()}.${ext || "jpg"}`;
-      const bucket = objectStorageClient.bucket(BUCKET_ID);
-      const gcsFile = bucket.file(`public/media-uploads/${filename}`);
-      await gcsFile.save(file.data, { contentType: file.mimetype, resumable: false });
-      const url = `https://storage.googleapis.com/${BUCKET_ID}/public/media-uploads/${filename}`;
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const objectId = `${crypto.randomUUID()}.${ext}`;
+      const publicPaths = objectStorageService.getPublicObjectSearchPaths();
+      // publicPaths[0] is e.g. "/replit-objstore-xxxxx/public"
+      const parts = publicPaths[0].startsWith("/") ? publicPaths[0].slice(1).split("/") : publicPaths[0].split("/");
+      const bucketName = parts[0];
+      const publicPrefix = parts.slice(1).join("/");
+      const objectName = `${publicPrefix.replace(/\/$/, "")}/${MEDIA_UPLOAD_PREFIX}/${objectId}`;
+      await objectStorageClient.bucket(bucketName).file(objectName).save(file.data, {
+        contentType: file.mimetype,
+        resumable: false,
+      });
+      const url = `${PUBLIC_SERVE_PREFIX}${MEDIA_UPLOAD_PREFIX}/${objectId}`;
       return res.json({ url, source: "local" });
     } catch (err) {
       res.status(500).json({ error: errorMessage(err) });
