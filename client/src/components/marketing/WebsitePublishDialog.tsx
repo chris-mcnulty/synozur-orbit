@@ -84,20 +84,30 @@ export function WebsitePublishDialog({
     },
     enabled: open,
   });
+  const connected = status?.connected ?? false;
   const { data: authors = [] } = useQuery<Author[]>({
     queryKey: ["/api/integrations/website/authors"],
-    queryFn: async () => (await fetch("/api/integrations/website/authors", { credentials: "include" })).json(),
-    enabled: open,
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/authors", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open && connected,
   });
   const { data: categories = [] } = useQuery<Taxonomy[]>({
     queryKey: ["/api/integrations/website/categories"],
-    queryFn: async () => (await fetch("/api/integrations/website/categories", { credentials: "include" })).json(),
-    enabled: open,
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/categories", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open && connected,
   });
   const { data: tags = [] } = useQuery<Taxonomy[]>({
     queryKey: ["/api/integrations/website/tags"],
-    queryFn: async () => (await fetch("/api/integrations/website/tags", { credentials: "include" })).json(),
-    enabled: open,
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/tags", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open && connected,
   });
   const { data: performance } = useQuery<Performance>({
     queryKey: ["/api/integrations/website/performance", asset?.id],
@@ -193,7 +203,20 @@ export function WebsitePublishDialog({
           <DialogDescription className="truncate">{asset.title}</DialogDescription>
         </DialogHeader>
 
-        {alreadyPosted && (
+        {/* Show a clear empty state when the website integration is not connected.
+            `status` starts undefined while loading; once resolved we know for sure. */}
+        {status !== undefined && !connected && (
+          <div className="rounded-md border border-dashed py-8 px-4 text-center space-y-2" data-testid="website-not-connected">
+            <Globe className="w-8 h-8 text-muted-foreground mx-auto" />
+            <p className="text-sm font-medium">Website not connected</p>
+            <p className="text-xs text-muted-foreground">
+              Connect your website in{" "}
+              <strong>Settings → Integrations</strong> to push drafts directly.
+            </p>
+          </div>
+        )}
+
+        {alreadyPosted && connected && (
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs flex items-center gap-2" data-testid="website-current-state">
             <Badge variant="secondary" className="capitalize">{asset.websitePostStatus ?? "draft"}</Badge>
             <span className="text-muted-foreground font-mono">/{asset.websitePostSlug}</span>
@@ -220,7 +243,7 @@ export function WebsitePublishDialog({
         )}
 
         {/* Live performance once the post exists */}
-        {alreadyPosted && performance && (
+        {alreadyPosted && connected && performance && (
           <div className="rounded-md border p-3 space-y-2" data-testid="website-performance">
             <div className="flex items-center gap-6">
               <div>
@@ -244,7 +267,7 @@ export function WebsitePublishDialog({
           </div>
         )}
 
-        <div className="space-y-4">
+        {connected && <div className="space-y-4">
           {!alreadyPosted && (
             <div>
               <Label className="text-xs text-muted-foreground">Author</Label>
@@ -311,7 +334,7 @@ export function WebsitePublishDialog({
             {push.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Globe className="w-4 h-4 mr-2" />}
             {scheduledFor ? "Schedule on website" : alreadyPosted ? "Update website draft" : "Post draft"}
           </Button>
-        </div>
+        </div>}
       </DialogContent>
     </Dialog>
   );
