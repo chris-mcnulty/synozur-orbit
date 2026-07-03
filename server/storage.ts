@@ -264,6 +264,7 @@ export interface IStorage {
     opts?: { sinceDays?: number; tenantDomain?: string; competitorId?: string },
   ): Promise<Activity[]>;
   updateActivitySentiment(id: string, fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string }): Promise<void>;
+  deleteActivity(id: string, tenantDomain: string): Promise<void>;
   getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
   getAnalyzedActivitiesByCompanyProfile(companyProfileId: string, sinceDays?: number): Promise<Activity[]>;
 
@@ -1100,6 +1101,12 @@ export class DatabaseStorage implements IStorage {
         analyzedAt: new Date(),
       })
       .where(eq(activity.id, id));
+  }
+
+  async deleteActivity(id: string, tenantDomain: string): Promise<void> {
+    await db
+      .delete(activity)
+      .where(and(eq(activity.id, id), eq(activity.tenantDomain, tenantDomain)));
   }
 
   async getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays: number = 90): Promise<Activity[]> {

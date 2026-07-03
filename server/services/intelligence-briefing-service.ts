@@ -82,50 +82,80 @@ function stripBaselineFromBriefing(parsed: any, baselineName?: string): { moveme
   return { movements, themes };
 }
 
+function formatActivityGroup(acts: Activity[]): string[] {
+  const lines: string[] = [];
+  const scored = acts.filter((a) => typeof a.sentimentScore === "number");
+  if (scored.length > 0) {
+    const meanSentiment = scored.reduce((s, a) => s + (a.sentimentScore || 0), 0) / scored.length;
+    const toneCounts: Record<string, number> = {};
+    for (const a of scored) {
+      if (a.toneLabel) toneCounts[a.toneLabel] = (toneCounts[a.toneLabel] || 0) + 1;
+    }
+    const dominantTone = Object.entries(toneCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    lines.push(
+      `  Tone snapshot: mean sentiment ${meanSentiment.toFixed(2)} (n=${scored.length})${dominantTone ? `, dominant tone "${dominantTone}"` : ""}.`,
+    );
+  }
+  for (const act of acts) {
+    const details = act.details as any;
+    const changeAnalysis = details?.changeAnalysis;
+    lines.push(`- **${act.type}** [Impact: ${act.impact}]: ${act.description}`);
+    if (act.summary) lines.push(`  Summary: ${act.summary}`);
+    if (typeof act.sentimentScore === "number" && act.toneLabel) {
+      lines.push(`  Tone: ${act.toneLabel} (sentiment ${act.sentimentScore.toFixed(2)})${act.toneNote ? ` — ${act.toneNote}` : ""}`);
+    }
+    if (changeAnalysis?.changes?.length > 0) {
+      for (const change of changeAnalysis.changes.slice(0, 3)) {
+        lines.push(`  - [${change.category}/${change.significance}] ${change.description}`);
+      }
+    }
+  }
+  return lines;
+}
+
 function buildSignalSummary(activities: Activity[]): string {
   if (activities.length === 0) return "No signals detected during this period.";
 
-  const byCompetitor: Record<string, Activity[]> = {};
-  for (const act of activities) {
-    const name = act.competitorName || "Unknown";
-    if (!byCompetitor[name]) byCompetitor[name] = [];
-    byCompetitor[name].push(act);
-  }
+  // Separate baseline (own-website) signals from competitor signals so the AI
+  // cannot confuse them and generate competitor-facing action items from own-site
+  // change events.
+  const competitorActivities = activities.filter(a => a.sourceType !== "baseline");
+  const baselineActivities   = activities.filter(a => a.sourceType === "baseline");
 
   const lines: string[] = [];
-  for (const [name, acts] of Object.entries(byCompetitor)) {
-    lines.push(`\n### ${name} (${acts.length} signal${acts.length > 1 ? "s" : ""})`);
 
-    // Task #102: aggregate sentiment & tone for this competitor's signals
-    const scored = acts.filter((a) => typeof a.sentimentScore === "number");
-    if (scored.length > 0) {
-      const meanSentiment = scored.reduce((s, a) => s + (a.sentimentScore || 0), 0) / scored.length;
-      const toneCounts: Record<string, number> = {};
-      for (const a of scored) {
-        if (a.toneLabel) toneCounts[a.toneLabel] = (toneCounts[a.toneLabel] || 0) + 1;
-      }
-      const dominantTone = Object.entries(toneCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
-      lines.push(
-        `  Tone snapshot: mean sentiment ${meanSentiment.toFixed(2)} (n=${scored.length})${dominantTone ? `, dominant tone "${dominantTone}"` : ""}.`,
-      );
+  // ── Competitor signals ──────────────────────────────────────────────────────
+  if (competitorActivities.length > 0) {
+    const byCompetitor: Record<string, Activity[]> = {};
+    for (const act of competitorActivities) {
+      const name = act.competitorName || "Unknown";
+      if (!byCompetitor[name]) byCompetitor[name] = [];
+      byCompetitor[name].push(act);
     }
+    for (const [name, acts] of Object.entries(byCompetitor)) {
+      lines.push(`\n### ${name} (${acts.length} signal${acts.length > 1 ? "s" : ""})`);
+      lines.push(...formatActivityGroup(acts));
+    }
+  }
 
-    for (const act of acts) {
-      const details = act.details as any;
-      const changeAnalysis = details?.changeAnalysis;
-      
-      lines.push(`- **${act.type}** [Impact: ${act.impact}]: ${act.description}`);
-      if (act.summary) {
-        lines.push(`  Summary: ${act.summary}`);
-      }
-      if (typeof act.sentimentScore === "number" && act.toneLabel) {
-        lines.push(`  Tone: ${act.toneLabel} (sentiment ${act.sentimentScore.toFixed(2)})${act.toneNote ? ` — ${act.toneNote}` : ""}`);
-      }
-      if (changeAnalysis?.changes?.length > 0) {
-        for (const change of changeAnalysis.changes.slice(0, 3)) {
-          lines.push(`  - [${change.category}/${change.significance}] ${change.description}`);
-        }
-      }
+  // ── Own-website signals (baseline) — situational awareness only ────────────
+  // IMPORTANT FOR AI: These signals are about YOUR OWN COMPANY's website, not
+  // a competitor. Do NOT create competitorMovement entries, action items, or
+  // risk alerts based on these signals. Do NOT treat changes to your own website
+  // as a competitor opportunity. Use these only for self-positioning context.
+  if (baselineActivities.length > 0) {
+    lines.push(`\n---`);
+    lines.push(`\n## OWN WEBSITE CHANGES — SITUATIONAL AWARENESS ONLY`);
+    lines.push(`NOTE FOR ANALYST: The following signals are about YOUR CLIENT'S OWN website (the baseline company), NOT a competitor. Do NOT generate any competitorMovements, actionItems, or riskAlerts from these signals. They are provided purely as context about the client's own site updates.`);
+    const byName: Record<string, Activity[]> = {};
+    for (const act of baselineActivities) {
+      const name = act.competitorName || "Own website";
+      if (!byName[name]) byName[name] = [];
+      byName[name].push(act);
+    }
+    for (const [name, acts] of Object.entries(byName)) {
+      lines.push(`\n### [OWN SITE] ${name} (${acts.length} signal${acts.length > 1 ? "s" : ""})`);
+      lines.push(...formatActivityGroup(acts));
     }
   }
 
@@ -335,12 +365,28 @@ Rules:
         ? t.competitors.filter((c: any) => typeof c === "string" && allowedCompetitorNames.has(c.toLowerCase()))
         : t.competitors,
     }));
-    const filteredActionItems = (Array.isArray(parsed.actionItems) ? parsed.actionItems : []).map((item: any) => ({
-      ...item,
-      relatedCompetitors: Array.isArray(item.relatedCompetitors)
-        ? item.relatedCompetitors.filter((c: any) => typeof c === "string" && allowedCompetitorNames.has(c.toLowerCase()))
-        : item.relatedCompetitors,
-    }));
+    const baselineNameLower = baseline?.companyName?.toLowerCase();
+    const filteredActionItems = (Array.isArray(parsed.actionItems) ? parsed.actionItems : [])
+      .map((item: any) => ({
+        ...item,
+        relatedCompetitors: Array.isArray(item.relatedCompetitors)
+          ? item.relatedCompetitors.filter((c: any) => typeof c === "string" && allowedCompetitorNames.has(c.toLowerCase()))
+          : item.relatedCompetitors,
+      }))
+      // Hard guard: remove any action item whose title or relatedCompetitors
+      // reference the baseline (own) company — this catches hallucinated
+      // "capitalize on your own company's pivot" tasks generated from own-site
+      // change signals that leaked into the prompt as competitor signals.
+      .filter((item: any) => {
+        if (!baselineNameLower) return true;
+        const titleLower = (item.title || "").toLowerCase();
+        if (titleLower.includes(baselineNameLower)) return false;
+        if (Array.isArray(item.relatedCompetitors) &&
+            item.relatedCompetitors.some((c: any) => typeof c === "string" && c.toLowerCase() === baselineNameLower)) {
+          return false;
+        }
+        return true;
+      });
 
     briefingData = {
       executiveSummary: parsed.executiveSummary || "Briefing generation completed but summary was empty.",

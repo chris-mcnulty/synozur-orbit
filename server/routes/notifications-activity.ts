@@ -125,6 +125,49 @@ export function registerNotificationsActivityRoutes(app: Express) {
     }
   });
 
+  // DELETE /api/activity/:id — dismiss a single activity item (tenant-scoped)
+  app.delete("/api/activity/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      await storage.deleteActivity(req.params.id, ctx.tenantDomain);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/activity/:id/accept-baseline — dismiss the alert AND clear the
+  // previousWebsiteContent baseline so the next crawl won't re-alert
+  app.post("/api/activity/:id/accept-baseline", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const activities = await storage.getActivityByContext(toContextFilter(ctx));
+      const item = activities.find(a => a.id === req.params.id);
+      if (!item) return res.status(404).json({ error: "Activity not found" });
+
+      // Reset the baseline so the current site content becomes the new normal
+      if (item.sourceType === "baseline" && item.companyProfileId) {
+        await storage.updateCompanyProfile(item.companyProfileId, {
+          previousWebsiteContent: null as any,
+          lastWebsiteMonitor: null as any,
+        });
+      } else if (item.competitorId) {
+        await storage.updateCompetitor(item.competitorId, {
+          previousWebsiteContent: null as any,
+          lastWebsiteMonitor: null as any,
+        });
+      }
+
+      // Delete the activity entry
+      await storage.deleteActivity(req.params.id, ctx.tenantDomain);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/activity/by-company-profile/:id", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);

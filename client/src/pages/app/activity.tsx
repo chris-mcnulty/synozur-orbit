@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap, MessageSquare, AtSign, UserPlus, DollarSign, ArrowUp, ArrowDown } from "lucide-react";
+import { Building, Globe, TrendingUp, TrendingDown, Minus, Rss, FileText, Users, Twitter, Instagram, Linkedin, AlertCircle, Newspaper, RefreshCw, Loader2, Zap, MessageSquare, AtSign, UserPlus, DollarSign, ArrowUp, ArrowDown, Trash2, CheckCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { useSearch, useLocation } from "wouter";
@@ -186,6 +186,36 @@ export default function Activity() {
         variant: "destructive",
       });
     },
+  });
+
+  const dismissActivityMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/activity/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to dismiss");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      toast({ title: "Alert dismissed" });
+    },
+    onError: (err: any) => toast({ title: "Couldn't dismiss", description: err.message, variant: "destructive" }),
+  });
+
+  const acceptBaselineMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/activity/${id}/accept-baseline`, { method: "POST", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to accept");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      toast({
+        title: "Accepted as new baseline",
+        description: "Alert dismissed and baseline reset. The next crawl will compare from the current site.",
+      });
+    },
+    onError: (err: any) => toast({ title: "Couldn't accept", description: err.message, variant: "destructive" }),
   });
 
   const isEnterprise = tenant?.plan === "enterprise" || tenant?.plan === "unlimited";
@@ -983,6 +1013,34 @@ export default function Activity() {
                             </ul>
                           </div>
                         )}
+
+                        {/* Dismiss / Accept-baseline actions */}
+                        <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 flex-wrap">
+                          {item.type === 'website_update' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1.5"
+                              data-testid={`activity-accept-baseline-${item.id}`}
+                              disabled={acceptBaselineMutation.isPending || dismissActivityMutation.isPending}
+                              onClick={() => acceptBaselineMutation.mutate(item.id)}
+                            >
+                              <CheckCheck className="h-3 w-3" />
+                              Accept as new baseline
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs gap-1.5 text-muted-foreground hover:text-destructive"
+                            data-testid={`activity-dismiss-${item.id}`}
+                            disabled={dismissActivityMutation.isPending || acceptBaselineMutation.isPending}
+                            onClick={() => dismissActivityMutation.mutate(item.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Dismiss
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>

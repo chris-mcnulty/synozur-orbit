@@ -76,6 +76,20 @@ async function analyzeWebsiteChanges(
   newContent: string,
   changeScore: number
 ): Promise<{ summary: string; analysis: StructuredChangeAnalysis | null }> {
+  const isMassiveChange = changeScore >= 70;
+  const migrationGuidance = isMassiveChange
+    ? `
+IMPORTANT — HIGH CHANGE SCORE CONTEXT:
+A ${changeScore}% change score often indicates a website platform migration, CMS change, or full redesign rather than a strategic pivot. Before concluding the company changed its strategy, ask yourself:
+- Do both versions still serve the same general market or industry?
+- Do both versions still describe similar core services or capabilities (even if phrased differently)?
+- Is the structure/template dramatically different (suggesting a new CMS or theme)?
+
+If the SAME core services and market positioning are present in both versions (even described with different words), classify this as a "design" change (platform/redesign) and set noSignificantChanges to true — do NOT report it as a strategic pivot away from those services.
+Only report a genuine strategic pivot if specific service lines, product categories, or target markets are clearly PRESENT in the previous version and clearly ABSENT from the current version.
+`
+    : "";
+
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
@@ -86,7 +100,7 @@ async function analyzeWebsiteChanges(
           content: `Analyze changes to ${competitorName}'s website content.
 
 Change magnitude: ${changeScore}% different from previous crawl
-
+${migrationGuidance}
 PREVIOUS CONTENT (excerpt):
 ${previousContent.substring(0, 6000)}
 
@@ -113,11 +127,11 @@ Category definitions:
 - product: New products, features, capabilities, or service offerings
 - team: Leadership changes, new hires, team page updates
 - content: Blog posts, case studies, whitepapers, or resource updates
-- design: Visual redesigns, layout changes, UX updates
+- design: Visual redesigns, layout changes, UX updates (including platform migrations and full site rebuilds)
 
 Only include categories where actual changes were detected in the "categories" array.
 
-If changes appear to be only dynamic content (dates, counters, copyright years) or minor formatting, respond with:
+If changes appear to be only dynamic content (dates, counters, copyright years), minor formatting, or a platform/CMS migration where the same core services remain, respond with:
 {"noSignificantChanges": true, "categories": [], "changes": [], "narrative": "No significant messaging changes detected."}
 
 JSON:`
