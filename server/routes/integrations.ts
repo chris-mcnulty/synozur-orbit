@@ -9,6 +9,7 @@ import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { z } from "zod";
 import { fromError } from "zod-validation-error";
+import type { UploadedFile } from "express-fileupload";
 import { storage } from "../storage";
 import { hasAdminAccess } from "./helpers";
 import { encryptSecret } from "../utils/encryption";
@@ -27,6 +28,7 @@ import {
   type IntegrationConfig,
   type InsertIntegrationConfig,
 } from "@shared/schema";
+import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 
 // Slack accepts hooks.slack.com; Teams accepts outlook.office.com,
 // <tenant>.webhook.office.com, prod-*.westus.logic.azure.com (workflows),
@@ -1002,6 +1004,65 @@ export function registerIntegrationRoutes(app: Express) {
       console.log(`[Website] Draft pushed tenant=${ctx.tenantDomain} asset=${asset?.id ?? "adhoc"} slug=${postSlug} status=${postStatus}`);
       res.json({ success: true, post: { id: postId, slug: postSlug, status: postStatus, scheduledFor } });
     } catch (err) { res.status(502).json({ error: errorMessage(err) }); }
+  });
+
+  // Upload an image for use in blog/rich-text content.
+  // Tries the tenant's website MCP upload_image first (so the image is hosted
+  // on the Synozur site and survives any Orbit storage changes); falls back to
+  // Orbit's object-storage bucket.  Returns { url, source: "website"|"local" }.
+  app.post("/api/integrations/website/upload-media", async (req, res) => {
+    try {
+      const ctx = await loadWebsiteContext(req, res); if (!ctx) return;
+      const files = req.files;
+      if (!files || !files.file) {
+        return res.status(400).json({ error: "No file uploaded (expected field 'file')" });
+      }
+      const file = files.file as UploadedFile;
+      if (!file.mimetype.startsWith("image/")) {
+        return res.status(400).json({ error: "Only image files are accepted." });
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        return res.status(413).json({ error: "Image must be under 10 MB." });
+      }
+      const altText = typeof req.body.altText === "string" && req.body.altText.trim()
+        ? req.body.altText.trim()
+        : file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+
+      // Try website MCP first
+      const conn = await website.getWebsiteConnection(ctx.tenantDomain);
+      if (conn?.enabled) {
+        try {
+          const imageData = file.data.toString("base64");
+          const media = await website.uploadImage(ctx.tenantDomain, {
+            imageData,
+            mimeType: file.mimetype,
+            altText,
+            filename: `orbit-${crypto.randomUUID()}.${ext}`,
+          });
+          return res.json({ url: media.publicUrl, id: media.id, source: "website" });
+        } catch (e) {
+          console.warn(`[upload-media] website MCP upload failed, falling back to object storage: ${errorMessage(e)}`);
+        }
+      }
+
+      // Fall back to object storage
+      const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (!BUCKET_ID) {
+        return res.status(500).json({
+          error: "No upload destination available — website MCP not connected and object storage not configured.",
+        });
+      }
+      const tenantSlug = ctx.tenantDomain.replace(/[^a-z0-9]/gi, "-");
+      const filename = `${tenantSlug}-blog-${crypto.randomUUID()}.${ext}`;
+      const bucket = objectStorageClient.bucket(BUCKET_ID);
+      const gcsFile = bucket.file(`public/blog-images/${filename}`);
+      await gcsFile.save(file.data, { contentType: file.mimetype });
+      const url = `https://storage.googleapis.com/${BUCKET_ID}/public/blog-images/${filename}`;
+      return res.json({ url, source: "local" });
+    } catch (err) {
+      res.status(500).json({ error: errorMessage(err) });
+    }
   });
 
   // Traffic for a post Orbit pushed — by assetId (preferred) or explicit slug.

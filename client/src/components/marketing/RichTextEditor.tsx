@@ -27,6 +27,9 @@ import {
   Redo,
   Search,
   Globe,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import {
   Dialog,
@@ -63,10 +66,60 @@ interface MediaPickerDialogProps {
 }
 
 function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) {
-  const [tab, setTab] = useState<"library" | "url">("library");
+  const [tab, setTab] = useState<"library" | "url" | "upload">("library");
   const [librarySection, setLibrarySection] = useState<"content" | "brand">("content");
   const [search, setSearch] = useState("");
   const [manualUrl, setManualUrl] = useState("");
+
+  // Upload tab state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadAlt, setUploadAlt] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ url: string; source: "website" | "local" } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploadFile(f);
+    setUploadResult(null);
+    setUploadError(null);
+    setUploadAlt(f.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+    const reader = new FileReader();
+    reader.onload = (ev) => setUploadPreview(ev.target?.result as string ?? null);
+    reader.readAsDataURL(f);
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) return;
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      formData.append("altText", uploadAlt);
+      const r = await fetch("/api/integrations/website/upload-media", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Upload failed");
+      setUploadResult({ url: data.url, source: data.source });
+    } catch (e: unknown) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleInsertUploaded = () => {
+    if (!uploadResult) return;
+    onInsert(uploadResult.url);
+    onClose();
+  };
 
   const { data: assets = [], isLoading } = useQuery<MediaAsset[]>({
     queryKey: ["/api/content-assets"],
@@ -128,6 +181,11 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
     setManualUrl("");
     setTab("library");
     setLibrarySection("content");
+    setUploadFile(null);
+    setUploadPreview(null);
+    setUploadAlt("");
+    setUploadResult(null);
+    setUploadError(null);
     onClose();
   };
 
@@ -154,6 +212,18 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
             data-testid="button-media-picker-tab-library"
           >
             Asset Library
+          </button>
+          <button
+            type="button"
+            className={`flex-1 py-1.5 text-xs font-medium transition-colors border-l ${
+              tab === "upload"
+                ? "bg-primary text-primary-foreground"
+                : "bg-background text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setTab("upload")}
+            data-testid="button-media-picker-tab-upload"
+          >
+            Upload
           </button>
           <button
             type="button"
@@ -308,6 +378,114 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
                     })}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Upload tab */}
+        {tab === "upload" && (
+          <div className="space-y-3">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+              data-testid="input-media-picker-file"
+            />
+
+            {!uploadFile ? (
+              <button
+                type="button"
+                className="w-full border-2 border-dashed rounded-lg py-10 flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-media-picker-drop-zone"
+              >
+                <Upload className="h-8 w-8" />
+                <span className="text-sm font-medium">Click to choose an image</span>
+                <span className="text-xs">PNG, JPG, WebP — max 10 MB</span>
+              </button>
+            ) : (
+              <div className="space-y-3">
+                {/* Preview */}
+                {uploadPreview && (
+                  <div className="rounded-lg overflow-hidden border aspect-video bg-muted">
+                    <img
+                      src={uploadPreview}
+                      alt="Preview"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
+
+                {/* Alt text */}
+                <div className="space-y-1">
+                  <Label htmlFor="upload-alt-input" className="text-xs font-medium">Alt text</Label>
+                  <Input
+                    id="upload-alt-input"
+                    value={uploadAlt}
+                    onChange={(e) => setUploadAlt(e.target.value)}
+                    placeholder="Describe the image…"
+                    className="text-sm"
+                    data-testid="input-media-picker-alt"
+                  />
+                </div>
+
+                {/* Success / error feedback */}
+                {uploadResult && (
+                  <div className="flex items-start gap-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>
+                      {uploadResult.source === "website"
+                        ? "Uploaded to the Synozur website media library."
+                        : "Saved to Orbit media storage."}
+                    </span>
+                  </div>
+                )}
+                {uploadError && (
+                  <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex-none"
+                    onClick={() => { setUploadFile(null); setUploadPreview(null); setUploadResult(null); setUploadError(null); fileInputRef.current && (fileInputRef.current.value = ""); }}
+                    data-testid="button-media-picker-upload-clear"
+                  >
+                    Change
+                  </Button>
+                  {!uploadResult ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="flex-1"
+                      onClick={handleUpload}
+                      disabled={isUploading}
+                      data-testid="button-media-picker-upload-submit"
+                    >
+                      {isUploading ? "Uploading…" : "Upload"}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="flex-1"
+                      onClick={handleInsertUploaded}
+                      data-testid="button-media-picker-upload-insert"
+                    >
+                      Insert Image
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </div>
