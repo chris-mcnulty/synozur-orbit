@@ -117,6 +117,13 @@ export default function CalendarPage() {
   // Once we've honored a given deep-link post id, don't reopen it (so the user
   // can freely close the drawer without it snapping back open).
   const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
+  // Post whose grid cell / list row should scroll into view and briefly
+  // highlight when arriving via a ?post= deep link. Cleared after the cue.
+  const [focusPostId, setFocusPostId] = useState<string | null>(null);
+  // Fallback highlight: when the deep-linked post sits beyond a day's visible
+  // slice (the "+N more" overflow) its pill isn't in the DOM, so we highlight
+  // the whole day cell instead. Holds the "yyyy-MM-dd" key. Cleared after cue.
+  const [focusDayKey, setFocusDayKey] = useState<string | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -205,8 +212,40 @@ export default function CalendarPage() {
     if (match) {
       setSelectedPost(match);
       setOpenedDeepLink(deepLink.postId);
+      setFocusPostId(deepLink.postId);
     }
   }, [deepLink.postId, openedDeepLink, isLoading, posts]);
+
+  // Once the focused post's cell (dated) or list row (undated) is in the DOM,
+  // scroll it into view and briefly highlight it so the user can see exactly
+  // where it sits — matching the editorial calendar's ?brief= behavior. The
+  // highlight clears after a moment so it's a one-time cue.
+  useEffect(() => {
+    if (!focusPostId || isLoading) return;
+    // Prefer the exact pill / list row when it's rendered.
+    const el = document.querySelector(
+      `[data-testid="calendar-post-${focusPostId}"], [data-testid="unscheduled-post-${focusPostId}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const t = setTimeout(() => setFocusPostId(null), 2500);
+      return () => clearTimeout(t);
+    }
+    // Fallback: the post is dated but hidden in the day's "+N more" overflow, so
+    // no pill exists. Scroll to + highlight the whole day cell instead.
+    const match = filteredPosts.find(p => p.id === focusPostId);
+    const ts = match?.scheduledDate ?? match?.publishedAt;
+    if (ts) {
+      const dayKey = format(parseISO(ts), "yyyy-MM-dd");
+      const cell = document.querySelector(`[data-testid="calendar-day-${dayKey}"]`);
+      if (cell) {
+        cell.scrollIntoView({ behavior: "smooth", block: "center" });
+        setFocusDayKey(dayKey);
+        const t = setTimeout(() => { setFocusPostId(null); setFocusDayKey(null); }, 2500);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [focusPostId, isLoading, filteredPosts]);
 
   const rescheduleMutation = useMutation({
     mutationFn: async ({ id, scheduledDate }: { id: string; scheduledDate: string }) => {
@@ -327,7 +366,7 @@ export default function CalendarPage() {
                       const id = e.dataTransfer.getData("text/plain");
                       if (id) onDropToDay(day, id);
                     }}
-                    className={`min-h-[100px] border-b border-r last:border-r-0 p-1 ${inMonth ? "" : "bg-muted/30 text-muted-foreground"}`}
+                    className={`min-h-[100px] border-b border-r last:border-r-0 p-1 ${inMonth ? "" : "bg-muted/30 text-muted-foreground"} ${focusDayKey === key ? "ring-2 ring-inset ring-primary" : ""}`}
                     data-testid={`calendar-day-${key}`}
                   >
                     <div className={`text-xs ${isToday(day) ? "font-bold text-primary" : ""}`}>
@@ -340,7 +379,7 @@ export default function CalendarPage() {
                           draggable={post.status !== "published"}
                           onDragStart={e => { e.dataTransfer.setData("text/plain", post.id); }}
                           onClick={() => setSelectedPost(post)}
-                          className={`text-[10px] px-1 py-0.5 rounded border cursor-pointer truncate flex items-center gap-1 ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"}`}
+                          className={`text-[10px] px-1 py-0.5 rounded border cursor-pointer truncate flex items-center gap-1 ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"} ${focusPostId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
                           data-testid={`calendar-post-${post.id}`}
                           title={post.accountName ? `${post.accountName} · ${post.preview}` : post.preview}
                         >
@@ -383,7 +422,7 @@ export default function CalendarPage() {
                     key={post.id}
                     type="button"
                     onClick={() => setSelectedPost(post)}
-                    className="flex w-full items-center gap-2 rounded border p-2 text-left text-xs hover:bg-muted"
+                    className={`flex w-full items-center gap-2 rounded border p-2 text-left text-xs hover:bg-muted ${focusPostId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
                     data-testid={`unscheduled-post-${post.id}`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[post.status] ?? "bg-gray-400"}`} />
