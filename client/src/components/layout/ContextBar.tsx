@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore, Zap } from "lucide-react";
+import { Building2, ChevronDown, Globe, Layers, Plus, Loader2, Link2, FileText, ArrowLeft, Sparkles, Trash2, Pencil, Download, Archive, ArchiveRestore, Zap, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import NotificationCentre from "@/components/layout/NotificationCentre";
@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/userContext";
 import { apiRequest } from "@/lib/queryClient";
@@ -95,6 +96,8 @@ export default function ContextBar() {
   const [editMarketSecondaryColor, setEditMarketSecondaryColor] = useState("#E60CB3");
   const [autoBuildEnabled, setAutoBuildEnabled] = useState(true);
   const [newMarketBusinessType, setNewMarketBusinessType] = useState<"b2b" | "b2c">("b2b");
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [showArchived, setShowArchived] = useState(false);
 
   const { data: tenantSettingsCtx, isLoading: tenantSettingsLoading } = useQuery<{ plan: string }>({
     queryKey: ["/api/tenant/settings"],
@@ -413,6 +416,36 @@ export default function ContextBar() {
     });
   };
 
+  const bulkArchiveMutation = useMutation({
+    mutationFn: async ({ ids, archive }: { ids: string[]; archive: boolean }) => {
+      await Promise.all(
+        ids.map((id) => apiRequest("PATCH", `/api/markets/${id}`, { status: archive ? "archived" : "active" }))
+      );
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/context"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors"] });
+      setBulkSelected(new Set());
+      toast({
+        title: variables.archive
+          ? `${variables.ids.length} market${variables.ids.length > 1 ? "s" : ""} archived`
+          : `${variables.ids.length} market${variables.ids.length > 1 ? "s" : ""} restored`,
+        description: variables.archive
+          ? "Crawling suspended for selected markets."
+          : "Monitoring resumed for selected markets.",
+      });
+    },
+    onError: () => toast({ title: "Some updates failed — try again", variant: "destructive" }),
+  });
+
+  const toggleBulk = (id: string) =>
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   const handleEditMarket = (market: Market, e: React.MouseEvent) => {
     e.stopPropagation();
     setMarketToEdit(market);
@@ -519,79 +552,218 @@ export default function ContextBar() {
                   Switch Market
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <div className="max-h-[320px] overflow-y-auto">
+                {/* Active markets list */}
+                <div className="max-h-[280px] overflow-y-auto">
                   {marketsData?.markets
                     ?.filter(m => m.status === "active")
-                    .map((market) => (
-                      <DropdownMenuItem
-                        key={market.id}
-                        onClick={() => switchMarketMutation.mutate(market.id)}
-                        className="flex items-center justify-between cursor-pointer group py-2"
-                        data-testid={`menu-item-market-${market.id}`}
-                      >
-                        <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{market.name}</span>
-                            {market.businessType === "b2c" && (
-                              <Badge variant="outline" className="text-[10px] border-orange-400/50 text-orange-600 dark:text-orange-400">B2C</Badge>
+                    .map((market) => {
+                      const isSelectable = canDeleteMarket && !market.isDefault;
+                      const isChecked = bulkSelected.has(market.id);
+                      return (
+                        <DropdownMenuItem
+                          key={market.id}
+                          onClick={() => {
+                            if (isSelectable && bulkSelected.size > 0) { toggleBulk(market.id); return; }
+                            switchMarketMutation.mutate(market.id);
+                          }}
+                          className="flex items-center justify-between cursor-pointer group py-2"
+                          data-testid={`menu-item-market-${market.id}`}
+                        >
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {isSelectable && (
+                              <Checkbox
+                                checked={isChecked}
+                                onCheckedChange={() => toggleBulk(market.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="shrink-0"
+                                data-testid={`checkbox-market-${market.id}`}
+                              />
                             )}
-                            {market.isDefault && (
-                              <Badge variant="outline" className="text-[10px]">Default</Badge>
-                            )}
-                            {market.id === context?.activeMarketId && (
-                              <Badge className="text-[10px] bg-primary">Active</Badge>
-                            )}
-                          </div>
-                          {market.baselineCompanyName ? (
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Building2 className="w-3 h-3" />
-                              <span className="truncate">{market.baselineCompanyName}</span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground/60 italic">No baseline set</span>
-                          )}
-                        </div>
-                        {canDeleteMarket && !market.isDefault && (
-                          <div className="flex items-center gap-1 ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-foreground/60 hover:text-primary hover:bg-primary/10"
-                              onClick={(e) => handleEditMarket(market, e)}
-                              data-testid={`btn-edit-market-${market.id}`}
-                              title="Edit market"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={`h-7 w-7 text-foreground/60 ${market.status === "archived" ? "hover:text-green-600 hover:bg-green-500/10" : "hover:text-amber-600 hover:bg-amber-500/10"}`}
-                              onClick={(e) => handleArchiveMarket(market, e)}
-                              data-testid={`btn-archive-market-${market.id}`}
-                              title={market.status === "archived" ? "Restore market" : "Archive market"}
-                            >
-                              {market.status === "archived" ? (
-                                <ArchiveRestore className="h-3.5 w-3.5" />
+                            <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{market.name}</span>
+                                {market.businessType === "b2c" && (
+                                  <Badge variant="outline" className="text-[10px] border-orange-400/50 text-orange-600 dark:text-orange-400">B2C</Badge>
+                                )}
+                                {market.isDefault && (
+                                  <Badge variant="outline" className="text-[10px]">Default</Badge>
+                                )}
+                                {market.id === context?.activeMarketId && (
+                                  <Badge className="text-[10px] bg-primary">Active</Badge>
+                                )}
+                              </div>
+                              {market.baselineCompanyName ? (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                  <Building2 className="w-3 h-3" />
+                                  <span className="truncate">{market.baselineCompanyName}</span>
+                                </div>
                               ) : (
-                                <Archive className="h-3.5 w-3.5" />
+                                <span className="text-xs text-muted-foreground/60 italic">No baseline set</span>
                               )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-foreground/60 hover:text-destructive hover:bg-destructive/10"
-                              onClick={(e) => handleDeleteMarket(market, e)}
-                              data-testid={`btn-delete-market-${market.id}`}
-                              title="Delete market"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            </div>
                           </div>
-                        )}
-                      </DropdownMenuItem>
-                    ))}
+                          {isSelectable && (
+                            <div className="flex items-center gap-1 ml-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-foreground/60 hover:text-primary hover:bg-primary/10"
+                                onClick={(e) => handleEditMarket(market, e)}
+                                data-testid={`btn-edit-market-${market.id}`}
+                                title="Edit market"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-foreground/60 hover:text-amber-600 hover:bg-amber-500/10"
+                                onClick={(e) => handleArchiveMarket(market, e)}
+                                data-testid={`btn-archive-market-${market.id}`}
+                                title="Archive market"
+                              >
+                                <Archive className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-foreground/60 hover:text-destructive hover:bg-destructive/10"
+                                onClick={(e) => handleDeleteMarket(market, e)}
+                                data-testid={`btn-delete-market-${market.id}`}
+                                title="Delete market"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </DropdownMenuItem>
+                      );
+                    })}
                 </div>
+
+                {/* Bulk action bar — appears when any active markets are selected */}
+                {bulkSelected.size > 0 && (() => {
+                  const selectedActive = [...bulkSelected].filter(id => marketsData?.markets.find(m => m.id === id && m.status === "active"));
+                  const selectedArchived = [...bulkSelected].filter(id => marketsData?.markets.find(m => m.id === id && m.status === "archived"));
+                  return (
+                    <div className="px-2 py-1.5 border-t flex items-center gap-2 bg-muted/40">
+                      <span className="text-xs text-muted-foreground flex-1">{bulkSelected.size} selected</span>
+                      {selectedActive.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs gap-1 border-amber-400/50 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                          disabled={bulkArchiveMutation.isPending}
+                          onClick={() => bulkArchiveMutation.mutate({ ids: selectedActive, archive: true })}
+                          data-testid="btn-bulk-archive"
+                        >
+                          <Archive className="w-3 h-3" />
+                          Archive {selectedActive.length > 1 ? `(${selectedActive.length})` : ""}
+                        </Button>
+                      )}
+                      {selectedArchived.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs gap-1 border-green-400/50 text-green-700 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/30"
+                          disabled={bulkArchiveMutation.isPending}
+                          onClick={() => bulkArchiveMutation.mutate({ ids: selectedArchived, archive: false })}
+                          data-testid="btn-bulk-restore"
+                        >
+                          <ArchiveRestore className="w-3 h-3" />
+                          Restore {selectedArchived.length > 1 ? `(${selectedArchived.length})` : ""}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs"
+                        onClick={() => setBulkSelected(new Set())}
+                        data-testid="btn-bulk-clear"
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  );
+                })()}
+
+                {/* Archived markets — collapsible section */}
+                {canDeleteMarket && (() => {
+                  const archivedMarkets = marketsData?.markets.filter(m => m.status === "archived") ?? [];
+                  if (archivedMarkets.length === 0) return null;
+                  return (
+                    <>
+                      <DropdownMenuSeparator />
+                      <button
+                        className="w-full px-2 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowArchived(v => !v); }}
+                        data-testid="btn-toggle-archived-markets"
+                      >
+                        <Archive className="w-3 h-3" />
+                        {showArchived ? "Hide" : "Show"} archived ({archivedMarkets.length})
+                      </button>
+                      {showArchived && (
+                        <div className="max-h-[180px] overflow-y-auto">
+                          {archivedMarkets.map((market) => {
+                            const isChecked = bulkSelected.has(market.id);
+                            return (
+                              <DropdownMenuItem
+                                key={market.id}
+                                className="flex items-center justify-between cursor-default group py-2 opacity-70"
+                                data-testid={`menu-item-archived-market-${market.id}`}
+                                onClick={(e) => { e.preventDefault(); toggleBulk(market.id); }}
+                              >
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  <Checkbox
+                                    checked={isChecked}
+                                    onCheckedChange={() => toggleBulk(market.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="shrink-0"
+                                    data-testid={`checkbox-archived-market-${market.id}`}
+                                  />
+                                  <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium line-through text-muted-foreground">{market.name}</span>
+                                      <Badge variant="outline" className="text-[10px] border-amber-400/40 text-amber-600">Archived</Badge>
+                                    </div>
+                                    {market.baselineCompanyName && (
+                                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <Building2 className="w-3 h-3" />
+                                        <span className="truncate">{market.baselineCompanyName}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-foreground/60 hover:text-green-600 hover:bg-green-500/10"
+                                    onClick={(e) => { e.stopPropagation(); archiveMarketMutation.mutate({ marketId: market.id, archive: false }); }}
+                                    data-testid={`btn-restore-market-${market.id}`}
+                                    title="Restore market"
+                                  >
+                                    <ArchiveRestore className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-foreground/60 hover:text-destructive hover:bg-destructive/10"
+                                    onClick={(e) => handleDeleteMarket(market, e)}
+                                    data-testid={`btn-delete-archived-market-${market.id}`}
+                                    title="Delete market"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 <DropdownMenuSeparator />
                 <div className="flex flex-col">
                   {showCreateMarketOption && (
