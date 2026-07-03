@@ -124,6 +124,10 @@ export default function CalendarPage() {
   // slice (the "+N more" overflow) its pill isn't in the DOM, so we highlight
   // the whole day cell instead. Holds the "yyyy-MM-dd" key. Cleared after cue.
   const [focusDayKey, setFocusDayKey] = useState<string | null>(null);
+  // Day whose posts are fully expanded (past the 4-post "+N more" cap). Set
+  // automatically when a deep-linked post is hidden in that day's overflow so
+  // its pill can render and be scrolled to; also toggled by "+N more".
+  const [expandedDayKey, setExpandedDayKey] = useState<string | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -231,21 +235,21 @@ export default function CalendarPage() {
       const t = setTimeout(() => setFocusPostId(null), 2500);
       return () => clearTimeout(t);
     }
-    // Fallback: the post is dated but hidden in the day's "+N more" overflow, so
-    // no pill exists. Scroll to + highlight the whole day cell instead.
+    // The post is dated but hidden in the day's "+N more" overflow, so no pill
+    // exists yet. Expand that day (so its pill renders) and highlight the cell;
+    // once expanded this effect re-runs and the pill branch above scrolls to it.
     const match = filteredPosts.find(p => p.id === focusPostId);
     const ts = match?.scheduledDate ?? match?.publishedAt;
     if (ts) {
       const dayKey = format(parseISO(ts), "yyyy-MM-dd");
-      const cell = document.querySelector(`[data-testid="calendar-day-${dayKey}"]`);
-      if (cell) {
-        cell.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (expandedDayKey !== dayKey) {
+        setExpandedDayKey(dayKey);
         setFocusDayKey(dayKey);
-        const t = setTimeout(() => { setFocusPostId(null); setFocusDayKey(null); }, 2500);
-        return () => clearTimeout(t);
+        const cell = document.querySelector(`[data-testid="calendar-day-${dayKey}"]`);
+        cell?.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [focusPostId, isLoading, filteredPosts]);
+  }, [focusPostId, isLoading, filteredPosts, expandedDayKey]);
 
   const rescheduleMutation = useMutation({
     mutationFn: async ({ id, scheduledDate }: { id: string; scheduledDate: string }) => {
@@ -373,7 +377,7 @@ export default function CalendarPage() {
                       {format(day, "d")}
                     </div>
                     <div className="space-y-0.5 mt-1">
-                      {dayPosts.slice(0, 4).map(post => (
+                      {(expandedDayKey === key ? dayPosts : dayPosts.slice(0, 4)).map(post => (
                         <div
                           key={post.id}
                           draggable={post.status !== "published"}
@@ -390,7 +394,14 @@ export default function CalendarPage() {
                         </div>
                       ))}
                       {dayPosts.length > 4 && (
-                        <div className="text-[10px] text-muted-foreground pl-1">+{dayPosts.length - 4} more</div>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedDayKey(prev => (prev === key ? null : key))}
+                          className="text-[10px] text-muted-foreground pl-1 hover:text-foreground hover:underline"
+                          data-testid={`calendar-day-toggle-${key}`}
+                        >
+                          {expandedDayKey === key ? "Show less" : `+${dayPosts.length - 4} more`}
+                        </button>
                       )}
                     </div>
                   </div>
