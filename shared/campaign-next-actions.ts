@@ -211,3 +211,27 @@ export function groupNextActions(items: ActionableItem[], groupBy: GroupBy = "ba
 export function pendingGroups(items: ActionableItem[], groupBy: GroupBy = "batch"): ActionGroup[] {
   return groupNextActions(items, groupBy).filter((g) => g.pending > 0);
 }
+
+/**
+ * Deep-link straight to the one item a single-item group represents, so an
+ * approver lands on the exact brief / email / post instead of a tab full of
+ * cards to hunt through. Returns undefined for multi-item (batched) rollups —
+ * those keep opening the tab.
+ *  - brief  → editorial calendar, editor auto-opened (`?brief=`)
+ *  - email  → email newsletters, viewer auto-opened (`?emailId=`)
+ *  - social → the campaign's Social Posts tab, scrolled to + highlighted (`?post=`)
+ */
+export function singleItemHref(campaignId: string, group: ActionGroup): string | undefined {
+  if (group.total !== 1 || !group.itemId) return undefined;
+  const itemId = encodeURIComponent(group.itemId);
+  switch (group.itemType) {
+    case "brief":
+      return `/app/marketing/editorial-calendar?campaignId=${encodeURIComponent(campaignId)}&brief=${itemId}`;
+    case "email":
+      return `/app/marketing/email-newsletters?emailId=${itemId}`;
+    case "social":
+      return `/app/marketing/campaigns/${encodeURIComponent(campaignId)}?post=${itemId}#posts`;
+    default:
+      return undefined;
+  }
+}

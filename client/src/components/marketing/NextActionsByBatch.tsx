@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ACTION_LABELS,
+  singleItemHref,
   type ActionGroup,
   type NextAction,
 } from "@shared/campaign-next-actions";
@@ -85,30 +86,6 @@ function groupHref(campaignId: string, group: ActionGroup): string {
   const filter = actionFilter(group);
   const search = filter ? `?filter=${encodeURIComponent(filter)}` : "";
   return `/app/marketing/campaigns/${campaignId}${search}#${actionTab(group)}`;
-}
-
-/**
- * Deep-link straight to the one item a single-item group represents, so an
- * approver lands on the exact brief / email / post instead of a tab full of
- * cards to hunt through. Returns undefined for multi-item (batched) rollups —
- * those keep opening the tab.
- *  - brief  → editorial calendar, editor auto-opened (`?brief=`)
- *  - email  → email newsletters, viewer auto-opened (`?emailId=`)
- *  - social → the campaign's Social Posts tab, scrolled to + highlighted (`?post=`)
- */
-export function singleItemHref(campaignId: string, group: ActionGroup): string | undefined {
-  if (group.total !== 1 || !group.itemId) return undefined;
-  const itemId = encodeURIComponent(group.itemId);
-  switch (group.itemType) {
-    case "brief":
-      return `/app/marketing/editorial-calendar?campaignId=${encodeURIComponent(campaignId)}&brief=${itemId}`;
-    case "email":
-      return `/app/marketing/email-newsletters?emailId=${itemId}`;
-    case "social":
-      return `/app/marketing/campaigns/${encodeURIComponent(campaignId)}?post=${itemId}#posts`;
-    default:
-      return undefined;
-  }
 }
 
 /** Compact "12 approve · 6 schedule" breakdown of the remaining work. */
