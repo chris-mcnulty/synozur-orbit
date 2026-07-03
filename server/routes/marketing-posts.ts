@@ -350,6 +350,7 @@ export function registerMarketingPostsRoutes(app: Express) {
       const {
         editedContent, hashtags, status, scheduledDate, content,
         overrideImageUrl, overrideBrandAssetId, deliveryMode, carouselSlides,
+        socialAccountId,
       } = req.body ?? {};
 
       const updateFields: Partial<GeneratedPost> & { updatedAt: Date } = { updatedAt: new Date() };
@@ -417,6 +418,21 @@ export function registerMarketingPostsRoutes(app: Express) {
       if (carouselSlides !== undefined) {
         if (carouselSlides === null || Array.isArray(carouselSlides)) {
           (updateFields as any).carouselSlides = carouselSlides;
+        }
+      }
+
+      if (socialAccountId !== undefined) {
+        if (socialAccountId === null) {
+          (updateFields as any).socialAccountId = null;
+        } else if (typeof socialAccountId === "string") {
+          const [acct] = await db.select({ id: socialAccounts.id })
+            .from(socialAccounts)
+            .where(and(
+              eq(socialAccounts.id, socialAccountId),
+              eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+            ));
+          if (!acct) return res.status(404).json({ error: "Social account not found" });
+          (updateFields as any).socialAccountId = socialAccountId;
         }
       }
 

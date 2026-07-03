@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // One row per Orbit-managed post, from /api/generated-posts/calendar.
 interface CalendarPost {
@@ -301,6 +302,7 @@ function EditPostDialog({
   const [scheduledValue, setScheduledValue] = useState<string>("");
   const [postNow, setPostNow] = useState(false);
   const [slideUrls, setSlideUrls] = useState<Record<number, string>>({});
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [didInit, setDidInit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -315,6 +317,15 @@ function EditPostDialog({
     queryFn: async () => {
       const r = await fetch(`/api/generated-posts/${postId}`, { credentials: "include" });
       if (!r.ok) throw new Error("Could not load post");
+      return r.json();
+    },
+  });
+
+  const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
+    queryKey: ["/api/social-accounts"],
+    queryFn: async () => {
+      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      if (!r.ok) return [];
       return r.json();
     },
   });
@@ -369,6 +380,7 @@ function EditPostDialog({
   if (post && !didInit) {
     setEditedText(post.editedContent ?? post.content ?? "");
     setScheduledValue(post.scheduledDate ? toDatetimeLocal(new Date(post.scheduledDate)) : "");
+    setSelectedAccountId(post.socialAccountId ?? null);
     const initUrls: Record<number, string> = {};
     (post.carouselSlides ?? []).forEach((s) => { initUrls[s.index] = s.imageUrl ?? ""; });
     setSlideUrls(initUrls);
@@ -385,6 +397,9 @@ function EditPostDialog({
       body.scheduledDate = new Date().toISOString();
     } else if (scheduledValue) {
       body.scheduledDate = new Date(scheduledValue).toISOString();
+    }
+    if (selectedAccountId !== (post?.socialAccountId ?? null)) {
+      body.socialAccountId = selectedAccountId;
     }
     if (isCarousel && post?.carouselSlides?.length) {
       body.carouselSlides = post.carouselSlides.map((s) => ({
@@ -585,7 +600,7 @@ function EditPostDialog({
                         <div className="flex-1 min-w-0 text-red-700 dark:text-red-400">
                           {missedReason.kind === "no_social_account" && (
                             <><p className="font-medium">No social account linked</p>
-                            <p className="text-[12px] mt-0.5 opacity-80">This post has no social account attached — the worker ignores it. Attach an account and reschedule.</p></>
+                            <p className="text-[12px] mt-0.5 opacity-80">Pick an account using the <strong>Social account</strong> field below, then save to reschedule.</p></>
                           )}
                           {missedReason.kind === "auto_publish_off" && (
                             <><p className="font-medium">Auto-publish is off for this campaign</p>
@@ -647,8 +662,7 @@ function EditPostDialog({
                           <>
                             <p className="font-medium">No social account linked</p>
                             <p className="text-[12px] mt-0.5 opacity-80">
-                              This post has no social account attached, so the auto-publish worker ignores it.
-                              Open the post, pick an account, and reschedule.
+                              Pick an account using the <strong>Social account</strong> field below, then save to reschedule.
                             </p>
                           </>
                         )}
@@ -778,6 +792,40 @@ function EditPostDialog({
                 </div>
               </div>
             )}
+
+            {/* Social account selector — visible when editable */}
+            {!isReadOnly && (() => {
+              const platformAccounts = allSocialAccounts.filter(
+                (a) => a.platform === post.platform && a.status === "active" && a.hasAccessToken
+              );
+              if (platformAccounts.length === 0) return null;
+              return (
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    Social account
+                    {missedReason?.kind === "no_social_account" && (
+                      <span className="text-destructive text-[11px] font-normal">— required to publish</span>
+                    )}
+                  </Label>
+                  <Select
+                    value={selectedAccountId ?? ""}
+                    onValueChange={(v) => setSelectedAccountId(v || null)}
+                    disabled={isBusy}
+                  >
+                    <SelectTrigger data-testid="edit-dialog-social-account" className="w-full">
+                      <SelectValue placeholder="Select an account…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {platformAccounts.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.accountName || a.platform}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })()}
 
             {/* Post text */}
             {/* Platform + graphic — shown for all stages */}
