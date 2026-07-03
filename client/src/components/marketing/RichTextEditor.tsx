@@ -438,11 +438,7 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
                 {uploadResult && (
                   <div className="flex items-start gap-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
                     <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                    <span>
-                      {uploadResult.source === "website"
-                        ? "Uploaded to the Synozur website media library."
-                        : "Saved to Orbit media storage."}
-                    </span>
+                    <span>Saved to Orbit media storage. Ready to insert.</span>
                   </div>
                 )}
                 {uploadError && (
