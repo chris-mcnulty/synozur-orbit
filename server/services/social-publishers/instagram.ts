@@ -210,8 +210,8 @@ export class InstagramPublisher implements SocialPublisher {
       };
     }
 
-    const imageUrl = post.overrideImageUrl;
-    if (!imageUrl) {
+    const rawImageUrl = post.overrideImageUrl;
+    if (!rawImageUrl) {
       return {
         success: false,
         errorCode: "image_required",
@@ -219,6 +219,17 @@ export class InstagramPublisher implements SocialPublisher {
           "Instagram requires an image. Set overrideImageUrl (a publicly reachable URL) on the post before publishing.",
       };
     }
+    // Instagram's Graph API fetches the image from its own servers — it must be
+    // an absolute public URL. Absolutize any relative Orbit paths using env vars
+    // (safety net for URLs stored before the upload endpoint was fixed).
+    const imageUrl = (() => {
+      if (!rawImageUrl.startsWith("/")) return rawImageUrl;
+      const base = process.env.PUBLIC_APP_URL?.replace(/\/+$/, "")
+        ?? (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : null)
+        ?? (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
+        ?? `http://localhost:${process.env.PORT ?? 5000}`;
+      return `${base}${rawImageUrl}`;
+    })();
 
     let userAccessToken: string;
     try {

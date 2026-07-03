@@ -1073,7 +1073,16 @@ export function registerIntegrationRoutes(app: Express) {
         contentType: file.mimetype,
         resumable: false,
       });
-      const url = `${PUBLIC_SERVE_PREFIX}${MEDIA_UPLOAD_PREFIX}/${objectId}`;
+      // Return an absolute URL so it is externally fetchable by social platforms
+      // (Instagram's API, SocialPilot, etc.) without requiring Orbit session auth.
+      const relativePath = `${PUBLIC_SERVE_PREFIX}${MEDIA_UPLOAD_PREFIX}/${objectId}`;
+      const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] || req.protocol || "https";
+      const host = req.headers["x-forwarded-host"] as string || req.headers.host;
+      const appBase = process.env.PUBLIC_APP_URL?.replace(/\/+$/, "")
+        ?? (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : null)
+        ?? (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
+        ?? (host ? `${proto}://${host}` : null);
+      const url = appBase ? `${appBase}${relativePath}` : relativePath;
       return res.json({ url, source: "local" });
     } catch (err) {
       res.status(500).json({ error: errorMessage(err) });
