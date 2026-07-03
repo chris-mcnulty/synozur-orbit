@@ -58,6 +58,7 @@ const ALLOWED_POST_STATUSES: readonly string[] = [
   "published",
   "publish_failed",
   "missed",
+  "deleted",
 ];
 
 function sanitizeFrameworkRefs(input: unknown): VoiceFrameworkRef[] {
