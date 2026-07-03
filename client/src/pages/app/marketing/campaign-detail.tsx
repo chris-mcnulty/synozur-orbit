@@ -347,6 +347,18 @@ function getTabFromHash(): CampaignTab {
   return (CAMPAIGN_TABS as readonly string[]).includes(hash) ? (hash as CampaignTab) : "plan";
 }
 
+// A deep-link may carry a `?filter=` so a nudge (e.g. the hub's "Fix failures"
+// next-action) lands on the posts tab already scoped to the exact items —
+// rather than the default "active" view where failures are buried.
+function getFilterFromSearch(): string | null {
+  try {
+    const v = new URLSearchParams(window.location.search).get("filter");
+    return v && v.trim() ? v.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 function generateAccountsKey(campaignId: string) {
   return `generate-dialog-accounts-${campaignId}`;
 }
@@ -389,7 +401,7 @@ export default function CampaignDetailPage() {
   const [assetSearch, setAssetSearch] = useState("");
   const [brandAssetCategoryFilter, setBrandAssetCategoryFilter] = useState("all");
   const [brandAssetSearch, setBrandAssetSearch] = useState("");
-  const [postFilter, setPostFilter] = useState<string>("active");
+  const [postFilter, setPostFilter] = useState<string>(() => getFilterFromSearch() ?? "active");
   const [postAccountFilter, setPostAccountFilter] = useState<string>("all");
   const [manualPostedAtMap, setManualPostedAtMap] = useState<Record<string, string>>({});
   // WS4: when drilling into one collapsed social batch (its generation run,
@@ -1856,6 +1868,8 @@ export default function CampaignDetailPage() {
 
   useEffect(() => {
     setActiveTab(getTabFromHash());
+    const f = getFilterFromSearch();
+    if (f) setPostFilter(f);
   }, [id]);
 
   useEffect(() => {

@@ -246,6 +246,11 @@ export default function EmailNewslettersPage() {
   const preselectedAssetId = params.get("assetId");
   const briefingAction = params.get("briefingAction");
   const recommendationContext = params.get("recommendation");
+  // Honor a ?emailId=<id> deep link (e.g. from the Content Pipeline board) —
+  // scroll to, highlight, and open that specific saved email instead of
+  // dumping the user at the top of the list.
+  const focusEmailId = params.get("emailId");
+  const [highlightEmailId, setHighlightEmailId] = useState<string | null>(focusEmailId);
 
   const [emailPlatform, setEmailPlatform] = useState("outlook");
   const [emailTone, setEmailTone] = useState("professional");
@@ -421,6 +426,26 @@ export default function EmailNewslettersPage() {
       }
     }
   }, [preselectedAssetId, contentAssets]);
+
+  // Deep-link: when arriving with ?emailId=..., clear any filters that would
+  // hide it, open its viewer, scroll to its card, and briefly highlight it so
+  // the user lands directly on the item ready to act.
+  useEffect(() => {
+    if (!focusEmailId || savedEmails.length === 0) return;
+    const target = savedEmails.find(e => e.id === focusEmailId);
+    if (!target) return;
+    setStatusFilter("all");
+    setLabelFilter("all");
+    setViewingEmail(target);
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-testid="card-email-${focusEmailId}"]`);
+      if (el && "scrollIntoView" in el) {
+        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 200);
+    const clear = setTimeout(() => setHighlightEmailId(null), 2500);
+    return () => { clearTimeout(t); clearTimeout(clear); };
+  }, [focusEmailId, savedEmails]);
 
   const categoryName = (catId?: string) => {
     if (!catId) return "";
@@ -1064,7 +1089,7 @@ export default function EmailNewslettersPage() {
             </div>
 
             {filteredEmails.map(email => (
-              <Card key={email.id} className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setViewingEmail(email)} data-testid={`card-email-${email.id}`}>
+              <Card key={email.id} className={`cursor-pointer hover:bg-muted/30 transition-colors${highlightEmailId === email.id ? " ring-2 ring-primary ring-offset-2" : ""}`} onClick={() => setViewingEmail(email)} data-testid={`card-email-${email.id}`}>
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">

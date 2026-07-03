@@ -62,6 +62,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
+  NATIVE_SOCIAL_BRIEF_FORMATS,
   PIPELINE_STAGES,
   TYPE_LABELS,
   allowedDropStages,
@@ -449,7 +450,19 @@ export default function ContentPipelinePage() {
   const allItems = useMemo<PipelineItem[]>(() => {
     const posts = postRows.map(postToPipelineItem);
     const emails = emailRows.map(emailToPipelineItem);
-    const briefs = briefRows.map(briefToPipelineItem);
+    // Dedup: a native social draft (linkedin/x brief) whose content has already
+    // been fanned out into real posts is a duplicate nudge — the posts are now
+    // the actionable items. Drop the brief so the board shows it once. Long-form
+    // briefs are never collapsed (their promo posts don't make them redundant).
+    const fannedOutBriefIds = new Set(
+      postRows.map((p) => p.sourceBriefId).filter((id): id is string => !!id),
+    );
+    const briefs = briefRows
+      .filter(
+        (b) =>
+          !(NATIVE_SOCIAL_BRIEF_FORMATS.has(b.format) && fannedOutBriefIds.has(b.id)),
+      )
+      .map(briefToPipelineItem);
     return [...posts, ...emails, ...briefs].filter((i): i is PipelineItem => i !== null);
   }, [postRows, emailRows, briefRows]);
 

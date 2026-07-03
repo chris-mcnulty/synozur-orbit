@@ -57,7 +57,22 @@ export interface CalendarPostRow {
   campaignId: string | null;
   overrideImageUrl: string | null;
   accountName: string | null;
+  /** The brief this post was fanned out from, if any (dedup key for the board). */
+  sourceBriefId?: string | null;
 }
+
+/**
+ * Brief formats whose content *is* the social post — a native social draft.
+ * Once such a brief has been fanned out into real posts, the brief itself is a
+ * pure duplicate on the board (the posts are now the actionable items). Long-form
+ * formats (blog, whitepaper, etc.) are NOT here: their promo posts don't make the
+ * source piece redundant, so those briefs always stay visible.
+ */
+export const NATIVE_SOCIAL_BRIEF_FORMATS = new Set([
+  "linkedin_post",
+  "linkedin_carousel",
+  "x_post",
+]);
 
 export interface SavedEmailRow {
   id: string;
@@ -147,7 +162,9 @@ export function emailToPipelineItem(row: SavedEmailRow): PipelineItem | null {
     platform: row.platform,
     scheduledAt: row.scheduledAt ?? null,
     createdAt: row.createdAt ?? null,
-    href: "/app/marketing/email-newsletters",
+    // Deep-link to this specific email so the Email page scrolls to, highlights,
+    // and opens it — rather than dumping the user at the top of the saved list.
+    href: `/app/marketing/email-newsletters?emailId=${row.id}`,
   };
 }
 
@@ -189,7 +206,10 @@ export function briefToPipelineItem(row: BriefRow): PipelineItem | null {
     campaignId: row.campaignId ?? null,
     scheduledAt: row.scheduledAt ?? null,
     createdAt: row.createdAt ?? null,
-    href: "/app/marketing/editorial-calendar",
+    // Deep-link to this specific brief so the Editorial Calendar scrolls to,
+    // highlights, and (when a draft exists) opens the editor for it — instead
+    // of landing the user at the top of the full brief list.
+    href: `/app/marketing/editorial-calendar?brief=${row.id}`,
   };
 }
 

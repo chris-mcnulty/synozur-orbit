@@ -75,6 +75,18 @@ export function actionTab(group: ActionGroup): string {
   }
 }
 
+/** The posts-tab filter a headline action should pre-apply, if any. */
+export function actionFilter(group: ActionGroup): string | undefined {
+  return group.headlineAction === "fix" ? "publish_failed" : undefined;
+}
+
+/** Campaign deep-link for a group: right tab, and (for failures) pre-filtered. */
+function groupHref(campaignId: string, group: ActionGroup): string {
+  const filter = actionFilter(group);
+  const search = filter ? `?filter=${encodeURIComponent(filter)}` : "";
+  return `/app/marketing/campaigns/${campaignId}${search}#${actionTab(group)}`;
+}
+
 /** Compact "12 approve · 6 schedule" breakdown of the remaining work. */
 function breakdown(group: ActionGroup): string {
   return (Object.entries(group.actionCounts) as [NextAction, number][])
@@ -209,7 +221,7 @@ export function MarketingHubNextActions() {
             </div>
             <div className="divide-y border-l-2 border-muted pl-3">
               {c.groups.map((g) => (
-                <GroupRow key={g.key} group={g} href={`/app/marketing/campaigns/${c.campaignId}#${actionTab(g)}`} />
+                <GroupRow key={g.key} group={g} href={groupHref(c.campaignId, g)} />
               ))}
             </div>
           </div>

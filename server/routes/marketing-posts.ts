@@ -610,6 +610,10 @@ export function registerMarketingPostsRoutes(app: Express) {
         deliveryMode: generatedPosts.deliveryMode,
         publishError: generatedPosts.publishError,
         campaignName: campaigns.name,
+        // The brief this post was fanned out from (when generated from a brief).
+        // Lets the unified pipeline collapse a native social draft once it has
+        // become real posts, so it doesn't nag twice.
+        sourceBriefId: generatedPosts.sourceBriefId,
       })
         .from(generatedPosts)
         .leftJoin(socialAccounts, eq(socialAccounts.id, generatedPosts.socialAccountId))

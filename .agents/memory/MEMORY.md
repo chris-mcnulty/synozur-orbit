@@ -38,4 +38,5 @@
 - [Apollo person_titles must be atomic](apollo-title-normalization.md) — ICP persona.role is a combined sentence; normalizePersonTitles() splits it; AUM segments must not map to headcount ranges.
 - [Synozur Website Codebase](synozur-website-codebase.md) — website MCP target is Replit project "Synozur-Baseline"; GitHub: github.com/chris-mcnulty/Synozur-WebBase.
 - [DB pool isolation](db-pool-isolation.md) — hot crawl/monitor work + its job telemetry must use crawlDb, never primary db, or it starves time-sensitive scheduled-post publishing.
+- [Pipeline board brief↔post dedup](pipeline-brief-post-dedup.md) — board hides a brief only if it's a native-social format (content IS the post) AND a post references it via sourceBriefId; long-form briefs never collapsed.
 - [Media upload URL must be absolute](media-upload-absolute-url.md) — upload-media endpoint returns absolute URL (deployment domain + /public-objects/...); Instagram publisher also absolutizes relative paths; /public-objects/ route is auth-free.
