@@ -1072,6 +1072,31 @@ Only use these timeframe values: ${periods.join(", ")}`;
     }
   });
 
+  // PATCH /api/intelligence-briefings/:id — remove an individual action item by index
+  app.patch("/api/intelligence-briefings/:id", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const briefing = await storage.getIntelligenceBriefing(req.params.id);
+      if (!briefing) return res.status(404).json({ error: "Briefing not found" });
+      if (briefing.tenantDomain !== ctx.tenantDomain) return res.status(403).json({ error: "Access denied" });
+
+      const { removeActionIndex } = req.body;
+      if (typeof removeActionIndex !== "number") {
+        return res.status(400).json({ error: "removeActionIndex must be a number" });
+      }
+
+      const bd = briefing.briefingData as any;
+      const actionItems = Array.isArray(bd?.actionItems) ? bd.actionItems : [];
+      const updated = { ...bd, actionItems: actionItems.filter((_: any, i: number) => i !== removeActionIndex) };
+
+      const saved = await storage.updateIntelligenceBriefing(req.params.id, { briefingData: updated });
+      res.json(saved);
+    } catch (error: any) {
+      if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.delete("/api/intelligence-briefings/:id", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);

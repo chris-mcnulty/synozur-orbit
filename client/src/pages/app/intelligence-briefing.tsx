@@ -469,6 +469,29 @@ export default function IntelligenceBriefingPage() {
     },
   });
 
+  const removeActionItemMutation = useMutation({
+    mutationFn: async (index: number) => {
+      const res = await fetch(`/api/intelligence-briefings/${activeBriefingId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removeActionIndex: index }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to remove action item");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings", activeBriefingId] });
+      toast({ title: "Action item removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't remove", description: err.message, variant: "destructive" });
+    },
+  });
+
   const podcastGenerateMutation = useMutation({
     mutationFn: async (briefingId: string) => {
       const res = await fetch(`/api/intelligence-briefings/${briefingId}/podcast`, {
@@ -1402,10 +1425,20 @@ export default function IntelligenceBriefingPage() {
                         <CardContent className="flex items-start gap-3 pt-4 pb-4 px-4">
                           <div className="shrink-0 mt-0.5">{urg.icon}</div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h3 className="text-sm font-semibold">{item.title}</h3>
-                              <Badge variant="outline" className={`text-[10px] ${urg.color}`}>{urg.label}</Badge>
-                              <Badge variant="secondary" className="text-[10px]">{item.category}</Badge>
+                            <div className="flex items-start gap-2 mb-1 flex-wrap">
+                              <h3 className="text-sm font-semibold flex-1 min-w-0">{item.title}</h3>
+                              <Badge variant="outline" className={`text-[10px] shrink-0 ${urg.color}`}>{urg.label}</Badge>
+                              <Badge variant="secondary" className="text-[10px] shrink-0">{item.category}</Badge>
+                              <button
+                                type="button"
+                                aria-label="Remove action item"
+                                data-testid={`action-remove-${i}`}
+                                className="shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                disabled={removeActionItemMutation.isPending}
+                                onClick={() => removeActionItemMutation.mutate(i)}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                             <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
                             {item.relatedCompetitors.length > 0 && (
