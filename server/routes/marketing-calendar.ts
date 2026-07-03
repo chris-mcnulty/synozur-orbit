@@ -36,7 +36,7 @@ import { buildPostsCsv } from "../services/posts-csv-export";
 import { repurposeAsset } from "../services/repurpose-service";
 import { coercePlatform, SUPPORTED_PLATFORMS } from "../services/repurpose-core";
 import { getScheduledDayCounts } from "../services/schedule-load";
-import { rollupSocialItems, batchDayKey, type RollupSocialItem } from "../services/calendar-rollup-core";
+import { rollupSocialItems, batchDayKey, resolveBatchSource, type RollupSocialItem } from "../services/calendar-rollup-core";
 import { storeArtifact } from "../services/artifact-storage-helper";
 
 // A day with at least this many activities is considered "crowded".
@@ -377,6 +377,119 @@ export function registerMarketingCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[marketing-calendar list]", err.message);
       res.status(500).json({ error: err.message || "Failed to load marketing calendar" });
+    }
+  });
+
+  // ───── Locate a single social post's calendar position ─────
+  // A `?post=<id>` deep link can't be resolved client-side when the post is
+  // collapsed inside a dense social batch — the rollup only ships batch summaries,
+  // not member ids. This tells the calendar where the post lives (its day) and,
+  // when the post is collapsed, which batch to drill into (source + day) so the
+  // deep-link effect can navigate to the right month, open that batch, and
+  // highlight the post. Scoped exactly like the main list (tenant + market) so
+  // the drilled query returns the same member.
+  app.get("/api/marketing-calendar/locate/social/:id", async (req, res) => {
+    if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { id } = req.params;
+
+      // Same market scoping as the main list: no-campaign posts are tenant-wide;
+      // campaign posts must belong to the current market and a live campaign.
+      const baseConds = [
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        ne(generatedPosts.status, "rejected"),
+        ne(generatedPosts.status, "deleted"),
+        ne(generatedPosts.status, "archived"),
+        or(
+          isNull(generatedPosts.campaignId),
+          and(ne(campaigns.status, "deleted"), or(eq(campaigns.marketId, ctx.marketId), isNull(campaigns.marketId))),
+        )!,
+      ];
+
+      const [target] = await db
+        .select({
+          id: generatedPosts.id,
+          scheduledDate: generatedPosts.scheduledDate,
+          publishedAt: generatedPosts.publishedAt,
+          campaignId: generatedPosts.campaignId,
+          solutionAreaId: generatedPosts.solutionAreaId,
+          conferenceId: generatedPosts.conferenceId,
+          generationJobId: generatedPosts.generationJobId,
+          variantGroup: generatedPosts.variantGroup,
+        })
+        .from(generatedPosts)
+        .leftJoin(campaigns, eq(campaigns.id, generatedPosts.campaignId))
+        .where(and(...baseConds, eq(generatedPosts.id, id)))
+        .limit(1);
+
+      if (!target) {
+        res.json({ found: false });
+        return;
+      }
+
+      const date = target.publishedAt ?? target.scheduledDate ?? null;
+      const iso = date ? date.toISOString() : null;
+      const source = resolveBatchSource({
+        id: target.id,
+        platform: "",
+        date: iso,
+        lifecycle: "",
+        campaignId: target.campaignId,
+        solutionAreaId: target.solutionAreaId,
+        conferenceId: target.conferenceId,
+        generationJobId: target.generationJobId,
+        variantGroup: target.variantGroup,
+      });
+
+      // No batch source → the post is standalone and shows directly in the grid.
+      if (!source) {
+        res.json({ found: true, date: iso, batch: null });
+        return;
+      }
+
+      // Count in-scope posts that share the SAME resolved batch source on the
+      // same day. Only groups larger than the rollup threshold get collapsed, so
+      // only then does the deep link need to drill in.
+      const day = batchDayKey(iso);
+      const siblings = await db
+        .select({
+          scheduledDate: generatedPosts.scheduledDate,
+          publishedAt: generatedPosts.publishedAt,
+          campaignId: generatedPosts.campaignId,
+          conferenceId: generatedPosts.conferenceId,
+          generationJobId: generatedPosts.generationJobId,
+          variantGroup: generatedPosts.variantGroup,
+        })
+        .from(generatedPosts)
+        .leftJoin(campaigns, eq(campaigns.id, generatedPosts.campaignId))
+        .where(and(
+          ...baseConds,
+          or(
+            eq(generatedPosts.generationJobId, source),
+            eq(generatedPosts.variantGroup, source),
+            eq(generatedPosts.conferenceId, source),
+            eq(generatedPosts.campaignId, source),
+          )!,
+        ));
+
+      let count = 0;
+      for (const s of siblings) {
+        const sDate = s.publishedAt ?? s.scheduledDate ?? null;
+        const sIso = sDate ? sDate.toISOString() : null;
+        const sSource = resolveBatchSource({
+          id: "", platform: "", date: sIso, lifecycle: "",
+          campaignId: s.campaignId, conferenceId: s.conferenceId,
+          generationJobId: s.generationJobId, variantGroup: s.variantGroup,
+        });
+        if (sSource === source && batchDayKey(sIso) === day) count++;
+      }
+
+      const collapsed = count > BUSY_THRESHOLD;
+      res.json({ found: true, date: iso, batch: collapsed ? { key: source, day } : null });
+    } catch (err: any) {
+      console.error("[marketing-calendar locate]", err.message);
+      res.status(500).json({ error: err.message || "Failed to locate post" });
     }
   });
 

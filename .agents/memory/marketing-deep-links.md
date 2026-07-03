@@ -24,3 +24,14 @@ links going through the helper so the item-level contract stays consistent.
 against posts loaded for the current month grid — but its query passes
 `includeUnscheduled: true`, so undated posts resolve without a `date`; dated ones
 need the correct month, which the `date=` param supplies.
+
+**Master Marketing Calendar batch gotcha:** in `marketing-calendar.tsx` the
+default view rolls up dense same-day social posts into a batch pill, so a
+`?post=<id>` member isn't in the loaded items by id and the deep-link effect
+can't find it. When a social target isn't found, the effect calls
+`GET /api/marketing-calendar/locate/social/:id` (returns `{found,date,batch:{key,day}|null}`;
+`batch` set only when the group exceeds the rollup threshold), sets the month
+anchor + `batchDrill`, and the next pass (with the batch's members loaded)
+highlights it. Guard the locate call with a per-target "attempted" flag so it
+fires once. The batch key/day mirror `resolveBatchSource`/`batchDayKey` so the
+drill query returns the same member the rollup collapsed.

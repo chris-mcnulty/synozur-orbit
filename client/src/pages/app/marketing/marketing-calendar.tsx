@@ -719,6 +719,10 @@ export default function MarketingCalendarPage() {
   // Once a given deep-link target has been honored, don't re-run it (so closing
   // the day panel / detail doesn't snap it back open).
   const [honoredDeepLink, setHonoredDeepLink] = useState<string | null>(null);
+  // A `?post=` target that's collapsed inside a dense social batch can't be found
+  // in the loaded items — we ask the server where it lives, then drill into its
+  // batch. Track which target we've already resolved so we only ask once.
+  const [batchResolveAttempted, setBatchResolveAttempted] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<"month" | "quarter">("month");
   const [groupBy, setGroupBy] = useState<"none" | "campaign" | "theme" | "event">("none");
   const [filters, setFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all" });
@@ -826,9 +830,30 @@ export default function MarketingCalendarPage() {
     const honorKey = `${target.type}:${target.id}`;
     if (honoredDeepLink === honorKey) return;
 
-    const match = scheduled.find((i) => i.type === target.type && i.id === target.id);
-    // Not in the loaded month (or collapsed inside a social batch) — leave the
-    // calendar where it is; no error, and retried if the data changes.
+    const match = scheduled.find((i) => i.type === target.type && i.id === target.id && !i.isBatch);
+    // The post may be collapsed inside a dense social batch — the rollup only
+    // ships batch summaries, so it isn't in `scheduled` by id. Ask the server
+    // where it lives, then land on its month and drill into its batch so the
+    // next pass (with the batch's members loaded) can find + highlight it.
+    if (!match && target.type === "social" && batchResolveAttempted !== honorKey) {
+      setBatchResolveAttempted(honorKey);
+      (async () => {
+        try {
+          const res = await apiRequest("GET", `/api/marketing-calendar/locate/social/${encodeURIComponent(target.id)}`);
+          const loc = await res.json() as { found: boolean; date: string | null; batch: { key: string; day: string } | null };
+          if (!loc.found || !loc.batch) return;
+          if (loc.batch.day !== "unscheduled") {
+            setAnchor(startOfMonth(parseLocalDay(loc.batch.day)));
+          }
+          setBatchDrill({ key: loc.batch.key, day: loc.batch.day, label: "the linked post" });
+        } catch {
+          // Best-effort: if locate fails, leave the calendar where it is.
+        }
+      })();
+      return;
+    }
+    // Not in the loaded month — leave the calendar where it is; no error, and
+    // retried if the data changes.
     if (!match) return;
     const dayKey = localKey(match.date);
     if (!dayKey) return;
@@ -853,7 +878,7 @@ export default function MarketingCalendarPage() {
 
     setFocusDayKey(dayKey);
     setHonoredDeepLink(honorKey);
-  }, [deepLink, isLoading, scheduled, byDay, honoredDeepLink, view, grouping, typeFilter, anchor]);
+  }, [deepLink, isLoading, scheduled, byDay, honoredDeepLink, batchResolveAttempted, view, grouping, typeFilter, anchor]);
 
   // Once the focused day cell is rendered, scroll it into view and briefly
   // highlight it so the user can see exactly where the item sits. The highlight

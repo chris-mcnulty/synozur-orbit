@@ -98,7 +98,10 @@ vi.mock("../schedule-load", () => ({
 
 vi.mock("../calendar-rollup-core", () => ({
   rollupSocialItems: vi.fn().mockReturnValue({ batches: [], loose: [] }),
-  batchDayKey: vi.fn((d: string | null) => d ?? ""),
+  batchDayKey: vi.fn((d: string | null) => (d ? d.slice(0, 10) : "unscheduled")),
+  resolveBatchSource: vi.fn((item: any) =>
+    item.generationJobId || item.variantGroup || item.conferenceId || item.campaignId || null,
+  ),
 }));
 
 vi.mock("../artifact-storage-helper", () => ({
@@ -286,6 +289,88 @@ describe("marketing-calendar routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: expect.stringMatching(/unknown type/i) });
+    });
+  });
+
+  // ── GET /api/marketing-calendar/locate/social/:id ─────────────────────────
+
+  describe("GET /api/marketing-calendar/locate/social/:id", () => {
+    it("returns found=false when the post does not exist", async () => {
+      // target select .limit(1) → empty
+      pushDb();
+
+      const res = await request(app).get("/api/marketing-calendar/locate/social/nope");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ found: false });
+    });
+
+    it("returns batch=null for a standalone post (no batch source)", async () => {
+      const TARGET = {
+        id: "post-1",
+        scheduledDate: new Date("2026-07-15T10:00:00Z"),
+        publishedAt: null,
+        campaignId: null, solutionAreaId: null, conferenceId: null,
+        generationJobId: null, variantGroup: null,
+      };
+      pushDb(TARGET);
+
+      const res = await request(app).get("/api/marketing-calendar/locate/social/post-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ found: true, batch: null });
+      expect(res.body.date).toBe("2026-07-15T10:00:00.000Z");
+    });
+
+    it("returns the batch key + day when the post is collapsed in a dense batch", async () => {
+      const TARGET = {
+        id: "post-1",
+        scheduledDate: new Date("2026-07-15T10:00:00Z"),
+        publishedAt: null,
+        campaignId: null, solutionAreaId: null, conferenceId: null,
+        generationJobId: "job-1", variantGroup: null,
+      };
+      // 4 siblings on the same day sharing the same generation job → > threshold (3)
+      const sibling = {
+        scheduledDate: new Date("2026-07-15T10:00:00Z"),
+        publishedAt: null,
+        campaignId: null, conferenceId: null,
+        generationJobId: "job-1", variantGroup: null,
+      };
+      pushDb(TARGET);
+      pushDb(sibling, sibling, sibling, sibling);
+
+      const res = await request(app).get("/api/marketing-calendar/locate/social/post-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        found: true,
+        batch: { key: "job-1", day: "2026-07-15" },
+      });
+    });
+
+    it("returns batch=null when the group is at/under the collapse threshold", async () => {
+      const TARGET = {
+        id: "post-1",
+        scheduledDate: new Date("2026-07-15T10:00:00Z"),
+        publishedAt: null,
+        campaignId: null, solutionAreaId: null, conferenceId: null,
+        generationJobId: "job-1", variantGroup: null,
+      };
+      const sibling = {
+        scheduledDate: new Date("2026-07-15T10:00:00Z"),
+        publishedAt: null,
+        campaignId: null, conferenceId: null,
+        generationJobId: "job-1", variantGroup: null,
+      };
+      pushDb(TARGET);
+      // Only 3 members (== threshold) → not collapsed.
+      pushDb(sibling, sibling, sibling);
+
+      const res = await request(app).get("/api/marketing-calendar/locate/social/post-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ found: true, batch: null });
     });
   });
 
