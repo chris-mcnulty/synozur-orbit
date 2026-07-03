@@ -2226,7 +2226,25 @@ export default function EditorialCalendarPage() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="blog-seo-title" className="text-xs text-muted-foreground">SEO title</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="blog-seo-title" className="text-xs text-muted-foreground">SEO title</Label>
+                      {!blogSeoTitle && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          data-testid="btn-generate-seo-title"
+                          onClick={() => {
+                            const title = draft?.title ?? draftBriefTitle ?? "";
+                            if (!title) return;
+                            const seoTitle = title.slice(0, 60);
+                            setBlogSeoTitle(seoTitle);
+                            if (draftAssetId) patchBlogMeta(draftAssetId, { seoTitle });
+                          }}
+                        >
+                          Generate
+                        </button>
+                      )}
+                    </div>
                     <Input
                       id="blog-seo-title"
                       placeholder="≤60 characters"
