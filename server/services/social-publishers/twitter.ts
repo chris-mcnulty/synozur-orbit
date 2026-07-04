@@ -271,7 +271,7 @@ export class TwitterPublisher implements SocialPublisher {
         return {
           success: false,
           errorCode: "image_upload_failed",
-          errorMessage: `Image could not be uploaded to X — the image URL may be broken or unreachable. Fix the image on this post and retry. URL: ${imageUrl}`,
+          errorMessage: `Image could not be fetched from Orbit storage for upload to X. This is a server-side issue — use the Retry button to try again. If it keeps failing, use the Change Image button (🖼) on the post to replace the graphic.`,
         };
       }
     }
@@ -327,10 +327,25 @@ export class TwitterPublisher implements SocialPublisher {
    */
   private async uploadMedia(accessToken: string, imageUrl: string): Promise<string | null> {
     try {
-      // Resolve relative URLs — server-side fetch needs an absolute base.
-      const absoluteUrl = imageUrl.startsWith("/")
-        ? `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`
-        : imageUrl;
+      // Resolve to a server-local URL wherever possible.
+      // Relative paths get localhost prepended (existing behaviour).
+      // Absolute /public-objects/ URLs on any host are also rewritten to
+      // localhost — this avoids an unreliable round-trip through the public
+      // domain (self-request) which can fail in production even though the
+      // file exists.  External image URLs (e.g. article lead images) are kept
+      // as-is because the server genuinely can't proxy them.
+      const absoluteUrl = (() => {
+        if (imageUrl.startsWith("/")) {
+          return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
+        }
+        try {
+          const parsed = new URL(imageUrl);
+          if (parsed.pathname.startsWith("/public-objects/")) {
+            return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
+          }
+        } catch { /* not a valid URL — fall through */ }
+        return imageUrl;
+      })();
 
       // 1. Download the image bytes.
       const imgResp = await fetch(absoluteUrl);

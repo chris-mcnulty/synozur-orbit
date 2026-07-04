@@ -456,7 +456,7 @@ export class LinkedInPublisher implements SocialPublisher {
           return {
             success: false,
             errorCode: "image_upload_failed",
-            errorMessage: `Image could not be uploaded to LinkedIn — the image URL may be broken or unreachable. Fix the image on this post and retry. URL: ${imageUrl}`,
+            errorMessage: `Image could not be fetched from Orbit storage for upload to LinkedIn. This is a server-side issue — use the Retry button to try again. If it keeps failing, use the Change Image button (🖼) on the post to replace the graphic.`,
           };
         }
         console.warn(`[LinkedIn] Image upload failed for post ${post.id} — posting as text-only. Image URL: ${imageUrl}`);
@@ -566,9 +566,20 @@ export class LinkedInPublisher implements SocialPublisher {
   ): Promise<string | null> {
     try {
       // Resolve relative URLs — server-side fetch needs an absolute base.
-      const absoluteUrl = imageUrl.startsWith("/")
-        ? `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`
-        : imageUrl;
+      // Rewrite /public-objects/ URLs on any host to localhost — same-server
+      // self-requests through the public domain are unreliable in production.
+      const absoluteUrl = (() => {
+        if (imageUrl.startsWith("/")) {
+          return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
+        }
+        try {
+          const parsed = new URL(imageUrl);
+          if (parsed.pathname.startsWith("/public-objects/")) {
+            return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
+          }
+        } catch { /* not a valid URL — fall through */ }
+        return imageUrl;
+      })();
 
       // 1. Initialize upload via the current LinkedIn Images API.
       const initResp = await fetch(`${API_HOST}/v2/images?action=initializeUpload`, {
