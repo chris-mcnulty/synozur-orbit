@@ -30,6 +30,14 @@ interface EngagementSnapshot {
 const MIN_CHANGE_THRESHOLD = 50;
 const REQUEST_DELAY_MS = 2000;
 
+// Rate follower growth/loss by percentage magnitude, not raw count.
+// 44 followers means very different things at 600 vs 600,000.
+function followerChangeImpact(pctChange: number): "High" | "Medium" | "Low" {
+  if (pctChange >= 10) return "High";
+  if (pctChange >= 3) return "Medium";
+  return "Low";
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -347,7 +355,10 @@ export async function monitorCompetitorSocialMedia(
             previousMetrics.followers > 0 &&
             apiResult.followerCount !== undefined &&
             Math.abs(apiResult.followerCount - previousMetrics.followers) / previousMetrics.followers > 0.01; // 1% change threshold
-          
+          const followerPct = (hasFollowerChange && previousMetrics?.followers && apiResult.followerCount)
+            ? Math.abs(apiResult.followerCount - previousMetrics.followers) / previousMetrics.followers * 100
+            : 0;
+
           const hasNewPosts = apiResult.recentPosts && apiResult.recentPosts.length > 0;
           
           // Create activity on first fetch or when changes detected
@@ -374,7 +385,8 @@ export async function monitorCompetitorSocialMedia(
               changes.push(`Initial LinkedIn data captured: ${apiResult.followerCount.toLocaleString()} followers`);
             } else if (hasFollowerChange && previousMetrics?.followers && apiResult.followerCount) {
               const diff = apiResult.followerCount - previousMetrics.followers;
-              changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()}`);
+              const pctStr = followerPct < 1 ? followerPct.toFixed(2) : followerPct.toFixed(1);
+              changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()} (${diff > 0 ? "+" : "-"}${pctStr}%)`);
             }
             if (hasNewPosts && apiResult.recentPosts) {
               changes.push(`${apiResult.recentPosts.length} recent posts detected`);
@@ -402,7 +414,7 @@ export async function monitorCompetitorSocialMedia(
                   latestPostTitle: latestPost?.text?.substring(0, 100),
                 },
                 date: now.toISOString(),
-                impact: hasFollowerChange ? "High" : "Medium",
+                impact: hasFollowerChange ? followerChangeImpact(followerPct) : "Medium",
                 userId: userId || competitor.userId,
                 tenantDomain,
                 marketId: competitor.marketId,
@@ -790,7 +802,10 @@ export async function monitorCompanyProfileSocialMedia(
           const hasFollowerChange = previousFollowers > 0 && 
             apiResult.followerCount !== undefined &&
             Math.abs(apiResult.followerCount - previousFollowers) / previousFollowers > 0.01; // 1% change threshold
-          
+          const followerPct = (hasFollowerChange && previousFollowers > 0 && apiResult.followerCount)
+            ? Math.abs(apiResult.followerCount - previousFollowers) / previousFollowers * 100
+            : 0;
+
           const hasNewPosts = apiResult.recentPosts && apiResult.recentPosts.length > 0;
           
           // Create initial activity on first successful fetch
@@ -813,7 +828,8 @@ export async function monitorCompanyProfileSocialMedia(
               changes.push(`Initial LinkedIn data captured: ${apiResult.followerCount.toLocaleString()} followers`);
             } else if (hasFollowerChange && apiResult.followerCount) {
               const diff = apiResult.followerCount - previousFollowers;
-              changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()}`);
+              const pctStr = followerPct < 1 ? followerPct.toFixed(2) : followerPct.toFixed(1);
+              changes.push(`Followers ${diff > 0 ? "increased" : "decreased"} by ${Math.abs(diff).toLocaleString()} (${diff > 0 ? "+" : "-"}${pctStr}%)`);
             }
             if (hasNewPosts && apiResult.recentPosts) {
               changes.push(`${apiResult.recentPosts.length} recent posts detected`);
@@ -838,7 +854,7 @@ export async function monitorCompanyProfileSocialMedia(
                 recentPosts: apiResult.recentPosts,
               },
               date: now.toISOString(),
-              impact: hasFollowerChange ? "High" : "Medium",
+              impact: hasFollowerChange ? followerChangeImpact(followerPct) : "Medium",
               userId,
               tenantDomain,
               marketId: marketId || companyProfile.marketId || undefined,
