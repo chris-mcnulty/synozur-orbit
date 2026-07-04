@@ -268,6 +268,7 @@ export interface IStorage {
   deleteActivity(id: string, tenantDomain: string): Promise<void>;
   deleteWebsiteChangeActivitiesByCompanyProfile(companyProfileId: string): Promise<number>;
   deleteOwnProductWebsiteChangeActivities(tenantDomain: string, marketId?: string, includeNullMarket?: boolean): Promise<number>;
+  resetProductWebsiteBaselines(companyProfileId: string): Promise<number>;
   getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
   getAnalyzedActivitiesByCompanyProfile(companyProfileId: string, sinceDays?: number): Promise<Activity[]>;
 
@@ -1146,6 +1147,26 @@ export class DatabaseStorage implements IStorage {
       );
     }
     const result = await db.delete(activity).where(and(...conds));
+    return result.rowCount ?? 0;
+  }
+
+  // Clear the stored website snapshot on all baseline products for this company
+  // profile so their next scheduled crawl sets a FRESH baseline instead of
+  // comparing against a stale/mismatched snapshot that produces false "99%
+  // change" signals.  Runs as part of "Reset Website Baseline" so product
+  // signals self-heal on the next crawl cycle without human intervention.
+  async resetProductWebsiteBaselines(companyProfileId: string): Promise<number> {
+    const result = await db
+      .update(products)
+      .set({
+        previousWebsiteContent: null as any,
+        crawlData: null as any,
+        lastWebsiteMonitor: null as any,
+      })
+      .where(and(
+        eq(products.companyProfileId, companyProfileId),
+        eq(products.isBaseline, true),
+      ));
     return result.rowCount ?? 0;
   }
 

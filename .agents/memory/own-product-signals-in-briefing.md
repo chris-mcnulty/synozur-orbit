@@ -34,3 +34,17 @@ website_update rows (scoped by tenantDomain + marketId; NULL-market legacy rows
 only folded in when resetting from the tenant's default market) AND regenerates
 the stored briefing so the false narrative clears immediately instead of waiting
 for the next scheduled run.
+
+**Also clear product previousWebsiteContent on reset.** Even after purging the
+activity rows, the products table (`isBaseline=true`) still holds
+`previousWebsiteContent` from the old (possibly large/multi-page) snapshot. The
+scheduler keeps crawling those products and comparing against the stale snapshot
+→ fresh "99% change" signals are re-created every run. `resetProductWebsiteBaselines(companyProfileId)`
+bulk-clears `previousWebsiteContent`, `crawlData`, `lastWebsiteMonitor` on all
+own products; their next crawl sets a clean baseline with no comparison.
+
+**The "3 days ago" cards that survived purge**: came from the stored
+`intelligence_briefings.briefing_data` JSON (the briefing had the false narrative
+baked in as `competitorMovements`/`riskAlerts`). Activity table was already
+clean; the displayed cards were from briefing JSON, not activities. Always
+check both tables when debugging "signal still showing after purge" situations.

@@ -905,6 +905,15 @@ export function registerAdminRoutes(app: Express) {
       );
       const clearedAlerts = clearedBaselineAlerts + clearedProductAlerts;
 
+      // Also clear the stored website snapshot on all own products so their
+      // NEXT scheduled crawl sets a fresh baseline. Without this, a product like
+      // "Zenith" that still has an old multi-page snapshot keeps producing
+      // "99% change" false alerts on every crawl, even after the signals are purged.
+      const resetProducts = await storage.resetProductWebsiteBaselines(profile.id).catch((err: any) => {
+        console.warn("[reset-website-baseline] Product baseline reset failed:", err?.message);
+        return 0;
+      });
+
       // Regenerate the stored intelligence briefing now so the false narrative
       // disappears immediately instead of lingering until the next scheduled run.
       // The prior briefing was synthesized from the now-purged signals, so it
@@ -955,7 +964,7 @@ export function registerAdminRoutes(app: Express) {
         console.warn("[reset-website-baseline] Could not start briefing regeneration:", regenErr?.message);
       }
 
-      res.json({ success: true, clearedAlerts, clearedBaselineAlerts, clearedProductAlerts, regeneratedBriefingId });
+      res.json({ success: true, clearedAlerts, clearedBaselineAlerts, clearedProductAlerts, resetProducts, regeneratedBriefingId });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });
