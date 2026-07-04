@@ -716,6 +716,10 @@ export default function MarketingCalendarPage() {
   // Day whose cell should scroll into view + briefly highlight when arriving via
   // a deep link. Holds a "yyyy-MM-dd" key; cleared after the one-time cue.
   const [focusDayKey, setFocusDayKey] = useState<string | null>(null);
+  // Backlog row (an undated draft) to scroll into view + briefly highlight when
+  // a deep link targets a post that has no send date yet. Holds an item key
+  // ("type-id"); cleared after the one-time cue.
+  const [focusBacklogKey, setFocusBacklogKey] = useState<string | null>(null);
   // Once a given deep-link target has been honored, don't re-run it (so closing
   // the day panel / detail doesn't snap it back open).
   const [honoredDeepLink, setHonoredDeepLink] = useState<string | null>(null);
@@ -826,15 +830,44 @@ export default function MarketingCalendarPage() {
   // so it's actually visible (mirrors the Social Posts calendar's auto-expand).
   useEffect(() => {
     const target = deepLink.target;
-    if (!target || isLoading) return;
+    // Wait for both the grid AND the backlog to load — an undated target lives
+    // only in the backlog, so we can't decide where it is until both resolve.
+    if (!target || isLoading || backlogLoading) return;
     const honorKey = `${target.type}:${target.id}`;
     if (honoredDeepLink === honorKey) return;
 
     const match = scheduled.find((i) => i.type === target.type && i.id === target.id && !i.isBatch);
-    // The post may be collapsed inside a dense social batch — the rollup only
-    // ships batch summaries, so it isn't in `scheduled` by id. Ask the server
-    // where it lives, then land on its month and drill into its batch so the
-    // next pass (with the batch's members loaded) can find + highlight it.
+
+    // Not on a scheduled day — the post may be an undated draft. Undated items
+    // (loose, or collapsed into an "unscheduled" batch) are fetched individually
+    // in the backlog rather than rolled up, so we can find the target there by
+    // id and surface it in the backlog rail instead of an empty batch drill.
+    if (!match) {
+      const backlogMatch = backlogItems.find((i) => i.type === target.type && i.id === target.id);
+      if (backlogMatch) {
+        // The rail only renders in the month calendar view with no grouping, and
+        // railBacklog applies the active type / campaign / theme / event filters.
+        // Relax whatever view state or filter would hide the target, then let the
+        // effect re-run so railBacklog includes it before we scroll + highlight.
+        let needsSettle = false;
+        if (view !== "calendar") { setView("calendar"); needsSettle = true; }
+        if (grouping !== "month") { setGrouping("month"); needsSettle = true; }
+        if (groupBy !== "none") { setGroupBy("none"); needsSettle = true; }
+        if (!matchesTypeFilter(backlogMatch, typeFilter)) { setTypeFilter("all"); needsSettle = true; }
+        if (filters.campaignId !== "all" && (backlogMatch.campaignId ?? "") !== filters.campaignId) { setFilters((f) => ({ ...f, campaignId: "all" })); needsSettle = true; }
+        if (filters.solutionAreaId !== "all" && (backlogMatch.solutionAreaId ?? "") !== filters.solutionAreaId) { setFilters((f) => ({ ...f, solutionAreaId: "all" })); needsSettle = true; }
+        if (filters.conferenceId !== "all" && (backlogMatch.conferenceId ?? "") !== filters.conferenceId) { setFilters((f) => ({ ...f, conferenceId: "all" })); needsSettle = true; }
+        if (needsSettle) return;
+        setFocusBacklogKey(`${backlogMatch.type}-${backlogMatch.id}`);
+        setHonoredDeepLink(honorKey);
+        return;
+      }
+    }
+
+    // The post may be collapsed inside a dense social batch on a DATED day — the
+    // rollup only ships batch summaries, so it isn't in `scheduled` by id. Ask
+    // the server where it lives, then land on its month and drill into its batch
+    // so the next pass (with the batch's members loaded) can find + highlight it.
     if (!match && target.type === "social" && batchResolveAttempted !== honorKey) {
       setBatchResolveAttempted(honorKey);
       (async () => {
@@ -842,10 +875,13 @@ export default function MarketingCalendarPage() {
           const res = await apiRequest("GET", `/api/marketing-calendar/locate/social/${encodeURIComponent(target.id)}`);
           const loc = await res.json() as { found: boolean; date: string | null; batch: { key: string; day: string } | null };
           if (!loc.found || !loc.batch) return;
+          // Undated ("unscheduled") batch members live in the backlog rail (handled
+          // above once backlogItems resolves), not on the dated grid — drilling
+          // the windowed grid would render nothing, so only drill dated batches.
           if (loc.batch.day !== "unscheduled") {
             setAnchor(startOfMonth(parseLocalDay(loc.batch.day)));
+            setBatchDrill({ key: loc.batch.key, day: loc.batch.day, label: "the linked post" });
           }
-          setBatchDrill({ key: loc.batch.key, day: loc.batch.day, label: "the linked post" });
         } catch {
           // Best-effort: if locate fails, leave the calendar where it is.
         }
@@ -878,7 +914,7 @@ export default function MarketingCalendarPage() {
 
     setFocusDayKey(dayKey);
     setHonoredDeepLink(honorKey);
-  }, [deepLink, isLoading, scheduled, byDay, honoredDeepLink, batchResolveAttempted, view, grouping, typeFilter, anchor]);
+  }, [deepLink, isLoading, backlogLoading, backlogItems, scheduled, byDay, honoredDeepLink, batchResolveAttempted, view, grouping, groupBy, typeFilter, filters, anchor]);
 
   // Once the focused day cell is rendered, scroll it into view and briefly
   // highlight it so the user can see exactly where the item sits. The highlight
@@ -890,6 +926,17 @@ export default function MarketingCalendarPage() {
     const t = setTimeout(() => setFocusDayKey(null), 2600);
     return () => clearTimeout(t);
   }, [focusDayKey]);
+
+  // Once the focused backlog row is rendered, scroll it into view and briefly
+  // highlight it — the same one-time cue as the day cell, for undated drafts
+  // that live in the backlog rail instead of on a dated day.
+  useEffect(() => {
+    if (!focusBacklogKey) return;
+    const row = document.querySelector(`[data-focus-backlog="${focusBacklogKey}"]`);
+    row?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setFocusBacklogKey(null), 2600);
+    return () => clearTimeout(t);
+  }, [focusBacklogKey]);
 
   // Content Advisor: review the currently-visible scheduled items (respects the
   // active campaign/type filter) plus the undated backlog. Scope the backlog
@@ -1453,6 +1500,7 @@ export default function MarketingCalendarPage() {
                   dragDescriptors={dragDescriptors}
                   scheduling={dragScheduleMut.isPending}
                   onUnschedule={(d) => handleRescheduleDrag(d, null)}
+                  focusKey={focusBacklogKey}
                 />
               </div>
             ) : (
@@ -1847,7 +1895,7 @@ function MonthGrid({ anchor, byDay, filterOpts, focusDayKey, onSelect, onOpenDay
 
 // Compact, draggable backlog rail shown beside the month grid. Lets users drag
 // drafts (single or multi-selected) onto a day cell to schedule them.
-function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, itemKey, onSelect, dragDescriptors, scheduling, onUnschedule }: {
+function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, itemKey, onSelect, dragDescriptors, scheduling, onUnschedule, focusKey }: {
   items: CalendarItem[];
   totalCount: number;
   isLoading: boolean;
@@ -1858,6 +1906,7 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
   dragDescriptors: (it: CalendarItem) => { type: string; id: string }[];
   scheduling: boolean;
   onUnschedule?: (descriptor: { type: string; id: string }) => void;
+  focusKey?: string | null;
 }) {
   const selectedCount = items.filter((it) => selected.has(itemKey(it))).length;
   const [isUnscheduleOver, setIsUnscheduleOver] = useState(false);
@@ -1928,13 +1977,15 @@ function BacklogRail({ items, totalCount, isLoading, selected, toggleSelected, i
               const k = itemKey(it);
               const checked = selected.has(k);
               const canDrag = true;
+              const focused = !!focusKey && focusKey === k;
               return (
                 <div
                   key={k}
                   draggable={canDrag}
                   onDragStart={canDrag ? (e) => onDragStart(e, it) : undefined}
-                  className={`flex items-center gap-2 rounded border px-2 py-1.5 text-xs ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
+                  className={`flex items-center gap-2 rounded border px-2 py-1.5 text-xs ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${focused ? "ring-2 ring-inset ring-primary" : ""} ${checked ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/50"}`}
                   data-testid={`backlog-rail-row-${it.id}`}
+                  data-focus-backlog={focused ? k : undefined}
                 >
                   {canDrag && <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelected(it)} data-testid={`checkbox-rail-${it.id}`} aria-label={`Select ${it.title}`} />
