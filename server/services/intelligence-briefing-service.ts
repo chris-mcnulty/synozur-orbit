@@ -116,11 +116,15 @@ function formatActivityGroup(acts: Activity[]): string[] {
 function buildSignalSummary(activities: Activity[]): string {
   if (activities.length === 0) return "No signals detected during this period.";
 
-  // Separate baseline (own-website) signals from competitor signals so the AI
-  // cannot confuse them and generate competitor-facing action items from own-site
-  // change events.
-  const competitorActivities = activities.filter(a => a.sourceType !== "baseline");
-  const baselineActivities   = activities.filter(a => a.sourceType === "baseline");
+  // Separate the client's OWN signals (their website baseline + their own
+  // product pages) from competitor signals so the AI cannot confuse them and
+  // generate competitor-facing action items — or false "abandoning X" risk
+  // alerts — from the client's own-site/product monitoring events. Product
+  // signals are about the client's OWN offerings, so they belong with baseline,
+  // NOT with competitors.
+  const OWN_SOURCE_TYPES = new Set(["baseline", "product"]);
+  const competitorActivities = activities.filter(a => !OWN_SOURCE_TYPES.has(a.sourceType ?? ""));
+  const ownActivities        = activities.filter(a => OWN_SOURCE_TYPES.has(a.sourceType ?? ""));
 
   const lines: string[] = [];
 
@@ -138,17 +142,19 @@ function buildSignalSummary(activities: Activity[]): string {
     }
   }
 
-  // ── Own-website signals (baseline) — situational awareness only ────────────
-  // IMPORTANT FOR AI: These signals are about YOUR OWN COMPANY's website, not
-  // a competitor. Do NOT create competitorMovement entries, action items, or
-  // risk alerts based on these signals. Do NOT treat changes to your own website
-  // as a competitor opportunity. Use these only for self-positioning context.
-  if (baselineActivities.length > 0) {
+  // ── Own website + product signals — situational awareness only ─────────────
+  // IMPORTANT FOR AI: These signals are about YOUR OWN COMPANY's website and its
+  // OWN product/offering pages, not a competitor. Do NOT create competitorMovement
+  // entries, action items, or risk alerts based on these signals. Do NOT treat
+  // changes to your own website as a competitor opportunity. Use these only for
+  // self-positioning context.
+  if (ownActivities.length > 0) {
     lines.push(`\n---`);
-    lines.push(`\n## OWN WEBSITE CHANGES — SITUATIONAL AWARENESS ONLY`);
-    lines.push(`NOTE FOR ANALYST: The following signals are about YOUR CLIENT'S OWN website (the baseline company), NOT a competitor. Do NOT generate any competitorMovements, actionItems, or riskAlerts from these signals. They are provided purely as context about the client's own site updates.`);
+    lines.push(`\n## OWN WEBSITE & PRODUCT CHANGES — SITUATIONAL AWARENESS ONLY`);
+    lines.push(`NOTE FOR ANALYST: The following signals are about YOUR CLIENT'S OWN website and OWN product/offering pages (the baseline company), NOT a competitor. Do NOT generate any competitorMovements, actionItems, or riskAlerts from these signals. They are provided purely as context about the client's own site updates.`);
+    lines.push(`CRITICAL — DO NOT MISREAD MONITORING ARTIFACTS AS STRATEGY: A "% change detected" number is a raw text-diff from an automated crawler, NOT evidence of a deliberate business decision. A high percentage almost always means a site redesign, CMS migration, navigation change, or a partial/failed crawl — it does NOT mean the client "removed", "abandoned", "pivoted away from", "deprioritized", or "walked back" that topic. NEVER infer that the client is retreating from any offering (e.g. AI, a product line, a service) from a change percentage, a missing page, or a failed/near-empty crawl of their own site. Only describe the client's positioning from the described positioning context, never from these change numbers.`);
     const byName: Record<string, Activity[]> = {};
-    for (const act of baselineActivities) {
+    for (const act of ownActivities) {
       const name = act.competitorName || "Own website";
       if (!byName[name]) byName[name] = [];
       byName[name].push(act);
@@ -322,6 +328,7 @@ Rules:
 - Action items must be specific enough to act on — not vague advice like "monitor closely."
 - If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
 - Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
+- NEVER raise a riskAlert (or any theme/action) claiming the client is removing, abandoning, pivoting away from, deprioritizing, or walking back one of their OWN offerings based on a website/product "% change detected" signal, a missing page, or a failed/near-empty crawl. Those are automated-crawler artifacts, not strategic decisions. Own-site/own-product signals in the "OWN WEBSITE & PRODUCT CHANGES" section are situational awareness only.
 - CRITICAL: "${baseline?.companyName || tenantDomain}" is YOUR company / the baseline — the company receiving this briefing. NEVER list it as a competitor. Do NOT include "${baseline?.companyName || tenantDomain}" in the "competitors" arrays in keyThemes, do NOT create a competitorMovement entry for it, and do NOT reference it as a competitor anywhere. It should only appear as "your company" or "your organization" when discussing your own positioning. The competitorMovements array must ONLY contain entries for actual tracked competitors, never the baseline company.
 - CRITICAL: You may ONLY reference the following competitor names in the briefing. Do NOT invent, fabricate, or reference any company not in this list: [${competitors.map(c => `"${c.name}"`).join(", ")}]. Every name in competitorMovements, keyThemes.competitors, and actionItems.relatedCompetitors MUST come from this exact list.
 - Return ONLY valid JSON, no markdown code fences.`;
@@ -772,6 +779,7 @@ Rules:
 - Action items must be specific enough to act on — not vague advice like "monitor closely."
 - If there are no signals, still produce themes based on the competitive landscape and suggest proactive actions.
 - Provide 3-5 key themes, movements for each active competitor, 3-5 action items, and risk alerts only when warranted.
+- NEVER raise a riskAlert (or any theme/action) claiming the client is removing, abandoning, pivoting away from, deprioritizing, or walking back one of their OWN offerings based on a website/product "% change detected" signal, a missing page, or a failed/near-empty crawl. Those are automated-crawler artifacts, not strategic decisions. Own-site/own-product signals in the "OWN WEBSITE & PRODUCT CHANGES" section are situational awareness only.
 - CRITICAL: "${baseline?.companyName || tenantDomain}" is YOUR company / the baseline — the company receiving this briefing. NEVER list it as a competitor. Do NOT include "${baseline?.companyName || tenantDomain}" in the "competitors" arrays in keyThemes, do NOT create a competitorMovement entry for it, and do NOT reference it as a competitor anywhere. It should only appear as "your company" or "your organization" when discussing your own positioning. The competitorMovements array must ONLY contain entries for actual tracked competitors, never the baseline company.
 - CRITICAL: You may ONLY reference the following competitor names in the briefing. Do NOT invent, fabricate, or reference any company not in this list: [${competitors.map(c => `"${c.name}"`).join(", ")}]. Every name in competitorMovements, keyThemes.competitors, and actionItems.relatedCompetitors MUST come from this exact list.
 - Return ONLY valid JSON, no markdown code fences.`;

@@ -894,8 +894,68 @@ export function registerAdminRoutes(app: Express) {
       });
       // Also clear any existing website-change alerts for this profile so a
       // false "content removal" card disappears from the feed immediately.
-      const clearedAlerts = await storage.deleteWebsiteChangeActivitiesByCompanyProfile(profile.id);
-      res.json({ success: true, clearedAlerts });
+      // This covers BOTH the baseline site (by companyProfileId) AND the tenant's
+      // own product/offering pages (sourceType='product', no companyProfileId) —
+      // the latter are what wrongly drove the "abandoning AI" narrative.
+      const clearedBaselineAlerts = await storage.deleteWebsiteChangeActivitiesByCompanyProfile(profile.id);
+      const clearedProductAlerts = await storage.deleteOwnProductWebsiteChangeActivities(
+        ctx.tenantDomain,
+        ctx.marketId || undefined,
+        ctx.isDefaultMarket,
+      );
+      const clearedAlerts = clearedBaselineAlerts + clearedProductAlerts;
+
+      // Regenerate the stored intelligence briefing now so the false narrative
+      // disappears immediately instead of lingering until the next scheduled run.
+      // The prior briefing was synthesized from the now-purged signals, so it
+      // keeps showing the stale risk alert until a fresh one replaces it.
+      let regeneratedBriefingId: string | null = null;
+      try {
+        const now = new Date();
+        const periodDays = 7;
+        const periodStart = new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
+        const placeholder = await storage.createIntelligenceBriefing({
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          periodStart,
+          periodEnd: now,
+          status: "generating",
+          briefingData: null,
+          signalCount: 0,
+          competitorCount: 0,
+        });
+        regeneratedBriefingId = placeholder.id;
+
+        const capturedCtx = { ...ctx };
+        const capturedFilter = toContextFilter(ctx);
+        (async () => {
+          try {
+            const { generateBriefingData } = await import("../services/intelligence-briefing-service");
+            const result = await generateBriefingData(
+              capturedCtx.tenantDomain,
+              periodDays,
+              capturedCtx.marketId,
+              capturedFilter,
+            );
+            await storage.updateIntelligenceBriefing(placeholder.id, {
+              status: "published",
+              briefingData: result.briefingData,
+              signalCount: result.signalCount,
+              competitorCount: result.competitorCount,
+            });
+          } catch (genErr: any) {
+            console.error("[reset-website-baseline] Briefing regeneration failed:", genErr?.message);
+            await storage.updateIntelligenceBriefing(placeholder.id, {
+              status: "failed",
+              briefingData: { error: genErr?.message },
+            }).catch(() => {});
+          }
+        })();
+      } catch (regenErr: any) {
+        console.warn("[reset-website-baseline] Could not start briefing regeneration:", regenErr?.message);
+      }
+
+      res.json({ success: true, clearedAlerts, clearedBaselineAlerts, clearedProductAlerts, regeneratedBriefingId });
     } catch (error: any) {
       if (error instanceof ContextError) return res.status(error.status).json({ error: error.message });
       res.status(500).json({ error: error.message });

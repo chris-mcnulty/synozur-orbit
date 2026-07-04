@@ -267,6 +267,7 @@ export interface IStorage {
   updateActivitySentiment(id: string, fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string }): Promise<void>;
   deleteActivity(id: string, tenantDomain: string): Promise<void>;
   deleteWebsiteChangeActivitiesByCompanyProfile(companyProfileId: string): Promise<number>;
+  deleteOwnProductWebsiteChangeActivities(tenantDomain: string, marketId?: string, includeNullMarket?: boolean): Promise<number>;
   getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
   getAnalyzedActivitiesByCompanyProfile(companyProfileId: string, sinceDays?: number): Promise<Activity[]>;
 
@@ -1121,6 +1122,30 @@ export class DatabaseStorage implements IStorage {
         eq(activity.companyProfileId, companyProfileId),
         eq(activity.type, "website_update"),
       ));
+    return result.rowCount ?? 0;
+  }
+
+  // Remove website-change alerts tied to the tenant's OWN product/offering pages
+  // (sourceType='product', which carry no companyProfileId). Used alongside the
+  // baseline reset so stale/false "product content removed" cards — the ones that
+  // wrongly read as "abandoning X" — disappear when the user resets the baseline.
+  async deleteOwnProductWebsiteChangeActivities(tenantDomain: string, marketId?: string, includeNullMarket = false): Promise<number> {
+    const conds = [
+      eq(activity.type, "website_update"),
+      eq(activity.sourceType, "product"),
+      eq(activity.tenantDomain, tenantDomain),
+    ];
+    if (marketId) {
+      // Scope strictly to this market. Only fold in legacy null-market rows when
+      // the caller opts in (e.g. resetting from the tenant's default market), so
+      // a reset in one market can never wipe another market's null-scoped rows.
+      conds.push(
+        includeNullMarket
+          ? sql`(${activity.marketId} = ${marketId} OR ${activity.marketId} IS NULL)`
+          : eq(activity.marketId, marketId),
+      );
+    }
+    const result = await db.delete(activity).where(and(...conds));
     return result.rowCount ?? 0;
   }
 
