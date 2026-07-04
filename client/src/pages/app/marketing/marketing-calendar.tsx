@@ -65,6 +65,13 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { itemDeepLinkHref } from "@/lib/marketing-deep-links";
+import {
+  decideDeepLinkLanding,
+  decideBatchLocateLanding,
+  shouldOpenDayPanel,
+  matchesTypeFilter,
+  type LocateResult,
+} from "./calendar-deep-link-core";
 import { useToast } from "@/hooks/use-toast";
 import { getTabContextHeaders } from "@/lib/tabContext";
 
@@ -175,17 +182,8 @@ interface FilterOptions {
 // A single string drives the filter: "all", a bucket ("social"/"email"/
 // "content"), a social channel ("social:linkedin"), or a content format
 // ("content:blog_post"). Email is its own bucket with no sub-dimension.
-function matchesTypeFilter(item: CalendarItem, tf: string): boolean {
-  if (tf === "all") return true;
-  if (tf.includes(":")) {
-    const [bucket, sub] = tf.split(":");
-    if (item.type !== bucket) return false;
-    if (bucket === "social") return (item.platform ?? "").toLowerCase() === sub;
-    if (bucket === "content") return (item.format ?? "") === sub;
-    return true;
-  }
-  return item.type === tf;
-}
+// `matchesTypeFilter` lives in calendar-deep-link-core (single source of truth,
+// shared with the deep-link landing logic) and is imported above.
 
 function typeFilterLabel(tf: string, filterOpts?: FilterOptions): string {
   if (tf === "all") return "All types";
@@ -829,91 +827,79 @@ export default function MarketingCalendarPage() {
   // item is hidden in that day's "+N more" overflow — open the day-detail panel
   // so it's actually visible (mirrors the Social Posts calendar's auto-expand).
   useEffect(() => {
-    const target = deepLink.target;
-    // Wait for both the grid AND the backlog to load — an undated target lives
-    // only in the backlog, so we can't decide where it is until both resolve.
-    if (!target || isLoading || backlogLoading) return;
-    const honorKey = `${target.type}:${target.id}`;
-    if (honoredDeepLink === honorKey) return;
+    // All the branch selection lives in the pure core (decideDeepLinkLanding);
+    // this effect is a thin adapter that maps the returned action to state
+    // setters + DOM side effects. See calendar-deep-link-core.ts for the rules.
+    const action = decideDeepLinkLanding({
+      target: deepLink.target,
+      // Wait for both the grid AND the backlog to load — an undated target
+      // lives only in the backlog, so we can't decide until both resolve.
+      loading: isLoading || backlogLoading,
+      honoredDeepLink,
+      batchResolveAttempted,
+      scheduled,
+      backlogItems,
+      view,
+      grouping,
+      groupBy,
+      typeFilter,
+      filters,
+      anchorYmd: ymd(anchor),
+    });
 
-    const match = scheduled.find((i) => i.type === target.type && i.id === target.id && !i.isBatch);
-
-    // Not on a scheduled day — the post may be an undated draft. Undated items
-    // (loose, or collapsed into an "unscheduled" batch) are fetched individually
-    // in the backlog rather than rolled up, so we can find the target there by
-    // id and surface it in the backlog rail instead of an empty batch drill.
-    if (!match) {
-      const backlogMatch = backlogItems.find((i) => i.type === target.type && i.id === target.id);
-      if (backlogMatch) {
-        // The rail only renders in the month calendar view with no grouping, and
-        // railBacklog applies the active type / campaign / theme / event filters.
-        // Relax whatever view state or filter would hide the target, then let the
-        // effect re-run so railBacklog includes it before we scroll + highlight.
-        let needsSettle = false;
-        if (view !== "calendar") { setView("calendar"); needsSettle = true; }
-        if (grouping !== "month") { setGrouping("month"); needsSettle = true; }
-        if (groupBy !== "none") { setGroupBy("none"); needsSettle = true; }
-        if (!matchesTypeFilter(backlogMatch, typeFilter)) { setTypeFilter("all"); needsSettle = true; }
-        if (filters.campaignId !== "all" && (backlogMatch.campaignId ?? "") !== filters.campaignId) { setFilters((f) => ({ ...f, campaignId: "all" })); needsSettle = true; }
-        if (filters.solutionAreaId !== "all" && (backlogMatch.solutionAreaId ?? "") !== filters.solutionAreaId) { setFilters((f) => ({ ...f, solutionAreaId: "all" })); needsSettle = true; }
-        if (filters.conferenceId !== "all" && (backlogMatch.conferenceId ?? "") !== filters.conferenceId) { setFilters((f) => ({ ...f, conferenceId: "all" })); needsSettle = true; }
-        if (needsSettle) return;
-        setFocusBacklogKey(`${backlogMatch.type}-${backlogMatch.id}`);
-        setHonoredDeepLink(honorKey);
+    switch (action.kind) {
+      case "wait":
+      case "already-honored":
+      case "none":
+        return;
+      case "settle": {
+        // Relax whatever view state / filter / month would hide the target,
+        // then let the effect re-run once state settles so the item shows.
+        const c = action.changes;
+        if (c.view) setView(c.view);
+        if (c.grouping) setGrouping(c.grouping);
+        if (c.groupBy) setGroupBy(c.groupBy);
+        if (c.typeFilter) setTypeFilter(c.typeFilter);
+        if (c.filters) setFilters((f) => ({ ...f, ...c.filters }));
+        if (c.anchorYmd) setAnchor(startOfMonth(parseLocalDay(c.anchorYmd)));
+        return;
+      }
+      case "focus-backlog":
+        // Undated draft — surface it in the backlog rail (scroll + highlight).
+        setFocusBacklogKey(action.backlogKey);
+        setHonoredDeepLink(action.honorKey);
+        return;
+      case "resolve-batch": {
+        // Target is collapsed inside a dense social batch — ask the server
+        // where it lives, then drill into its (dated) batch. Undated members
+        // are handled by the backlog rail, never drilled.
+        setBatchResolveAttempted(action.honorKey);
+        const targetId = deepLink.target!.id;
+        (async () => {
+          try {
+            const res = await apiRequest("GET", `/api/marketing-calendar/locate/social/${encodeURIComponent(targetId)}`);
+            const loc = (await res.json()) as LocateResult;
+            const decision = decideBatchLocateLanding(loc);
+            if (decision.kind === "drill") {
+              setAnchor(startOfMonth(parseLocalDay(decision.batch.day)));
+              setBatchDrill({ key: decision.batch.key, day: decision.batch.day, label: "the linked post" });
+            }
+          } catch {
+            // Best-effort: if locate fails, leave the calendar where it is.
+          }
+        })();
+        return;
+      }
+      case "focus-day": {
+        // Everything is aligned: reveal the item (open the day panel if it's
+        // beyond the 4-pill cap in "+N more"), then scroll + highlight its cell.
+        const dayList = byDay.get(action.dayKey) || [];
+        if (shouldOpenDayPanel(dayList, deepLink.target!)) setDayDetail(action.dayKey);
+        setFocusDayKey(action.dayKey);
+        setHonoredDeepLink(action.honorKey);
         return;
       }
     }
-
-    // The post may be collapsed inside a dense social batch on a DATED day — the
-    // rollup only ships batch summaries, so it isn't in `scheduled` by id. Ask
-    // the server where it lives, then land on its month and drill into its batch
-    // so the next pass (with the batch's members loaded) can find + highlight it.
-    if (!match && target.type === "social" && batchResolveAttempted !== honorKey) {
-      setBatchResolveAttempted(honorKey);
-      (async () => {
-        try {
-          const res = await apiRequest("GET", `/api/marketing-calendar/locate/social/${encodeURIComponent(target.id)}`);
-          const loc = await res.json() as { found: boolean; date: string | null; batch: { key: string; day: string } | null };
-          if (!loc.found || !loc.batch) return;
-          // Undated ("unscheduled") batch members live in the backlog rail (handled
-          // above once backlogItems resolves), not on the dated grid — drilling
-          // the windowed grid would render nothing, so only drill dated batches.
-          if (loc.batch.day !== "unscheduled") {
-            setAnchor(startOfMonth(parseLocalDay(loc.batch.day)));
-            setBatchDrill({ key: loc.batch.key, day: loc.batch.day, label: "the linked post" });
-          }
-        } catch {
-          // Best-effort: if locate fails, leave the calendar where it is.
-        }
-      })();
-      return;
-    }
-    // Not in the loaded month — leave the calendar where it is; no error, and
-    // retried if the data changes.
-    if (!match) return;
-    const dayKey = localKey(match.date);
-    if (!dayKey) return;
-
-    // Make sure the target's month grid is actually rendered before we try to
-    // locate its day. Apply any needed view changes, then let the effect re-run
-    // once state settles so byDay reflects the correct, unfiltered month.
-    let needsSettle = false;
-    if (view !== "calendar") { setView("calendar"); needsSettle = true; }
-    if (grouping !== "month") { setGrouping("month"); needsSettle = true; }
-    // A type filter would drop the pill from byDay — relax it so it shows.
-    if (!matchesTypeFilter(match, typeFilter)) { setTypeFilter("all"); needsSettle = true; }
-    const monthAnchor = startOfMonth(parseLocalDay(dayKey));
-    if (ymd(monthAnchor) !== ymd(anchor)) { setAnchor(monthAnchor); needsSettle = true; }
-    if (needsSettle) return;
-
-    // Everything is aligned: the item beyond the 4-pill cap lives in "+N more",
-    // so open the day panel to reveal it.
-    const dayList = byDay.get(dayKey) || [];
-    const idx = dayList.findIndex((i) => i.type === match.type && i.id === match.id);
-    if (idx >= 4) setDayDetail(dayKey);
-
-    setFocusDayKey(dayKey);
-    setHonoredDeepLink(honorKey);
   }, [deepLink, isLoading, backlogLoading, backlogItems, scheduled, byDay, honoredDeepLink, batchResolveAttempted, view, grouping, groupBy, typeFilter, filters, anchor]);
 
   // Once the focused day cell is rendered, scroll it into view and briefly

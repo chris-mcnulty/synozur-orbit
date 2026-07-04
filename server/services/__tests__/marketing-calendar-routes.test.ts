@@ -349,6 +349,37 @@ describe("marketing-calendar routes", () => {
       });
     });
 
+    it("returns batch day='unscheduled' for a collapsed batch of UNDATED members", async () => {
+      // Undated members (no scheduledDate/publishedAt) still collapse when a
+      // dense batch shares a source. The client uses day==='unscheduled' as the
+      // signal to surface them in the backlog rail rather than drilling the grid.
+      const TARGET = {
+        id: "post-1",
+        scheduledDate: null,
+        publishedAt: null,
+        campaignId: null, solutionAreaId: null, conferenceId: null,
+        generationJobId: "job-1", variantGroup: null,
+      };
+      const sibling = {
+        scheduledDate: null,
+        publishedAt: null,
+        campaignId: null, conferenceId: null,
+        generationJobId: "job-1", variantGroup: null,
+      };
+      pushDb(TARGET);
+      // 4 undated siblings sharing the same generation job → > threshold (3).
+      pushDb(sibling, sibling, sibling, sibling);
+
+      const res = await request(app).get("/api/marketing-calendar/locate/social/post-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        found: true,
+        date: null,
+        batch: { key: "job-1", day: "unscheduled" },
+      });
+    });
+
     it("returns batch=null when the group is at/under the collapse threshold", async () => {
       const TARGET = {
         id: "post-1",
