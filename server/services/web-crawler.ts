@@ -399,6 +399,61 @@ function findKeyPages(html: string, baseUrl: string): KeyPages {
   return pages;
 }
 
+// Upper bound on how many pages we queue from findKeyPages + the sitemap combined.
+// Keeps large sites (sitemaps with hundreds of URLs) from exploding the crawl.
+const MAX_PAGES_TO_CRAWL = 14;
+
+function extractSitemapLocs(xml: string): string[] {
+  const locs: string[] = [];
+  const re = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    locs.push(m[1].trim());
+  }
+  return locs;
+}
+
+// Discover page URLs from /sitemap.xml. Client-rendered SPAs expose no nav links
+// in their static homepage HTML, so findKeyPages returns nothing and the crawl
+// would collapse to the homepage alone — the sitemap is the reliable page index.
+// Handles a sitemap index (nested sitemaps) and filters to same-host content URLs.
+async function fetchSitemapUrls(baseUrl: string): Promise<string[]> {
+  try {
+    const base = new URL(baseUrl);
+    const res = await fetchPageHttp(new URL("/sitemap.xml", base.origin).href, 1);
+    if (!res) return [];
+
+    let locs = extractSitemapLocs(res.html);
+    if (/<sitemapindex/i.test(res.html)) {
+      const nested: string[] = [];
+      for (const sm of locs.slice(0, 3)) {
+        const r = await fetchPageHttp(sm, 1);
+        if (r) nested.push(...extractSitemapLocs(r.html));
+      }
+      locs = nested;
+    }
+
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const loc of locs) {
+      try {
+        const u = new URL(loc);
+        if (u.hostname !== base.hostname) continue;
+        if (/\.(xml|rss|json|jpe?g|png|gif|svg|pdf|webp|ico|css|js)$/i.test(u.pathname)) continue;
+        const key = u.href.replace(/\/$/, "");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(u.href);
+      } catch {
+        // Invalid URL, skip
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 // Simple concurrency limiter that works in CJS bundle
 function createConcurrencyLimit(maxConcurrent: number) {
   let running = 0;
@@ -492,7 +547,38 @@ export async function crawlCompetitorWebsite(url: string, options: { useHeadless
   if (keyPages.resources) pagesToCrawl.push({ url: keyPages.resources, type: "other" });
   if (keyPages.industries) pagesToCrawl.push({ url: keyPages.industries, type: "other" });
   if (keyPages.expertise) pagesToCrawl.push({ url: keyPages.expertise, type: "services" });
-  
+
+  // Coverage boost via sitemap.xml. Client-rendered SPAs (and any site whose nav
+  // isn't in static HTML) yield no keyPages, so without this the crawl collapses
+  // to the homepage and later comparisons read whole sections as "removed". The
+  // sitemap is the authoritative page list; merge it (deduped, priority-ordered).
+  try {
+    const sitemapUrls = await fetchSitemapUrls(homepage.finalUrl);
+    if (sitemapUrls.length > 0) {
+      const already = new Set<string>([
+        homepage.finalUrl.replace(/\/$/, ""),
+        ...pagesToCrawl.map(p => p.url.replace(/\/$/, "")),
+      ]);
+      const typePriority: Record<string, number> = {
+        about: 0, services: 1, products: 1, pricing: 1, blog: 2, other: 3,
+      };
+      const candidates = sitemapUrls
+        .map(u => ({ url: u, type: classifyPageType(u, "") }))
+        .filter(c => c.type !== "homepage" && !already.has(c.url.replace(/\/$/, "")))
+        .sort((a, b) => (typePriority[a.type] ?? 4) - (typePriority[b.type] ?? 4));
+      for (const c of candidates) {
+        if (pagesToCrawl.length >= MAX_PAGES_TO_CRAWL) break;
+        const key = c.url.replace(/\/$/, "");
+        if (already.has(key)) continue;
+        already.add(key);
+        pagesToCrawl.push({ url: c.url, type: c.type });
+      }
+      console.log(`[Web Crawler] Sitemap discovery for ${normalizedUrl}: ${sitemapUrls.length} urls found, queued ${pagesToCrawl.length} total pages`);
+    }
+  } catch (sitemapError: any) {
+    console.error(`[Web Crawler] Sitemap discovery failed for ${normalizedUrl}:`, sitemapError.message);
+  }
+
   // Track crawled URLs to avoid duplicates
   const crawledUrls = new Set<string>([homepage.finalUrl]);
   const subPagesToDiscover: { parentUrl: string; parentType: CrawlResult["pageType"] }[] = [];

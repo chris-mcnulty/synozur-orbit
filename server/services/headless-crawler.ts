@@ -48,6 +48,32 @@ async function delay(ms: number): Promise<void> {
 let browserInstance: Browser | null = null;
 let activeCrawls = 0;
 const MAX_CONCURRENT_CRAWLS = 2;
+const crawlWaitQueue: Array<() => void> = [];
+
+// Acquire a headless crawl slot, WAITING (queuing) when at capacity rather than
+// bailing out. Previously we returned null when full, which forced callers to
+// fall back to plain HTTP — for client-rendered SPAs that yields only the empty
+// app shell, making multi-page crawls both content-poor and nondeterministic
+// (a different subset of pages won the race each run, causing false "change"
+// alerts). Queuing guarantees every page is actually rendered.
+async function acquireCrawlSlot(): Promise<void> {
+  if (activeCrawls < MAX_CONCURRENT_CRAWLS) {
+    activeCrawls++;
+    return;
+  }
+  await new Promise<void>((resolve) => crawlWaitQueue.push(resolve));
+  // Slot ownership was handed directly to us by releaseCrawlSlot (activeCrawls
+  // was left incremented on our behalf), so we do not increment again here.
+}
+
+function releaseCrawlSlot(): void {
+  const next = crawlWaitQueue.shift();
+  if (next) {
+    next(); // Hand our slot to the next waiter; activeCrawls stays the same.
+  } else {
+    activeCrawls--;
+  }
+}
 
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
@@ -176,16 +202,11 @@ export async function fetchPageHeadless(
     timeout?: number;
   } = {}
 ): Promise<HeadlessCrawlResult | null> {
-  if (activeCrawls >= MAX_CONCURRENT_CRAWLS) {
-    console.log(`[Headless] Skipping ${url} - max concurrent crawls (${MAX_CONCURRENT_CRAWLS}) reached`);
-    return null;
-  }
-  
-  activeCrawls++;
+  await acquireCrawlSlot();
   try {
     return await _fetchPageHeadlessInner(url, options);
   } finally {
-    activeCrawls--;
+    releaseCrawlSlot();
   }
 }
 

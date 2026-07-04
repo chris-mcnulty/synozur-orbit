@@ -69,6 +69,40 @@ function isEmptyOrCollapsedCrawl(
   return false;
 }
 
+// Page-coverage collapse: when a site was previously crawled across several pages
+// but this run only reached a fraction of them, whole sections (services, about,
+// insights, etc.) vanish from the comparison and the AI wrongly concludes the
+// company "removed" or "abandoned" those themes. This almost always means the
+// crawler failed to reach the sub-pages this time — not that the site changed.
+// e.g. a multi-page site that suddenly yields only its homepage.
+const MIN_PREV_PAGES_FOR_COVERAGE = 3; // only guard sites we've seen as multi-page
+const COVERAGE_COLLAPSE_FRACTION = 0.4; // this run reached < 40% of prior pages = partial
+// Escape hatch: transient partial crawls self-heal (the next full crawl refreshes
+// the baseline within days). If the richer baseline has NOT been refreshed by a
+// good crawl in this long, the reduced coverage is the site's real new shape, so
+// stop guarding and let it become the new baseline — otherwise monitoring would be
+// stuck comparing against a stale page count forever and miss real future changes.
+const COVERAGE_COLLAPSE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function getPrevPageCount(prevCrawlData: any): number {
+  const pages = prevCrawlData?.pagesCrawled;
+  return Array.isArray(pages) ? pages.length : 0;
+}
+
+function isCoverageCollapse(prevCrawlData: any, currentPageCount: number): boolean {
+  const prevPages = getPrevPageCount(prevCrawlData);
+  if (prevPages < MIN_PREV_PAGES_FOR_COVERAGE) return false;
+  if (currentPageCount >= prevPages * COVERAGE_COLLAPSE_FRACTION) return false;
+
+  // Only guard while the richer baseline is still fresh. A stale baseline means
+  // no full crawl has succeeded in a long time, so treat the reduction as real.
+  const crawledAtRaw = prevCrawlData?.crawledAt;
+  const crawledAt = crawledAtRaw ? new Date(crawledAtRaw).getTime() : 0;
+  if (crawledAt && Date.now() - crawledAt > COVERAGE_COLLAPSE_MAX_AGE_MS) return false;
+
+  return true;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -135,6 +169,9 @@ Only report a genuine strategic pivot if specific service lines, product categor
 
 Change magnitude: ${changeScore}% different from previous crawl
 ${migrationGuidance}
+CRAWL COVERAGE CAVEAT — READ FIRST:
+This comparison only samples a subset of the site's pages, and the exact pages captured can differ from one crawl to the next. A topic, service, product, or theme that appears in the PREVIOUS excerpt but not the CURRENT excerpt may simply not have been crawled this time — it is NOT evidence the company removed, dropped, or abandoned it. Only report that something was removed or abandoned when the CURRENT content actively replaces, contradicts, or clearly discontinues it on a page that still exists. When a theme is merely missing from the current excerpt, do NOT claim it was removed or abandoned — treat it as "not captured this crawl" and, if that is the only apparent change, set noSignificantChanges to true.
+
 PREVIOUS CONTENT (excerpt):
 ${previousContent.substring(0, 6000)}
 
@@ -275,6 +312,23 @@ export async function monitorCompetitorWebsite(
         changeScore: 0,
         status: "no_content",
         message: "Crawl returned near-empty content - site may be unavailable",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
+    // Page-coverage collapse: this run reached far fewer pages than before, so
+    // whole sections are missing and would read as false "removals". Skip
+    // analysis and preserve the richer baseline for the next full crawl.
+    if (isCoverageCollapse(competitor.crawlData, crawlResult.pages.length)) {
+      console.log(`[WebsiteMonitoring] Skipping ${competitor.name}: coverage collapse (${crawlResult.pages.length} of ${getPrevPageCount(competitor.crawlData)} pages)`);
+      await storage.updateCompetitor(competitor.id, { lastWebsiteMonitor: now }).catch(() => {});
+      return {
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Crawl reached fewer pages than usual - skipped to avoid a false change",
         pagesMonitored: crawlResult.pages.length,
       };
     }
@@ -437,6 +491,10 @@ export async function monitorCompanyProfileWebsite(
     const crawlResult = await crawlCompetitorWebsite(companyProfile.websiteUrl);
     
     if (crawlResult.pages.length === 0) {
+      // Stamp lastWebsiteMonitor even on a skipped run so the sweep freshness
+      // gate (now - lastWebsiteMonitor < intervalMs) engages and the profile is
+      // not re-queued every scheduler pass.
+      await storage.updateCompanyProfile(companyProfile.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
         companyProfileId: companyProfile.id,
         companyName: companyProfile.companyName,
@@ -455,6 +513,7 @@ export async function monitorCompanyProfileWebsite(
     // skip change detection + alert creation and leave the stored baseline
     // untouched so a transient blank fetch never overwrites a good snapshot.
     if (isEmptyOrCollapsedCrawl(newContent, previousContent, crawlResult.totalWordCount)) {
+      await storage.updateCompanyProfile(companyProfile.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
         companyProfileId: companyProfile.id,
         companyName: companyProfile.companyName,
@@ -462,6 +521,23 @@ export async function monitorCompanyProfileWebsite(
         changeScore: 0,
         status: "no_content",
         message: "Crawl returned near-empty content - site may be unavailable",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
+    // Page-coverage collapse: this run reached far fewer pages than before, so
+    // whole sections are missing and would read as false "removals". Skip
+    // analysis and preserve the richer baseline for the next full crawl.
+    if (isCoverageCollapse(companyProfile.crawlData, crawlResult.pages.length)) {
+      console.log(`[WebsiteMonitoring] Skipping baseline ${companyProfile.companyName}: coverage collapse (${crawlResult.pages.length} of ${getPrevPageCount(companyProfile.crawlData)} pages)`);
+      await storage.updateCompanyProfile(companyProfile.id, { lastWebsiteMonitor: now }).catch(() => {});
+      return {
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Crawl reached fewer pages than usual - skipped to avoid a false change",
         pagesMonitored: crawlResult.pages.length,
       };
     }
@@ -553,6 +629,8 @@ export async function monitorCompanyProfileWebsite(
     
   } catch (error: any) {
     console.error(`Error monitoring website for ${companyProfile.companyName}:`, error);
+    // Stamp so a persistently failing site doesn't get re-queued every sweep.
+    await storage.updateCompanyProfile(companyProfile.id, { lastWebsiteMonitor: now }).catch(() => {});
     return {
       companyProfileId: companyProfile.id,
       companyName: companyProfile.companyName,
@@ -680,6 +758,23 @@ export async function monitorProductWebsite(
         changeScore: 0,
         status: "no_content",
         message: "Crawl returned near-empty content - site may be unavailable",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
+    // Page-coverage collapse: this run reached far fewer pages than before, so
+    // whole sections are missing and would read as false "removals". Skip
+    // analysis and preserve the richer baseline for the next full crawl.
+    if (isCoverageCollapse(product.crawlData, crawlResult.pages.length)) {
+      console.log(`[WebsiteMonitoring] Skipping product ${product.name}: coverage collapse (${crawlResult.pages.length} of ${getPrevPageCount(product.crawlData)} pages)`);
+      await storage.updateProduct(product.id, { lastWebsiteMonitor: now }).catch(() => {});
+      return {
+        productId: product.id,
+        productName: product.name,
+        hasChanges: false,
+        changeScore: 0,
+        status: "no_content",
+        message: "Crawl reached fewer pages than usual - skipped to avoid a false change",
         pagesMonitored: crawlResult.pages.length,
       };
     }
