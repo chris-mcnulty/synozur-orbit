@@ -14,6 +14,7 @@ import {
   Sparkles,
   Loader2,
   Copy,
+  CopyPlus,
   Lightbulb,
   ChevronDown,
   Trash2,
@@ -643,6 +644,33 @@ export default function EmailNewslettersPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const duplicateEmailMutation = useMutation({
+    mutationFn: async (email: SavedEmail) => {
+      const r = await fetch("/api/email/saved", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          subject: `${email.subject} (copy)`,
+          htmlBody: email.htmlBody,
+          textBody: email.textBody,
+          platform: email.platform,
+          tone: email.tone,
+          subjectLineSuggestions: email.subjectLineSuggestions,
+          coachingTips: email.coachingTips,
+          sourceAssetIds: Array.isArray(email.sourceAssetIds) && email.sourceAssetIds.length > 0 ? email.sourceAssetIds : undefined,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      toast({ title: "Email duplicated", description: "A copy has been added to your saved emails." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const uniqueLabels = [...new Set(savedEmails.map(e => e.label).filter(Boolean))] as string[];
 
   const filteredEmails = savedEmails.filter(e => {
@@ -1198,6 +1226,16 @@ export default function EmailNewslettersPage() {
                           <Send className="w-3.5 h-3.5" />
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Duplicate email"
+                        onClick={e => { e.stopPropagation(); duplicateEmailMutation.mutate(email); }}
+                        disabled={duplicateEmailMutation.isPending}
+                        data-testid={`button-duplicate-email-${email.id}`}
+                      >
+                        <CopyPlus className="w-3.5 h-3.5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

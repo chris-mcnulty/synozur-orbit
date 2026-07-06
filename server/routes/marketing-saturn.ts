@@ -4019,13 +4019,14 @@ Structure your response using these exact delimiters:
   app.patch("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { subject, htmlBody, textBody, status, label } = req.body;
+    const { subject, htmlBody, textBody, status, label, sourceAssetIds } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (subject !== undefined) updates.subject = subject;
     if (htmlBody !== undefined) updates.htmlBody = htmlBody;
     if (textBody !== undefined) updates.textBody = textBody;
     if (status !== undefined) updates.status = status;
     if (label !== undefined) updates.label = label || null;
+    if (sourceAssetIds !== undefined) updates.sourceAssetIds = Array.isArray(sourceAssetIds) && sourceAssetIds.length > 0 ? sourceAssetIds : null;
     const [row] = await db.update(generatedEmails)
       .set(updates)
       .where(and(
