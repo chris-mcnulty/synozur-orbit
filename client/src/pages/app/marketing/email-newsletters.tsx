@@ -27,6 +27,7 @@ import {
   Download,
   Send,
   Upload,
+  Plus,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EmailListSkeleton } from "@/components/ui/skeletons";
@@ -284,6 +285,8 @@ export default function EmailNewslettersPage() {
   const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [editSourceAssetIds, setEditSourceAssetIds] = useState<string[]>([]);
+  const [editAssetSearch, setEditAssetSearch] = useState("");
   const [editMode, setEditMode] = useState<"visual" | "source">("visual");
   const editableRef = useRef<HTMLDivElement>(null);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
@@ -517,8 +520,8 @@ export default function EmailNewslettersPage() {
   }, [editingEmail?.id, editMode, editBody]);
 
   const updateEmailMutation = useMutation({
-    mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
-      const payload: Record<string, string> = { subject };
+    mutationFn: async ({ emailId, subject, body, isHtml, sourceAssetIds }: { emailId: string; subject: string; body: string; isHtml: boolean; sourceAssetIds: string[] }) => {
+      const payload: Record<string, unknown> = { subject, sourceAssetIds };
       if (isHtml) {
         payload.htmlBody = body;
       } else {
@@ -1309,6 +1312,8 @@ export default function EmailNewslettersPage() {
                           setEditingEmail(email);
                           setEditSubject(email.subject);
                           setEditBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
+                          setEditSourceAssetIds(Array.isArray(email.sourceAssetIds) ? email.sourceAssetIds : []);
+                          setEditAssetSearch("");
                         }}
                         data-testid={`button-edit-email-${email.id}`}
                       >
@@ -1539,6 +1544,82 @@ export default function EmailNewslettersPage() {
                   </div>
                 )}
               </div>
+              {/* Source Asset Picker */}
+              <div className="space-y-2">
+                <Label>Source Assets</Label>
+                <p className="text-xs text-muted-foreground">Link the content assets that informed this email. Used for image insertion and context tracking.</p>
+                {editSourceAssetIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5" data-testid="linked-source-assets">
+                    {editSourceAssetIds.map(id => {
+                      const asset = contentAssets.find(a => a.id === id);
+                      if (!asset) return null;
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-0.5 border"
+                          data-testid={`badge-linked-asset-${id}`}
+                        >
+                          {asset.title}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${asset.title}`}
+                            data-testid={`button-remove-linked-asset-${id}`}
+                            onClick={() => setEditSourceAssetIds(prev => prev.filter(x => x !== id))}
+                            className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                <Collapsible data-testid="collapsible-add-source-assets">
+                  <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                    <Plus className="w-3.5 h-3.5" />
+                    Add or change linked assets
+                    <ChevronDown className="w-3 h-3" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-2 space-y-1.5">
+                      <Input
+                        placeholder="Search assets…"
+                        value={editAssetSearch}
+                        onChange={e => setEditAssetSearch(e.target.value)}
+                        className="h-7 text-xs"
+                        data-testid="input-edit-asset-search"
+                      />
+                      <div className="max-h-44 overflow-y-auto border rounded space-y-0.5 p-1 bg-background" data-testid="list-edit-source-assets">
+                        {activeAssets
+                          .filter(a => !editAssetSearch || a.title.toLowerCase().includes(editAssetSearch.toLowerCase()))
+                          .map(asset => {
+                            const linked = editSourceAssetIds.includes(asset.id);
+                            return (
+                              <button
+                                key={asset.id}
+                                type="button"
+                                data-testid={`button-toggle-source-asset-${asset.id}`}
+                                onClick={() => setEditSourceAssetIds(prev =>
+                                  linked ? prev.filter(x => x !== asset.id) : [...prev, asset.id]
+                                )}
+                                className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-2 transition-colors ${linked ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted"}`}
+                              >
+                                <span className={`w-3.5 h-3.5 flex-shrink-0 border rounded-sm flex items-center justify-center ${linked ? "bg-primary border-primary text-primary-foreground" : "border-input"}`}>
+                                  {linked && <span className="text-[9px] leading-none">✓</span>}
+                                </span>
+                                <span className="truncate">{asset.title}</span>
+                              </button>
+                            );
+                          })}
+                        {activeAssets.filter(a => !editAssetSearch || a.title.toLowerCase().includes(editAssetSearch.toLowerCase())).length === 0 && (
+                          <p className="text-xs text-muted-foreground p-2 text-center" data-testid="text-no-assets-found">No assets found</p>
+                        )}
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+
               <Button
                 className="w-full"
                 disabled={!editSubject.trim() || updateEmailMutation.isPending}
@@ -1553,6 +1634,7 @@ export default function EmailNewslettersPage() {
                       subject: editSubject,
                       body: bodyToSave,
                       isHtml: editingEmail.platform === "hubspot-marketing",
+                      sourceAssetIds: editSourceAssetIds,
                     });
                   }
                 }}
@@ -1877,6 +1959,8 @@ export default function EmailNewslettersPage() {
                       setEditingEmail(viewingEmail);
                       setEditSubject(viewingEmail.subject);
                       setEditBody(viewingEmail.platform === "hubspot-marketing" ? viewingEmail.htmlBody : (viewingEmail.textBody || viewingEmail.htmlBody));
+                      setEditSourceAssetIds(Array.isArray(viewingEmail.sourceAssetIds) ? viewingEmail.sourceAssetIds : []);
+                      setEditAssetSearch("");
                       setViewingEmail(null);
                     }}
                     data-testid="button-edit-from-view"
