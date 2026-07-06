@@ -24,6 +24,7 @@ import {
   Tag,
   Download,
   Send,
+  Upload,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EmailListSkeleton } from "@/components/ui/skeletons";
@@ -281,6 +282,9 @@ export default function EmailNewslettersPage() {
   const [editBody, setEditBody] = useState("");
   const [editMode, setEditMode] = useState<"visual" | "source">("visual");
   const editableRef = useRef<HTMLDivElement>(null);
+  const imageUploadInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<{ url: string; name: string }[]>([]);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [viewingEmail, setViewingEmail] = useState<SavedEmail | null>(null);
   const [labelDialogEmail, setLabelDialogEmail] = useState<SavedEmail | null>(null);
@@ -1312,6 +1316,17 @@ export default function EmailNewslettersPage() {
                       const assetsWithImages = contentAssets.filter(a =>
                         a.leadImageUrl && (!srcIds?.length || srcIds.includes(a.id))
                       );
+                      const insertImageTag = (url: string, alt: string) => {
+                        const tag = `<img src="${url}" alt="${alt.replace(/"/g, "&quot;")}" style="max-width:100%;display:block;margin:8px 0;" />`;
+                        if (editMode === "visual") {
+                          if (editableRef.current) {
+                            editableRef.current.focus();
+                            document.execCommand("insertHTML", false, tag);
+                          }
+                        } else {
+                          setEditBody(prev => prev + "\n" + tag);
+                        }
+                      };
                       return (
                         <Collapsible data-testid="collapsible-insert-image">
                           <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1">
@@ -1320,12 +1335,77 @@ export default function EmailNewslettersPage() {
                             <ChevronDown className="w-3 h-3" />
                           </CollapsibleTrigger>
                           <CollapsibleContent>
-                            {assetsWithImages.length === 0 ? (
-                              <p className="text-xs text-muted-foreground mt-2 border rounded p-3 bg-muted/30" data-testid="text-no-asset-images">
-                                None of the assets used to generate this email have images attached.
+                            <input
+                              ref={imageUploadInputRef}
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              className="hidden"
+                              data-testid="input-upload-image-file"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                e.target.value = "";
+                                setIsUploadingImage(true);
+                                try {
+                                  const formData = new FormData();
+                                  formData.append("file", file);
+                                  const r = await fetch("/api/integrations/website/upload-media", {
+                                    method: "POST",
+                                    credentials: "include",
+                                    body: formData,
+                                  });
+                                  const data = await r.json();
+                                  if (!r.ok) throw new Error(data.error || "Upload failed");
+                                  const uploaded = { url: data.url as string, name: file.name };
+                                  setUploadedImages(prev => [uploaded, ...prev]);
+                                  insertImageTag(uploaded.url, file.name.replace(/\.[^.]+$/, ""));
+                                } catch (err) {
+                                  toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Could not upload image.", variant: "destructive" });
+                                } finally {
+                                  setIsUploadingImage(false);
+                                }
+                              }}
+                            />
+                            <div className="flex items-center justify-between mt-2 mb-1">
+                              <span className="text-xs text-muted-foreground">
+                                {assetsWithImages.length + uploadedImages.length === 0 ? "No images yet" : `${assetsWithImages.length + uploadedImages.length} image${assetsWithImages.length + uploadedImages.length !== 1 ? "s" : ""}`}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isUploadingImage}
+                                data-testid="button-upload-image"
+                                className="flex items-center gap-1 text-xs px-2 py-1 rounded border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => imageUploadInputRef.current?.click()}
+                              >
+                                {isUploadingImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                                {isUploadingImage ? "Uploading…" : "Upload image"}
+                              </button>
+                            </div>
+                            {assetsWithImages.length === 0 && uploadedImages.length === 0 ? (
+                              <p className="text-xs text-muted-foreground border rounded p-3 bg-muted/30" data-testid="text-no-asset-images">
+                                None of the assets used to generate this email have images attached. Upload one above.
                               </p>
                             ) : (
-                              <div className="grid grid-cols-3 gap-2 mt-2" data-testid="grid-asset-images">
+                              <div className="grid grid-cols-3 gap-2" data-testid="grid-asset-images">
+                                {uploadedImages.map((img, idx) => (
+                                  <button
+                                    key={`uploaded-${idx}`}
+                                    type="button"
+                                    title={img.name}
+                                    className="border rounded overflow-hidden bg-muted/30 hover:ring-2 hover:ring-primary transition-all text-left relative"
+                                    data-testid={`button-insert-uploaded-image-${idx}`}
+                                    onClick={() => insertImageTag(img.url, img.name.replace(/\.[^.]+$/, ""))}
+                                  >
+                                    <img
+                                      src={img.url}
+                                      alt={img.name}
+                                      className="w-full h-20 object-cover"
+                                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                    />
+                                    <p className="text-[10px] text-muted-foreground px-1.5 py-1 truncate">{img.name}</p>
+                                    <span className="absolute top-1 right-1 text-[9px] bg-primary text-primary-foreground rounded px-1 leading-4">Uploaded</span>
+                                  </button>
+                                ))}
                                 {assetsWithImages.map(asset => (
                                   <button
                                     key={asset.id}
@@ -1333,17 +1413,7 @@ export default function EmailNewslettersPage() {
                                     title={asset.title}
                                     className="border rounded overflow-hidden bg-muted/30 hover:ring-2 hover:ring-primary transition-all text-left"
                                     data-testid={`button-insert-image-${asset.id}`}
-                                    onClick={() => {
-                                      const tag = `<img src="${asset.leadImageUrl}" alt="${asset.title.replace(/"/g, "&quot;")}" style="max-width:100%;display:block;margin:8px 0;" />`;
-                                      if (editMode === "visual") {
-                                        if (editableRef.current) {
-                                          editableRef.current.focus();
-                                          document.execCommand("insertHTML", false, tag);
-                                        }
-                                      } else {
-                                        setEditBody(prev => prev + "\n" + tag);
-                                      }
-                                    }}
+                                    onClick={() => insertImageTag(asset.leadImageUrl!, asset.title)}
                                   >
                                     <img
                                       src={asset.leadImageUrl}
