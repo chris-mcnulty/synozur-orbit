@@ -3951,7 +3951,7 @@ Structure your response using these exact delimiters:
   app.post("/api/email/saved", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, subject, previewText, htmlBody, textBody, platform, tone, callToAction, recipientContext, subjectLineSuggestions, coachingTips } = req.body;
+    const { campaignId, subject, previewText, htmlBody, textBody, platform, tone, callToAction, recipientContext, subjectLineSuggestions, coachingTips, sourceAssetIds } = req.body;
     if (!subject?.trim() || (!htmlBody?.trim() && !textBody?.trim())) {
       return res.status(400).json({ error: "subject and either htmlBody or textBody are required" });
     }
@@ -3981,6 +3981,7 @@ Structure your response using these exact delimiters:
       textBody,
       subjectLineSuggestions: subjectLineSuggestions || null,
       coachingTips: coachingTips || null,
+      sourceAssetIds: Array.isArray(sourceAssetIds) && sourceAssetIds.length > 0 ? sourceAssetIds : null,
       createdBy: ctx.userId,
     } as InsertGeneratedEmail).returning();
     res.status(201).json(row);

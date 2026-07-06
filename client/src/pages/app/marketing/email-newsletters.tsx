@@ -71,6 +71,7 @@ interface SavedEmail {
   status: string;
   subjectLineSuggestions?: string[];
   coachingTips?: string[];
+  sourceAssetIds?: string[] | null;
   createdAt: string;
 }
 
@@ -488,14 +489,22 @@ export default function EmailNewslettersPage() {
     return products.filter(p => ids.has(p.id));
   }, [activeAssets, products]);
 
-  // Sync contenteditable div when switching to visual mode or opening a new email
+  // Sync contenteditable div when switching to visual mode or opening a new email.
+  // Use requestAnimationFrame so the Dialog open-animation has time to mount the
+  // DOM node before we attempt to write to it (fixes blank-body on first open).
   useEffect(() => {
-    if (editingEmail?.platform === "hubspot-marketing" && editMode === "visual" && editableRef.current) {
-      editableRef.current.innerHTML = DOMPurify.sanitize(editBody, {
-        ADD_ATTR: ["width", "height", "cellpadding", "cellspacing", "border", "align", "valign", "bgcolor", "target"],
-      });
+    if (editingEmail?.platform === "hubspot-marketing" && editMode === "visual") {
+      const inject = () => {
+        if (editableRef.current) {
+          editableRef.current.innerHTML = DOMPurify.sanitize(editBody, {
+            ADD_ATTR: ["width", "height", "cellpadding", "cellspacing", "border", "align", "valign", "bgcolor", "target"],
+          });
+        }
+      };
+      const raf = requestAnimationFrame(inject);
+      return () => cancelAnimationFrame(raf);
     }
-  }, [editingEmail?.id, editMode]);
+  }, [editingEmail?.id, editMode, editBody]);
 
   const updateEmailMutation = useMutation({
     mutationFn: async ({ emailId, subject, body, isHtml }: { emailId: string; subject: string; body: string; isHtml: boolean }) => {
@@ -599,6 +608,7 @@ export default function EmailNewslettersPage() {
           textBody: previewEmail.textBody,
           subjectLineSuggestions: previewEmail.subjectLineSuggestions,
           coachingTips: previewEmail.coachingTips,
+          sourceAssetIds: selectedAssetIds.length > 0 ? selectedAssetIds : undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -686,7 +696,10 @@ export default function EmailNewslettersPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Generate Email</CardTitle>
-            <CardDescription>Select content assets and configure your email generation settings.</CardDescription>
+            <CardDescription>
+              Select content assets and configure your email generation settings.{" "}
+              <span className="text-foreground/70">Not sure which platform to pick? <strong>HubSpot Marketing Email</strong> is the best choice for most bulk newsletters.</span>
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {activeAssets.length > 0 && (
@@ -812,6 +825,12 @@ export default function EmailNewslettersPage() {
                     <SelectItem value="dynamics-365">Dynamics 365 Customer Email</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1" data-testid="text-platform-description">
+                  {emailPlatform === "outlook" && "Plain-text or simple HTML — copy-paste into Outlook compose."}
+                  {emailPlatform === "hubspot-marketing" && "Branded HTML newsletter, rendered in HubSpot's email tool."}
+                  {emailPlatform === "hubspot-1to1" && "Short personal-style email sent one-to-one via HubSpot CRM."}
+                  {emailPlatform === "dynamics-365" && "Customer email formatted for Dynamics 365 customer journeys."}
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium">Tone</label>
@@ -1288,6 +1307,59 @@ export default function EmailNewslettersPage() {
                         ? "Click any text in the preview to edit it directly."
                         : "Edit the raw HTML. Switch to Visual to see the rendered result."}
                     </p>
+                    {(() => {
+                      const srcIds = editingEmail?.sourceAssetIds;
+                      const assetsWithImages = contentAssets.filter(a =>
+                        a.leadImageUrl && (!srcIds?.length || srcIds.includes(a.id))
+                      );
+                      return (
+                        <Collapsible data-testid="collapsible-insert-image">
+                          <CollapsibleTrigger className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1">
+                            <ImageIcon className="w-3.5 h-3.5" />
+                            Insert Image from Assets
+                            <ChevronDown className="w-3 h-3" />
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            {assetsWithImages.length === 0 ? (
+                              <p className="text-xs text-muted-foreground mt-2 border rounded p-3 bg-muted/30" data-testid="text-no-asset-images">
+                                None of the assets used to generate this email have images attached.
+                              </p>
+                            ) : (
+                              <div className="grid grid-cols-3 gap-2 mt-2" data-testid="grid-asset-images">
+                                {assetsWithImages.map(asset => (
+                                  <button
+                                    key={asset.id}
+                                    type="button"
+                                    title={asset.title}
+                                    className="border rounded overflow-hidden bg-muted/30 hover:ring-2 hover:ring-primary transition-all text-left"
+                                    data-testid={`button-insert-image-${asset.id}`}
+                                    onClick={() => {
+                                      const tag = `<img src="${asset.leadImageUrl}" alt="${asset.title.replace(/"/g, "&quot;")}" style="max-width:100%;display:block;margin:8px 0;" />`;
+                                      if (editMode === "visual") {
+                                        if (editableRef.current) {
+                                          editableRef.current.focus();
+                                          document.execCommand("insertHTML", false, tag);
+                                        }
+                                      } else {
+                                        setEditBody(prev => prev + "\n" + tag);
+                                      }
+                                    }}
+                                  >
+                                    <img
+                                      src={asset.leadImageUrl}
+                                      alt={asset.title}
+                                      className="w-full h-20 object-cover"
+                                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                    />
+                                    <p className="text-[10px] text-muted-foreground px-1.5 py-1 truncate">{asset.title}</p>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div>

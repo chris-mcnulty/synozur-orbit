@@ -3311,6 +3311,7 @@ export const generatedEmails = pgTable("generated_emails", {
   solutionAreaId: varchar("solution_area_id").references((): AnyPgColumn => solutionAreas.id, { onDelete: "set null" }),
   conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at"),
+  sourceAssetIds: text("source_asset_ids").array(),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
