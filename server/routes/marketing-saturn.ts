@@ -4020,7 +4020,7 @@ Structure your response using these exact delimiters:
   app.patch("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { subject, htmlBody, textBody, status, label, sourceAssetIds } = req.body;
+    const { subject, htmlBody, textBody, status, label, sourceAssetIds, scheduledAt } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (subject !== undefined) updates.subject = subject;
     if (htmlBody !== undefined) updates.htmlBody = htmlBody;
@@ -4028,6 +4028,7 @@ Structure your response using these exact delimiters:
     if (status !== undefined) updates.status = status;
     if (label !== undefined) updates.label = label || null;
     if (sourceAssetIds !== undefined) updates.sourceAssetIds = Array.isArray(sourceAssetIds) && sourceAssetIds.length > 0 ? sourceAssetIds : null;
+    if ("scheduledAt" in req.body) updates.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
     const [row] = await db.update(generatedEmails)
       .set(updates)
       .where(and(

@@ -710,6 +710,26 @@ export default function EmailNewslettersPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const clearScheduledDateMutation = useMutation({
+    mutationFn: async (emailId: string) => {
+      const r = await fetch(`/api/email/saved/${emailId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ scheduledAt: null }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      setRescheduleEmail(null);
+      setRescheduleDateTime("");
+      toast({ title: "Schedule cleared", description: "The email has been returned to a saved state." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const uniqueLabels = [...new Set(savedEmails.map(e => e.label).filter(Boolean))] as string[];
 
   const filteredEmails = savedEmails.filter(e => {
@@ -1665,26 +1685,52 @@ export default function EmailNewslettersPage() {
                   data-testid="input-reschedule-datetime"
                 />
               </div>
+              {rescheduleEmail?.scheduledAt && (
+                <p className="text-xs text-muted-foreground">
+                  Currently scheduled for{" "}
+                  <span className="font-medium text-foreground">
+                    {format(new Date(rescheduleEmail.scheduledAt), "MMM d, yyyy 'at' h:mm a")}
+                  </span>
+                </p>
+              )}
             </div>
-            <div className="flex justify-end gap-2 mt-2">
-              <Button
-                variant="outline"
-                onClick={() => { setRescheduleEmail(null); setRescheduleDateTime(""); }}
-                data-testid="button-cancel-reschedule-email"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={!rescheduleDateTime || rescheduleEmailMutation.isPending}
-                onClick={() => {
-                  if (rescheduleEmail && rescheduleDateTime) {
-                    rescheduleEmailMutation.mutate({ email: rescheduleEmail, scheduledAt: new Date(rescheduleDateTime).toISOString() });
-                  }
-                }}
-                data-testid="button-confirm-reschedule-email"
-              >
-                {rescheduleEmailMutation.isPending ? "Scheduling..." : "Create scheduled draft"}
-              </Button>
+            <div className="flex items-center justify-between mt-2">
+              {rescheduleEmail?.scheduledAt ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  disabled={clearScheduledDateMutation.isPending}
+                  onClick={() => {
+                    if (rescheduleEmail) clearScheduledDateMutation.mutate(rescheduleEmail.id);
+                  }}
+                  data-testid="button-clear-scheduled-date"
+                >
+                  {clearScheduledDateMutation.isPending ? "Clearing..." : "Clear scheduled date"}
+                </Button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => { setRescheduleEmail(null); setRescheduleDateTime(""); }}
+                  data-testid="button-cancel-reschedule-email"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={!rescheduleDateTime || rescheduleEmailMutation.isPending}
+                  onClick={() => {
+                    if (rescheduleEmail && rescheduleDateTime) {
+                      rescheduleEmailMutation.mutate({ email: rescheduleEmail, scheduledAt: new Date(rescheduleDateTime).toISOString() });
+                    }
+                  }}
+                  data-testid="button-confirm-reschedule-email"
+                >
+                  {rescheduleEmailMutation.isPending ? "Scheduling..." : "Create scheduled draft"}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
