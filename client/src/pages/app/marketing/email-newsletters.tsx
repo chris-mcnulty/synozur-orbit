@@ -21,6 +21,7 @@ import {
   Search,
   ImageIcon,
   Calendar,
+  CalendarClock,
   Eye,
   Tag,
   Download,
@@ -74,6 +75,7 @@ interface SavedEmail {
   subjectLineSuggestions?: string[];
   coachingTips?: string[];
   sourceAssetIds?: string[] | null;
+  scheduledAt?: string | null;
   createdAt: string;
 }
 
@@ -299,6 +301,8 @@ export default function EmailNewslettersPage() {
   const [sendTrackOpens, setSendTrackOpens] = useState<boolean>(true);
   const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
   const [sendExcludeActiveProspects, setSendExcludeActiveProspects] = useState<boolean>(false);
+  const [rescheduleEmail, setRescheduleEmail] = useState<SavedEmail | null>(null);
+  const [rescheduleDateTime, setRescheduleDateTime] = useState<string>("");
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -668,6 +672,37 @@ export default function EmailNewslettersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
       toast({ title: "Email duplicated", description: "A copy has been added to your saved emails." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const rescheduleEmailMutation = useMutation({
+    mutationFn: async ({ email, scheduledAt }: { email: SavedEmail; scheduledAt: string }) => {
+      const r = await fetch("/api/email/saved", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          subject: email.subject,
+          htmlBody: email.htmlBody,
+          textBody: email.textBody,
+          platform: email.platform,
+          tone: email.tone,
+          label: email.label,
+          subjectLineSuggestions: email.subjectLineSuggestions,
+          coachingTips: email.coachingTips,
+          sourceAssetIds: Array.isArray(email.sourceAssetIds) && email.sourceAssetIds.length > 0 ? email.sourceAssetIds : undefined,
+          scheduledAt,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      setRescheduleEmail(null);
+      setRescheduleDateTime("");
+      toast({ title: "Email rescheduled", description: "A new draft has been created with the selected send date." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -1230,6 +1265,19 @@ export default function EmailNewslettersPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        title="Reschedule email"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setRescheduleEmail(email);
+                          setRescheduleDateTime("");
+                        }}
+                        data-testid={`button-reschedule-email-${email.id}`}
+                      >
+                        <CalendarClock className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         title="Duplicate email"
                         onClick={e => { e.stopPropagation(); duplicateEmailMutation.mutate(email); }}
                         disabled={duplicateEmailMutation.isPending}
@@ -1497,6 +1545,49 @@ export default function EmailNewslettersPage() {
                 data-testid="button-save-edit-email"
               >
                 {updateEmailMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!rescheduleEmail} onOpenChange={v => { if (!v) { setRescheduleEmail(null); setRescheduleDateTime(""); } }}>
+          <DialogContent className="sm:max-w-[420px]" data-testid="dialog-reschedule-email">
+            <DialogHeader>
+              <DialogTitle>Reschedule Email</DialogTitle>
+              <DialogDescription>
+                Pick a new send date and time. A new draft will be created with the same content and source assets — the original email is unchanged.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="reschedule-datetime">Send date &amp; time</Label>
+                <Input
+                  id="reschedule-datetime"
+                  type="datetime-local"
+                  value={rescheduleDateTime}
+                  onChange={e => setRescheduleDateTime(e.target.value)}
+                  data-testid="input-reschedule-datetime"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button
+                variant="outline"
+                onClick={() => { setRescheduleEmail(null); setRescheduleDateTime(""); }}
+                data-testid="button-cancel-reschedule-email"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={!rescheduleDateTime || rescheduleEmailMutation.isPending}
+                onClick={() => {
+                  if (rescheduleEmail && rescheduleDateTime) {
+                    rescheduleEmailMutation.mutate({ email: rescheduleEmail, scheduledAt: new Date(rescheduleDateTime).toISOString() });
+                  }
+                }}
+                data-testid="button-confirm-reschedule-email"
+              >
+                {rescheduleEmailMutation.isPending ? "Scheduling..." : "Create scheduled draft"}
               </Button>
             </div>
           </DialogContent>
