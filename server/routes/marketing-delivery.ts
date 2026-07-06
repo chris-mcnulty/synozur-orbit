@@ -1007,6 +1007,59 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     res.status(201).json({ inserted, skipped, total: c });
   });
 
+  // Update a recipient's name, email, and/or status.
+  app.patch("/api/email-recipient-lists/:id/recipients/:rid", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+
+    const [existing] = await db.select().from(emailRecipients).where(and(
+      eq(emailRecipients.id, req.params.rid),
+      eq(emailRecipients.listId, req.params.id),
+      eq(emailRecipients.tenantDomain, ctx.tenantDomain),
+    ));
+    if (!existing) return res.status(404).json({ error: "Recipient not found" });
+
+    const VALID_STATUSES = ["active", "unsubscribed", "bounced", "manual_remove"];
+    const updates: Record<string, unknown> = {};
+
+    if (typeof req.body?.name === "string") updates.name = req.body.name.trim() || null;
+    if (req.body?.name === null) updates.name = null;
+
+    if (typeof req.body?.email === "string") {
+      const newEmail = req.body.email.trim().toLowerCase();
+      if (!newEmail.includes("@")) return res.status(400).json({ error: "Invalid email address" });
+      if (newEmail !== existing.email) {
+        // Check uniqueness within the list.
+        const [conflict] = await db.select({ id: emailRecipients.id }).from(emailRecipients)
+          .where(and(
+            eq(emailRecipients.listId, req.params.id),
+            eq(emailRecipients.tenantDomain, ctx.tenantDomain),
+            eq(emailRecipients.email, newEmail),
+          ));
+        if (conflict) return res.status(409).json({ error: "That email address is already in this list" });
+        updates.email = newEmail;
+      }
+    }
+
+    if (typeof req.body?.status === "string") {
+      if (!VALID_STATUSES.includes(req.body.status)) {
+        return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(", ")}` });
+      }
+      updates.status = req.body.status;
+    }
+
+    if (Object.keys(updates).length === 0) return res.json(existing);
+
+    const [updated] = await db.update(emailRecipients).set(updates)
+      .where(and(
+        eq(emailRecipients.id, req.params.rid),
+        eq(emailRecipients.listId, req.params.id),
+        eq(emailRecipients.tenantDomain, ctx.tenantDomain),
+      ))
+      .returning();
+    res.json(updated);
+  });
+
   app.delete("/api/email-recipient-lists/:id/recipients/:rid", async (req, res) => {
     if (!await guardFeature(req, res, "directEmailDelivery")) return;
     const ctx = await getRequestContext(req);

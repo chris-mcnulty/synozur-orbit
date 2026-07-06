@@ -7,8 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Lock, Send, ListPlus, Users, Ban, Trash2, Plus, AlertTriangle, ChevronDown, ChevronRight, Download } from "lucide-react";
+import { Lock, Send, ListPlus, Users, Ban, Trash2, Plus, AlertTriangle, ChevronDown, ChevronRight, Download, Pencil, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
@@ -222,6 +223,38 @@ export default function SendsPage() {
       }
     },
   });
+
+  const updateRecipientMutation = useMutation({
+    mutationFn: async ({ listId, rid, patch }: { listId: string; rid: string; patch: { name?: string | null; email?: string; status?: string } }) => {
+      const r = await fetch(`/api/email-recipient-lists/${listId}/recipients/${rid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Update failed");
+      return r.json() as Promise<Recipient>;
+    },
+    onSuccess: () => {
+      if (recipientsForList) {
+        queryClient.invalidateQueries({ queryKey: [`/api/email-recipient-lists/${recipientsForList.id}/recipients`] });
+      }
+      setEditingRecipientId(null);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ name: string; email: string; status: string }>({ name: "", email: "", status: "active" });
+
+  function startEditRecipient(r: Recipient) {
+    setEditingRecipientId(r.id);
+    setEditDraft({ name: r.name ?? "", email: r.email, status: r.status });
+  }
+
+  function cancelEditRecipient() {
+    setEditingRecipientId(null);
+  }
 
   const addSuppressionMutation = useMutation({
     mutationFn: async (email: string) => {
@@ -468,25 +501,98 @@ export default function SendsPage() {
               </Card>
               <div>
                 <h4 className="text-sm font-medium mb-2">Recipients ({recipients.length})</h4>
-                <div className="border rounded-lg max-h-72 overflow-y-auto divide-y">
+                <div className="border rounded-lg max-h-80 overflow-y-auto divide-y">
                   {recipients.length === 0 ? (
                     <p className="p-4 text-sm text-muted-foreground text-center">No recipients yet.</p>
-                  ) : recipients.map(r => (
-                    <div key={r.id} className="px-3 py-2 flex items-center gap-2 text-sm" data-testid={`row-recipient-${r.id}`}>
-                      <span className="font-mono flex-1 truncate">{r.email}</span>
-                      {r.name && <span className="text-muted-foreground text-xs">{r.name}</span>}
-                      <Badge variant="outline" className="text-[10px] capitalize">{r.status}</Badge>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => recipientsForList && removeRecipientMutation.mutate({ listId: recipientsForList.id, rid: r.id })}
-                        data-testid={`button-remove-recipient-${r.id}`}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  ))}
+                  ) : recipients.map(r => {
+                    const isEditing = editingRecipientId === r.id;
+                    const isSaving = updateRecipientMutation.isPending && editingRecipientId === r.id;
+                    const statusColor = r.status === "active" ? "text-emerald-600 border-emerald-300" : r.status === "unsubscribed" ? "text-amber-600 border-amber-300" : "text-muted-foreground";
+                    if (isEditing) {
+                      return (
+                        <div key={r.id} className="px-3 py-2.5 space-y-2 bg-muted/30" data-testid={`row-recipient-editing-${r.id}`}>
+                          <div className="flex gap-2">
+                            <Input
+                              value={editDraft.email}
+                              onChange={e => setEditDraft(d => ({ ...d, email: e.target.value }))}
+                              placeholder="email@example.com"
+                              className="h-7 text-xs font-mono flex-1"
+                              data-testid={`input-edit-email-${r.id}`}
+                            />
+                            <Input
+                              value={editDraft.name}
+                              onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
+                              placeholder="Name (optional)"
+                              className="h-7 text-xs flex-1"
+                              data-testid={`input-edit-name-${r.id}`}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Select value={editDraft.status} onValueChange={v => setEditDraft(d => ({ ...d, status: v }))}>
+                              <SelectTrigger className="h-7 text-xs w-40" data-testid={`select-edit-status-${r.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
+                                <SelectItem value="bounced">Bounced</SelectItem>
+                                <SelectItem value="manual_remove">Manually removed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <div className="flex items-center gap-1 ml-auto">
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 text-xs gap-1"
+                                disabled={isSaving || !editDraft.email.includes("@")}
+                                onClick={() => recipientsForList && updateRecipientMutation.mutate({
+                                  listId: recipientsForList.id,
+                                  rid: r.id,
+                                  patch: { name: editDraft.name.trim() || null, email: editDraft.email.trim(), status: editDraft.status },
+                                })}
+                                data-testid={`button-save-recipient-${r.id}`}
+                              >
+                                <Check className="w-3 h-3" />Save
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={cancelEditRecipient} data-testid={`button-cancel-edit-${r.id}`}>
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={r.id} className="px-3 py-2 flex items-center gap-2 text-sm group" data-testid={`row-recipient-${r.id}`}>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono text-xs truncate">{r.email}</div>
+                          {r.name && <div className="text-[11px] text-muted-foreground truncate">{r.name}</div>}
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] capitalize shrink-0 ${statusColor}`}>
+                          {r.status === "manual_remove" ? "Removed" : r.status}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => startEditRecipient(r)}
+                          title="Edit name, email, or status"
+                          data-testid={`button-edit-recipient-${r.id}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:text-destructive"
+                          onClick={() => recipientsForList && removeRecipientMutation.mutate({ listId: recipientsForList.id, rid: r.id })}
+                          title="Remove from list"
+                          data-testid={`button-remove-recipient-${r.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
