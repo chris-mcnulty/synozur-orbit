@@ -464,6 +464,15 @@ export default function ContentLibraryPage() {
   const websiteConnected = !!websiteStatus?.connected;
   const [websitePublishOpen, setWebsitePublishOpen] = useState(false);
 
+  const { data: referencingEmails = [] } = useQuery<{ id: string; subject: string; platform: string | null; label: string | null; createdAt: string }[]>({
+    queryKey: ["/api/content-assets", detailAsset?.id, "emails"],
+    queryFn: async () => {
+      const r = await fetch(`/api/content-assets/${detailAsset!.id}/emails`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: !!detailAsset,
+  });
+
   const downloadDocx = async (asset: ContentAsset) => {
     if (detailAsset && (editForm.title !== detailAsset.title || (editForm.content || "") !== (detailAsset.content || ""))) {
       toast({ title: "Save first", description: "Save your changes, then download so the document matches.", variant: "destructive" });
@@ -2141,6 +2150,38 @@ export default function ContentLibraryPage() {
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
+
+                  {referencingEmails.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-sm font-medium">Referenced in Emails</span>
+                        <Badge variant="secondary" className="text-xs px-1.5 py-0" data-testid="badge-referencing-email-count">{referencingEmails.length}</Badge>
+                      </div>
+                      <div className="space-y-1 max-h-36 overflow-y-auto">
+                        {referencingEmails.map(email => (
+                          <button
+                            key={email.id}
+                            type="button"
+                            className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted/60 transition-colors border border-border/50"
+                            onClick={() => {
+                              setEditOpen(false);
+                              setDetailAsset(null);
+                              navigate(`/app/marketing/email-newsletters?emailId=${email.id}`);
+                            }}
+                            data-testid={`button-referencing-email-${email.id}`}
+                          >
+                            <Mail className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                            <span className="flex-1 truncate">{email.subject}</span>
+                            {email.label && (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{email.label}</Badge>
+                            )}
+                            <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground/60" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
                     <Button

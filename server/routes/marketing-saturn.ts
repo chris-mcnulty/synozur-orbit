@@ -587,6 +587,35 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  app.get("/api/content-assets/:id/emails", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const assetId = req.params.id;
+    const [asset] = await db.select({ id: contentAssets.id })
+      .from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, assetId),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ))
+      .limit(1);
+    if (!asset) return res.status(404).json({ error: "Not found" });
+    const rows = await db.select({
+      id: generatedEmails.id,
+      subject: generatedEmails.subject,
+      platform: generatedEmails.platform,
+      label: generatedEmails.label,
+      createdAt: generatedEmails.createdAt,
+    }).from(generatedEmails)
+      .where(and(
+        eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
+        sql`${assetId} = ANY(${generatedEmails.sourceAssetIds})`,
+      ))
+      .orderBy(desc(generatedEmails.createdAt));
+    res.json(rows);
+  });
+
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
