@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 
 interface ContentAsset {
   id: string;
@@ -244,6 +244,7 @@ function SendDeliverabilityPreview({ listId }: { listId: string }) {
 export default function EmailNewslettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const preselectedAssetId = params.get("assetId");
@@ -1807,6 +1808,48 @@ export default function EmailNewslettersPage() {
                     </ol>
                   </div>
                 )}
+                {(() => {
+                  const linkedAssets = Array.isArray(viewingEmail.sourceAssetIds) && viewingEmail.sourceAssetIds.length > 0
+                    ? contentAssets.filter(a => viewingEmail.sourceAssetIds!.includes(a.id))
+                    : [];
+                  if (linkedAssets.length === 0) return null;
+                  return (
+                    <div data-testid="section-generated-from">
+                      <label className="text-sm font-medium mb-2 block">Generated from</label>
+                      <div className="flex flex-col gap-2">
+                        {linkedAssets.map(asset => (
+                          <button
+                            key={asset.id}
+                            className="flex items-center gap-3 text-left border rounded px-3 py-2 bg-muted/30 hover:bg-muted/60 transition-colors w-full group"
+                            onClick={() => {
+                              setViewingEmail(null);
+                              navigate(`/app/marketing/content-library?asset=${encodeURIComponent(asset.id)}`);
+                            }}
+                            data-testid={`button-source-asset-${asset.id}`}
+                          >
+                            {asset.leadImageUrl ? (
+                              <img
+                                src={asset.leadImageUrl}
+                                alt=""
+                                className="w-10 h-10 rounded object-cover shrink-0 border"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0 border">
+                                <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium truncate group-hover:text-primary transition-colors" data-testid={`text-source-asset-title-${asset.id}`}>{asset.title}</div>
+                              {asset.description && (
+                                <div className="text-xs text-muted-foreground truncate">{asset.description}</div>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {viewingEmail.platform === "hubspot-marketing" ? (
                   <div
                     className="border rounded bg-card text-card-foreground text-sm overflow-y-auto"
