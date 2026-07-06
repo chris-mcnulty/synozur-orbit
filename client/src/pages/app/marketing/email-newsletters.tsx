@@ -244,6 +244,8 @@ function SendDeliverabilityPreview({ listId }: { listId: string }) {
   );
 }
 
+const EMAIL_STATUS_FILTER_KEY = "orbit:email-newsletters:statusFilter";
+
 export default function EmailNewslettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -280,7 +282,14 @@ export default function EmailNewslettersPage() {
   const [assetProductFilter, setAssetProductFilter] = useState<string>("all");
   const [assetDateSort, setAssetDateSort] = useState<string>("newest");
 
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(
+    () => {
+      try { return sessionStorage.getItem(EMAIL_STATUS_FILTER_KEY) ?? "all"; } catch { return "all"; }
+    }
+  );
+  useEffect(() => {
+    try { sessionStorage.setItem(EMAIL_STATUS_FILTER_KEY, statusFilter); } catch {}
+  }, [statusFilter]);
   const [labelFilter, setLabelFilter] = useState<string>("all");
   const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
   const [editSubject, setEditSubject] = useState("");
