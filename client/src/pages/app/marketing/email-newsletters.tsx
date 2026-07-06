@@ -710,7 +710,9 @@ export default function EmailNewslettersPage() {
   const uniqueLabels = [...new Set(savedEmails.map(e => e.label).filter(Boolean))] as string[];
 
   const filteredEmails = savedEmails.filter(e => {
-    const matchesStatus = statusFilter === "all" || e.status === statusFilter;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "scheduled" ? !!e.scheduledAt : e.status === statusFilter);
     const matchesLabel = labelFilter === "all" || (labelFilter === "__unlabeled" ? !e.label : e.label === labelFilter);
     return matchesStatus && matchesLabel;
   });
@@ -1137,6 +1139,7 @@ export default function EmailNewslettersPage() {
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
                     <SelectItem value="sent">Sent</SelectItem>
                   </SelectContent>
                 </Select>
