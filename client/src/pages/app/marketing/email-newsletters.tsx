@@ -1193,6 +1193,11 @@ export default function EmailNewslettersPage() {
                         {email.label && (
                           <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30">{email.label}</Badge>
                         )}
+                        {Array.isArray(email.sourceAssetIds) && email.sourceAssetIds.length > 0 && (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground gap-1" data-testid={`badge-source-assets-${email.id}`}>
+                            <span>Based on {email.sourceAssetIds.length} asset{email.sourceAssetIds.length !== 1 ? "s" : ""}</span>
+                          </Badge>
+                        )}
                         <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
                       </div>
                     </div>
