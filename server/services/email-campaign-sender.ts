@@ -29,6 +29,7 @@ import {
   emailSends,
   emailSendRecipients,
   emailSuppressions,
+  emailSenderIdentities,
   marketingAuditLog,
   prospects,
   type GeneratedEmail,
@@ -280,6 +281,11 @@ export interface DispatchSendOptions {
    * the worker honours the choice made at schedule time.
    */
   excludeActiveProspects?: boolean;
+  /**
+   * ID of the email_sender_identities row to use as the `from` address.
+   * When null/undefined the SendGrid connector's configured from_email is used.
+   */
+  senderIdentityId?: string | null;
 }
 
 export interface SuppressedRecipient {
@@ -331,6 +337,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     trackOpens: opts.trackOpens !== false,
     trackClicks: opts.trackClicks !== false,
     excludeActiveProspects: opts.excludeActiveProspects === true,
+    senderIdentityId: opts.senderIdentityId ?? null,
     recipientCount: 0,
     sentCount: 0,
     failedCount: 0,
@@ -592,6 +599,18 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   const { apiKey, fromEmail } = await getSendGridCreds();
   sgMail.setApiKey(apiKey);
 
+  // Resolve sender identity — falls back to connector's from_email if not set.
+  let fromField: string | { email: string; name: string } = fromEmail;
+  let replyToField: string | undefined;
+  if (opts.senderIdentityId) {
+    const [identity] = await db.select().from(emailSenderIdentities)
+      .where(and(eq(emailSenderIdentities.id, opts.senderIdentityId), eq(emailSenderIdentities.tenantDomain, tenantDomain)));
+    if (identity) {
+      fromField = { email: identity.email, name: identity.name };
+      if (identity.replyToEmail) replyToField = identity.replyToEmail;
+    }
+  }
+
   let sentCount = 0;
   let failedCount = 0;
 
@@ -606,7 +625,8 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     try {
       const [resp] = await sgMail.send({
         to: r.email,
-        from: fromEmail,
+        from: fromField,
+        ...(replyToField ? { replyTo: replyToField } : {}),
         subject: email.subject,
         text,
         html,
@@ -813,6 +833,8 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           trackClicks: row.send.trackClicks,
           // Preserve the prospect-suppression choice captured at schedule time.
           excludeActiveProspects: row.send.excludeActiveProspects,
+          // Preserve the sender identity captured at schedule time.
+          senderIdentityId: row.send.senderIdentityId ?? null,
         }, row.send.id);
         sent += result.sentCount;
         failed += result.failedCount;

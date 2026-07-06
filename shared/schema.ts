@@ -4086,6 +4086,21 @@ export const hubspotContactIdCache = pgTable("hubspot_contact_id_cache", {
 
 export type HubspotContactIdCacheEntry = typeof hubspotContactIdCache.$inferSelect;
 
+// Per-tenant verified sender identities used when dispatching email campaigns.
+// Multiple identities may exist per tenant; exactly one can be marked default.
+export const emailSenderIdentities = pgTable("email_sender_identities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),           // display name, e.g. "Synozur Marketing"
+  email: text("email").notNull(),         // must be verified in SendGrid
+  replyToEmail: text("reply_to_email"),   // optional reply-to override
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertEmailSenderIdentitySchema = createInsertSchema(emailSenderIdentities).omit({ id: true, createdAt: true });
+export type EmailSenderIdentity = typeof emailSenderIdentities.$inferSelect;
+export type InsertEmailSenderIdentity = z.infer<typeof insertEmailSenderIdentitySchema>;
+
 // One row per "Send" action — links a generatedEmail to the audience and
 // records aggregate counters for the UI Sends tab.
 export const emailSends = pgTable("email_sends", {
@@ -4115,6 +4130,7 @@ export const emailSends = pgTable("email_sends", {
   openCount: integer("open_count").notNull().default(0),
   clickCount: integer("click_count").notNull().default(0),
   deliveredCount: integer("delivered_count").notNull().default(0),
+  senderIdentityId: varchar("sender_identity_id").references(() => emailSenderIdentities.id, { onDelete: "set null" }),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),

@@ -45,6 +45,7 @@ import {
   emailSuppressions,
   emailSends,
   emailSendRecipients,
+  emailSenderIdentities,
   marketingAuditLog,
   prospects,
 } from "@shared/schema";
@@ -1110,6 +1111,72 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     res.json({ success: true });
   });
 
+  // ───── Sender Identities ─────
+  app.get("/api/email-sender-identities", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const rows = await db.select().from(emailSenderIdentities)
+      .where(eq(emailSenderIdentities.tenantDomain, ctx.tenantDomain))
+      .orderBy(desc(emailSenderIdentities.isDefault), emailSenderIdentities.name);
+    res.json(rows);
+  });
+
+  app.post("/api/email-sender-identities", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const { name, email, replyToEmail, isDefault } = req.body ?? {};
+    if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "name is required" });
+    if (typeof email !== "string" || !email.includes("@")) return res.status(400).json({ error: "Valid email required" });
+    // If marking default, clear any existing default first.
+    if (isDefault) {
+      await db.update(emailSenderIdentities).set({ isDefault: false })
+        .where(eq(emailSenderIdentities.tenantDomain, ctx.tenantDomain));
+    }
+    const [row] = await db.insert(emailSenderIdentities).values({
+      tenantDomain: ctx.tenantDomain,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      replyToEmail: typeof replyToEmail === "string" && replyToEmail.includes("@") ? replyToEmail.trim().toLowerCase() : null,
+      isDefault: isDefault === true,
+    }).returning();
+    res.status(201).json(row);
+  });
+
+  app.patch("/api/email-sender-identities/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const [existing] = await db.select().from(emailSenderIdentities)
+      .where(and(eq(emailSenderIdentities.id, req.params.id), eq(emailSenderIdentities.tenantDomain, ctx.tenantDomain)));
+    if (!existing) return res.status(404).json({ error: "Sender identity not found" });
+    const updates: Record<string, unknown> = {};
+    if (typeof req.body?.name === "string" && req.body.name.trim()) updates.name = req.body.name.trim();
+    if (typeof req.body?.email === "string" && req.body.email.includes("@")) updates.email = req.body.email.trim().toLowerCase();
+    if (typeof req.body?.replyToEmail === "string") {
+      updates.replyToEmail = req.body.replyToEmail.includes("@") ? req.body.replyToEmail.trim().toLowerCase() : null;
+    }
+    if (req.body?.replyToEmail === null) updates.replyToEmail = null;
+    if (req.body?.isDefault === true) {
+      await db.update(emailSenderIdentities).set({ isDefault: false })
+        .where(and(eq(emailSenderIdentities.tenantDomain, ctx.tenantDomain), ne(emailSenderIdentities.id, req.params.id)));
+      updates.isDefault = true;
+    } else if (req.body?.isDefault === false) {
+      updates.isDefault = false;
+    }
+    if (Object.keys(updates).length === 0) return res.json(existing);
+    const [updated] = await db.update(emailSenderIdentities).set(updates)
+      .where(and(eq(emailSenderIdentities.id, req.params.id), eq(emailSenderIdentities.tenantDomain, ctx.tenantDomain)))
+      .returning();
+    res.json(updated);
+  });
+
+  app.delete("/api/email-sender-identities/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    await db.delete(emailSenderIdentities)
+      .where(and(eq(emailSenderIdentities.id, req.params.id), eq(emailSenderIdentities.tenantDomain, ctx.tenantDomain)));
+    res.json({ success: true });
+  });
+
   // ───── Sends (Sends tab) ─────
   // Project the columns the Sends UI expects: include the email subject from
   // generated_emails and alias recipient_count → totalRecipients so the
@@ -1327,7 +1394,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
     if (!email) return res.status(404).json({ error: "Email not found" });
 
-    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects } = req.body ?? {};
+    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId } = req.body ?? {};
     if (!listId && !testRecipient) {
       return res.status(400).json({ error: "Either listId or testRecipient is required" });
     }
@@ -1363,6 +1430,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         trackOpens: typeof trackOpens === "boolean" ? trackOpens : undefined,
         trackClicks: typeof trackClicks === "boolean" ? trackClicks : undefined,
         excludeActiveProspects: excludeActiveProspects === true,
+        senderIdentityId: typeof senderIdentityId === "string" ? senderIdentityId : null,
       });
       res.status(201).json(result);
     } catch (err: any) {

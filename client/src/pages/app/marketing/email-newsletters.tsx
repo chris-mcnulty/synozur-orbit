@@ -313,6 +313,7 @@ export default function EmailNewslettersPage() {
   const [sendTrackOpens, setSendTrackOpens] = useState<boolean>(true);
   const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
   const [sendExcludeActiveProspects, setSendExcludeActiveProspects] = useState<boolean>(false);
+  const [sendSenderIdentityId, setSendSenderIdentityId] = useState<string>("");
   const [rescheduleEmail, setRescheduleEmail] = useState<SavedEmail | null>(null);
   const [rescheduleDateTime, setRescheduleDateTime] = useState<string>("");
 
@@ -354,8 +355,17 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed && directDeliveryEnabled,
   });
 
+  const { data: senderIdentities = [] } = useQuery<Array<{ id: string; name: string; email: string; replyToEmail: string | null; isDefault: boolean }>>({
+    queryKey: ["/api/email-sender-identities"],
+    queryFn: async () => {
+      const r = await fetch("/api/email-sender-identities", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && directDeliveryEnabled,
+  });
+
   const sendEmailMutation = useMutation({
-    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean }) => {
+    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean; senderIdentityId?: string }) => {
       const r = await fetch(`/api/generated-emails/${emailId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -367,6 +377,7 @@ export default function EmailNewslettersPage() {
           trackOpens,
           trackClicks,
           excludeActiveProspects,
+          senderIdentityId: senderIdentityId || undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Send failed");
@@ -379,6 +390,7 @@ export default function EmailNewslettersPage() {
       setSendListId("");
       setSendTestRecipient("");
       setSendScheduleAt("");
+      setSendSenderIdentityId("");
       toast({
         title: "Send started",
         description: `${data.sentCount ?? data.totalRecipients ?? 0} of ${data.totalRecipients ?? 0} delivered. View progress in the Sends tab.`,
@@ -1834,6 +1846,24 @@ export default function EmailNewslettersPage() {
                   </div>
                   <ProspectCheckBanner listId={sendListId} />
                   <SendDeliverabilityPreview listId={sendListId} />
+                  {senderIdentities.length > 0 && (
+                    <div className="space-y-2 pt-1 border-t">
+                      <Label className="text-xs uppercase tracking-wide text-muted-foreground">From address</Label>
+                      <select
+                        className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        value={sendSenderIdentityId}
+                        onChange={e => setSendSenderIdentityId(e.target.value)}
+                        data-testid="select-sender-identity"
+                      >
+                        <option value="">— Use default SendGrid sender —</option>
+                        {senderIdentities.map(si => (
+                          <option key={si.id} value={si.id}>
+                            {si.name} &lt;{si.email}&gt;{si.isDefault ? " (default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="space-y-2 pt-1 border-t">
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">Suppression</Label>
                     <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -1906,6 +1936,7 @@ export default function EmailNewslettersPage() {
                       trackOpens: sendMode === "list" ? sendTrackOpens : undefined,
                       trackClicks: sendMode === "list" ? sendTrackClicks : undefined,
                       excludeActiveProspects: sendMode === "list" ? sendExcludeActiveProspects : undefined,
+                      senderIdentityId: sendSenderIdentityId || undefined,
                     });
                   }}
                   data-testid="button-confirm-send"

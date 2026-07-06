@@ -92,7 +92,16 @@ interface EmailSendDetail extends EmailSend {
   suppressedProspectCount?: number;
 }
 
-type SendsTab = "sends" | "lists" | "suppressions";
+type SendsTab = "sends" | "lists" | "suppressions" | "senders";
+
+interface SenderIdentity {
+  id: string;
+  name: string;
+  email: string;
+  replyToEmail: string | null;
+  isDefault: boolean;
+  createdAt: string;
+}
 
 export default function SendsPage() {
   const { toast } = useToast();
@@ -143,6 +152,68 @@ export default function SendsPage() {
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,
+  });
+
+  const { data: senderIdentities = [] } = useQuery<SenderIdentity[]>({
+    queryKey: ["/api/email-sender-identities"],
+    queryFn: async () => {
+      const r = await fetch("/api/email-sender-identities", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed,
+  });
+
+  const [senderForm, setSenderForm] = useState({ name: "", email: "", replyToEmail: "", isDefault: false });
+  const [editingSender, setEditingSender] = useState<SenderIdentity | null>(null);
+  const [editSenderDraft, setEditSenderDraft] = useState({ name: "", email: "", replyToEmail: "", isDefault: false });
+
+  const createSenderMutation = useMutation({
+    mutationFn: async (payload: typeof senderForm) => {
+      const r = await fetch("/api/email-sender-identities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ...payload, replyToEmail: payload.replyToEmail || null }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Create failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-sender-identities"] });
+      setSenderForm({ name: "", email: "", replyToEmail: "", isDefault: false });
+      toast({ title: "Sender identity created" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateSenderMutation = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<typeof editSenderDraft> }) => {
+      const r = await fetch(`/api/email-sender-identities/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ...patch, replyToEmail: patch.replyToEmail || null }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Update failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-sender-identities"] });
+      setEditingSender(null);
+      toast({ title: "Sender identity updated" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteSenderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/email-sender-identities/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error("Delete failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email-sender-identities"] });
+      toast({ title: "Sender identity deleted" });
+    },
   });
 
   const { data: recipients = [] } = useQuery<Recipient[]>({
@@ -320,6 +391,7 @@ export default function SendsPage() {
             <TabsTrigger value="sends" data-testid="tab-sends"><Send className="w-3.5 h-3.5 mr-1.5" />Sends ({sends.length})</TabsTrigger>
             <TabsTrigger value="lists" data-testid="tab-lists"><Users className="w-3.5 h-3.5 mr-1.5" />Recipient Lists ({lists.length})</TabsTrigger>
             <TabsTrigger value="suppressions" data-testid="tab-suppressions"><Ban className="w-3.5 h-3.5 mr-1.5" />Suppressions ({suppressions.length})</TabsTrigger>
+            <TabsTrigger value="senders" data-testid="tab-senders"><Send className="w-3.5 h-3.5 mr-1.5" />Senders ({senderIdentities.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="sends" className="space-y-3 mt-4">
@@ -432,6 +504,73 @@ export default function SendsPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeSuppressionMutation.mutate(s.id)} data-testid={`button-remove-suppression-${s.id}`}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="senders" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Add sender identity</CardTitle>
+                <CardDescription className="text-xs">Each address must be verified as a sender in your SendGrid account before use.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Input placeholder="Display name — e.g. Synozur Marketing" value={senderForm.name} onChange={e => setSenderForm(f => ({ ...f, name: e.target.value }))} data-testid="input-sender-name" />
+                <Input placeholder="From email — e.g. hello@synozur.com" value={senderForm.email} onChange={e => setSenderForm(f => ({ ...f, email: e.target.value }))} data-testid="input-sender-email" />
+                <Input placeholder="Reply-to email (optional)" value={senderForm.replyToEmail} onChange={e => setSenderForm(f => ({ ...f, replyToEmail: e.target.value }))} data-testid="input-sender-reply-to" />
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={senderForm.isDefault} onChange={e => setSenderForm(f => ({ ...f, isDefault: e.target.checked }))} data-testid="checkbox-sender-default" />
+                    Set as default
+                  </label>
+                  <Button
+                    className="ml-auto"
+                    disabled={!senderForm.name.trim() || !senderForm.email.includes("@") || createSenderMutation.isPending}
+                    onClick={() => createSenderMutation.mutate(senderForm)}
+                    data-testid="button-add-sender"
+                  ><Plus className="w-3.5 h-3.5 mr-1" />Add sender</Button>
+                </div>
+              </CardContent>
+            </Card>
+            {senderIdentities.length === 0 ? (
+              <Card><CardContent className="py-12 text-center text-muted-foreground" data-testid="text-no-senders">No sender identities yet. Add one above — remember to verify the address in SendGrid first.</CardContent></Card>
+            ) : (
+              <div className="grid gap-2">
+                {senderIdentities.map(s => (
+                  <Card key={s.id} data-testid={`card-sender-${s.id}`}>
+                    <CardContent className="py-3">
+                      {editingSender?.id === s.id ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <Input value={editSenderDraft.name} onChange={e => setEditSenderDraft(d => ({ ...d, name: e.target.value }))} placeholder="Display name" className="h-7 text-xs" data-testid={`input-edit-sender-name-${s.id}`} />
+                          <Input value={editSenderDraft.email} onChange={e => setEditSenderDraft(d => ({ ...d, email: e.target.value }))} placeholder="From email" className="h-7 text-xs font-mono" data-testid={`input-edit-sender-email-${s.id}`} />
+                          <Input value={editSenderDraft.replyToEmail} onChange={e => setEditSenderDraft(d => ({ ...d, replyToEmail: e.target.value }))} placeholder="Reply-to (optional)" className="h-7 text-xs font-mono" data-testid={`input-edit-sender-reply-to-${s.id}`} />
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input type="checkbox" checked={editSenderDraft.isDefault} onChange={e => setEditSenderDraft(d => ({ ...d, isDefault: e.target.checked }))} />
+                              Default
+                            </label>
+                            <div className="ml-auto flex gap-1">
+                              <Button size="sm" className="h-7 px-2 text-xs gap-1" disabled={updateSenderMutation.isPending} onClick={() => updateSenderMutation.mutate({ id: s.id, patch: editSenderDraft })} data-testid={`button-save-sender-${s.id}`}><Check className="w-3 h-3" />Save</Button>
+                              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditingSender(null)} data-testid={`button-cancel-edit-sender-${s.id}`}><X className="w-3 h-3" /></Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{s.name}</span>
+                              {s.isDefault && <Badge variant="default" className="text-[10px]">Default</Badge>}
+                            </div>
+                            <div className="font-mono text-xs text-muted-foreground truncate">{s.email}</div>
+                            {s.replyToEmail && <div className="text-[11px] text-muted-foreground">Reply-to: {s.replyToEmail}</div>}
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingSender(s); setEditSenderDraft({ name: s.name, email: s.email, replyToEmail: s.replyToEmail ?? "", isDefault: s.isDefault }); }} data-testid={`button-edit-sender-${s.id}`}><Pencil className="w-3.5 h-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive" onClick={() => deleteSenderMutation.mutate(s.id)} data-testid={`button-delete-sender-${s.id}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 ))}
