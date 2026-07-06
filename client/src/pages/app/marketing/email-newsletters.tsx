@@ -1201,6 +1201,12 @@ export default function EmailNewslettersPage() {
                             <span>Based on {email.sourceAssetIds.length} asset{email.sourceAssetIds.length !== 1 ? "s" : ""}</span>
                           </Badge>
                         )}
+                        {email.scheduledAt && (
+                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700 gap-1" data-testid={`badge-scheduled-${email.id}`}>
+                            <Calendar className="w-2.5 h-2.5" />
+                            Scheduled for {format(new Date(email.scheduledAt), "MMM d, yyyy")}
+                          </Badge>
+                        )}
                         <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
                       </div>
                     </div>
