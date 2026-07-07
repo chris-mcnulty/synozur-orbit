@@ -239,7 +239,17 @@ function wrapResponsiveDocument(html: string): string {
         width:100% !important;
         max-width:100% !important;
       }
-      /* Images fill the column */
+      /* Stack multi-column table cells vertically.
+         Percentage-width <td>s are the tell-tale sign of a 2-3 column layout
+         (image+text side-by-side, stat cards, etc.). Make each one take the
+         full row width so they reflow top-to-bottom on narrow screens. */
+      td[width="50%"], td[width="33%"], td[width="25%"],
+      td[style*="width:50%"], td[style*="width:33%"], td[style*="width:25%"] {
+        display:block !important;
+        width:100% !important;
+        max-width:100% !important;
+      }
+      /* Images fill the column after it is stacked */
       img { max-width:100% !important; height:auto !important; width:100% !important; }
       /* Reduce side padding so body text fills narrow screens */
       td[style*="padding:24px 32px"],

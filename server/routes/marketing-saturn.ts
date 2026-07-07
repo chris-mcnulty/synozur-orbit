@@ -3636,7 +3636,7 @@ REQUIRED SECTIONS (adapt based on content):
 4. **Key Stats / Data Cards**: If stats exist, use a SINGLE-ROW table with 2-3 <td> cells, each with percentage widths (e.g. width="33%"). Each cell: use Brand Secondary Color as background, border-radius:8px, centered large bold number and label in white. Do NOT use fixed pixel widths on stat cells.
 5. **Key Points**: Present 3-5 highlights as styled paragraphs with bold titles (use Brand Primary Color for bold text) and descriptions.
 6. **Primary CTA Button**: Render as a centered <table> with a single <td bgcolor="BRAND_PRIMARY_COLOR" style="border-radius:6px;text-align:center"><a href="URL" style="display:inline-block;padding:14px 32px;color:#ffffff;font-weight:bold;text-decoration:none;font-family:Arial,sans-serif;font-size:16px">Button Text</a></td>. Do NOT use [CTA_BUTTON] placeholders.
-7. **Secondary Content**: If multiple assets, add another section.
+7. **Secondary Content**: If multiple assets, add another section. IMPORTANT: Do NOT place images and text side by side in a 2-column layout. Each image must occupy its own full-width <tr><td style="padding:0"> row; its accompanying text goes in a separate <tr><td style="padding:24px 32px"> below it. Never use width="50%" or width="33%" on image cells.
 8. **Footer**: Simple single-column footer. Do NOT use multi-column footer layouts — stack footer items vertically. Include EXACTLY ONE footer at the very end — never repeat or duplicate the footer section under any circumstances.
 
 VISUAL DESIGN RULES:
