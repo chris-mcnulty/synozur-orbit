@@ -184,6 +184,76 @@ function injectFooter(html: string, unsubUrl: string, prefsUrl: string): string 
   return `${html}${footer}`;
 }
 
+/**
+ * Wrap a raw HTML table fragment in a full <!DOCTYPE html> document with a
+ * viewport meta tag and responsive @media overrides.
+ *
+ * The AI email generator produces a bare table fragment (no <html>/<head>)
+ * so HubSpot can embed it without conflicts. But when WE send via SendGrid,
+ * we need a full document so mobile email clients know the intended width and
+ * can reflow the layout. This wrapper is applied only at send time; the stored
+ * htmlBody fragment is left unchanged.
+ *
+ * Key rules applied on screens ≤ 620 px:
+ *  - Outer 560px tables become 100% wide (reflow instead of scroll/shrink).
+ *  - All images scale to 100% width with auto height.
+ *  - Content cells drop from 24px/32px padding to 16px so body text fills
+ *    the screen edge-to-edge.
+ *  - Heading font sizes step down one tier to stay readable.
+ */
+function wrapResponsiveDocument(html: string): string {
+  // Already a full document — just ensure a viewport meta tag is present.
+  if (/<!DOCTYPE/i.test(html)) {
+    if (!/<meta[^>]*viewport/i.test(html)) {
+      return html.replace(
+        /(<head[^>]*>)/i,
+        '$1\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+      );
+    }
+    return html;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title></title>
+  <style type="text/css">
+    body { margin:0; padding:0; background:#f4f4f4; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+    img { border:0; outline:none; }
+    table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }
+    @media only screen and (max-width:620px) {
+      /* Outer email wrapper — switch from fixed 560px to full width */
+      table[width="560"],
+      table[style*="max-width:560px"] {
+        width:100% !important;
+        max-width:100% !important;
+      }
+      /* Images fill the column */
+      img { max-width:100% !important; height:auto !important; width:100% !important; }
+      /* Reduce side padding so body text fills narrow screens */
+      td[style*="padding:24px 32px"],
+      td[style*="padding: 24px 32px"] { padding:16px !important; }
+      td[style*="padding:32px"],
+      td[style*="padding: 32px"] { padding:16px !important; }
+      /* Step heading font sizes down one tier */
+      h1, td h1, td[style*="font-size:26px"], td[style*="font-size: 26px"] { font-size:22px !important; line-height:1.3 !important; }
+      h2, td h2 { font-size:18px !important; }
+      /* CTA button tables go full-width on mobile */
+      table[style*="margin:24px auto"] { width:100% !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;">
+  <center>
+    ${html}
+  </center>
+</body>
+</html>`;
+}
+
 function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string): string {
   return `${text}\n\n---\nUnsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
 }
@@ -618,7 +688,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     const base = baseUrl.replace(/\/$/, "");
     const unsubUrl = `${base}/u/${r.token}`;
     const prefsUrl = `${base}/p/${r.token}`;
-    const html = injectFooter(wrappedHtml, unsubUrl, prefsUrl);
+    const html = wrapResponsiveDocument(injectFooter(wrappedHtml, unsubUrl, prefsUrl));
     const text = wrappedText
       ? injectTextFooter(wrappedText, unsubUrl, prefsUrl)
       : `Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
