@@ -219,11 +219,19 @@ function wrapResponsiveDocument(html: string): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <!-- Opt out of dark-mode auto-inversion — this email is designed for light backgrounds -->
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title></title>
   <style type="text/css">
-    body { margin:0; padding:0; background:#f4f4f4; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+    :root { color-scheme: light; supported-color-schemes: light; }
+    body { margin:0; padding:0; background:#ffffff; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
     img { border:0; outline:none; }
     table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }
+    /* Force light mode in Apple Mail / Outlook dark mode */
+    @media (prefers-color-scheme: dark) {
+      body, table, td, div { background-color: inherit !important; color: inherit !important; }
+    }
     @media only screen and (max-width:620px) {
       /* Outer email wrapper — switch from fixed 560px to full width */
       table[width="560"],
@@ -246,10 +254,8 @@ function wrapResponsiveDocument(html: string): string {
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#f4f4f4;">
-  <center>
-    ${html}
-  </center>
+<body style="margin:0;padding:0;background:#ffffff;">
+${html}
 </body>
 </html>`;
 }
@@ -688,7 +694,12 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     const base = baseUrl.replace(/\/$/, "");
     const unsubUrl = `${base}/u/${r.token}`;
     const prefsUrl = `${base}/p/${r.token}`;
-    const html = wrapResponsiveDocument(injectFooter(wrappedHtml, unsubUrl, prefsUrl));
+    // Only wrap in a responsive document if there is actual HTML content.
+    // If htmlBody is empty (plain-text email) don't produce an HTML part at
+    // all — let the email client fall back to the text part instead of
+    // showing a document that contains only the unsubscribe footer.
+    const htmlWithFooter = wrappedHtml ? injectFooter(wrappedHtml, unsubUrl, prefsUrl) : null;
+    const html = htmlWithFooter ? wrapResponsiveDocument(htmlWithFooter) : undefined;
     const text = wrappedText
       ? injectTextFooter(wrappedText, unsubUrl, prefsUrl)
       : `Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
@@ -699,7 +710,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
         ...(replyToField ? { replyTo: replyToField } : {}),
         subject: email.subject,
         text,
-        html,
+        ...(html ? { html } : {}),
         headers: {
           "List-Unsubscribe": `<${unsubUrl}>, <mailto:unsubscribe@${tenantDomain}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
