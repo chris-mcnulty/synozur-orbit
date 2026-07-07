@@ -50,6 +50,7 @@ interface SocialAccount {
   connectedAt?: string | null;
   tokenExpiresAt?: string | null;
   lastPublishError?: string | null;
+  status?: string | null;
 }
 
 function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
@@ -1068,10 +1069,16 @@ export default function SocialAccountsPage() {
                     <div className="pt-2 border-t mt-2 space-y-2">
                       {account.encryptedAccessToken ? (
                         <>
-                          <div className="flex items-center gap-1.5 text-xs text-green-600" data-testid={`status-connected-${account.id}`}>
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Connected for direct publishing
-                          </div>
-                          {account.platform === "linkedin" && (
+                          {account.status === "needs_reconnect" ? (
+                            <div className="flex items-center gap-1.5 text-xs text-red-600 font-medium" data-testid={`status-needs-reconnect-${account.id}`}>
+                              <AlertTriangle className="w-3.5 h-3.5" /> Reconnection required — token rejected by platform
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-xs text-green-600" data-testid={`status-connected-${account.id}`}>
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Connected for direct publishing
+                            </div>
+                          )}
+                          {account.platform === "linkedin" && account.status !== "needs_reconnect" && (
                             <LinkedInAuthorPicker account={account} />
                           )}
                           {account.lastPublishError && (

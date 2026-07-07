@@ -297,6 +297,12 @@ export class TwitterPublisher implements SocialPublisher {
         errorCode: parsed?.type ? String(parsed.type).split("/").pop() : `http_${resp.status}`,
         errorMessage: parsed?.detail || parsed?.title || errText || `Twitter create tweet failed: ${resp.status}`,
         responsePayload: parsed ?? errText,
+        // Always return any refreshed tokens so the caller can save them,
+        // even when the tweet itself failed — rotating tokens are consumed
+        // on use and must not be discarded.
+        refreshedAccessToken,
+        refreshedRefreshToken,
+        refreshedTokenExpiresAt,
       };
     }
 

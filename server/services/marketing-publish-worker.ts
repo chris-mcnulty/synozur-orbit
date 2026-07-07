@@ -55,6 +55,17 @@ const PERMANENT_ERROR_CODES = new Set([
   "missing_author",
   "token_decrypt_failed",
   "token_expired",
+  // Refresh token rejected by the platform — no point retrying with the same
+  // invalid token. The account must be reconnected before future attempts.
+  "token_refresh_failed",
+]);
+
+/** Error codes that indicate the stored credentials are no longer valid. */
+const AUTH_ERROR_CODES = new Set([
+  "not_connected",
+  "token_decrypt_failed",
+  "token_expired",
+  "token_refresh_failed",
 ]);
 
 const dailyCounters = new Map<string, { day: string; count: number }>();
@@ -327,17 +338,19 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
 
       try {
         const result = await publisher.publish({ account, post });
+        // Always persist refreshed tokens immediately — even on a failed
+        // publish — so the next attempt doesn't reuse a now-consumed token.
+        if (result.refreshedAccessToken) {
+          await db.update(socialAccounts).set({
+            encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
+            encryptedRefreshToken: result.refreshedRefreshToken
+              ? encryptSecret(result.refreshedRefreshToken)
+              : account.encryptedRefreshToken,
+            tokenExpiresAt: result.refreshedTokenExpiresAt ?? account.tokenExpiresAt,
+            updatedAt: new Date(),
+          }).where(eq(socialAccounts.id, account.id));
+        }
         if (result.success) {
-          if (result.refreshedAccessToken) {
-            await db.update(socialAccounts).set({
-              encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
-              encryptedRefreshToken: result.refreshedRefreshToken
-                ? encryptSecret(result.refreshedRefreshToken)
-                : account.encryptedRefreshToken,
-              tokenExpiresAt: result.refreshedTokenExpiresAt ?? account.tokenExpiresAt,
-              updatedAt: new Date(),
-            }).where(eq(socialAccounts.id, account.id));
-          }
           await db.update(generatedPosts).set({
             status: "published",
             publishedAt: new Date(),
@@ -437,8 +450,10 @@ async function markFailed(
     }).where(eq(generatedPosts.id, postId));
   }
 
+  const isAuthError = errorCode ? AUTH_ERROR_CODES.has(errorCode) : false;
   await db.update(socialAccounts).set({
     lastPublishError: result.errorMessage ?? "Publish failed",
+    ...(isAuthError ? { status: "needs_reconnect" } : {}),
     updatedAt: new Date(),
   }).where(eq(socialAccounts.id, accountId));
 
@@ -515,6 +530,18 @@ export async function publishPostNow(
   }
 
   const result = await publisher.publish({ account, post, attemptedBy });
+  // Always persist refreshed tokens immediately — even on a failed publish —
+  // so the next attempt doesn't reuse a now-consumed rotating refresh token.
+  if (result.refreshedAccessToken) {
+    await db.update(socialAccounts).set({
+      encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
+      encryptedRefreshToken: result.refreshedRefreshToken
+        ? encryptSecret(result.refreshedRefreshToken)
+        : account.encryptedRefreshToken,
+      tokenExpiresAt: result.refreshedTokenExpiresAt ?? account.tokenExpiresAt,
+      updatedAt: new Date(),
+    }).where(eq(socialAccounts.id, account.id));
+  }
   if (result.success) {
     await db.update(generatedPosts).set({
       status: "published",
