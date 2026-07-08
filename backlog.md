@@ -705,3 +705,81 @@ The items below are new candidates for the backlog aimed at broadening Orbit's r
 - [ ] Full-tenant export bundle (JSON + assets) triggered from Settings, delivered via signed URL
 - [ ] Right-to-erasure workflow for individual users with admin confirmation
 **Effort**: Medium-High
+
+### Marketing Automation (HubSpot Parity)
+
+Closes the biggest gaps identified in the HubSpot Marketing Hub comparison (`docs/hubspot-marketing-gap-analysis.md`). Scope excludes capabilities owned by `synozur-webbase` (landing pages, CTAs, forms/lead capture, blog/CMS, on-page SEO). Decided posture: **build native in Orbit**, fed by the `synozur-webbase` MCP server (form submits, page views) plus Orbit's own email/social/link signals, syncing outbound to HubSpot.
+
+#### Unified Marketing Contact Spine & Activity Timeline
+**Status**: Proposed
+**Why**: Orbit creates and distributes content well but is blind to the contact journey. A first-class contact record with a behavioral timeline is the substrate for segmentation, scoring, nurture, and attribution. Today contacts exist only as static `email_recipients` and read-only HubSpot mirrors.
+- [ ] `marketing_contacts` + `marketing_contact_events` tables in `shared/schema.ts` (+ generated migration)
+- [ ] Ingest website form-submit / subscription / page-view events via the `synozur-webbase` MCP server
+- [ ] Backfill timeline from `email_recipients`, SendGrid webhooks, and `marketing_link_clicks`; enrich from existing HubSpot company/contact sync
+- [ ] Contact detail + timeline UI under `client/src/pages/app/marketing/contacts.tsx`
+- [ ] Identity resolution (email / cookie) and dedupe against HubSpot
+- [ ] Plan gating in `server/services/plan-policy.ts` / `FEATURE_REGISTRY`
+**Effort**: High
+
+#### Dynamic Segmentation Engine
+**Status**: Proposed
+**Why**: HubSpot's active lists recompute from behavior; Orbit only has static recipient lists. Rule-based segments are reused everywhere downstream (email targeting, workflow enrollment, scoring, ad audiences).
+- [ ] `marketing_segments` (rule JSON) + `marketing_segment_members` (materialized) tables
+- [ ] Rule builder over contact properties + timeline events; live "active" recomputation via scheduled job / job queue
+- [ ] Segment builder UI at `client/src/pages/app/marketing/segments.tsx`
+- [ ] Reuse for recipient selection in `marketing-delivery.ts`; optional mirror to HubSpot lists
+**Effort**: Medium-High
+
+#### Native Marketing Workflow / Automation Engine
+**Status**: Proposed
+**Why**: Multi-step nurture is the single highest-value gap vs. HubSpot. Orbit has adjacent primitives to build on — the sales-outreach cadence engine and the job queue — rather than starting from zero.
+- [ ] Schema: `marketing_workflows`, `marketing_workflow_steps`, `marketing_workflow_enrollments`, `marketing_workflow_step_runs`
+- [ ] Engine `marketing-workflow-service.ts` modeled on `cadence-service.ts`; job-queue-driven delays/scheduling
+- [ ] Enrollment triggers: segment membership, form submit, link click, score threshold; re-enrollment rules
+- [ ] Action types v1: send email (reuse `email-campaign-sender`), wait/delay, if/then branch, set property, create task (Planner/Outlook), internal notification (`notification-service.ts`)
+- [ ] Visual builder UI at `client/src/pages/app/marketing/workflows.tsx`; nurture templates seeded from personas/solution areas
+**Effort**: High
+
+#### Email Nurture Sequences & HubSpot Event Loop
+**Status**: Proposed
+**Why**: The first concrete workflow action, plus closing the reporting loop so a contact record is complete regardless of which tool sent the email.
+- [ ] Drip/nurture sequences layered on the existing send path
+- [ ] Mirror Orbit SendGrid send/open/click events to HubSpot as timeline events (`email-campaign-sender.ts` → HubSpot engagement API)
+**Effort**: Medium
+
+#### AI Lead Scoring & Grading
+**Status**: Proposed
+**Why**: Property + behavior weighted scoring with AI-assisted suggestions grounded in Orbit's competitive-intel signals — a genuine differentiator HubSpot can't replicate. Drives lifecycle stage and sales handoff.
+- [ ] `marketing_scoring_rules` + `score` on `marketing_contacts`; recompute on event ingest
+- [ ] AI-assisted rule/score suggestions via `ai-provider.ts`
+- [ ] Lifecycle-stage transitions trigger workflows; push score to a HubSpot contact property
+**Effort**: Medium-High
+
+#### Multi-Touch Attribution & Customer Journey
+**Status**: Proposed
+**Why**: Current performance reporting is single-touch (click→conversion). Multi-touch models over the new contact timeline give credible pipeline attribution.
+- [ ] Extend `performance-service.ts` / `marketing-performance.ts` with first/last/linear/position-based models over the contact timeline + `marketing_link_clicks`
+- [ ] Model selector + journey view in `client/src/pages/app/marketing/performance.tsx`
+**Effort**: Medium
+
+#### Email A/B Testing, Smart Content & Preference Center
+**Status**: Proposed
+**Why**: Optimization + granular consent gaps vs. HubSpot. Personalization tokens and variant testing lift engagement; subscription types are a GDPR upgrade over single unsubscribe.
+- [ ] Variant sends with winner selection in `email-campaign-sender.ts`
+- [ ] Personalization/merge tokens resolved from contact properties at send time
+- [ ] Subscription types + preference center extending `email_suppressions` and the unsubscribe flow
+**Effort**: Medium-High
+
+#### ABM Account Scoring (Strategic, Optional)
+**Status**: Proposed
+**Why**: Extends personas/ICP + existing HubSpot company sync into account-level scoring and dashboards — strong fit with Orbit's competitive-intel core.
+- [ ] Company/account scoring model reusing HubSpot company sync + persona/ICP definitions
+- [ ] Target-account list + ABM dashboard widgets
+**Effort**: Medium-High
+
+#### Paid Ads Audience Sync (Deferred — Decision Pending)
+**Status**: Proposed (deferred; in/out decision pending)
+**Why**: Largest, least-aligned build vs. Orbit's AI/intel core. If pursued, push Orbit segments as audiences to HubSpot Ads rather than building native ad management.
+- [ ] Segment → HubSpot Ads audience push (Google / Meta / LinkedIn via HubSpot)
+- [ ] Basic spend/ROI read-back into performance reporting
+**Effort**: High
