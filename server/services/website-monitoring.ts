@@ -75,21 +75,21 @@ export function isEmptyOrCollapsedCrawl(
 // company "removed" or "abandoned" those themes. This almost always means the
 // crawler failed to reach the sub-pages this time — not that the site changed.
 // e.g. a multi-page site that suddenly yields only its homepage.
-const MIN_PREV_PAGES_FOR_COVERAGE = 3; // only guard sites we've seen as multi-page
-const COVERAGE_COLLAPSE_FRACTION = 0.4; // this run reached < 40% of prior pages = partial
+export const MIN_PREV_PAGES_FOR_COVERAGE = 3; // only guard sites we've seen as multi-page
+export const COVERAGE_COLLAPSE_FRACTION = 0.4; // this run reached < 40% of prior pages = partial
 // Escape hatch: transient partial crawls self-heal (the next full crawl refreshes
 // the baseline within days). If the richer baseline has NOT been refreshed by a
 // good crawl in this long, the reduced coverage is the site's real new shape, so
 // stop guarding and let it become the new baseline — otherwise monitoring would be
 // stuck comparing against a stale page count forever and miss real future changes.
-const COVERAGE_COLLAPSE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+export const COVERAGE_COLLAPSE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function getPrevPageCount(prevCrawlData: any): number {
   const pages = prevCrawlData?.pagesCrawled;
   return Array.isArray(pages) ? pages.length : 0;
 }
 
-function isCoverageCollapse(prevCrawlData: any, currentPageCount: number): boolean {
+export function isCoverageCollapse(prevCrawlData: any, currentPageCount: number): boolean {
   const prevPages = getPrevPageCount(prevCrawlData);
   if (prevPages < MIN_PREV_PAGES_FOR_COVERAGE) return false;
   if (currentPageCount >= prevPages * COVERAGE_COLLAPSE_FRACTION) return false;
