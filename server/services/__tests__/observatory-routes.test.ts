@@ -33,15 +33,18 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
    */
   function terminal(): any {
     const val = dbQ.shift() ?? [];
-    return {
+    // Self-referential so .where(...).groupBy(...), .where(...).orderBy(...).limit(...) etc. all resolve to val.
+    const t: any = {
       then: (resolve: any, reject?: any) => Promise.resolve(val).then(resolve, reject),
       catch: (reject: any) => Promise.resolve(val).catch(reject),
       finally: (cb: any) => Promise.resolve(val).finally(cb),
       returning: () => Promise.resolve(val),
-      orderBy: () => Promise.resolve(val),
+      orderBy: () => t,
+      groupBy: () => t,
       onConflictDoNothing: () => Promise.resolve(val),
-      limit: () => Promise.resolve(val),
+      limit: () => t,
     };
+    return t;
   }
 
   function mkChain(): any {
@@ -730,6 +733,138 @@ describe("observatory routes", () => {
         .delete("/api/observatory/findings/nonexistent/controls/ctrl-1");
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  // ── Standards catalog auth regression ────────────────────────────────────────
+  //
+  // These tests guard against accidental removal of the ctxOr401 guard on the
+  // read-only standards library and dashboard stats endpoints. An unauthenticated
+  // caller would otherwise be able to read the full audit log history and the
+  // compliance controls catalog.
+
+  describe("GET /api/observatory/frameworks — auth guard", () => {
+    it("returns 401 when no context is present", async () => {
+      const { ContextError } = await import("../../context");
+      vi.mocked(getRequestContext).mockRejectedValue(
+        new (ContextError as any)("No tenant context", 401),
+      );
+
+      const res = await request(app).get("/api/observatory/frameworks");
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 200 with the frameworks list when authenticated", async () => {
+      const FW = { id: "fw-1", name: "ISO 27001", code: "ISO27001", sortOrder: 1 };
+      // select().from(obsFrameworks).leftJoin().groupBy().orderBy() — mkChain.orderBy pops
+      pushDb({ framework: FW, controlCount: 3 });
+
+      const res = await request(app).get("/api/observatory/frameworks");
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+  });
+
+  describe("GET /api/observatory/controls — auth guard", () => {
+    it("returns 401 when no context is present", async () => {
+      const { ContextError } = await import("../../context");
+      vi.mocked(getRequestContext).mockRejectedValue(
+        new (ContextError as any)("No tenant context", 401),
+      );
+
+      const res = await request(app).get("/api/observatory/controls");
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 200 with controls list when authenticated", async () => {
+      const FW = { id: "fw-1", name: "ISO 27001", code: "ISO27001" };
+      // select().from(obsControls).innerJoin().where().orderBy().limit() —
+      // where() is terminal (pops); orderBy/limit chain on terminal self-ref
+      pushDb({ control: CONTROL, frameworkName: FW.name, frameworkCode: FW.code });
+
+      const res = await request(app).get("/api/observatory/controls");
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+  });
+
+  describe("GET /api/observatory/stats — auth guard & tenant scoping", () => {
+    it("returns 401 when no context is present", async () => {
+      const { ContextError } = await import("../../context");
+      vi.mocked(getRequestContext).mockRejectedValue(
+        new (ContextError as any)("No tenant context", 401),
+      );
+
+      const res = await request(app).get("/api/observatory/stats");
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns stats scoped to the active tenant", async () => {
+      // The stats endpoint makes 7 DB calls, all filtered by ctx.tenantDomain:
+      //   1. count(obsApplications) where tenantDomain = ctx.tenantDomain
+      //   2. count(obsVersions)     where tenantDomain = ctx.tenantDomain
+      //   3. count(obsAssessments)  where tenantDomain = ctx.tenantDomain
+      //   4. count(obsEvidence)     where tenantDomain = ctx.tenantDomain
+      //   5. findingsBySeverity groupBy (where tenantDomain + status in [...])
+      //   6. findingsByStatus groupBy (where tenantDomain)
+      //   7. recentAuditLogs orderBy createdAt limit 10 (where tenantDomain)
+      pushDb({ count: 4 });   // apps
+      pushDb({ count: 7 });   // versions
+      pushDb({ count: 2 });   // assessments
+      pushDb({ count: 9 });   // evidence
+      pushDb({ severity: "Critical", count: 1 });   // findingsBySeverity
+      pushDb({ status: "open", count: 3 });          // findingsByStatus
+      pushDb();                                       // recentAudit (empty)
+
+      const res = await request(app).get("/api/observatory/stats");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        applications: 4,
+        versions: 7,
+        assessments: 2,
+        evidence: 9,
+      });
+      expect(Array.isArray(res.body.openFindingsBySeverity)).toBe(true);
+      expect(Array.isArray(res.body.findingsByStatus)).toBe(true);
+      expect(Array.isArray(res.body.recentActivity)).toBe(true);
+    });
+
+    it("does not leak data from a different tenant — context switch returns that tenant's counts", async () => {
+      // Simulate a request arriving with a DIFFERENT tenant context.
+      // The endpoint must use ctx.tenantDomain, not a hardcoded value, so swapping
+      // the context causes it to query (and return) the other tenant's data.
+      const OTHER_CTX = {
+        ...WRITER_CTX,
+        tenantId: "tenant-2",
+        tenantDomain: "other.com",
+      };
+      vi.mocked(getRequestContext).mockResolvedValue(OTHER_CTX as any);
+
+      pushDb({ count: 0 });  // apps    — other tenant has none
+      pushDb({ count: 0 });  // versions
+      pushDb({ count: 0 });  // assessments
+      pushDb({ count: 0 });  // evidence
+      pushDb();              // findingsBySeverity — empty
+      pushDb();              // findingsByStatus — empty
+      pushDb();              // recentAudit — empty
+
+      const res = await request(app).get("/api/observatory/stats");
+
+      expect(res.status).toBe(200);
+      // Other tenant has no data — counts must be 0, not WRITER_CTX tenant's data.
+      expect(res.body.applications).toBe(0);
+      expect(res.body.versions).toBe(0);
+      expect(res.body.assessments).toBe(0);
+      expect(res.body.evidence).toBe(0);
+      expect(res.body.openFindingsBySeverity).toEqual([]);
+      expect(res.body.findingsByStatus).toEqual([]);
+      expect(res.body.recentActivity).toEqual([]);
     });
   });
 });
