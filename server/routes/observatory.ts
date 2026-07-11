@@ -45,6 +45,9 @@ import {
 import { z } from "zod";
 import { seedStandardsCatalog } from "../services/observatory-standards";
 import { seedObservatoryDemo } from "../services/observatory-demo-seed";
+import { ObjectStorageService } from "../replit_integrations/object_storage/objectStorage";
+
+const objectStorageService = new ObjectStorageService();
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -894,12 +897,20 @@ export function registerObservatoryRoutes(app: Express) {
     if (!canWrite(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
     try {
       const data = evidenceBodySchema.partial().parse(req.body);
+      const [existing] = await db
+        .select({ fileUrl: obsEvidence.fileUrl })
+        .from(obsEvidence)
+        .where(and(eq(obsEvidence.id, req.params.id), eq(obsEvidence.tenantDomain, ctx.tenantDomain)));
+      if (!existing) return res.status(404).json({ message: "Evidence not found" });
       const [updated] = await db
         .update(obsEvidence)
         .set({ ...data, updatedAt: new Date() })
         .where(and(eq(obsEvidence.id, req.params.id), eq(obsEvidence.tenantDomain, ctx.tenantDomain)))
         .returning();
       if (!updated) return res.status(404).json({ message: "Evidence not found" });
+      if (existing.fileUrl && "fileUrl" in data && data.fileUrl !== existing.fileUrl) {
+        objectStorageService.tryDeleteObjectEntity(existing.fileUrl);
+      }
       await audit(ctx, "evidence", updated.id, "update", `Updated evidence "${updated.title}"`, { fields: Object.keys(data) });
       res.json(updated);
     } catch (err) {
@@ -917,6 +928,9 @@ export function registerObservatoryRoutes(app: Express) {
         .where(and(eq(obsEvidence.id, req.params.id), eq(obsEvidence.tenantDomain, ctx.tenantDomain)))
         .returning();
       if (!deleted) return res.status(404).json({ message: "Evidence not found" });
+      if (deleted.fileUrl) {
+        objectStorageService.tryDeleteObjectEntity(deleted.fileUrl);
+      }
       await audit(ctx, "evidence", deleted.id, "delete", `Deleted evidence "${deleted.title}"`);
       res.json({ success: true });
     } catch (err) {

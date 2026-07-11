@@ -250,6 +250,21 @@ export class ObjectStorageService {
     return normalizedPath;
   }
 
+  /**
+   * Best-effort delete: resolves the fileUrl to a storage object and deletes it.
+   * Never throws — logs a warning on failure so the caller's DB operation is
+   * never blocked by a storage cleanup issue.
+   */
+  async tryDeleteObjectEntity(fileUrl: string): Promise<void> {
+    try {
+      const normalizedPath = this.normalizeObjectEntityPath(fileUrl);
+      const file = await this.getObjectEntityFile(normalizedPath);
+      await file.delete();
+    } catch (err) {
+      console.warn("[objectStorage] tryDeleteObjectEntity failed (best-effort):", fileUrl, err);
+    }
+  }
+
   // Checks if the user can access the object entity.
   async canAccessObjectEntity({
     userId,
