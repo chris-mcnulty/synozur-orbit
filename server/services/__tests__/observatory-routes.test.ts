@@ -281,8 +281,12 @@ describe("observatory routes", () => {
 
   describe("DELETE /api/observatory/applications/:id", () => {
     it("deletes an application and returns { success: true }", async () => {
-      pushDb(APP);   // delete(obsApplications).where().returning()
-      pushDb();      // audit
+      pushDb(APP);  // select(obsApplications).where() — existence check
+      pushDb();     // delete(obsFindings).where()
+      pushDb();     // delete(obsAssessments).where()
+      pushDb();     // delete(obsVersions).where()
+      pushDb(APP);  // delete(obsApplications).where().returning()
+      pushDb();     // audit
 
       const res = await request(app).delete("/api/observatory/applications/app-1");
 
@@ -291,13 +295,50 @@ describe("observatory routes", () => {
     });
 
     it("returns 404 when the application does not exist for this tenant", async () => {
-      pushDb();    // delete returns [] → no row
-      // no audit because we return early
+      pushDb();    // select(obsApplications).where() returns [] → not found
+      // no child deletes and no audit because we return early
 
       const res = await request(app).delete("/api/observatory/applications/nonexistent");
 
       expect(res.status).toBe(404);
       expect(res.body.message).toMatch(/not found/i);
+    });
+
+    it("explicitly deletes findings, assessments, and versions before removing the parent — cascade regression guard", async () => {
+      // This test is the cascade regression guard.
+      //
+      // The route issues explicit child deletes (findings → assessments → versions)
+      // BEFORE deleting the application row. This means:
+      //   1. The test will fail with a queue underrun if any of the child-cleanup
+      //      DB calls are removed from the route, catching a missing cascade early.
+      //   2. Even if DB-level FK cascade rules are accidentally removed from a
+      //      future migration, the application-level cleanup here prevents
+      //      orphaned findings / assessments / versions from accumulating.
+      //
+      // Cascade order verified:
+      //   obs_findings    (app-scoped) → cascades obs_finding_evidence,
+      //                                             obs_finding_controls,
+      //                                             obs_review_item_findings
+      //   obs_assessments (app-scoped) → cascades obs_review_items
+      //                                             (→ obs_review_item_evidence),
+      //                                             obs_assessment_evidence
+      //   obs_versions    (app-scoped) → cascades obs_version_evidence
+
+      const FINDING_2 = { ...FINDING, id: "find-2", title: "Open redirect" };
+
+      pushDb(APP);             // select — confirm app exists
+      pushDb(FINDING, FINDING_2); // delete(obsFindings).where() — 2 findings removed
+      pushDb(ASSESSMENT);      // delete(obsAssessments).where() — 1 assessment removed
+      pushDb(VERSION);         // delete(obsVersions).where() — 1 version removed
+      pushDb(APP);             // delete(obsApplications).where().returning()
+      pushDb();                // audit
+
+      const res = await request(app).delete("/api/observatory/applications/app-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+      // All 6 queue entries were consumed — no DB call was skipped.
+      expect(dbQ).toHaveLength(0);
     });
   });
 

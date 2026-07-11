@@ -231,9 +231,36 @@ export function registerObservatoryRoutes(app: Express) {
     if (!ctx) return;
     if (!canDelete(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
     try {
+      const appId = req.params.id;
+
+      // Verify the application exists and belongs to this tenant before touching children.
+      const [existing] = await db
+        .select()
+        .from(obsApplications)
+        .where(and(eq(obsApplications.id, appId), eq(obsApplications.tenantDomain, ctx.tenantDomain)));
+      if (!existing) return res.status(404).json({ message: "Application not found" });
+
+      // Explicit cascade cleanup — defensive layer on top of DB-level FK cascades.
+      // Order matters: most-dependent rows first so that nothing is left dangling
+      // even if a future migration accidentally drops a cascade rule.
+      //   findings    → cascades obs_finding_evidence, obs_finding_controls,
+      //                           obs_review_item_findings
+      //   assessments → cascades obs_review_items (→ obs_review_item_evidence,
+      //                           obs_review_item_findings), obs_assessment_evidence
+      //   versions    → cascades obs_version_evidence
+      await db.delete(obsFindings).where(
+        and(eq(obsFindings.applicationId, appId), eq(obsFindings.tenantDomain, ctx.tenantDomain)),
+      );
+      await db.delete(obsAssessments).where(
+        and(eq(obsAssessments.applicationId, appId), eq(obsAssessments.tenantDomain, ctx.tenantDomain)),
+      );
+      await db.delete(obsVersions).where(
+        and(eq(obsVersions.applicationId, appId), eq(obsVersions.tenantDomain, ctx.tenantDomain)),
+      );
+
       const [deleted] = await db
         .delete(obsApplications)
-        .where(and(eq(obsApplications.id, req.params.id), eq(obsApplications.tenantDomain, ctx.tenantDomain)))
+        .where(and(eq(obsApplications.id, appId), eq(obsApplications.tenantDomain, ctx.tenantDomain)))
         .returning();
       if (!deleted) return res.status(404).json({ message: "Application not found" });
       await audit(ctx, "application", deleted.id, "delete", `Deleted application "${deleted.name}"`);
