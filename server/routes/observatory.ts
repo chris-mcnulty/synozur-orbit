@@ -698,6 +698,26 @@ export function registerObservatoryRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/observatory/assessments/:id/evidence/:evidenceId", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    if (!canWrite(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
+    try {
+      const [assessment] = await db
+        .select()
+        .from(obsAssessments)
+        .where(and(eq(obsAssessments.id, req.params.id), eq(obsAssessments.tenantDomain, ctx.tenantDomain)));
+      if (!assessment) return res.status(404).json({ message: "Assessment not found" });
+      await db
+        .delete(obsAssessmentEvidence)
+        .where(and(eq(obsAssessmentEvidence.assessmentId, assessment.id), eq(obsAssessmentEvidence.evidenceId, req.params.evidenceId)));
+      await audit(ctx, "assessment", assessment.id, "unlink", "Unlinked evidence from assessment");
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err, "evidence unlink");
+    }
+  });
+
   app.post("/api/observatory/findings/:id/controls/:controlId", async (req, res) => {
     const ctx = await ctxOr401(req, res);
     if (!ctx) return;

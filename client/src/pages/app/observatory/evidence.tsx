@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { Archive, Download, Loader2, Paperclip, Plus, Search, ExternalLink, X } from "lucide-react";
 import { EVIDENCE_TYPES, labelFor } from "./shared";
 import { formatDate } from "@/lib/utils";
@@ -51,6 +51,7 @@ export default function ObservatoryEvidence() {
   const { user } = useUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
   const linkFindingId = params.get("findingId") ?? "";
@@ -208,7 +209,12 @@ export default function ObservatoryEvidence() {
         ) : (
           <div className="space-y-2">
             {(evidence ?? []).map((e) => (
-              <Card key={e.id} data-testid={`card-evidence-${e.id}`}>
+              <Card
+                key={e.id}
+                className="cursor-pointer hover:border-primary/50 transition-colors"
+                data-testid={`card-evidence-${e.id}`}
+                onClick={() => navigate(`/app/observatory/evidence/${e.id}`)}
+              >
                 <CardContent className="py-3 px-4 flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="font-medium text-sm truncate" data-testid={`text-evidence-title-${e.id}`}>{e.title}</p>
@@ -224,13 +230,14 @@ export default function ObservatoryEvidence() {
                         download={e.fileName ?? undefined}
                         className="text-muted-foreground hover:text-foreground"
                         title={e.fileName ? `Download ${e.fileName}` : "Download file"}
+                        onClick={(ev) => ev.stopPropagation()}
                         data-testid={`link-evidence-download-${e.id}`}
                       >
                         <Download className="h-4 w-4" />
                       </a>
                     )}
                     {e.externalUrl && (
-                      <a href={e.externalUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" data-testid={`link-evidence-url-${e.id}`}>
+                      <a href={e.externalUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" onClick={(ev) => ev.stopPropagation()} data-testid={`link-evidence-url-${e.id}`}>
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     )}

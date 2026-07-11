@@ -106,6 +106,7 @@ import ObservatoryAssessmentDetail from "@/pages/app/observatory/assessment-deta
 import ObservatoryFindings from "@/pages/app/observatory/findings";
 import ObservatoryFindingDetail from "@/pages/app/observatory/finding-detail";
 import ObservatoryEvidence from "@/pages/app/observatory/evidence";
+import ObservatoryEvidenceDetail from "@/pages/app/observatory/evidence-detail";
 import ObservatoryStandards from "@/pages/app/observatory/standards";
 import ObservatoryReviewHub from "@/pages/app/observatory/review-hub";
 import ObservatoryReviewWorkbench from "@/pages/app/observatory/review-workbench";
@@ -178,6 +179,7 @@ function Router() {
       <Route path="/app/observatory/findings" component={ObservatoryFindings} />
       <Route path="/app/observatory/findings/:id" component={ObservatoryFindingDetail} />
       <Route path="/app/observatory/evidence" component={ObservatoryEvidence} />
+      <Route path="/app/observatory/evidence/:id" component={ObservatoryEvidenceDetail} />
       <Route path="/app/observatory/standards" component={ObservatoryStandards} />
       <Route path="/app/observatory/review/:module" component={ObservatoryReviewHub} />
       <Route path="/app/observatory/review/:module/:assessmentId" component={ObservatoryReviewWorkbench} />

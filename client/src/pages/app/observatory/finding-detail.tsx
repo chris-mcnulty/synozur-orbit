@@ -279,9 +279,11 @@ export default function ObservatoryFindingDetail() {
               <div className="space-y-2">
                 {finding.evidence.map((e) => (
                   <div key={e.id} className="flex items-center justify-between gap-3 border border-border rounded-md px-3 py-2" data-testid={`row-evidence-${e.id}`}>
-                    <p className="font-medium text-sm truncate">{e.title}</p>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <Link href={`/app/observatory/evidence/${e.id}`} className="min-w-0 flex-1 cursor-pointer hover:underline">
+                      <p className="font-medium text-sm truncate">{e.title}</p>
                       <Badge variant="secondary" className="text-xs">{e.evidenceType.replace(/_/g, " ")}</Badge>
+                    </Link>
+                    <div className="flex items-center gap-2 shrink-0">
                       {canWrite && (
                         <Button variant="ghost" size="icon" onClick={() => unlinkEvidence.mutate(e.id)} data-testid={`button-unlink-evidence-${e.id}`}>
                           <X className="h-4 w-4" />

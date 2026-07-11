@@ -53,7 +53,9 @@ export const EVIDENCE_TYPES = [
 ] as const;
 export const DATA_CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"] as const;
 
-export function labelFor(list: readonly { value: string; label: string }[], value?: string | null): string {
+export type LabeledOption = { value: string; label: string };
+
+export function labelFor(list: readonly LabeledOption[], value?: string | null): string {
   if (!value) return "—";
   return list.find((o) => o.value === value)?.label ?? value;
 }

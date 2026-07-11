@@ -254,10 +254,12 @@ export default function ObservatoryAssessmentDetail() {
             ) : (
               <div className="space-y-2">
                 {assessment.evidence.map((e) => (
-                  <div key={e.id} className="flex items-center justify-between gap-3 border border-border rounded-md px-3 py-2" data-testid={`row-evidence-${e.id}`}>
-                    <p className="font-medium text-sm truncate">{e.title}</p>
-                    <Badge variant="secondary" className="text-xs shrink-0">{e.evidenceType.replace(/_/g, " ")}</Badge>
-                  </div>
+                  <Link key={e.id} href={`/app/observatory/evidence/${e.id}`}>
+                    <div className="flex items-center justify-between gap-3 border border-border rounded-md px-3 py-2 cursor-pointer hover:border-primary/50" data-testid={`row-evidence-${e.id}`}>
+                      <p className="font-medium text-sm truncate">{e.title}</p>
+                      <Badge variant="secondary" className="text-xs shrink-0">{e.evidenceType.replace(/_/g, " ")}</Badge>
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}
