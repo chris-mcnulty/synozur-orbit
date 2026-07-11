@@ -319,11 +319,8 @@ export default function Landing() {
                 ))}
               </ul>
             </div>
-            <div className="bg-muted/50 rounded-xl p-8 aspect-video flex items-center justify-center border border-border">
-              <div className="text-center">
-                <currentPillar.icon size={48} className="mx-auto mb-4 text-primary/50" />
-                <p className="text-sm text-muted-foreground">[Screenshot: {currentPillar.title}]</p>
-              </div>
+            <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl p-12 aspect-video flex items-center justify-center border border-primary/20">
+              <currentPillar.icon size={80} className="text-primary/30" />
             </div>
           </div>
         </div>
