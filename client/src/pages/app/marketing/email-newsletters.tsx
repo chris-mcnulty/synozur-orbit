@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
+import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -255,11 +256,10 @@ export default function EmailNewslettersPage() {
   const preselectedAssetId = params.get("assetId");
   const briefingAction = params.get("briefingAction");
   const recommendationContext = params.get("recommendation");
-  // Honor a ?emailId=<id> deep link (e.g. from the Content Pipeline board) —
-  // scroll to, highlight, and open that specific saved email instead of
-  // dumping the user at the top of the list.
+  // Capture the ?emailId= deep-link param once at mount (stable across renders).
   const focusEmailId = params.get("emailId");
-  const [highlightEmailId, setHighlightEmailId] = useState<string | null>(focusEmailId);
+  // Prevent re-opening the viewer if savedEmails refreshes after the user closes it.
+  const deepLinkHonoredRef = useRef(false);
 
   const [emailPlatform, setEmailPlatform] = useState("outlook");
   const [emailTone, setEmailTone] = useState("professional");
@@ -462,25 +462,29 @@ export default function EmailNewslettersPage() {
     }
   }, [preselectedAssetId, contentAssets]);
 
-  // Deep-link: when arriving with ?emailId=..., clear any filters that would
-  // hide it, open its viewer, scroll to its card, and briefly highlight it so
-  // the user lands directly on the item ready to act.
+  // Deep-link: eagerly reset any filters that would hide the target email and
+  // open its viewer. This must run before the DOM lookup below because cards
+  // are rendered from filteredEmails — a filter can prevent the card from
+  // existing in the DOM. Uses a ref so a query refetch doesn't re-open the
+  // viewer after the user has already closed it.
   useEffect(() => {
-    if (!focusEmailId || savedEmails.length === 0) return;
+    if (!focusEmailId || savedEmails.length === 0 || deepLinkHonoredRef.current) return;
     const target = savedEmails.find(e => e.id === focusEmailId);
     if (!target) return;
+    deepLinkHonoredRef.current = true;
     setStatusFilter("all");
     setLabelFilter("all");
     setViewingEmail(target);
-    const t = setTimeout(() => {
-      const el = document.querySelector(`[data-testid="card-email-${focusEmailId}"]`);
-      if (el && "scrollIntoView" in el) {
-        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 200);
-    const clear = setTimeout(() => setHighlightEmailId(null), 2500);
-    return () => { clearTimeout(t); clearTimeout(clear); };
   }, [focusEmailId, savedEmails]);
+
+  // Scroll to and briefly highlight the target card once it's in the DOM
+  // (filters cleared above). The hook reads ?emailId=, finds the card element,
+  // scrolls it into view, and clears the ring after the timeout.
+  const [focusId] = useDeepLinkFocus<SavedEmail>({
+    paramName: "emailId",
+    items: savedEmails,
+    testIdPrefix: "card-email",
+  });
 
   const categoryName = (catId?: string) => {
     if (!catId) return "";
@@ -1223,7 +1227,7 @@ export default function EmailNewslettersPage() {
             </div>
 
             {filteredEmails.map(email => (
-              <Card key={email.id} className={`cursor-pointer hover:bg-muted/30 transition-colors${highlightEmailId === email.id ? " ring-2 ring-primary ring-offset-2" : ""}`} onClick={() => setViewingEmail(email)} data-testid={`card-email-${email.id}`}>
+              <Card key={email.id} className={`cursor-pointer hover:bg-muted/30 transition-colors${focusId === email.id ? " ring-2 ring-primary ring-offset-2" : ""}`} onClick={() => setViewingEmail(email)} data-testid={`card-email-${email.id}`}>
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">

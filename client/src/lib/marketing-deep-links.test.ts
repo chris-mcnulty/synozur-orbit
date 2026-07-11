@@ -139,14 +139,14 @@ describe("target pages still read their deep-link params", () => {
     expect(src).toContain('.get("campaignId")');
   });
 
-  it("email-newsletters reads ?emailId=", () => {
+  it("email-newsletters passes paramName: \"emailId\" to useDeepLinkFocus", () => {
     const src = read("email-newsletters.tsx");
-    expect(src).toContain('.get("emailId")');
+    expect(src).toContain('paramName: "emailId"');
   });
 
-  it("calendar (Master Social Calendar) reads ?post= and ?date=", () => {
+  it("calendar (Master Social Calendar) passes paramName: \"post\" to useDeepLinkFocus and reads ?date=", () => {
     const src = read("calendar.tsx");
-    expect(src).toContain('.get("post")');
+    expect(src).toContain('paramName: "post"');
     expect(src).toContain('.get("date")');
   });
 

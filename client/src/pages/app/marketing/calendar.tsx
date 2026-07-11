@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import { Link, useSearch } from "wouter";
 import {
   CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
@@ -93,10 +94,6 @@ export default function CalendarPage() {
   // Deep-link support: the master Marketing Calendar can link here with a
   // ?post=<id> (and optional &date=<iso>) to land on a specific post.
   const searchString = useSearch();
-  const deepLink = useMemo(() => {
-    const p = new URLSearchParams(searchString);
-    return { postId: p.get("post"), date: p.get("date"), campaignId: p.get("campaignId") };
-  }, [searchString]);
 
   // Filter by campaign. Seeded from the deep-link campaignId when present.
   const [campaignFilter, setCampaignFilter] = useState<string>(() => {
@@ -114,12 +111,9 @@ export default function CalendarPage() {
     return new Date();
   });
   const [selectedPost, setSelectedPost] = useState<CalendarPost | null>(null);
-  // Once we've honored a given deep-link post id, don't reopen it (so the user
-  // can freely close the drawer without it snapping back open).
-  const [openedDeepLink, setOpenedDeepLink] = useState<string | null>(null);
-  // Post whose grid cell / list row should scroll into view and briefly
-  // highlight when arriving via a ?post= deep link. Cleared after the cue.
-  const [focusPostId, setFocusPostId] = useState<string | null>(null);
+  // Ref tracks which deep-link post id has already been opened so the user can
+  // freely close the drawer without it snapping back open.
+  const openedDeepLinkRef = useRef<string | null>(null);
   // Fallback highlight: when the deep-linked post sits beyond a day's visible
   // slice (the "+N more" overflow) its pill isn't in the DOM, so we highlight
   // the whole day cell instead. Holds the "yyyy-MM-dd" key. Cleared after cue.
@@ -206,50 +200,60 @@ export default function CalendarPage() {
     [filteredPosts],
   );
 
-  // When arriving via a deep link, open the targeted post's drawer once the
-  // month's posts have loaded. If the post isn't in this range (or no longer
-  // exists), we just leave the calendar on the linked month — no error.
-  useEffect(() => {
-    if (!deepLink.postId || openedDeepLink === deepLink.postId) return;
-    if (isLoading) return;
-    const match = posts.find(p => p.id === deepLink.postId);
-    if (match) {
-      setSelectedPost(match);
-      setOpenedDeepLink(deepLink.postId);
-      setFocusPostId(deepLink.postId);
-    }
-  }, [deepLink.postId, openedDeepLink, isLoading, posts]);
+  // Deep-link: useDeepLinkFocus reads ?post=, scrolls the matched pill into
+  // view (dated posts only), fires onFound once the element is in the DOM.
+  // Overflow ("+N more") and undated posts need the extra effect below since
+  // their DOM elements appear later or use a different testid prefix.
+  const [focusId] = useDeepLinkFocus<CalendarPost>({
+    paramName: "post",
+    items: posts,
+    testIdPrefix: "calendar-post",
+    onFound: (match) => {
+      if (openedDeepLinkRef.current !== match.id) {
+        setSelectedPost(match);
+        openedDeepLinkRef.current = match.id;
+      }
+    },
+  });
 
-  // Once the focused post's cell (dated) or list row (undated) is in the DOM,
-  // scroll it into view and briefly highlight it so the user can see exactly
-  // where it sits — matching the editorial calendar's ?brief= behavior. The
-  // highlight clears after a moment so it's a one-time cue.
+  // Supplemental scroll handler for:
+  //  - Undated posts (testid "unscheduled-post-*", different prefix than hook)
+  //  - Dated posts hidden in "+N more" overflow (not in DOM until day expands)
+  // Also opens the drawer for the above cases where onFound won't fire.
   useEffect(() => {
-    if (!focusPostId || isLoading) return;
-    // Prefer the exact pill / list row when it's rendered.
-    const el = document.querySelector(
-      `[data-testid="calendar-post-${focusPostId}"], [data-testid="unscheduled-post-${focusPostId}"]`,
-    );
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      const t = setTimeout(() => setFocusPostId(null), 2500);
-      return () => clearTimeout(t);
+    if (!focusId || isLoading) return;
+    // Undated rail — hook can't find this element (wrong prefix).
+    const unscheduledEl = document.querySelector(`[data-testid="unscheduled-post-${focusId}"]`);
+    if (unscheduledEl) {
+      unscheduledEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (openedDeepLinkRef.current !== focusId) {
+        const match = posts.find(p => p.id === focusId);
+        if (match) { setSelectedPost(match); openedDeepLinkRef.current = focusId; }
+      }
+      return;
     }
-    // The post is dated but hidden in the day's "+N more" overflow, so no pill
-    // exists yet. Expand that day (so its pill renders) and highlight the cell;
-    // once expanded this effect re-runs and the pill branch above scrolls to it.
-    const match = filteredPosts.find(p => p.id === focusPostId);
-    const ts = match?.scheduledDate ?? match?.publishedAt;
-    if (ts) {
-      const dayKey = format(parseISO(ts), "yyyy-MM-dd");
-      if (expandedDayKey !== dayKey) {
-        setExpandedDayKey(dayKey);
-        setFocusDayKey(dayKey);
-        const cell = document.querySelector(`[data-testid="calendar-day-${dayKey}"]`);
-        cell?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Dated post hidden in overflow — open the drawer immediately (same as the
+    // old effect), then expand the day so its pill becomes visible and the hook
+    // can scroll to it on the next render. Opening the drawer does not require
+    // the pill to be in the DOM.
+    const match = filteredPosts.find(p => p.id === focusId);
+    if (match) {
+      if (openedDeepLinkRef.current !== focusId) {
+        setSelectedPost(match);
+        openedDeepLinkRef.current = focusId;
+      }
+      const ts = match.scheduledDate ?? match.publishedAt;
+      if (ts) {
+        const dayKey = format(parseISO(ts), "yyyy-MM-dd");
+        if (expandedDayKey !== dayKey) {
+          setExpandedDayKey(dayKey);
+          setFocusDayKey(dayKey);
+          const cell = document.querySelector(`[data-testid="calendar-day-${dayKey}"]`);
+          cell?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
       }
     }
-  }, [focusPostId, isLoading, filteredPosts, expandedDayKey]);
+  }, [focusId, isLoading, filteredPosts, expandedDayKey, posts]);
 
   const rescheduleMutation = useMutation({
     mutationFn: async ({ id, scheduledDate }: { id: string; scheduledDate: string }) => {
@@ -383,7 +387,7 @@ export default function CalendarPage() {
                           draggable={post.status !== "published"}
                           onDragStart={e => { e.dataTransfer.setData("text/plain", post.id); }}
                           onClick={() => setSelectedPost(post)}
-                          className={`text-[10px] px-1 py-0.5 rounded border cursor-pointer truncate flex items-center gap-1 ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"} ${focusPostId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                          className={`text-[10px] px-1 py-0.5 rounded border cursor-pointer truncate flex items-center gap-1 ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"} ${focusId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
                           data-testid={`calendar-post-${post.id}`}
                           title={post.accountName ? `${post.accountName} · ${post.preview}` : post.preview}
                         >
@@ -433,7 +437,7 @@ export default function CalendarPage() {
                     key={post.id}
                     type="button"
                     onClick={() => setSelectedPost(post)}
-                    className={`flex w-full items-center gap-2 rounded border p-2 text-left text-xs hover:bg-muted ${focusPostId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                    className={`flex w-full items-center gap-2 rounded border p-2 text-left text-xs hover:bg-muted ${focusId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
                     data-testid={`unscheduled-post-${post.id}`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[post.status] ?? "bg-gray-400"}`} />
