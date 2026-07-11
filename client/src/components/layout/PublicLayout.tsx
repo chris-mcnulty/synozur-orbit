@@ -15,7 +15,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
               className="h-7 object-contain"
             />
             <span className="text-foreground/50">|</span>
-            <span>Orbit</span>
+            <span>Observatory</span>
           </Link>
         </div>
         

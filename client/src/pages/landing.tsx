@@ -553,11 +553,12 @@ export default function Landing() {
         <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
         
         <div className="max-w-5xl mx-auto text-center relative z-10">
-          <img 
-            src="/brand/orbit-logo-white.png" 
-            alt="Orbit — Go-to-Market Intelligence Platform by Synozur" 
-            className="h-48 md:h-60 mx-auto mb-4 object-contain -mt-8"
-          />
+          <div
+            className="mx-auto mb-4 -mt-8 text-7xl md:text-9xl font-bold tracking-tight text-white select-none"
+            style={{ fontFamily: "'Avenir Next LT Pro', sans-serif" }}
+          >
+            Observatory
+          </div>
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
             <Gem size={16} />
             <span>Go-to-Market Intelligence Platform</span>
