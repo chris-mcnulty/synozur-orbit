@@ -11,7 +11,7 @@ import { buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } f
 import Anthropic from "@anthropic-ai/sdk";
 import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "../services/social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "../services/website-monitoring";
-import { crawlCompetitorWebsite, getCombinedContent } from "../services/web-crawler";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "../services/web-crawler";
 import { captureVisualAssets } from "../services/visual-capture";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "../services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
@@ -590,16 +590,7 @@ export function registerCompetitorRoutes(app: Express) {
       }
       
       // Store crawl data (pages summary, not full content for storage efficiency)
-      socialUpdates.crawlData = {
-        pagesCrawled: crawlResult.pages.map(p => ({ 
-          url: p.url, 
-          pageType: p.pageType, 
-          title: p.title,
-          wordCount: p.wordCount 
-        })),
-        totalWordCount: crawlResult.totalWordCount,
-        crawledAt: crawlResult.crawledAt,
-      };
+      socialUpdates.crawlData = buildCrawlData(crawlResult);
       socialUpdates.lastFullCrawl = now;
       
       // Store blog snapshot if discovered
@@ -1304,14 +1295,7 @@ Return ONLY the JSON object, no other text.`;
             const combinedContent = getCombinedContent(crawlResult);
             const updateData: any = {
               crawlData: {
-                pagesCrawled: crawlResult.pages.map(p => ({
-                  url: p.url,
-                  pageType: p.pageType,
-                  title: p.title,
-                  wordCount: p.wordCount,
-                })),
-                totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
-                crawledAt: crawlResult.crawledAt,
+                ...buildCrawlData(crawlResult),
                 socialLinks: crawlResult.socialLinks,
               },
               previousWebsiteContent: combinedContent.substring(0, 100000),

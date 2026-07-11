@@ -14,7 +14,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 import { documentExtractionService } from "../services/document-extraction";
 import { analyzeCompetitorWebsite, aiCompanyResearch, type LinkedInContext } from "../ai-service";
-import { crawlCompetitorWebsite, getCombinedContent } from "../services/web-crawler";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "../services/web-crawler";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "../services/website-monitoring";
 import { monitorCompetitorSocialMedia } from "../services/social-monitoring";
 import { invalidateMarketStatusCache } from "../services/scheduled-jobs";
@@ -1226,16 +1226,7 @@ export function registerAdminRoutes(app: Express) {
       }
       
       // Store crawl data for future reference
-      socialUpdates.crawlData = {
-        pagesCrawled: crawlResult.pages.map(p => ({ 
-          url: p.url, 
-          pageType: p.pageType, 
-          title: p.title,
-          wordCount: p.wordCount 
-        })),
-        totalWordCount: crawlResult.totalWordCount,
-        crawledAt: crawlResult.crawledAt,
-      };
+      socialUpdates.crawlData = buildCrawlData(crawlResult);
       socialUpdates.lastFullCrawl = new Date();
       
       // Store blog snapshot if discovered

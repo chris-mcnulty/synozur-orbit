@@ -1,6 +1,6 @@
 import { storage } from "../storage";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch } from "../ai-service";
-import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
 import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { calculateScores, getCurrentWeeklyPeriod } from "./scoring-service";
@@ -168,7 +168,7 @@ async function runAutoBuildWithProfile(
         const socialLinks = crawlResult.socialLinks || {};
         const detectedBlogUrl = crawlResult.pages?.find(p => p.pageType === "blog")?.url ?? null;
         const profileUpdates: any = {
-          crawlData: crawlResult as any,
+          crawlData: buildCrawlData(crawlResult),
           lastCrawl: new Date().toISOString(),
           linkedInUrl: profile.linkedInUrl || socialLinks.linkedIn || null,
           instagramUrl: profile.instagramUrl || socialLinks.instagram || null,
@@ -339,7 +339,7 @@ Only return the JSON array, no other text.`;
         const socialLinks = crawlResult.socialLinks || {};
         const detectedBlogUrl = crawlResult.pages?.find(p => p.pageType === "blog")?.url ?? null;
         await storage.updateCompetitor(competitor.id, {
-          crawlData: crawlResult as any,
+          crawlData: buildCrawlData(crawlResult),
           lastCrawl: new Date().toISOString(),
           linkedInUrl: socialLinks.linkedIn || null,
           instagramUrl: socialLinks.instagram || null,

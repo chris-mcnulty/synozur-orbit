@@ -5,7 +5,7 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, logAiUsage, guardFeature, guardManualAction } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
-import { crawlCompetitorWebsite } from "../services/web-crawler";
+import { crawlCompetitorWebsite, buildCrawlData } from "../services/web-crawler";
 import { z } from "zod";
 import { contentAssets, projectProducts as projectProductsTable, productFeedback } from "@shared/schema";
 import { generateRoadmapRecommendations } from "../ai-service";
@@ -561,7 +561,7 @@ Provide analysis in this JSON format:
       }
 
       const updated = await storage.updateProduct(product.id, {
-        crawlData: crawlResult,
+        crawlData: buildCrawlData(crawlResult),
         analysisData: Object.keys(analysisData).length > 0 ? analysisData : undefined,
         updatedAt: new Date(),
       });

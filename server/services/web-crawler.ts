@@ -762,3 +762,37 @@ export async function crawlPricingPage(
     crawledAt: new Date().toISOString(),
   };
 }
+
+/**
+ * Builds the standard crawlData payload from a CrawlSummary, guaranteeing
+ * that `crawledAt` is always a valid ISO timestamp.  If the crawler somehow
+ * produced a result without a timestamp (should never happen, but defensive),
+ * we backfill from the current time and log a warning so the issue is visible
+ * rather than silently persisting undefined — which would permanently activate
+ * the isCoverageCollapse guard.
+ */
+export function buildCrawlData(crawlResult: CrawlSummary): {
+  pagesCrawled: { url: string; pageType: string; title: string; wordCount: number }[];
+  totalWordCount: number;
+  crawledAt: string;
+} {
+  let crawledAt = crawlResult.crawledAt;
+  if (!crawledAt) {
+    crawledAt = new Date().toISOString();
+    console.warn(
+      "[buildCrawlData] crawledAt was missing from crawl result — backfilling with current timestamp. " +
+      "This prevents the isCoverageCollapse guard from getting stuck in an always-active state. " +
+      "Investigate why the crawler returned a result without a timestamp."
+    );
+  }
+  return {
+    pagesCrawled: crawlResult.pages.map(p => ({
+      url: p.url,
+      pageType: p.pageType,
+      title: p.title,
+      wordCount: p.wordCount,
+    })),
+    totalWordCount: crawlResult.totalWordCount,
+    crawledAt,
+  };
+}

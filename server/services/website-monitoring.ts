@@ -1,6 +1,6 @@
 import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
-import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
 import { notifications } from "./notifications";
 
 const anthropic = new Anthropic({
@@ -364,16 +364,7 @@ export async function monitorCompetitorWebsite(
       const baselineUpdates: any = {
         previousWebsiteContent: newContent.substring(0, 100000),
         lastWebsiteMonitor: now,
-        crawlData: {
-          pagesCrawled: crawlResult.pages.map(p => ({
-            url: p.url,
-            pageType: p.pageType,
-            title: p.title,
-            wordCount: p.wordCount,
-          })),
-          totalWordCount: crawlResult.totalWordCount,
-          crawledAt: crawlResult.crawledAt,
-        },
+        crawlData: buildCrawlData(crawlResult),
         lastFullCrawl: now,
         blogSnapshot: crawlResult.blogSnapshot ? {
           ...crawlResult.blogSnapshot,
@@ -467,16 +458,7 @@ export async function monitorCompetitorWebsite(
     const monitorUpdates: any = {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
-      crawlData: {
-        pagesCrawled: crawlResult.pages.map(p => ({
-          url: p.url,
-          pageType: p.pageType,
-          title: p.title,
-          wordCount: p.wordCount,
-        })),
-        totalWordCount: crawlResult.totalWordCount,
-        crawledAt: crawlResult.crawledAt,
-      },
+      crawlData: buildCrawlData(crawlResult),
       lastFullCrawl: now,
       blogSnapshot: crawlResult.blogSnapshot ? {
         ...crawlResult.blogSnapshot,
@@ -629,16 +611,7 @@ export async function monitorCompanyProfileWebsite(
       const baselineUpdates: any = {
         previousWebsiteContent: newContent.substring(0, 100000),
         lastWebsiteMonitor: now,
-        crawlData: {
-          pagesCrawled: crawlResult.pages.map(p => ({
-            url: p.url,
-            pageType: p.pageType,
-            title: p.title,
-            wordCount: p.wordCount,
-          })),
-          totalWordCount: crawlResult.totalWordCount,
-          crawledAt: crawlResult.crawledAt,
-        },
+        crawlData: buildCrawlData(crawlResult),
         lastFullCrawl: now,
         blogSnapshot: crawlResult.blogSnapshot ? {
           ...crawlResult.blogSnapshot,
@@ -695,16 +668,7 @@ export async function monitorCompanyProfileWebsite(
     const profileMonitorUpdates: any = {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
-      crawlData: {
-        pagesCrawled: crawlResult.pages.map(p => ({
-          url: p.url,
-          pageType: p.pageType,
-          title: p.title,
-          wordCount: p.wordCount,
-        })),
-        totalWordCount: crawlResult.totalWordCount,
-        crawledAt: crawlResult.crawledAt,
-      },
+      crawlData: buildCrawlData(crawlResult),
       lastFullCrawl: now,
       blogSnapshot: crawlResult.blogSnapshot ? {
         ...crawlResult.blogSnapshot,
@@ -934,16 +898,7 @@ export async function monitorProductWebsite(
     await storage.updateProduct(product.id, {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
-      crawlData: {
-        pagesCrawled: crawlResult.pages.map(p => ({
-          url: p.url,
-          pageType: p.pageType,
-          title: p.title,
-          wordCount: p.wordCount,
-        })),
-        totalWordCount: crawlResult.totalWordCount,
-        crawledAt: crawlResult.crawledAt,
-      },
+      crawlData: buildCrawlData(crawlResult),
     });
 
     const isRealChange = hasSignificantChanges && !summary?.toLowerCase().includes("no significant");

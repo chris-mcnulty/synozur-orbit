@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
 import { captureVisualAssets } from "./visual-capture";
 import { monitorCompetitorSocialMedia, monitorCompanyProfileSocialMedia, monitorProductSocialMedia } from "./social-monitoring";
 import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite } from "./website-monitoring";
@@ -341,16 +341,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
             await crawlOps.resetCompetitorCrawlFailures(competitor.id);
 
             const updates: any = {
-              crawlData: {
-                pagesCrawled: crawlResult.pages.map(p => ({
-                  url: p.url,
-                  pageType: p.pageType,
-                  title: p.title,
-                  wordCount: p.wordCount,
-                })),
-                totalWordCount: crawlResult.totalWordCount,
-                crawledAt: crawlResult.crawledAt,
-              },
+              crawlData: buildCrawlData(crawlResult),
               lastFullCrawl: new Date(),
             };
 
@@ -555,16 +546,7 @@ async function runWebsiteCrawlJob(): Promise<void> {
             }
 
             const updates: any = {
-              crawlData: {
-                pagesCrawled: crawlResult.pages.map(p => ({
-                  url: p.url,
-                  pageType: p.pageType,
-                  title: p.title,
-                  wordCount: p.wordCount,
-                })),
-                totalWordCount: crawlResult.totalWordCount,
-                crawledAt: crawlResult.crawledAt,
-              },
+              crawlData: buildCrawlData(crawlResult),
               lastFullCrawl: new Date(),
               lastCrawl: new Date().toISOString(),
             };

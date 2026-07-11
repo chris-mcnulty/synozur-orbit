@@ -3,7 +3,7 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations,
 import { buildCompetitorDocumentContext, buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "./competitor-document-context";
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
-import { crawlCompetitorWebsite, getCombinedContent } from "./web-crawler";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
 import { monitorCompetitorSocialMedia as monitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
 import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } from "./promise-pool";
@@ -136,16 +136,7 @@ async function runRegenerationInBackground(
           
           // Update company profile with crawl data
           await storage.updateCompanyProfile(companyProfile.id, {
-            crawlData: {
-              pagesCrawled: crawlResult.pages.map(p => ({
-                url: p.url,
-                pageType: p.pageType,
-                title: p.title,
-                wordCount: p.wordCount,
-              })),
-              totalWordCount: crawlResult.pages.reduce((sum, p) => sum + p.wordCount, 0),
-              crawledAt: crawlResult.crawledAt,
-            },
+            crawlData: buildCrawlData(crawlResult),
             previousWebsiteContent: combinedContent.substring(0, 100000),
             lastCrawl: new Date().toISOString(),
             lastFullCrawl: new Date(),

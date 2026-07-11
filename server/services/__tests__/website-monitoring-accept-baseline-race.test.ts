@@ -35,6 +35,16 @@ vi.mock("../../storage", () => ({
 vi.mock("../web-crawler", () => ({
   crawlCompetitorWebsite: vi.fn(),
   getCombinedContent: vi.fn(),
+  buildCrawlData: vi.fn((crawlResult: any) => ({
+    pagesCrawled: (crawlResult.pages ?? []).map((p: any) => ({
+      url: p.url,
+      pageType: p.pageType,
+      title: p.title,
+      wordCount: p.wordCount,
+    })),
+    totalWordCount: crawlResult.totalWordCount ?? 0,
+    crawledAt: crawlResult.crawledAt ?? new Date().toISOString(),
+  })),
 }));
 
 vi.mock("@anthropic-ai/sdk", () => {

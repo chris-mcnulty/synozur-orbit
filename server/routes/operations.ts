@@ -6,7 +6,7 @@ import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess, hasContentAccess, guardManualAction } from "./helpers";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
 import Anthropic from "@anthropic-ai/sdk";
-import { crawlCompetitorWebsite } from "../services/web-crawler";
+import { crawlCompetitorWebsite, buildCrawlData } from "../services/web-crawler";
 import type { Competitor, User } from "@shared/schema";
 import { getCacheStats, invalidateTenantCache, clearCache as clearAICache } from "../services/ai-cache";
 import { getDeadLetterJobs, dismissDeadLetterJob } from "../services/job-queue";
@@ -625,7 +625,7 @@ Provide analysis in this JSON format:
             }
 
             await storage.updateCompetitor(competitor.id, {
-              crawlData: crawlResult,
+              crawlData: buildCrawlData(crawlResult),
               analysisData,
               lastFullCrawl: new Date(),
             });
@@ -698,7 +698,7 @@ Provide analysis in this JSON format:
             }
 
             await storage.updateProduct(product.id, {
-              crawlData: crawlResult,
+              crawlData: buildCrawlData(crawlResult),
               analysisData,
             });
 
