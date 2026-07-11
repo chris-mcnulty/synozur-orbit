@@ -138,24 +138,39 @@ export function registerNotificationsActivityRoutes(app: Express) {
   });
 
   // POST /api/activity/:id/accept-baseline — dismiss the alert AND clear the
-  // previousWebsiteContent baseline so the next crawl won't re-alert
+  // previousWebsiteContent baseline so the next crawl won't re-alert.
+  // Idempotent: a second call (double-click or concurrent tab) returns 200
+  // without side-effects because the activity will already be gone.
   app.post("/api/activity/:id/accept-baseline", async (req, res) => {
     try {
       const ctx = await getRequestContext(req);
       const activities = await storage.getActivityByContext(toContextFilter(ctx));
       const item = activities.find(a => a.id === req.params.id);
-      if (!item) return res.status(404).json({ error: "Activity not found" });
 
-      // Reset the baseline so the current site content becomes the new normal
+      // Activity already dismissed — treat as success so a double-click or
+      // concurrent tab request doesn't surface a confusing error to the user.
+      if (!item) return res.json({ success: true });
+
+      // Reset the baseline so the current site content becomes the new normal.
+      // We set lastWebsiteMonitor to NOW (not null) so the monitoring sweep
+      // does NOT queue an immediate re-crawl.  Nulling it was the source of
+      // the double-crawl race: two rapid accepts both null the field → the
+      // sweep sees two "never monitored" entries and fires two crawls, causing
+      // the second to diff against the first and produce a spurious alert.
+      // Setting it to now means the normal crawl interval governs the next
+      // check; previousWebsiteContent=null is still cleared, so the next
+      // scheduled crawl will establish the fresh baseline without a re-alert.
+      const acceptedAt = new Date();
+
       if (item.sourceType === "baseline" && item.companyProfileId) {
         await storage.updateCompanyProfile(item.companyProfileId, {
           previousWebsiteContent: null as any,
-          lastWebsiteMonitor: null as any,
+          lastWebsiteMonitor: acceptedAt,
         });
       } else if (item.competitorId) {
         await storage.updateCompetitor(item.competitorId, {
           previousWebsiteContent: null as any,
-          lastWebsiteMonitor: null as any,
+          lastWebsiteMonitor: acceptedAt,
         });
         // Clear ALL open website-change alerts for this competitor so every
         // false "content removal" card disappears immediately, not just the

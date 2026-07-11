@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { cleanSignalSummary } from "@/lib/utils";
 import AppLayout from "@/components/layout/AppLayout";
 import { ActOnThisMenu } from "@/components/ActOnThisMenu";
@@ -201,6 +201,10 @@ export default function Activity() {
     onError: (err: any) => toast({ title: "Couldn't dismiss", description: err.message, variant: "destructive" }),
   });
 
+  // Track item IDs that have been accepted to prevent rapid double-clicks from
+  // firing a second request before React re-renders the disabled state.
+  const acceptingIds = useRef<Set<string>>(new Set());
+
   const acceptBaselineMutation = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(`/api/activity/${id}/accept-baseline`, { method: "POST", credentials: "include" });
@@ -215,7 +219,12 @@ export default function Activity() {
         description: "Alert dismissed and baseline reset. The next crawl will compare from the current site.",
       });
     },
-    onError: (err: any) => toast({ title: "Couldn't accept", description: err.message, variant: "destructive" }),
+    onError: (err: any) => {
+      toast({ title: "Couldn't accept", description: err.message, variant: "destructive" });
+    },
+    onSettled: (_data, _err, id) => {
+      acceptingIds.current.delete(id);
+    },
   });
 
   const isEnterprise = tenant?.plan === "enterprise" || tenant?.plan === "unlimited";
@@ -1022,8 +1031,12 @@ export default function Activity() {
                               variant="outline"
                               className="h-7 text-xs gap-1.5"
                               data-testid={`activity-accept-baseline-${item.id}`}
-                              disabled={acceptBaselineMutation.isPending || dismissActivityMutation.isPending}
-                              onClick={() => acceptBaselineMutation.mutate(item.id)}
+                              disabled={acceptBaselineMutation.isPending || dismissActivityMutation.isPending || acceptingIds.current.has(item.id)}
+                              onClick={() => {
+                                if (acceptingIds.current.has(item.id)) return;
+                                acceptingIds.current.add(item.id);
+                                acceptBaselineMutation.mutate(item.id);
+                              }}
                             >
                               <CheckCheck className="h-3 w-3" />
                               Accept as new baseline
