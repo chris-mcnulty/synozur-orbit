@@ -548,7 +548,7 @@ export default function Landing() {
       <section aria-label="Hero" className="relative overflow-hidden py-24 md:py-32 px-6 min-h-[85vh] flex items-center justify-center">
         <div 
           className="absolute inset-0 z-0 select-none bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('/images/hero-background.png')" }}
+          style={{ backgroundImage: "url('/images/hero-background.jpg')" }}
         />
         <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
         
