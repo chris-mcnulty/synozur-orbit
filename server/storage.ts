@@ -1175,7 +1175,7 @@ export class DatabaseStorage implements IStorage {
       .set({
         previousWebsiteContent: null as any,
         crawlData: null as any,
-        lastWebsiteMonitor: null as any,
+        lastWebsiteMonitor: new Date(),
       })
       .where(and(
         eq(products.companyProfileId, companyProfileId),
