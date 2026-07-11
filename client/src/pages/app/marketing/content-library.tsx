@@ -1884,7 +1884,12 @@ export default function ContentLibraryPage() {
               .then((a: ContentAsset | null) => { if (a) openEditDialog(a); });
           }}
           onViewPosts={() => navigate("/app/marketing/calendar")}
-          onGenerated={() => queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] })}
+          onGenerated={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+            if (repurposeTarget?.id) {
+              queryClient.invalidateQueries({ queryKey: ["/api/content-assets", repurposeTarget.id, "posts"] });
+            }
+          }}
         />
 
         {/* Edit Asset Dialog */}
