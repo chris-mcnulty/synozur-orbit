@@ -40,15 +40,15 @@ const REQUEST_DELAY_MS = 1500;
 // blank page) or that collapses to a tiny fraction of the previously-seen
 // content is treated like an unreachable crawl, so it never produces a false
 // "complete content removal" alert or overwrites a good baseline snapshot.
-const MIN_ABSOLUTE_CONTENT_WORDS = 50; // fewer real words than this = essentially empty
-const MIN_ABSOLUTE_CONTENT_CHARS = 200; // combined content shorter than this = essentially empty
-const MIN_PREV_CONTENT_FOR_COLLAPSE = 500; // only flag a collapse when we had substantial prior content
-const COLLAPSE_FRACTION = 0.15; // new content under this fraction of previous = suspicious collapse
+export const MIN_ABSOLUTE_CONTENT_WORDS = 50; // fewer real words than this = essentially empty
+export const MIN_ABSOLUTE_CONTENT_CHARS = 200; // combined content shorter than this = essentially empty
+export const MIN_PREV_CONTENT_FOR_COLLAPSE = 500; // only flag a collapse when we had substantial prior content
+export const COLLAPSE_FRACTION = 0.15; // new content under this fraction of previous = suspicious collapse
 
 // Returns true when a crawl looks like an unreachable/failed fetch rather than a
 // genuine content change: either it is below a sane absolute size, or it dropped
 // to a tiny fraction of the previously-stored content.
-function isEmptyOrCollapsedCrawl(
+export function isEmptyOrCollapsedCrawl(
   newContent: string,
   previousContent: string,
   totalWordCount: number,
