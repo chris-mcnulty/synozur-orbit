@@ -13,7 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
 import { useSearch, useLocation } from "wouter";
-import { Archive, Download, Loader2, Paperclip, Plus, Search, ExternalLink, X } from "lucide-react";
+import { Archive, Download, FileText, Loader2, Paperclip, Pencil, Plus, Search, ExternalLink, X } from "lucide-react";
 import { EVIDENCE_TYPES, labelFor } from "./shared";
 import { formatDate } from "@/lib/utils";
 
@@ -47,6 +47,26 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isImageMime(contentType: string | null): boolean {
+  return !!contentType && contentType.startsWith("image/");
+}
+
+const MIME_LABELS: Record<string, string> = {
+  "image/jpeg": "JPEG",
+  "image/png": "PNG",
+  "image/gif": "GIF",
+  "image/webp": "WebP",
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+  "application/msword": "DOC",
+  "text/plain": "TXT",
+};
+
+function mimeLabel(contentType: string | null): string | null {
+  if (!contentType) return null;
+  return MIME_LABELS[contentType] ?? contentType.split("/")[1]?.toUpperCase() ?? null;
+}
+
 export default function ObservatoryEvidence() {
   const { user } = useUser();
   const { toast } = useToast();
@@ -60,6 +80,8 @@ export default function ObservatoryEvidence() {
 
   const [typeFilter, setTypeFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+
+  // ── Create dialog ──────────────────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(!!linkFindingId || !!linkAssessmentId);
   const [form, setForm] = useState({
     title: "", description: "", evidenceType: "screenshot",
@@ -68,6 +90,19 @@ export default function ObservatoryEvidence() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Edit dialog ────────────────────────────────────────────────────────────
+  const [editingEvidence, setEditingEvidence] = useState<EvidenceRow | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "", description: "", evidenceType: "screenshot",
+    sourceTool: "", externalUrl: "", collectedAt: "",
+  });
+  // null = keep existing; File = replace with new upload
+  const [editSelectedFile, setEditSelectedFile] = useState<File | null>(null);
+  const [editUploadError, setEditUploadError] = useState<string | null>(null);
+  // true = user clicked "Remove file" (clear existing attachment)
+  const [editRemoveFile, setEditRemoveFile] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   const qp = new URLSearchParams();
   if (typeFilter !== "all") qp.set("type", typeFilter);
@@ -78,18 +113,22 @@ export default function ObservatoryEvidence() {
     queryKey: [`/api/observatory/evidence${qs ? `?${qs}` : ""}`],
   });
 
+  // ── File validation helpers ───────────────────────────────────────────────
+  function validateFile(file: File): string | null {
+    if (!ALLOWED_MIME_TYPES.includes(file.type))
+      return "File type not supported. Use images (JPEG, PNG, GIF, WebP), PDF, DOCX, DOC, or TXT.";
+    if (file.size > MAX_FILE_SIZE)
+      return `File is too large (max ${formatBytes(MAX_FILE_SIZE)}).`;
+    return null;
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     setUploadError(null);
     const file = e.target.files?.[0] ?? null;
     if (!file) { setSelectedFile(null); return; }
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      setUploadError("File type not supported. Use images (JPEG, PNG, GIF, WebP), PDF, DOCX, DOC, or TXT.");
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      setUploadError(`File is too large (max ${formatBytes(MAX_FILE_SIZE)}).`);
+    const err = validateFile(file);
+    if (err) {
+      setUploadError(err);
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
@@ -103,6 +142,28 @@ export default function ObservatoryEvidence() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setEditUploadError(null);
+    const file = e.target.files?.[0] ?? null;
+    if (!file) { setEditSelectedFile(null); return; }
+    const err = validateFile(file);
+    if (err) {
+      setEditUploadError(err);
+      setEditSelectedFile(null);
+      if (editFileInputRef.current) editFileInputRef.current.value = "";
+      return;
+    }
+    setEditSelectedFile(file);
+    setEditRemoveFile(false);
+  }
+
+  function clearEditFile() {
+    setEditSelectedFile(null);
+    setEditUploadError(null);
+    if (editFileInputRef.current) editFileInputRef.current.value = "";
+  }
+
+  // ── Upload helper ─────────────────────────────────────────────────────────
   async function uploadFile(file: File): Promise<{ fileUrl: string; fileName: string; fileSize: number; contentType: string }> {
     const { uploadURL, objectPath } = await (
       await apiRequest("POST", "/api/uploads/request-url", {
@@ -127,6 +188,7 @@ export default function ObservatoryEvidence() {
     };
   }
 
+  // ── Create mutation ───────────────────────────────────────────────────────
   const createMutation = useMutation({
     mutationFn: async () => {
       let fileMeta: { fileUrl: string; fileName: string; fileSize: number; contentType: string } | null = null;
@@ -160,6 +222,62 @@ export default function ObservatoryEvidence() {
     },
     onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
   });
+
+  // ── Edit mutation ─────────────────────────────────────────────────────────
+  const patchMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingEvidence) return;
+      let filePatch: Record<string, unknown> = {};
+
+      if (editSelectedFile) {
+        // Upload the new file and replace metadata
+        const meta = await uploadFile(editSelectedFile);
+        filePatch = meta;
+      } else if (editRemoveFile) {
+        // Explicitly clear the attachment
+        filePatch = { fileUrl: null, fileName: null, fileSize: null, contentType: null };
+      }
+
+      return (
+        await apiRequest("PATCH", `/api/observatory/evidence/${editingEvidence.id}`, {
+          title: editForm.title,
+          description: editForm.description || null,
+          evidenceType: editForm.evidenceType,
+          source: editForm.sourceTool || null,
+          externalUrl: editForm.externalUrl || null,
+          collectedAt: editForm.collectedAt || null,
+          ...filePatch,
+        })
+      ).json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/observatory") });
+      setEditingEvidence(null);
+      toast({ title: "Evidence updated" });
+    },
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  function openEditDialog(ev: EvidenceRow) {
+    setEditingEvidence(ev);
+    setEditForm({
+      title: ev.title,
+      description: ev.description ?? "",
+      evidenceType: ev.evidenceType,
+      sourceTool: ev.source ?? "",
+      externalUrl: ev.externalUrl ?? "",
+      collectedAt: ev.collectedAt ? ev.collectedAt.split("T")[0] : "",
+    });
+    setEditSelectedFile(null);
+    setEditUploadError(null);
+    setEditRemoveFile(false);
+  }
+
+  // Resolve the "current" file state while the edit dialog is open
+  const editCurrentFile: { name: string; size: number | null; type: string | null; url: string } | null =
+    editingEvidence && editingEvidence.fileUrl && !editRemoveFile && !editSelectedFile
+      ? { name: editingEvidence.fileName ?? "Attached file", size: editingEvidence.fileSize, type: editingEvidence.contentType, url: editingEvidence.fileUrl }
+      : null;
 
   return (
     <AppLayout>
@@ -243,6 +361,18 @@ export default function ObservatoryEvidence() {
                     )}
                     <span className="text-xs text-muted-foreground">{formatDate(e.collectedAt ?? e.createdAt)}</span>
                     <Badge variant="secondary" className="text-xs">{labelFor(EVIDENCE_TYPES, e.evidenceType)}</Badge>
+                    {canWrite && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => openEditDialog(e)}
+                        data-testid={`button-edit-evidence-${e.id}`}
+                        aria-label="Edit evidence"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -251,6 +381,7 @@ export default function ObservatoryEvidence() {
         )}
       </div>
 
+      {/* ── Add evidence dialog ─────────────────────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         if (!createMutation.isPending) {
           setDialogOpen(open);
@@ -352,6 +483,181 @@ export default function ObservatoryEvidence() {
                   {selectedFile ? "Uploading…" : "Saving…"}
                 </>
               ) : "Add evidence"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit evidence dialog ────────────────────────────────────────────── */}
+      <Dialog open={!!editingEvidence} onOpenChange={(open) => {
+        if (!patchMutation.isPending && !open) {
+          setEditingEvidence(null);
+          clearEditFile();
+          setEditRemoveFile(false);
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Evidence</DialogTitle>
+            <DialogDescription>Update the details or replace the attached file.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Title *</Label>
+              <Input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} data-testid="input-edit-evidence-title" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Type *</Label>
+                <Select value={editForm.evidenceType} onValueChange={(v) => setEditForm({ ...editForm, evidenceType: v })}>
+                  <SelectTrigger data-testid="select-edit-evidence-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {EVIDENCE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Collected on</Label>
+                <Input type="date" value={editForm.collectedAt} onChange={(e) => setEditForm({ ...editForm, collectedAt: e.target.value })} data-testid="input-edit-evidence-collected" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Source tool</Label>
+                <Input placeholder="e.g. axe DevTools, Burp Suite" value={editForm.sourceTool} onChange={(e) => setEditForm({ ...editForm, sourceTool: e.target.value })} data-testid="input-edit-evidence-source" />
+              </div>
+              <div className="space-y-2">
+                <Label>External URL</Label>
+                <Input placeholder="https://…" value={editForm.externalUrl} onChange={(e) => setEditForm({ ...editForm, externalUrl: e.target.value })} data-testid="input-edit-evidence-url" />
+              </div>
+            </div>
+
+            {/* ── Attached file section ── */}
+            <div className="space-y-2">
+              <Label>Attached file</Label>
+
+              {/* Showing the replacement file the user just picked */}
+              {editSelectedFile ? (
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm bg-muted/30">
+                  <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate flex-1">{editSelectedFile.name}</span>
+                  <span className="text-muted-foreground shrink-0">{formatBytes(editSelectedFile.size)}</span>
+                  <span className="text-xs text-primary shrink-0">New</span>
+                  <button type="button" onClick={clearEditFile} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Cancel replacement" data-testid="button-cancel-edit-file">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : editCurrentFile ? (
+                /* Existing file on record */
+                <div className="rounded-md border px-3 py-2 space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 truncate flex-1" data-testid="text-edit-evidence-filename">{editCurrentFile.name}</span>
+                    {editCurrentFile.size != null && (
+                      <span className="text-muted-foreground shrink-0 text-xs">{formatBytes(editCurrentFile.size)}</span>
+                    )}
+                    {mimeLabel(editCurrentFile.type) && (
+                      <span className="text-muted-foreground shrink-0 text-xs font-mono" data-testid="text-edit-evidence-filetype">{mimeLabel(editCurrentFile.type)}</span>
+                    )}
+                    <a
+                      href={editCurrentFile.url}
+                      download={editCurrentFile.name}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Download current file"
+                      data-testid="link-edit-evidence-download"
+                    >
+                      <Download className="h-4 w-4" />
+                    </a>
+                  </div>
+                  {/* Inline image preview */}
+                  {isImageMime(editCurrentFile.type) && (
+                    <img
+                      src={editCurrentFile.url}
+                      alt={editCurrentFile.name}
+                      className="max-h-40 rounded object-contain border"
+                      data-testid="img-edit-evidence-preview"
+                    />
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => editFileInputRef.current?.click()}
+                      data-testid="button-replace-evidence-file"
+                    >
+                      Replace file
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => { setEditRemoveFile(true); }}
+                      data-testid="button-remove-evidence-file"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : editRemoveFile ? (
+                /* User chose to remove existing file */
+                <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                  <X className="h-4 w-4 shrink-0" />
+                  <span className="flex-1">File will be removed on save.</span>
+                  <button type="button" onClick={() => setEditRemoveFile(false)} className="hover:text-foreground underline text-xs" data-testid="button-undo-remove-file">
+                    Undo
+                  </button>
+                </div>
+              ) : (
+                /* No file attached — offer to attach one */
+                <div
+                  className="flex items-center gap-2 rounded-md border border-dashed px-3 py-3 cursor-pointer hover:border-foreground/40 transition-colors"
+                  onClick={() => editFileInputRef.current?.click()}
+                  data-testid="dropzone-edit-evidence-file"
+                >
+                  <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-muted-foreground">
+                    Click to attach a screenshot, PDF, or scan report (max 10 MB)
+                  </span>
+                </div>
+              )}
+
+              <input
+                ref={editFileInputRef}
+                type="file"
+                accept={ALLOWED_MIME_TYPES.join(",")}
+                className="hidden"
+                onChange={handleEditFileChange}
+                data-testid="input-edit-evidence-file"
+              />
+              {editUploadError && (
+                <p className="text-xs text-destructive" data-testid="text-edit-evidence-file-error">{editUploadError}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea rows={2} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} data-testid="input-edit-evidence-description" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditingEvidence(null); clearEditFile(); setEditRemoveFile(false); }} disabled={patchMutation.isPending} data-testid="button-cancel-edit-evidence">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => patchMutation.mutate()}
+              disabled={!editForm.title.trim() || patchMutation.isPending || !!editUploadError}
+              data-testid="button-save-edit-evidence"
+            >
+              {patchMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {editSelectedFile ? "Uploading…" : "Saving…"}
+                </>
+              ) : "Save changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
