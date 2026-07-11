@@ -297,12 +297,15 @@ export async function monitorCompetitorWebsite(
     }
     
     const newContent = getCombinedContent(crawlResult);
-    const previousContent = competitor.previousWebsiteContent || "";
+    // Use the snapshot that was current at load time as the initial reference,
+    // but we will re-read from the DB below (after the network crawl) to catch
+    // any accept-baseline that fired while we were crawling.
+    const previousContentAtLoad = competitor.previousWebsiteContent || "";
 
     // Treat an essentially-empty or collapsed crawl like an unreachable site:
     // skip change detection + alert creation and leave the stored baseline
     // untouched so a transient blank fetch never overwrites a good snapshot.
-    if (isEmptyOrCollapsedCrawl(newContent, previousContent, crawlResult.totalWordCount)) {
+    if (isEmptyOrCollapsedCrawl(newContent, previousContentAtLoad, crawlResult.totalWordCount)) {
       await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
       await storage.updateCompetitor(competitor.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
@@ -335,8 +338,69 @@ export async function monitorCompetitorWebsite(
 
     await storage.resetCompetitorCrawlFailures(competitor.id);
 
+    // Re-read previousWebsiteContent from the DB now that the network crawl is
+    // done.  A crawl can take 10-30 s; during that window an accept-baseline
+    // request may have cleared previousWebsiteContent.  The in-memory snapshot
+    // we loaded at the top of this function would still hold the old content,
+    // causing a diff + alert against data the user just dismissed.  Refreshing
+    // here closes that race: if the baseline was cleared mid-crawl we get an
+    // empty string, the fresh-baseline fast-path below stores the new snapshot
+    // silently, and no alert is emitted.
+    const refreshed = await storage.getCompetitor(competitorId);
+    const previousContent = refreshed?.previousWebsiteContent || "";
+
+    // Explicit fast-path for a null/cleared baseline (either set from the start
+    // or just cleared by an accept-baseline while we were crawling).  Store the
+    // fresh crawl as the new baseline and return immediately — no diff, no alert.
+    if (!previousContent) {
+      console.log(`[WebsiteMonitoring] ${competitor.name}: no prior baseline — storing fresh snapshot without alerting`);
+      const baselineUpdates: any = {
+        previousWebsiteContent: newContent.substring(0, 100000),
+        lastWebsiteMonitor: now,
+        crawlData: {
+          pagesCrawled: crawlResult.pages.map(p => ({
+            url: p.url,
+            pageType: p.pageType,
+            title: p.title,
+            wordCount: p.wordCount,
+          })),
+          totalWordCount: crawlResult.totalWordCount,
+          crawledAt: crawlResult.crawledAt,
+        },
+        lastFullCrawl: now,
+        blogSnapshot: crawlResult.blogSnapshot ? {
+          ...crawlResult.blogSnapshot,
+          capturedAt: now.toISOString(),
+        } : undefined,
+        linkedInUrl: competitor.linkedInUrl || crawlResult.socialLinks.linkedIn,
+        instagramUrl: competitor.instagramUrl || crawlResult.socialLinks.instagram,
+        twitterUrl: competitor.twitterUrl || crawlResult.socialLinks.twitter,
+        facebookUrl: competitor.facebookUrl || crawlResult.socialLinks.facebook,
+      };
+      await storage.updateCompetitor(competitor.id, baselineUpdates);
+      if (competitor.organizationId) {
+        await storage.updateOrganization(competitor.organizationId, {
+          previousWebsiteContent: baselineUpdates.previousWebsiteContent,
+          lastWebsiteMonitor: now,
+          crawlData: baselineUpdates.crawlData,
+          lastFullCrawl: now,
+          blogSnapshot: baselineUpdates.blogSnapshot,
+          linkedInUrl: baselineUpdates.linkedInUrl,
+          instagramUrl: baselineUpdates.instagramUrl,
+        }).catch(err => console.error("[Org Update] Baseline sync failed:", err.message));
+      }
+      return {
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        hasChanges: false,
+        changeScore: 0,
+        status: "success",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
     const changeScore = calculateChangeScore(previousContent, newContent);
-    const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
+    const hasSignificantChanges = changeScore >= MIN_CHANGE_THRESHOLD;
     
     let summary: string | undefined;
     let changeAnalysis: StructuredChangeAnalysis | undefined;
@@ -507,12 +571,15 @@ export async function monitorCompanyProfileWebsite(
     }
     
     const newContent = getCombinedContent(crawlResult);
-    const previousContent = companyProfile.previousWebsiteContent || "";
+    // Use the snapshot that was current at load time for the size-collapse
+    // guards below, then re-read from DB after the crawl to catch any
+    // accept-baseline that fired while we were crawling.
+    const previousContentAtLoad = companyProfile.previousWebsiteContent || "";
 
     // Treat an essentially-empty or collapsed crawl like an unreachable site:
     // skip change detection + alert creation and leave the stored baseline
     // untouched so a transient blank fetch never overwrites a good snapshot.
-    if (isEmptyOrCollapsedCrawl(newContent, previousContent, crawlResult.totalWordCount)) {
+    if (isEmptyOrCollapsedCrawl(newContent, previousContentAtLoad, crawlResult.totalWordCount)) {
       await storage.updateCompanyProfile(companyProfile.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
         companyProfileId: companyProfile.id,
@@ -542,8 +609,48 @@ export async function monitorCompanyProfileWebsite(
       };
     }
 
+    // Re-read previousWebsiteContent from the DB now that the network crawl is
+    // done.  An accept-baseline request may have cleared the field while we were
+    // crawling; re-reading here closes that race.
+    const refreshedProfile = await storage.getCompanyProfile(companyProfileId);
+    const previousContent = refreshedProfile?.previousWebsiteContent || "";
+
+    // Explicit fast-path for a null/cleared baseline — store the fresh crawl as
+    // the new baseline and return immediately without diffing or alerting.
+    if (!previousContent) {
+      console.log(`[WebsiteMonitoring] Baseline ${companyProfile.companyName}: no prior baseline — storing fresh snapshot without alerting`);
+      const baselineUpdates: any = {
+        previousWebsiteContent: newContent.substring(0, 100000),
+        lastWebsiteMonitor: now,
+        crawlData: {
+          pagesCrawled: crawlResult.pages.map(p => ({
+            url: p.url,
+            pageType: p.pageType,
+            title: p.title,
+            wordCount: p.wordCount,
+          })),
+          totalWordCount: crawlResult.totalWordCount,
+          crawledAt: crawlResult.crawledAt,
+        },
+        lastFullCrawl: now,
+        blogSnapshot: crawlResult.blogSnapshot ? {
+          ...crawlResult.blogSnapshot,
+          capturedAt: now.toISOString(),
+        } : undefined,
+      };
+      await storage.updateCompanyProfile(companyProfile.id, baselineUpdates);
+      return {
+        companyProfileId: companyProfile.id,
+        companyName: companyProfile.companyName,
+        hasChanges: false,
+        changeScore: 0,
+        status: "success",
+        pagesMonitored: crawlResult.pages.length,
+      };
+    }
+
     const changeScore = calculateChangeScore(previousContent, newContent);
-    const hasSignificantChanges = previousContent.length > 0 && changeScore >= MIN_CHANGE_THRESHOLD;
+    const hasSignificantChanges = changeScore >= MIN_CHANGE_THRESHOLD;
     
     let summary: string | undefined;
     let changeAnalysis: StructuredChangeAnalysis | undefined;
