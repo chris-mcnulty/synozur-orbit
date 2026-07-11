@@ -15,6 +15,7 @@ import {
   type ContentItemType,
   type NextAction,
 } from "@shared/campaign-next-actions";
+import { tabFromHash, filterFromSearch } from "@/lib/campaign-url-helpers";
 
 let n = 0;
 function item(over: Partial<ActionableItem> = {}): ActionableItem {

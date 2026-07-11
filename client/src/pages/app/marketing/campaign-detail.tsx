@@ -66,6 +66,7 @@ import {
 } from "./hub-components";
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
 import { CampaignNextActions } from "@/components/marketing/NextActionsByBatch";
+import { CAMPAIGN_TABS, type CampaignTab, tabFromHash, filterFromSearch } from "@/lib/campaign-url-helpers";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -339,25 +340,10 @@ interface BrandAsset {
   categoryName?: string;
 }
 
-const CAMPAIGN_TABS = ["plan", "posts", "review", "assets", "accounts", "links", "children", "hub"] as const;
-type CampaignTab = typeof CAMPAIGN_TABS[number];
-
-function getTabFromHash(): CampaignTab {
-  const hash = window.location.hash.replace("#", "");
-  return (CAMPAIGN_TABS as readonly string[]).includes(hash) ? (hash as CampaignTab) : "plan";
-}
-
 // A deep-link may carry a `?filter=` so a nudge (e.g. the hub's "Fix failures"
 // next-action) lands on the posts tab already scoped to the exact items —
 // rather than the default "active" view where failures are buried.
-function getFilterFromSearch(): string | null {
-  try {
-    const v = new URLSearchParams(window.location.search).get("filter");
-    return v && v.trim() ? v.trim() : null;
-  } catch {
-    return null;
-  }
-}
+// tabFromHash / filterFromSearch live in @/lib/campaign-url-helpers (imported above).
 
 function generateAccountsKey(campaignId: string) {
   return `generate-dialog-accounts-${campaignId}`;
@@ -392,7 +378,7 @@ export default function CampaignDetailPage() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const searchStr = useSearch();
-  const [activeTab, setActiveTab] = useState<CampaignTab>(getTabFromHash);
+  const [activeTab, setActiveTab] = useState<CampaignTab>(() => tabFromHash(window.location.hash));
   const [fsOpen, setFsOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
@@ -402,7 +388,7 @@ export default function CampaignDetailPage() {
   const [assetSearch, setAssetSearch] = useState("");
   const [brandAssetCategoryFilter, setBrandAssetCategoryFilter] = useState("all");
   const [brandAssetSearch, setBrandAssetSearch] = useState("");
-  const [postFilter, setPostFilter] = useState<string>(() => getFilterFromSearch() ?? "active");
+  const [postFilter, setPostFilter] = useState<string>(() => filterFromSearch(window.location.search) ?? "active");
   const [postAccountFilter, setPostAccountFilter] = useState<string>("all");
   const [manualPostedAtMap, setManualPostedAtMap] = useState<Record<string, string>>({});
   // WS4: when drilling into one collapsed social batch (its generation run,
@@ -1865,14 +1851,14 @@ export default function CampaignDetailPage() {
   const prevJobStatus = useRef(jobStatus?.status);
   const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onHashChange = () => setActiveTab(getTabFromHash());
+    const onHashChange = () => setActiveTab(tabFromHash(window.location.hash));
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   useEffect(() => {
-    setActiveTab(getTabFromHash());
-    const f = getFilterFromSearch();
+    setActiveTab(tabFromHash(window.location.hash));
+    const f = filterFromSearch(window.location.search);
     if (f) setPostFilter(f);
   }, [id]);
 
