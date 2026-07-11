@@ -1867,7 +1867,7 @@ export default function CampaignDetailPage() {
     setPostAccountFilter("all");
     setBatchFilter(null);
     setHighlightedPostId(null);
-  }, [id]);
+  }, [id, searchStr]);
 
   // Deep-link to one post (?post=<id>) — e.g. a single-item "Next actions" nudge.
   // Wait until the post exists, then open the Social Posts tab with filters
