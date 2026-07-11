@@ -120,9 +120,9 @@ describe("isCoverageCollapse", () => {
   });
 
   it("returns true when crawledAt is missing (guard stays active — escape hatch requires a real timestamp)", () => {
-    // No crawledAt → crawledAt resolves to 0; the escape-hatch condition uses
-    // `if (crawledAt && ...)` which short-circuits when crawledAt is falsy, so
-    // the guard never disarms and the collapse is still suppressed.
+    // No crawledAt → crawledAt resolves to 0.  The explicit `if (!crawledAt) return true`
+    // guard keeps the escape hatch inactive: without a real timestamp we cannot confirm
+    // the baseline is stale, so we conservatively treat the collapse as genuine.
     const prev = { pagesCrawled: Array.from({ length: 10 }, (_, i) => `https://example.com/p${i}`) };
     assert.equal(isCoverageCollapse(prev, 1), true);
   });

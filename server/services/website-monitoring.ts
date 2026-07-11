@@ -98,7 +98,14 @@ export function isCoverageCollapse(prevCrawlData: any, currentPageCount: number)
   // no full crawl has succeeded in a long time, so treat the reduction as real.
   const crawledAtRaw = prevCrawlData?.crawledAt;
   const crawledAt = crawledAtRaw ? new Date(crawledAtRaw).getTime() : 0;
-  if (crawledAt && Date.now() - crawledAt > COVERAGE_COLLAPSE_MAX_AGE_MS) return false;
+
+  // Explicit intent: a missing timestamp means we cannot confirm the baseline is
+  // stale, so keep the guard active (conservative). Do NOT collapse this into the
+  // age check below — `if (!crawledAt || age > MAX)` would flip the meaning and
+  // disarm the guard whenever the timestamp is absent.
+  if (!crawledAt) return true;
+
+  if (Date.now() - crawledAt > COVERAGE_COLLAPSE_MAX_AGE_MS) return false;
 
   return true;
 }
