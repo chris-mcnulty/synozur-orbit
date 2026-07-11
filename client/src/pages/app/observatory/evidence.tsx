@@ -24,7 +24,7 @@ interface EvidenceRow {
   evidenceType: string;
   source: string | null;
   externalUrl: string | null;
-  fileUrl: string | null;
+  hasFile: boolean;
   fileName: string | null;
   fileSize: number | null;
   contentType: string | null;
@@ -224,9 +224,9 @@ export default function ObservatoryEvidence() {
                     </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    {e.fileUrl && (
+                    {e.hasFile && (
                       <a
-                        href={e.fileUrl}
+                        href={`/api/observatory/evidence/${e.id}/file`}
                         download={e.fileName ?? undefined}
                         className="text-muted-foreground hover:text-foreground"
                         title={e.fileName ? `Download ${e.fileName}` : "Download file"}

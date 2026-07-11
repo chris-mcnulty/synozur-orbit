@@ -15,6 +15,7 @@ import { db } from "../db";
 import { and, desc, eq, ilike, inArray, or, sql, asc } from "drizzle-orm";
 import { getRequestContext, ContextError, type RequestContext } from "../context";
 import { hasAdminAccess, hasContentAccess } from "./helpers";
+import { ObjectStorageService, ObjectNotFoundError } from "../replit_integrations/object_storage/objectStorage";
 import {
   obsApplications,
   obsVersions,
@@ -788,6 +789,18 @@ export function registerObservatoryRoutes(app: Express) {
   });
 
   // ── Evidence ──────────────────────────────────────────────────────────────
+
+  /**
+   * Strip the raw object-storage path from an evidence row before sending it
+   * to the client.  Callers should use GET /api/observatory/evidence/:id/file
+   * (which enforces tenant ownership) to download the actual file.  Exposing
+   * the raw /objects/ path would let a determined user bypass that check.
+   */
+  function sanitizeEvidence<T extends { fileUrl?: string | null }>(row: T): Omit<T, "fileUrl"> & { hasFile: boolean } {
+    const { fileUrl, ...rest } = row;
+    return { ...rest, hasFile: !!fileUrl };
+  }
+
   app.get("/api/observatory/evidence", async (req, res) => {
     const ctx = await ctxOr401(req, res);
     if (!ctx) return;
@@ -803,7 +816,7 @@ export function registerObservatoryRoutes(app: Express) {
         .from(obsEvidence)
         .where(and(...conditions))
         .orderBy(desc(obsEvidence.createdAt));
-      res.json(rows);
+      res.json(rows.map(sanitizeEvidence));
     } catch (err) {
       handleError(res, err, "evidence");
     }
@@ -840,7 +853,7 @@ export function registerObservatoryRoutes(app: Express) {
         .innerJoin(obsFrameworks, eq(obsControls.frameworkId, obsFrameworks.id))
         .where(eq(obsControlEvidence.evidenceId, row.id));
       res.json({
-        ...row,
+        ...sanitizeEvidence(row),
         findings: findings.map((f) => f.finding),
         assessments: assessments.map((a) => a.assessment),
         versions: versions.map((v) => v.version),
@@ -848,6 +861,36 @@ export function registerObservatoryRoutes(app: Express) {
       });
     } catch (err) {
       handleError(res, err, "evidence");
+    }
+  });
+
+  app.get("/api/observatory/evidence/:id/file", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    try {
+      const [row] = await db
+        .select()
+        .from(obsEvidence)
+        .where(and(eq(obsEvidence.id, req.params.id), eq(obsEvidence.tenantDomain, ctx.tenantDomain)));
+      if (!row) return res.status(404).json({ message: "Evidence not found" });
+      if (!row.fileUrl) return res.status(404).json({ message: "No file attached to this evidence" });
+
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(row.fileUrl);
+
+      if (row.fileName) {
+        res.setHeader("Content-Disposition", `attachment; filename="${row.fileName.replace(/"/g, '\\"')}"`);
+      }
+      if (row.contentType) {
+        res.setHeader("Content-Type", row.contentType);
+      }
+
+      await objectStorageService.downloadObject(objectFile, res);
+    } catch (err) {
+      if (err instanceof ObjectNotFoundError) {
+        return res.status(404).json({ message: "File not found in storage" });
+      }
+      handleError(res, err, "evidence file");
     }
   });
 
@@ -885,7 +928,7 @@ export function registerObservatoryRoutes(app: Express) {
         if (v) await db.insert(obsVersionEvidence).values({ versionId: v.id, evidenceId: created.id }).onConflictDoNothing();
       }
       await audit(ctx, "evidence", created.id, "create", `Added evidence "${created.title}"`);
-      res.status(201).json(created);
+      res.status(201).json(sanitizeEvidence(created));
     } catch (err) {
       handleError(res, err, "evidence");
     }
@@ -912,7 +955,7 @@ export function registerObservatoryRoutes(app: Express) {
         objectStorageService.tryDeleteObjectEntity(existing.fileUrl);
       }
       await audit(ctx, "evidence", updated.id, "update", `Updated evidence "${updated.title}"`, { fields: Object.keys(data) });
-      res.json(updated);
+      res.json(sanitizeEvidence(updated));
     } catch (err) {
       handleError(res, err, "evidence");
     }
