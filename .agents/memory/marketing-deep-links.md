@@ -11,7 +11,7 @@ Every rollup surface that nudges toward ONE content item deep-links through
 in `marketing-calendar.tsx`).
 
 **Param contract the target pages honor** (they scroll+highlight or auto-open):
-- brief  → `/app/marketing/editorial-calendar?brief=<id>` (+ optional `calendar=`, `campaignId=`)
+- brief  → `/app/marketing/editorial-calendar?brief=<id>` (+ optional `calendar=<calendarId>` scopes visible briefs to that editorial calendar, `campaignId=` scopes to a campaign)
 - email  → `/app/marketing/email-newsletters?emailId=<id>`
 - social → `/app/marketing/campaigns/<campaignId>?post=<id>#posts` when a campaign
            is known, else Master Social Calendar `/app/marketing/calendar?post=<id>`

@@ -297,6 +297,13 @@ export default function EditorialCalendarPage() {
       ? new URLSearchParams(window.location.search).get("campaignId")
       : null,
   );
+  // Honor a ?calendar=<id> deep link — scope the visible briefs to that
+  // editorial calendar. null = all calendars.
+  const [calendarFilter, setCalendarFilter] = useState<string | null>(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("calendar")
+      : null,
+  );
   const [formatFilter, setFormatFilter] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   // Copy-to-campaign dialog state
@@ -422,6 +429,7 @@ export default function EditorialCalendarPage() {
   // Apply default hide-closed filter, then campaign + format filters.
   const visibleBriefs = briefs.filter((b) => {
     if (!showAll && !activeOnly(b)) return false;
+    if (calendarFilter && b.calendarId !== calendarFilter) return false;
     if (campaignFilter && b.campaignId !== campaignFilter) return false;
     if (formatFilter && b.format !== formatFilter) return false;
     return true;
@@ -1222,11 +1230,11 @@ export default function EditorialCalendarPage() {
               >
                 {showAll ? "Active only" : `Show all${hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}`}
               </Button>
-              {(campaignFilter || formatFilter) && (
+              {(calendarFilter || campaignFilter || formatFilter) && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => { setCampaignFilter(null); setFormatFilter(null); }}
+                  onClick={() => { setCalendarFilter(null); setCampaignFilter(null); setFormatFilter(null); }}
                   data-testid="button-clear-filters"
                 >
                   <X className="mr-1 h-3 w-3" />
