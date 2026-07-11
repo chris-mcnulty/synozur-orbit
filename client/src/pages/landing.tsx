@@ -189,6 +189,345 @@ const capabilities = [
   }
 ];
 
+function PillarPreview({ id }: { id: string }) {
+  const base = "bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl border border-primary/20 aspect-video flex items-center justify-center p-6 overflow-hidden";
+  if (id === "intelligence") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl space-y-2 text-left">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-semibold text-foreground">Competitive Briefing</span>
+          <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">3 gaps found</span>
+        </div>
+        {[
+          { name: "Acme Corp", change: "+12%", color: "text-red-400", bar: "w-4/5" },
+          { name: "RivalTech", change: "−8%", color: "text-green-500", bar: "w-1/2" },
+          { name: "MarketPro", change: "+3%", color: "text-yellow-500", bar: "w-2/3" },
+        ].map((c, i) => (
+          <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+            <div className="w-5 h-5 rounded bg-primary/20 flex-shrink-0" />
+            <span className="text-xs font-medium flex-1 text-foreground">{c.name}</span>
+            <div className={`h-1.5 rounded-full bg-current ${c.color} ${c.bar}`} />
+            <span className={`text-xs font-mono ${c.color}`}>{c.change}</span>
+          </div>
+        ))}
+        <div className="mt-2 p-2 rounded-lg bg-primary/10 border border-primary/20 flex gap-2 items-start">
+          <Brain size={12} className="text-primary mt-0.5 flex-shrink-0" />
+          <span className="text-xs text-muted-foreground">Acme shifted messaging to enterprise security — update battlecard Q3</span>
+        </div>
+      </div>
+    </div>
+  );
+  if (id === "marketing") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-semibold text-foreground">Editorial Calendar — July</span>
+          <div className="flex gap-1">
+            <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">Email</span>
+            <span className="text-xs bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">Social</span>
+            <span className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">Blog</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-5 gap-1 mb-1">
+          {["Mon","Tue","Wed","Thu","Fri"].map(d => <div key={d} className="text-center text-xs text-muted-foreground">{d}</div>)}
+        </div>
+        <div className="grid grid-cols-5 gap-1">
+          {[
+            { type:"blog", label:"Case Study" }, null, { type:"email", label:"Newsletter" }, null, { type:"social", label:"X Post" },
+            null, { type:"social", label:"LinkedIn" }, null, { type:"blog", label:"Whitepaper" }, null,
+            { type:"email", label:"Campaign" }, null, null, { type:"social", label:"Facebook" }, null,
+          ].map((item, i) => (
+            <div key={i} className={cn("h-7 rounded text-center flex items-center justify-center", item
+              ? item.type === "email" ? "bg-blue-500/20 text-blue-400"
+              : item.type === "social" ? "bg-purple-500/20 text-purple-400"
+              : "bg-green-500/20 text-green-400"
+              : "bg-muted/30"
+            )}>
+              {item && <span className="text-[9px] font-medium truncate px-1">{item.label}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+  if (id === "sales") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-semibold text-foreground">Outreach Prospects</span>
+          <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">42 ICP matches</span>
+        </div>
+        {[
+          { name: "Sarah Chen", title: "VP Marketing", co: "TechFlow Inc", status: "Replied", sc: "text-green-500 bg-green-500/10" },
+          { name: "James Okafor", title: "CMO", co: "Growbase", status: "Opened", sc: "text-yellow-500 bg-yellow-500/10" },
+          { name: "Priya Nair", title: "Dir. Demand Gen", co: "Scalr", status: "Sent", sc: "text-blue-400 bg-blue-400/10" },
+        ].map((p, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+            <div className="w-6 h-6 rounded-full bg-primary/30 flex-shrink-0 flex items-center justify-center text-xs text-primary font-bold">{p.name[0]}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-foreground truncate">{p.name}</div>
+              <div className="text-[10px] text-muted-foreground truncate">{p.title} · {p.co}</div>
+            </div>
+            <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", p.sc)}>{p.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  // product
+  return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-semibold text-foreground">Product Roadmap — Q3</span>
+          <span className="text-xs text-muted-foreground">AI prioritisation on</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { col: "Backlog", color: "border-muted", items: ["SSO Enhancements", "CSV Export v2"] },
+            { col: "In Progress", color: "border-yellow-500/50", items: ["API Gateway", "Mobile App"] },
+            { col: "Done", color: "border-green-500/50", items: ["HubSpot Sync", "Apollo ICP"] },
+          ].map((col, i) => (
+            <div key={i} className={cn("rounded-lg border p-2 space-y-1.5", col.color)}>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">{col.col}</div>
+              {col.items.map((item, j) => (
+                <div key={j} className="text-[10px] bg-muted/60 rounded p-1.5 text-foreground">{item}</div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CapabilityPreview({ id, icon: Icon }: { id: string; icon: React.ComponentType<{ size?: number; className?: string }> }) {
+  const base = "bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl border border-primary/20 aspect-video flex items-center justify-center p-6 overflow-hidden";
+
+  if (id === "intelligence") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><Radar size={12} className="text-primary" /> Monitoring — 8 competitors</div>
+        {[
+          { name: "Acme Corp", change: "Messaging update", when: "2h ago", dot: "bg-red-400" },
+          { name: "RivalTech", change: "Pricing page changed", when: "Yesterday", dot: "bg-yellow-400" },
+          { name: "MarketPro", change: "New case study", when: "3 days ago", dot: "bg-muted" },
+        ].map((r, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", r.dot)} />
+            <span className="text-xs text-foreground font-medium w-20 flex-shrink-0">{r.name}</span>
+            <span className="text-xs text-muted-foreground flex-1">{r.change}</span>
+            <span className="text-[10px] text-muted-foreground">{r.when}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (id === "battlecards") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left">
+        <div className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2"><Shield size={12} className="text-primary" /> vs. Acme Corp</div>
+        <div className="space-y-1.5">
+          {[
+            { label: "Ease of use", us: 5, them: 3 },
+            { label: "Integrations", us: 4, them: 5 },
+            { label: "AI features", us: 5, them: 2 },
+            { label: "Price/value", us: 4, them: 3 },
+          ].map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground w-20">{row.label}</span>
+              <div className="flex gap-0.5">{Array.from({length:5}).map((_,j)=><div key={j} className={cn("w-3 h-3 rounded-sm", j < row.us ? "bg-primary" : "bg-muted")} />)}</div>
+              <span className="text-[10px] text-muted-foreground mx-1">vs</span>
+              <div className="flex gap-0.5">{Array.from({length:5}).map((_,j)=><div key={j} className={cn("w-3 h-3 rounded-sm", j < row.them ? "bg-muted-foreground/60" : "bg-muted")} />)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (id === "outreach") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><UserSearch size={12} className="text-primary" /> Cadence — Week 1 Touch</div>
+        <div className="p-2 bg-primary/10 rounded-lg border border-primary/20 text-xs text-foreground">
+          Hi Sarah — saw Acme just updated their pricing. Given TechFlow's growth stage, here's why teams like yours are switching to Orbit...
+        </div>
+        <div className="flex gap-2">
+          <div className="flex-1 p-2 bg-muted/50 rounded-lg text-center">
+            <div className="text-sm font-bold text-foreground">42</div>
+            <div className="text-[10px] text-muted-foreground">Prospects</div>
+          </div>
+          <div className="flex-1 p-2 bg-muted/50 rounded-lg text-center">
+            <div className="text-sm font-bold text-yellow-500">68%</div>
+            <div className="text-[10px] text-muted-foreground">Opened</div>
+          </div>
+          <div className="flex-1 p-2 bg-muted/50 rounded-lg text-center">
+            <div className="text-sm font-bold text-green-500">12</div>
+            <div className="text-[10px] text-muted-foreground">Replied</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (id === "campaigns") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><Megaphone size={12} className="text-primary" /> Campaign — Q3 Launch</div>
+        {[
+          { label: "Email Newsletter", status: "Scheduled", sc: "bg-blue-500/20 text-blue-400" },
+          { label: "LinkedIn Post", status: "Published", sc: "bg-green-500/20 text-green-400" },
+          { label: "Case Study", status: "In Review", sc: "bg-yellow-500/20 text-yellow-500" },
+          { label: "Blog Post", status: "Drafting", sc: "bg-muted text-muted-foreground" },
+        ].map((r, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+            <span className="text-xs text-foreground flex-1">{r.label}</span>
+            <span className={cn("text-[10px] px-2 py-0.5 rounded-full", r.sc)}>{r.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (id === "email") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><MailCheck size={12} className="text-primary" /> July Newsletter — Sent</div>
+        <div className="grid grid-cols-3 gap-2 mb-2">
+          {[{l:"Delivered",v:"1,204",c:"text-foreground"},{l:"Opened",v:"61%",c:"text-yellow-500"},{l:"Clicked",v:"18%",c:"text-primary"}].map((m,i)=>(
+            <div key={i} className="text-center p-2 bg-muted/50 rounded-lg">
+              <div className={cn("text-sm font-bold", m.c)}>{m.v}</div>
+              <div className="text-[10px] text-muted-foreground">{m.l}</div>
+            </div>
+          ))}
+        </div>
+        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{width:"61%"}} /></div>
+        <div className="text-[10px] text-muted-foreground">61% open rate · 4 unsubscribes · HubSpot synced</div>
+      </div>
+    </div>
+  );
+
+  if (id === "social") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><Share2 size={12} className="text-primary" /> Social Publishing</div>
+        {[
+          { platform: "LinkedIn", text: "Thrilled to announce...", status: "Posted", sc: "text-green-500" },
+          { platform: "X / Twitter", text: "Big news for GTM teams...", status: "Scheduled", sc: "text-yellow-500" },
+          { platform: "Facebook", text: "We're launching...", status: "Scheduled", sc: "text-yellow-500" },
+          { platform: "Bluesky", text: "🚀 Orbit just shipped...", status: "Draft", sc: "text-muted-foreground" },
+        ].map((p, i) => (
+          <div key={i} className="flex items-center gap-2 p-1.5 bg-muted/50 rounded-lg">
+            <span className="text-[10px] font-medium text-muted-foreground w-16 flex-shrink-0">{p.platform}</span>
+            <span className="text-[10px] text-foreground flex-1 truncate">{p.text}</span>
+            <span className={cn("text-[10px]", p.sc)}>{p.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (id === "content-engine") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><Repeat2 size={12} className="text-primary" /> Repurpose: "Q3 GTM Brief"</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {[
+            {f:"Blog Post", done: true}, {f:"LinkedIn Post", done: true},
+            {f:"Whitepaper", done: false}, {f:"Case Study", done: false},
+            {f:"Video Script", done: false}, {f:"Podcast Outline", done: false},
+          ].map((item, i) => (
+            <div key={i} className={cn("p-1.5 rounded-lg text-[10px] flex items-center gap-1.5", item.done ? "bg-green-500/10 text-green-400" : "bg-muted/50 text-muted-foreground")}>
+              <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", item.done ? "bg-green-500" : "bg-muted-foreground/40")} />
+              {item.f}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (id === "seo") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><LineChart size={12} className="text-primary" /> Share of Voice — Top Keywords</div>
+        {[
+          { kw: "GTM platform", pos: 3, sov: "28%", trend: "▲", tc: "text-green-500" },
+          { kw: "competitive intel", pos: 7, sov: "12%", trend: "▲", tc: "text-green-500" },
+          { kw: "sales prospecting", pos: 14, sov: "5%", trend: "▼", tc: "text-red-400" },
+        ].map((r, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+            <span className="text-xs text-foreground flex-1">{r.kw}</span>
+            <span className="text-[10px] text-muted-foreground">#{r.pos}</span>
+            <span className={cn("text-[10px] font-mono", r.tc)}>{r.trend} {r.sov}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (id === "roadmap") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left">
+        <div className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2"><GitBranch size={12} className="text-primary" /> Roadmap · Q3 2026</div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { col: "Now", items: ["HubSpot sync", "Apollo ICP"] },
+            { col: "Next", items: ["API Gateway", "Mobile"] },
+            { col: "Later", items: ["AI scoring", "SSO v2"] },
+          ].map((col, i) => (
+            <div key={i} className="space-y-1">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase">{col.col}</div>
+              {col.items.map((item, j) => (
+                <div key={j} className="text-[10px] bg-muted/60 rounded p-1.5 text-foreground">{item}</div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (id === "reporting") return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><FileText size={12} className="text-primary" /> Intelligence Report — July</div>
+        <div className="h-2 w-full bg-primary/20 rounded-full"><div className="h-2 bg-primary rounded-full w-3/4" /></div>
+        {["Executive Summary", "Competitor Matrix", "Positioning Gaps", "Recommendations"].map((s, i) => (
+          <div key={i} className="flex items-center gap-2 p-1.5 bg-muted/50 rounded-lg">
+            <div className="w-3 h-3 rounded bg-primary/30 flex-shrink-0" />
+            <span className="text-[10px] text-foreground">{s}</span>
+            <CheckCircle2 size={10} className="ml-auto text-green-500" />
+          </div>
+        ))}
+        <div className="text-[10px] text-primary mt-1">↓ Export branded PDF</div>
+      </div>
+    </div>
+  );
+
+  // content-libraries fallback
+  return (
+    <div className={base}>
+      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
+        <div className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2"><BookOpen size={12} className="text-primary" /> Content Library</div>
+        {[
+          { type: "Blog", title: "Why GTM Teams Switch to Orbit", tag: "Published" },
+          { type: "WP", title: "2026 B2B Competitive Intelligence Report", tag: "Draft" },
+          { type: "CS", title: "How TechFlow Grew Pipeline 40%", tag: "Active" },
+        ].map((a, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-mono">{a.type}</span>
+            <span className="text-[10px] text-foreground flex-1 truncate">{a.title}</span>
+            <span className="text-[10px] text-muted-foreground">{a.tag}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Landing() {
   usePageTracking("/");
   const [activeCapability, setActiveCapability] = useState("intelligence");
@@ -319,9 +658,7 @@ export default function Landing() {
                 ))}
               </ul>
             </div>
-            <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl p-12 aspect-video flex items-center justify-center border border-primary/20">
-              <currentPillar.icon size={80} className="text-primary/30" />
-            </div>
+            <PillarPreview id={currentPillar.id} />
           </div>
         </div>
       </section>
@@ -464,11 +801,7 @@ export default function Landing() {
               <h3 className="text-2xl font-bold mb-4">{currentCapability.title}</h3>
               <p className="text-muted-foreground leading-relaxed">{currentCapability.description}</p>
             </div>
-            <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl p-12 aspect-video flex items-center justify-center border border-primary/20">
-              {currentCapability.icon && (
-                <currentCapability.icon size={72} className="text-primary/40" />
-              )}
-            </div>
+            <CapabilityPreview id={currentCapability.id} icon={currentCapability.icon} />
           </div>
         </div>
       </section>
