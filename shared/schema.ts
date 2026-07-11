@@ -1699,6 +1699,9 @@ export const AI_FEATURES = {
   PROSPECT_RESEARCH: 'prospect_research',
   OUTREACH_COMPOSER: 'outreach_composer',
   OUTREACH_VOICE_EXTRACT: 'outreach_voice_extract',
+  // Observatory (application assurance) — AI-assisted drafting of finding
+  // descriptions/recommendations from workbench review notes.
+  OBSERVATORY_ASSIST: 'observatory_assist',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1722,6 +1725,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   prospect_research: 'Prospect Research & Scoring',
   outreach_composer: 'Outreach Draft Composer',
   outreach_voice_extract: 'Outbound Voice Extraction',
+  observatory_assist: 'Observatory Finding Drafting',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -5126,6 +5130,8 @@ export const obsFindings = pgTable("obs_findings", {
   impact: text("impact"), // low, medium, high
   cweId: text("cwe_id"),
   wcagCriterion: text("wcag_criterion"),
+  sourceFile: text("source_file"), // affected source file (source code review)
+  sourceLine: integer("source_line"), // affected line number (source code review)
   dueDate: timestamp("due_date"),
   assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
   assignedToName: text("assigned_to_name"),
@@ -5274,3 +5280,281 @@ export type InsertObsEvidence = z.infer<typeof insertObsEvidenceSchema>;
 export const insertObsAuditLogSchema = createInsertSchema(obsAuditLogs).omit({ id: true, createdAt: true });
 export type ObsAuditLog = typeof obsAuditLogs.$inferSelect;
 export type InsertObsAuditLog = z.infer<typeof insertObsAuditLogSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Observatory — specialized assessment modules (workbenches)
+// Accessibility, Source Code, Pen Test, Architecture, Privacy, AI Governance
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Module constants ────────────────────────────────────────────────────────
+export const OBS_REVIEW_MODULES = [
+  "accessibility",
+  "source_code",
+  "architecture",
+  "architecture_azure",
+  "privacy",
+  "ai_governance",
+] as const;
+export type ObsReviewModule = (typeof OBS_REVIEW_MODULES)[number];
+
+/** Checklist row statuses for review workbenches (accessibility semantics, reused everywhere). */
+export const OBS_REVIEW_STATUSES = [
+  "Pass",
+  "Pass With Notes",
+  "Supports With Exceptions",
+  "Fail",
+  "Not Tested",
+  "Not Applicable",
+] as const;
+export type ObsReviewStatus = (typeof OBS_REVIEW_STATUSES)[number];
+
+/** Statuses for the Azure capability checklist rows (architecture_azure module). */
+export const OBS_AZURE_STATUSES = [
+  "Configured",
+  "Partially Configured",
+  "Not Configured",
+  "Planned",
+  "Not Applicable",
+] as const;
+export type ObsAzureStatus = (typeof OBS_AZURE_STATUSES)[number];
+
+export const OBS_ACCESSIBILITY_CATEGORIES = [
+  "Images",
+  "Forms",
+  "Keyboard",
+  "Focus",
+  "Color Contrast",
+  "ARIA",
+  "Screen Reader",
+  "Tables",
+  "Responsive Design",
+  "Zoom Testing",
+  "Semantic Structure",
+  "Error Handling",
+] as const;
+
+export const OBS_SOURCE_REVIEW_CATEGORIES = [
+  "Input Validation",
+  "Authentication",
+  "Authorization",
+  "Session Management",
+  "Cryptography",
+  "Error Handling & Logging",
+  "Data Protection",
+  "Dependency Management",
+  "Secrets Handling",
+  "Code Quality & Maintainability",
+] as const;
+
+export const OBS_ARCHITECTURE_AREAS = [
+  "Authentication",
+  "Authorization",
+  "Encryption",
+  "Logging",
+  "Monitoring",
+  "Secrets Management",
+  "Data Protection",
+  "Network Security",
+] as const;
+
+export const OBS_AZURE_CAPABILITIES = [
+  "Entra ID",
+  "Managed Identity",
+  "Key Vault",
+  "Front Door",
+  "WAF",
+  "App Service",
+  "AKS",
+  "Functions",
+  "Storage",
+  "SQL",
+] as const;
+
+export const OBS_PRIVACY_AREAS = [
+  "Data Collection",
+  "Retention",
+  "Deletion",
+  "Consent",
+  "Classification",
+  "Auditability",
+  "Privacy Controls",
+] as const;
+
+export const OBS_AI_GOVERNANCE_AREAS = [
+  "Model Inventory",
+  "Prompt Handling",
+  "Human Oversight",
+  "Citation Strategy",
+  "Grounding",
+  "Data Leakage Prevention",
+  "Prompt Injection Protection",
+  "Model Documentation",
+] as const;
+
+/** Default checklist categories seeded per module when a workbench is initialized. */
+export const OBS_MODULE_CATEGORIES: Record<ObsReviewModule, readonly string[]> = {
+  accessibility: OBS_ACCESSIBILITY_CATEGORIES,
+  source_code: OBS_SOURCE_REVIEW_CATEGORIES,
+  architecture: OBS_ARCHITECTURE_AREAS,
+  architecture_azure: OBS_AZURE_CAPABILITIES,
+  privacy: OBS_PRIVACY_AREAS,
+  ai_governance: OBS_AI_GOVERNANCE_AREAS,
+};
+
+export const OBS_PEN_TEST_RESULTS = [
+  "Ready",
+  "Ready After Remediation",
+  "Remediation Required",
+  "Not Ready",
+] as const;
+export type ObsPenTestResult = (typeof OBS_PEN_TEST_RESULTS)[number];
+
+export const OBS_VALIDATION_STATUSES = [
+  "Not Started",
+  "In Progress",
+  "Validated",
+  "Failed Validation",
+] as const;
+export type ObsValidationStatus = (typeof OBS_VALIDATION_STATUSES)[number];
+
+export const OBS_EXPLOITABILITY_LEVELS = [
+  "Trivial",
+  "Easy",
+  "Moderate",
+  "Difficult",
+  "Theoretical",
+] as const;
+export type ObsExploitability = (typeof OBS_EXPLOITABILITY_LEVELS)[number];
+
+// ── Review items (shared checklist rows across workbenches) ─────────────────
+export const obsReviewItems = pgTable("obs_review_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  assessmentId: varchar("assessment_id").notNull().references(() => obsAssessments.id, { onDelete: "cascade" }),
+  module: text("module").notNull(), // OBS_REVIEW_MODULES
+  category: text("category").notNull(), // one of the module's category constants
+  status: text("status").notNull().default("Not Tested"), // OBS_REVIEW_STATUSES (or OBS_AZURE_STATUSES for architecture_azure)
+  notes: text("notes"),
+  reviewer: text("reviewer"),
+  reviewedAt: timestamp("reviewed_at"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_review_items_tenant_idx").on(t.tenantDomain),
+  assessmentIdx: index("obs_review_items_assessment_idx").on(t.assessmentId),
+  uniqueRow: uniqueIndex("obs_review_items_assessment_module_category_idx").on(t.assessmentId, t.module, t.category),
+}));
+
+export const obsReviewItemFindings = pgTable("obs_review_item_findings", {
+  reviewItemId: varchar("review_item_id").notNull().references(() => obsReviewItems.id, { onDelete: "cascade" }),
+  findingId: varchar("finding_id").notNull().references(() => obsFindings.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.reviewItemId, t.findingId] }),
+}));
+
+export const obsReviewItemEvidence = pgTable("obs_review_item_evidence", {
+  reviewItemId: varchar("review_item_id").notNull().references(() => obsReviewItems.id, { onDelete: "cascade" }),
+  evidenceId: varchar("evidence_id").notNull().references(() => obsEvidence.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.reviewItemId, t.evidenceId] }),
+}));
+
+// ── Source code review metadata (one per assessment) ───────────────────────
+export const obsSourceReviewMeta = pgTable("obs_source_review_meta", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  assessmentId: varchar("assessment_id").notNull().references(() => obsAssessments.id, { onDelete: "cascade" }),
+  repositoryUrl: text("repository_url"),
+  branch: text("branch"),
+  commitHash: text("commit_hash"),
+  language: text("language"),
+  framework: text("framework"),
+  component: text("component"),
+  reviewTool: text("review_tool"), // manual, or future scanner provider key
+  notes: text("notes"),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_source_review_meta_tenant_idx").on(t.tenantDomain),
+  uniqueAssessment: uniqueIndex("obs_source_review_meta_assessment_idx").on(t.assessmentId),
+}));
+
+// ── Penetration tests ───────────────────────────────────────────────────────
+export const obsPenTests = pgTable("obs_pen_tests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  assessmentId: varchar("assessment_id").notNull().references(() => obsAssessments.id, { onDelete: "cascade" }),
+  testName: text("test_name").notNull(),
+  firm: text("firm"),
+  leadTester: text("lead_tester"),
+  methodology: text("methodology"), // e.g. OWASP WSTG, PTES, OSSTMM
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  executiveSummary: text("executive_summary"),
+  result: text("result"), // OBS_PEN_TEST_RESULTS, null until concluded
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_pen_tests_tenant_idx").on(t.tenantDomain),
+  uniqueAssessment: uniqueIndex("obs_pen_tests_assessment_idx").on(t.assessmentId),
+}));
+
+/**
+ * Pen-test finding extension. Each row wraps a shared obs_findings row (the
+ * finding participates in the global traceability model) and adds the
+ * pen-test-specific attributes: CVSS, exploitability, and validation tracking.
+ */
+export const obsPenTestFindings = pgTable("obs_pen_test_findings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  penTestId: varchar("pen_test_id").notNull().references(() => obsPenTests.id, { onDelete: "cascade" }),
+  findingId: varchar("finding_id").notNull().references(() => obsFindings.id, { onDelete: "cascade" }),
+  cvssScore: real("cvss_score"), // 0.0 – 10.0
+  cvssVector: text("cvss_vector"), // e.g. CVSS:3.1/AV:N/AC:L/…
+  exploitability: text("exploitability"), // OBS_EXPLOITABILITY_LEVELS
+  validationStatus: text("validation_status").notNull().default("Not Started"), // OBS_VALIDATION_STATUSES
+  validatedBy: text("validated_by"),
+  validatedAt: timestamp("validated_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_pen_test_findings_tenant_idx").on(t.tenantDomain),
+  penTestIdx: index("obs_pen_test_findings_pen_test_idx").on(t.penTestId),
+  uniqueFinding: uniqueIndex("obs_pen_test_findings_finding_idx").on(t.findingId),
+}));
+
+// ── Relations ───────────────────────────────────────────────────────────────
+export const obsReviewItemsRelations = relations(obsReviewItems, ({ one }) => ({
+  assessment: one(obsAssessments, { fields: [obsReviewItems.assessmentId], references: [obsAssessments.id] }),
+}));
+
+export const obsPenTestsRelations = relations(obsPenTests, ({ one, many }) => ({
+  assessment: one(obsAssessments, { fields: [obsPenTests.assessmentId], references: [obsAssessments.id] }),
+  penTestFindings: many(obsPenTestFindings),
+}));
+
+export const obsPenTestFindingsRelations = relations(obsPenTestFindings, ({ one }) => ({
+  penTest: one(obsPenTests, { fields: [obsPenTestFindings.penTestId], references: [obsPenTests.id] }),
+  finding: one(obsFindings, { fields: [obsPenTestFindings.findingId], references: [obsFindings.id] }),
+}));
+
+// ── Insert schemas + types ──────────────────────────────────────────────────
+export const insertObsReviewItemSchema = createInsertSchema(obsReviewItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsReviewItem = typeof obsReviewItems.$inferSelect;
+export type InsertObsReviewItem = z.infer<typeof insertObsReviewItemSchema>;
+
+export const insertObsSourceReviewMetaSchema = createInsertSchema(obsSourceReviewMeta).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsSourceReviewMeta = typeof obsSourceReviewMeta.$inferSelect;
+export type InsertObsSourceReviewMeta = z.infer<typeof insertObsSourceReviewMetaSchema>;
+
+export const insertObsPenTestSchema = createInsertSchema(obsPenTests).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsPenTest = typeof obsPenTests.$inferSelect;
+export type InsertObsPenTest = z.infer<typeof insertObsPenTestSchema>;
+
+export const insertObsPenTestFindingSchema = createInsertSchema(obsPenTestFindings).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsPenTestFinding = typeof obsPenTestFindings.$inferSelect;
+export type InsertObsPenTestFinding = z.infer<typeof insertObsPenTestFindingSchema>;

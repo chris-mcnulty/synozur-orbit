@@ -107,6 +107,10 @@ import ObservatoryFindings from "@/pages/app/observatory/findings";
 import ObservatoryFindingDetail from "@/pages/app/observatory/finding-detail";
 import ObservatoryEvidence from "@/pages/app/observatory/evidence";
 import ObservatoryStandards from "@/pages/app/observatory/standards";
+import ObservatoryReviewHub from "@/pages/app/observatory/review-hub";
+import ObservatoryReviewWorkbench from "@/pages/app/observatory/review-workbench";
+import ObservatoryPenTests from "@/pages/app/observatory/pen-tests";
+import ObservatoryPenTestDetail from "@/pages/app/observatory/pen-test-detail";
 
 function GlobalAdminOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
@@ -175,6 +179,10 @@ function Router() {
       <Route path="/app/observatory/findings/:id" component={ObservatoryFindingDetail} />
       <Route path="/app/observatory/evidence" component={ObservatoryEvidence} />
       <Route path="/app/observatory/standards" component={ObservatoryStandards} />
+      <Route path="/app/observatory/review/:module" component={ObservatoryReviewHub} />
+      <Route path="/app/observatory/review/:module/:assessmentId" component={ObservatoryReviewWorkbench} />
+      <Route path="/app/observatory/pen-tests" component={ObservatoryPenTests} />
+      <Route path="/app/observatory/pen-tests/:id" component={ObservatoryPenTestDetail} />
       <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
       <Route path="/app/settings/integrations">{() => <PageFeatureGate featureKey="outcomeMetrics" label="Integrations" description="Connect Google Analytics and other services to enrich your outcomes data."><SettingsIntegrationsPage /></PageFeatureGate>}</Route>
