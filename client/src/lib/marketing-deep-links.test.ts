@@ -150,9 +150,17 @@ describe("target pages still read their deep-link params", () => {
     expect(src).toContain('.get("date")');
   });
 
-  it("campaign-detail reads ?post= and honors the #posts hash tab", () => {
+  it("campaign-detail passes paramName: \"post\" to useDeepLinkFocus and preReveal activates the posts tab", () => {
     const src = read("campaign-detail.tsx");
-    expect(src).toContain('.get("post")');
-    expect(src).toContain("posts");
+    // The ?post= param is read inside useDeepLinkFocus via paramName: "post".
+    // Renaming the string here OR in the hook's URLSearchParams call breaks the
+    // render-level test in use-deep-link-focus.test.tsx.
+    expect(src).toContain('paramName: "post"');
+    // The preReveal callback must switch to the posts tab BEFORE the DOM is
+    // queried, so the card element exists when the hook tries to scroll to it.
+    // Removing preReveal or moving the tab-switch to onFound (which fires
+    // AFTER the scroll) would silently break deep-links to posts in other tabs.
+    expect(src).toContain("preReveal");
+    expect(src).toContain('setActiveTab("posts")');
   });
 });

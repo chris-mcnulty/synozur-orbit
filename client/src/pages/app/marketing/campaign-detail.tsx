@@ -67,6 +67,7 @@ import {
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
 import { CampaignNextActions } from "@/components/marketing/NextActionsByBatch";
 import { CAMPAIGN_TABS, type CampaignTab, tabFromHash, filterFromSearch } from "@/lib/campaign-url-helpers";
+import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -508,9 +509,6 @@ export default function CampaignDetailPage() {
 
   // Brief source navigation — highlights the source brief in the Content Plan tab
   const [highlightedBriefId, setHighlightedBriefId] = useState<string | null>(null);
-  // Post deep-link (?post=<id>, e.g. from a single-item "Next actions" nudge) —
-  // scrolls the Social Posts tab to that post and briefly highlights it.
-  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
 
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
@@ -747,6 +745,24 @@ export default function CampaignDetailPage() {
     queryFn: async () => {
       const r = await fetch(`/api/campaigns/${id}/generated-posts`, { credentials: "include" });
       return r.ok ? r.json() : [];
+    },
+  });
+
+  // Post deep-link: ?post=<id> (always paired with #posts in the URL).
+  // preReveal fires first — switching to the posts tab + clearing all filters
+  // so the target card exists in the DOM.  The hook then waits 120 ms for
+  // React to re-render before querying the DOM and scrolling.
+  // currentSearch keeps the hook reactive to in-page URL changes (no remount).
+  const [focusedPostId] = useDeepLinkFocus({
+    paramName: "post",
+    items: posts,
+    testIdPrefix: "card-post",
+    currentSearch: searchStr,
+    preReveal: (post) => {
+      setActiveTab("posts");
+      setPostFilter("all");
+      setPostAccountFilter("all");
+      setBatchFilter(batchSourceOf(post) ?? null);
     },
   });
 
@@ -1857,42 +1873,20 @@ export default function CampaignDetailPage() {
   }, []);
 
   useEffect(() => {
-    // Reset all post-tab state to clean defaults when the campaign changes so
-    // stale state from the previous campaign cannot leak into the new one.
-    // The ?post= deep-link effect below is declared later and therefore runs
-    // second in the same React commit, so it correctly overrides these
-    // defaults when a ?post= param is present.
-    setActiveTab(tabFromHash(window.location.hash));
-    setPostFilter(filterFromSearch(window.location.search) ?? "active");
-    setPostAccountFilter("all");
-    setBatchFilter(null);
-    setHighlightedPostId(null);
-  }, [id, searchStr]);
-
-  // Deep-link to one post (?post=<id>) — e.g. a single-item "Next actions" nudge.
-  // Wait until the post exists, then open the Social Posts tab with filters
-  // cleared so it can't be hidden, drill into its batch if it belongs to one,
-  // scroll to it, and briefly highlight. Runs reactively so it also fires when
-  // arriving via in-page navigation (no remount).
-  useEffect(() => {
+    // Reset post-tab state to clean defaults when the campaign changes.
+    // When ?post= is present the useDeepLinkFocus preReveal callback will set
+    // the correct filter/batch state — don't clobber those values here.
+    // (React batches all effects from one commit, and this effect is registered
+    // after the hook, so it runs last; without the guard it would overwrite
+    // the preReveal state before the delayed scroll can fire.)
     const focusPostId = new URLSearchParams(searchStr).get("post");
-    if (!focusPostId) return;
-    const target = posts.find(p => p.id === focusPostId);
-    if (!target) return; // posts not loaded yet — effect re-runs when they arrive
-    setActiveTab("posts");
-    setPostFilter("all");
-    setPostAccountFilter("all");
-    setBatchFilter(batchSourceOf(target) ?? null);
-    setHighlightedPostId(focusPostId);
-    const t1 = setTimeout(() => {
-      const el = document.querySelector(`[data-testid="card-post-${focusPostId}"]`);
-      if (el && "scrollIntoView" in el) {
-        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 120);
-    const t2 = setTimeout(() => setHighlightedPostId(null), 2500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [searchStr, posts]);
+    setActiveTab(tabFromHash(window.location.hash));
+    if (!focusPostId) {
+      setPostFilter(filterFromSearch(window.location.search) ?? "active");
+      setPostAccountFilter("all");
+      setBatchFilter(null);
+    }
+  }, [id, searchStr]);
 
   useEffect(() => {
     const prev = prevJobStatus.current;
@@ -3480,7 +3474,7 @@ export default function CampaignDetailPage() {
                       key={post.id}
                       data-testid={`card-post-${post.id}`}
                       className={
-                        (postSelectMode && postSelectedIds.has(post.id)) || highlightedPostId === post.id
+                        (postSelectMode && postSelectedIds.has(post.id)) || focusedPostId === post.id
                           ? "ring-2 ring-primary transition-shadow"
                           : ""
                       }

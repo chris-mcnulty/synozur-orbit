@@ -16,6 +16,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, act, screen, cleanup } from "@testing-library/react";
+import { useState } from "react";
 import { useDeepLinkFocus } from "./use-deep-link-focus";
 
 type Item = { id: string; label: string };
@@ -29,16 +30,20 @@ function DeepLinkList({
   paramName,
   prefix,
   items,
+  preReveal,
   onFound,
   clearAfterMs,
+  revealDelayMs,
 }: {
   paramName: string;
   prefix: string;
   items: Item[];
+  preReveal?: (item: Item) => void;
   onFound?: (item: Item) => void;
   clearAfterMs?: number;
+  revealDelayMs?: number;
 }) {
-  const [focusId] = useDeepLinkFocus({ paramName, items, testIdPrefix: prefix, onFound, clearAfterMs });
+  const [focusId] = useDeepLinkFocus({ paramName, items, testIdPrefix: prefix, preReveal, onFound, clearAfterMs, revealDelayMs });
   return (
     <ul>
       {items.map((item) => (
@@ -51,6 +56,53 @@ function DeepLinkList({
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * A component that simulates the campaign-detail tab pattern:
+ * items start hidden (wrong tab) and are revealed via preReveal.
+ */
+function TabbedDeepLinkList({
+  paramName,
+  prefix,
+  items,
+  revealDelayMs,
+}: {
+  paramName: string;
+  prefix: string;
+  items: Item[];
+  revealDelayMs?: number;
+}) {
+  const [activeTab, setActiveTab] = useState<"other" | "target">("other");
+
+  const [focusId] = useDeepLinkFocus({
+    paramName,
+    items,
+    testIdPrefix: prefix,
+    revealDelayMs,
+    preReveal: () => {
+      setActiveTab("target");
+    },
+  });
+
+  return (
+    <div>
+      <div data-testid="active-tab">{activeTab}</div>
+      {activeTab === "target" && (
+        <ul>
+          {items.map((item) => (
+            <li
+              key={item.id}
+              data-testid={`${prefix}-${item.id}`}
+              className={focusId === item.id ? "ring-2 ring-primary ring-offset-2" : ""}
+            >
+              {item.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -204,5 +256,57 @@ describe("useDeepLinkFocus", () => {
     await act(async () => { vi.advanceTimersByTime(2500); });
     expect(screen.getByTestId("brief-b1").className).not.toContain("ring-2");
     vi.useRealTimers();
+  });
+
+  describe("preReveal — campaign social Posts tab pattern", () => {
+    it("calls preReveal immediately when the item is found in the list", async () => {
+      setSearch("?post=b2");
+      const preReveal = vi.fn();
+      await act(async () => {
+        render(
+          <DeepLinkList
+            paramName="post"
+            prefix="post"
+            items={ITEMS}
+            preReveal={preReveal}
+            revealDelayMs={0}
+          />,
+        );
+      });
+      expect(preReveal).toHaveBeenCalledOnce();
+      expect(preReveal).toHaveBeenCalledWith(ITEMS[1]);
+    });
+
+    it("scrolls to and highlights the target even when it starts hidden behind a tab", async () => {
+      vi.useFakeTimers();
+      setSearch("?post=b1");
+      const posts: Item[] = [{ id: "b1", label: "Post 1" }, { id: "b2", label: "Post 2" }];
+      await act(async () => {
+        render(
+          <TabbedDeepLinkList paramName="post" prefix="post" items={posts} revealDelayMs={50} />,
+        );
+      });
+      // Before the reveal delay: preReveal has switched the tab (DOM updated)
+      // but scroll hasn't fired yet.
+      expect(screen.getByTestId("active-tab").textContent).toBe("target");
+      expect(scrollIntoViewMock).not.toHaveBeenCalled();
+
+      // After the reveal delay: hook queries DOM, finds element, scrolls.
+      await act(async () => { vi.advanceTimersByTime(50); });
+      expect(scrollIntoViewMock).toHaveBeenCalledOnce();
+      expect(screen.getByTestId("post-b1").className).toContain("ring-2");
+      vi.useRealTimers();
+    });
+
+    it("does not call preReveal when the param is absent", async () => {
+      setSearch("");
+      const preReveal = vi.fn();
+      await act(async () => {
+        render(
+          <DeepLinkList paramName="post" prefix="post" items={ITEMS} preReveal={preReveal} revealDelayMs={0} />,
+        );
+      });
+      expect(preReveal).not.toHaveBeenCalled();
+    });
   });
 });
