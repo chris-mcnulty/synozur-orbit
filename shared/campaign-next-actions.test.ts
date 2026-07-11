@@ -298,3 +298,91 @@ describe("groupHref — composes the tab hash and optional ?filter=", () => {
     );
   });
 });
+
+// ── Hub → campaign-detail full link flow ─────────────────────────────────────
+// These tests exercise the complete round-trip that a user takes when they click
+// a nudge card in the Planning Hub:
+//
+//   1. groupHref() builds the URL (shared/campaign-next-actions.ts)
+//   2. The browser navigates; campaign-detail.tsx's [id] effect fires:
+//        setActiveTab(tabFromHash(window.location.hash))
+//        setPostFilter(filterFromSearch(window.location.search) ?? "active")
+//
+// A regression in either half (link generation or URL parsing) would silently
+// land the user on the wrong tab / wrong filter.  These tests pin the contract
+// so both sides are verified together.
+
+describe("Hub → campaign-detail link flow: fix-failures nudge", () => {
+  it("groupHref emits the expected URL shape for a fix group", () => {
+    const href = groupHref("camp-1", group("social", "fix"));
+    assert.equal(href, "/app/marketing/campaigns/camp-1?filter=publish_failed#posts");
+  });
+
+  it("tabFromHash parses the hash portion → Posts tab", () => {
+    // Simulate what the browser exposes as window.location.hash after navigation.
+    const hash = "#posts";
+    assert.equal(tabFromHash(hash), "posts");
+  });
+
+  it("filterFromSearch parses the search portion → publish_failed", () => {
+    // Simulate window.location.search (browser separates hash from search).
+    const search = "?filter=publish_failed";
+    assert.equal(filterFromSearch(search), "publish_failed");
+  });
+
+  it("end-to-end: fix-failures URL → Posts tab + publish_failed filter", () => {
+    const href = groupHref("camp-1", group("social", "fix"));
+    // Split into the search and hash the way the browser presents them.
+    const url = new URL(href, "https://example.com");
+    assert.equal(tabFromHash(url.hash), "posts",
+      "fix nudge must open the Posts tab");
+    assert.equal(filterFromSearch(url.search), "publish_failed",
+      "fix nudge must pre-apply the publish_failed filter");
+  });
+
+  it("filterFromSearch ?? 'active' expression resolves to publish_failed (not the default)", () => {
+    const search = "?filter=publish_failed";
+    const postFilter = filterFromSearch(search) ?? "active";
+    assert.equal(postFilter, "publish_failed");
+  });
+});
+
+describe("Hub → campaign-detail link flow: non-fix nudge (Plan tab, no filter)", () => {
+  it("groupHref emits a plain hash-only URL for a non-fix group (brief/approve)", () => {
+    const href = groupHref("camp-1", group("brief", "approve"));
+    assert.equal(href, "/app/marketing/campaigns/camp-1#plan");
+  });
+
+  it("groupHref emits a #review hash for a social approve group (not Posts)", () => {
+    const href = groupHref("camp-1", group("social", "approve"));
+    assert.equal(href, "/app/marketing/campaigns/camp-1#review");
+  });
+
+  it("end-to-end: non-fix brief nudge URL → Plan tab + 'active' default filter", () => {
+    const href = groupHref("camp-1", group("brief", "approve"));
+    const url = new URL(href, "https://example.com");
+    assert.equal(tabFromHash(url.hash), "plan",
+      "brief nudge must open the Plan tab");
+    // No ?filter= → filterFromSearch returns null → ?? 'active' kicks in
+    const postFilter = filterFromSearch(url.search) ?? "active";
+    assert.equal(postFilter, "active",
+      "absence of ?filter= must reset the Posts filter to 'active'");
+  });
+
+  it("end-to-end: social schedule nudge URL → Posts tab + 'active' default filter", () => {
+    const href = groupHref("camp-1", group("social", "schedule"));
+    const url = new URL(href, "https://example.com");
+    assert.equal(tabFromHash(url.hash), "posts",
+      "schedule nudge must open the Posts tab");
+    const postFilter = filterFromSearch(url.search) ?? "active";
+    assert.equal(postFilter, "active",
+      "non-fix nudge must not pre-apply any filter");
+  });
+
+  it("filterFromSearch ?? 'active' expression resolves to 'active' when no ?filter= present", () => {
+    // This is the exact expression campaign-detail.tsx's [id] effect evaluates.
+    const search = "";
+    const postFilter = filterFromSearch(search) ?? "active";
+    assert.equal(postFilter, "active");
+  });
+});
