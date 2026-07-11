@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import SEOHead from "@/components/SEOHead";
 import { Link } from "wouter";
-import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown, Sparkles, Mail, HardDrive, Cpu, Handshake, Activity, Share2, BookOpen, Wand2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown, Sparkles, Mail, HardDrive, Cpu, Handshake, Activity, Share2, BookOpen, Wand2, UserSearch, Send, Globe, Search, Repeat2, Megaphone, MailCheck, LineChart, SlidersHorizontal, Newspaper } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 
@@ -54,26 +54,43 @@ const platformPillars = [
     icon: Radar,
     title: "Competitive Intelligence",
     tagline: "Know your battlefield",
-    description: "AI-powered analysis of competitor positioning, messaging, and market movements. Track changes, identify gaps, and stay ahead of the competition.",
+    description: "AI-powered analysis of competitor positioning, messaging, and market movements. Orbit continuously monitors competitors, surfaces gaps, and synthesises everything into actionable intelligence briefings.",
     features: [
-      "Automated competitor monitoring",
-      "Claude-powered positioning analysis",
-      "Messaging gap identification",
-      "Competitive battlecards"
+      "Automated competitor website monitoring",
+      "Claude-powered positioning & gap analysis",
+      "Competitive battlecards with Harvey Ball scoring",
+      "AI intelligence briefings on demand",
+      "SEO & share-of-voice keyword tracking"
     ]
   },
   {
     id: "marketing",
     icon: CalendarDays,
-    title: "Marketing Projects",
-    tagline: "Plan with precision",
-    description: "Transform competitive insights into actionable marketing plans. Quarterly, half-year, and annual planning with AI-generated task recommendations—plus direct generation of social posts and email campaigns.",
+    title: "Marketing & Campaigns",
+    tagline: "Create, deliver, and track",
+    description: "Run the full campaign lifecycle inside Orbit. Generate multi-format content, deliver email campaigns directly to your list with open and click tracking, publish social posts to LinkedIn, X, Facebook, and Bluesky—and measure everything in one editorial calendar.",
     features: [
-      "AI-suggested marketing activities",
-      "Quarterly & annual planning",
-      "Social post & email campaign generation",
-      "Activity-based organization",
-      "Progress tracking"
+      "Editorial calendar with campaign briefs & themes",
+      "Email delivery — lists, scheduling, open/click tracking",
+      "Social direct publishing — LinkedIn, X, Facebook, Bluesky",
+      "Multi-format content: blog, whitepaper, case study, podcast, video script",
+      "One-click content repurposing across formats",
+      "Distribution planner & UTM link tracking"
+    ]
+  },
+  {
+    id: "sales",
+    icon: UserSearch,
+    title: "Sales Outreach",
+    tagline: "Build pipeline at scale",
+    description: "Turn market intelligence into pipeline. Orbit's prospecting engine finds ICP-matched contacts via Apollo, drafts personalised outreach in your voice, manages multi-touch cadences, and syncs everything back to HubSpot automatically.",
+    features: [
+      "ICP prospect discovery — titles, company size, market",
+      "AI-drafted outreach with personal voice profiles",
+      "Multi-touch email & LinkedIn cadence management",
+      "HubSpot contact sync & timeline event logging",
+      "Relationship intelligence reports on target accounts",
+      "Prospect suppression & compliance controls"
     ]
   },
   {
@@ -81,12 +98,13 @@ const platformPillars = [
     icon: GitBranch,
     title: "Product Management",
     tagline: "Build what matters",
-    description: "Align product development with market reality. Manage roadmaps, track competitive features, and prioritize based on intelligence—not intuition.",
+    description: "Align product development with competitive reality. Manage roadmaps, track feature gaps, collect customer feedback, and make prioritisation decisions grounded in market intelligence—not gut feel.",
     features: [
-      "Product roadmap management",
-      "Competitive feature tracking",
-      "Market-driven prioritization",
-      "Release planning"
+      "Product roadmap management & release planning",
+      "Competitive feature gap tracking",
+      "Customer feedback collection & voting",
+      "AI-powered roadmap recommendations",
+      "Market-driven prioritisation"
     ]
   }
 ];
@@ -95,72 +113,79 @@ const capabilities = [
   {
     id: "intelligence",
     label: "Market Intelligence",
+    icon: Radar,
     title: "Know your competitive landscape",
-    description: "Orbit continuously monitors competitor websites, extracting key messaging, value propositions, and positioning changes. Get real-time insights into how your market is evolving.",
-    image: "/images/capabilities/market-intelligence.png"
-  },
-  {
-    id: "analysis",
-    label: "AI Analysis",
-    title: "Understand what sets you apart",
-    description: "Claude-powered analysis compares your positioning against competitors, identifying gaps in your messaging and opportunities to differentiate. See exactly where you're winning—and where you're vulnerable.",
-    image: "/images/capabilities/ai-analysis.png"
-  },
-  {
-    id: "recommendations",
-    label: "Recommendations",
-    title: "Get actionable guidance",
-    description: "AI-generated recommendations tailored to your industry and audience. Move from insight to action with specific messaging improvements, positioning shifts, and competitive responses.",
-    image: "/images/capabilities/recommendations.png"
+    description: "Orbit continuously monitors competitor websites, extracting messaging, value propositions, and positioning changes. Real-time intelligence briefings synthesise everything into a clear picture of how your market is moving—so you're never caught off guard."
   },
   {
     id: "battlecards",
     label: "Battlecards",
+    icon: Shield,
     title: "Arm your sales team",
-    description: "Generate competitive battlecards with Harvey Ball scoring, qualitative comparisons, and sales challenge questions. Give your team the ammunition they need to win deals.",
-    image: "/images/capabilities/battlecards.png"
+    description: "Generate competitive battlecards with Harvey Ball scoring, qualitative feature comparisons, and objection-handling scripts. Sales reps get the ammunition they need to win deals—delivered in branded PDFs or live in the app."
   },
   {
-    id: "planning",
-    label: "Marketing Projects",
-    title: "Plan your GTM activities",
-    description: "Transform insights into action with AI-powered marketing planning. Generate quarterly, half-year, or annual marketing plans based on competitive intelligence and industry best practices.",
-    image: "/images/capabilities/planning.png"
+    id: "outreach",
+    label: "Sales Outreach",
+    icon: UserSearch,
+    title: "Prospect and outreach at scale",
+    description: "Discover ICP-matched contacts directly inside Orbit using Apollo's database—filter by persona, title, company size, and market. Orbit drafts personalised outreach sequences in your own voice using your writing samples, manages multi-touch email and LinkedIn cadences, and syncs every interaction back to HubSpot automatically."
+  },
+  {
+    id: "campaigns",
+    label: "Campaign Planning",
+    icon: Megaphone,
+    title: "Plan campaigns from brief to delivery",
+    description: "Build campaigns with themes, briefs, and an editorial calendar. Orbit's AI generates a full content brief from a campaign objective, then routes each asset—blog posts, social posts, emails, whitepapers—through the right channel automatically. The distribution planner schedules and tracks everything in one view."
+  },
+  {
+    id: "email",
+    label: "Email Delivery",
+    icon: MailCheck,
+    title: "Send campaigns directly from Orbit",
+    description: "Orbit is a complete email delivery engine—not just a generator. Build recipient lists, configure named sender identities, schedule sends, and track opens and clicks per recipient. Unsubscribe management and one-click HubSpot contact sync are built in. No third-party ESP configuration required."
+  },
+  {
+    id: "social",
+    label: "Social Publishing",
+    icon: Share2,
+    title: "Publish directly to every major network",
+    description: "Connect LinkedIn, X/Twitter, Facebook, and Bluesky once—then publish social posts directly from Orbit's social calendar. AI generates platform-native copy with tone selection. Schedule posts at optimal times, track delivery status, and export to SocialPilot CSV as a fallback. Conference promotion posts include AI-generated hero images."
+  },
+  {
+    id: "content-engine",
+    label: "Content Engine",
+    icon: Repeat2,
+    title: "One brief, every format",
+    description: "Orbit generates the full content catalogue from a single campaign brief: blog posts with SEO metadata, whitepapers, case studies, landing page copy, video scripts, and Polaris podcast outlines. Repurpose any asset into another format with one click—including LinkedIn carousels and branded social graphics."
+  },
+  {
+    id: "seo",
+    label: "SEO & Share of Voice",
+    icon: LineChart,
+    title: "Track your visibility against competitors",
+    description: "Monitor keyword rankings for your brand and every tracked competitor. Orbit pulls weekly SERP snapshots, calculates share-of-voice across your target keyword set, and surfaces ranking movements so you can see whether your content is gaining or losing ground."
   },
   {
     id: "roadmap",
     label: "Product Roadmap",
+    icon: GitBranch,
     title: "Prioritize with market context",
-    description: "Align product development with competitive reality. Track feature gaps, manage your roadmap, and make data-driven prioritization decisions based on market intelligence.",
-    image: "/images/capabilities/roadmap.png"
+    description: "Align product development with competitive reality. Manage your feature roadmap, track gaps against competitors, collect and triage customer feedback with a voting portal, and get AI-generated prioritisation recommendations grounded in market intelligence."
   },
   {
     id: "reporting",
     label: "Reporting",
-    title: "Share insights across the org",
-    description: "Export branded PDF reports for leadership, sales enablement, or board presentations. Track positioning changes over time with assessment snapshots and share intelligence that drives decisions.",
-    image: "/images/capabilities/reporting.png"
-  },
-  {
-    id: "social-email",
-    label: "Social & Email",
-    title: "Generate marketing assets in seconds",
-    description: "Create platform-specific social posts for LinkedIn, Twitter/X, and Facebook with tone selection and Saturn-parity content extraction. Generate email newsletters targeting Outlook, Dynamics 365, HubSpot Marketing, or HubSpot 1:1—complete with CTA fields, tone control, and platform-specific coaching tips.",
-    image: "/images/capabilities/social-email.png"
+    icon: FileText,
+    title: "Share intelligence that drives decisions",
+    description: "Export branded PDF reports for leadership, board presentations, and sales enablement. Track positioning changes over time with assessment snapshots. Relationship intelligence reports synthesise everything Orbit knows about a target account into a single briefing document."
   },
   {
     id: "content-libraries",
-    label: "Content & Brand Libraries",
-    title: "Organize your brand and content assets",
-    description: "Manage content libraries with filtering, grouping, and asset cards. Maintain brand libraries with asset categories, tagging, and CSV export. Keep your positioning docs, brand guidelines, and marketing collateral organized and accessible to the entire team.",
-    image: "/images/capabilities/content-libraries.png"
-  },
-  {
-    id: "ai-flexibility",
-    label: "AI Flexibility",
-    title: "Multi-provider AI with Azure Foundry",
-    description: "Choose the right AI model for every task. Azure AI Foundry brings GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API. Switch providers per-task or set organization-wide defaults.",
-    image: "/images/capabilities/ai-flexibility.png"
+    label: "Content & Brand",
+    icon: BookOpen,
+    title: "One home for all brand and content assets",
+    description: "Maintain your content library—blog drafts, whitepapers, case studies, landing page copy—alongside a brand library of logos, colours, fonts, and guidelines. Every AI generation draws on your brand context automatically."
   }
 ];
 
@@ -174,8 +199,8 @@ export default function Landing() {
   return (
     <PublicLayout>
       <SEOHead
-        title="Orbit — AI-Powered Go-to-Market Intelligence Platform | Synozur"
-        description="Orbit unifies competitive intelligence, marketing planning, and product management. AI-powered analysis, battlecards, and GTM planning for teams that compete to win."
+        title="Orbit — AI-Powered GTM Engine | Synozur"
+        description="Orbit unifies competitive intelligence, campaign delivery, and AI sales prospecting. Know your market, reach your audience, and build pipeline—without switching tools."
         path="/"
         jsonLd={landingJsonLd}
       />
@@ -200,12 +225,12 @@ export default function Landing() {
           </div>
           
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-            From insight to action<br />
-            <span className="text-primary">in one platform</span>
+            Your GTM engine.<br />
+            <span className="text-primary">From intelligence to pipeline.</span>
           </h1>
           
           <p className="text-xl text-muted-foreground mb-10 max-w-3xl mx-auto leading-relaxed">
-            Orbit unifies competitive intelligence, marketing planning, and product management—giving GTM teams the clarity to compete, plan, and build with confidence.
+            Orbit unifies competitive intelligence, multi-channel campaign delivery, and AI-powered sales prospecting—so GTM teams can know their market, reach their audience, and build pipeline without switching tools.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
@@ -255,9 +280,9 @@ export default function Landing() {
       <section aria-label="Platform Pillars" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-6xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">The Platform</p>
-          <h2 className="text-3xl font-bold text-center mb-6">Three pillars of GTM excellence</h2>
+          <h2 className="text-3xl font-bold text-center mb-6">Four pillars of GTM excellence</h2>
           <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
-            Most tools give you data. Orbit gives you a complete system—from understanding your market to planning your response to building what wins.
+            Most tools stop at data. Orbit gives you a complete operating system—from market intelligence to campaign delivery to pipeline generation to product alignment.
           </p>
           
           {/* Pillar Selector */}
@@ -323,18 +348,19 @@ export default function Landing() {
       <section aria-label="How It Works" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">How It Works</p>
-          <h2 className="text-3xl font-bold text-center mb-16">Intelligence that flows into action</h2>
+          <h2 className="text-3xl font-bold text-center mb-16">Intelligence that flows into pipeline</h2>
           
           <div className="relative">
             {/* Connection Line */}
-            <div className="hidden md:block absolute top-12 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
+            <div className="hidden md:block absolute top-12 left-[10%] right-[10%] h-0.5 bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
             
-            <div className="grid md:grid-cols-4 gap-8">
+            <div className="grid md:grid-cols-5 gap-6">
               {[
-                { step: 1, icon: Radar, title: "Monitor", desc: "Track competitor websites, messaging, and market changes automatically" },
-                { step: 2, icon: Brain, title: "Analyze", desc: "Claude AI identifies positioning gaps and competitive opportunities" },
-                { step: 3, icon: CalendarDays, title: "Plan", desc: "Generate marketing plans with AI-suggested activities and timelines" },
-                { step: 4, icon: Rocket, title: "Execute", desc: "Generate social posts, email campaigns, and align product roadmaps with market intelligence" }
+                { step: 1, icon: Radar, title: "Monitor", desc: "Track competitor websites, messaging, and market movements automatically" },
+                { step: 2, icon: Brain, title: "Analyze", desc: "Claude AI surfaces positioning gaps, opportunities, and competitive intelligence briefings" },
+                { step: 3, icon: Megaphone, title: "Campaign", desc: "Generate briefs, content, and email campaigns — all in one editorial calendar" },
+                { step: 4, icon: Globe, title: "Publish", desc: "Deliver emails directly, post to LinkedIn, X, Facebook, and Bluesky from Orbit" },
+                { step: 5, icon: UserSearch, title: "Prospect", desc: "Find ICP contacts, draft AI outreach in your voice, and sync to HubSpot automatically" }
               ].map((item) => (
                 <div key={item.step} className="text-center relative">
                   <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/25">
@@ -371,34 +397,34 @@ export default function Landing() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
-                icon: Share2,
-                title: "Marketing Assets — Social Posts",
-                desc: "AI-generated social content with platform-specific formatting for LinkedIn, Twitter/X, and Facebook. Choose your tone and extract Saturn-parity content automatically."
+                icon: MailCheck,
+                title: "Email Campaign Delivery",
+                desc: "Send campaigns directly from Orbit. Recipient lists, scheduling, open and click tracking, unsubscribe management, and HubSpot contact sync — all built in."
               },
               {
-                icon: Mail,
-                title: "Marketing Assets — Email Newsletters",
-                desc: "Platform-targeted email generation for Outlook, Dynamics 365, HubSpot Marketing, and HubSpot 1:1. Includes tone control, CTA fields, and platform-specific coaching tips."
+                icon: Globe,
+                title: "Social Direct Publishing",
+                desc: "Publish posts directly to LinkedIn, X/Twitter, Facebook, and Bluesky from Orbit's social calendar. No manual copy-paste — schedule, send, and track from one place."
               },
               {
-                icon: HardDrive,
-                title: "SharePoint Embedded Support",
-                desc: "Enterprise data residency via SharePoint Embedded containers through Microsoft Graph API. Keep your sensitive data within your own tenant."
+                icon: UserSearch,
+                title: "AI Sales Prospecting",
+                desc: "Find ICP-matched contacts via Apollo, draft personalised outreach in your own voice, manage multi-touch cadences, and sync every interaction back to HubSpot automatically."
               },
               {
-                icon: Cpu,
-                title: "Microsoft Azure AI Foundry",
-                desc: "Multi-model support including GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API."
+                icon: Repeat2,
+                title: "Multi-Format Content Engine",
+                desc: "One campaign brief generates blog posts, whitepapers, case studies, landing page copy, video scripts, and Polaris podcast outlines. Repurpose any asset into another format with one click."
               },
               {
-                icon: Handshake,
-                title: "Consortia ID / Partner Program",
-                desc: "Microsoft Content AI Partner Program membership and consortia-level identification for enterprise customers and partners."
+                icon: LineChart,
+                title: "SEO & Share of Voice",
+                desc: "Track keyword rankings for your brand and every competitor. Weekly SERP snapshots, share-of-voice scoring, and ranking movement alerts so your content strategy stays ahead."
               },
               {
-                icon: Activity,
-                title: "Insight Analytics",
-                desc: "AI usage tracking dashboard with tenant-level cost attribution and page-level engagement analytics. Understand how your organization uses AI."
+                icon: CalendarDays,
+                title: "Editorial Calendar & Distribution Planner",
+                desc: "Full campaign lifecycle in one view — briefs, themes, content queue, email scheduling, and social publishing. One-click distribution routes each asset to the right channel automatically."
               }
             ].map((feature, i) => (
               <div key={i} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all" data-testid={`card-whats-new-${i}`}>
@@ -441,8 +467,10 @@ export default function Landing() {
               <h3 className="text-2xl font-bold mb-4">{currentCapability.title}</h3>
               <p className="text-muted-foreground leading-relaxed">{currentCapability.description}</p>
             </div>
-            <div className="bg-muted/50 rounded-xl p-8 aspect-video flex items-center justify-center border border-border">
-              <p className="text-sm text-muted-foreground">[Screenshot: {currentCapability.label}]</p>
+            <div className="bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl p-12 aspect-video flex items-center justify-center border border-primary/20">
+              {currentCapability.icon && (
+                <currentCapability.icon size={72} className="text-primary/40" />
+              )}
             </div>
           </div>
         </div>
@@ -459,17 +487,17 @@ export default function Landing() {
               {
                 icon: Eye,
                 title: "See clearly",
-                desc: "Understand exactly how competitors position themselves—and where you have the advantage."
+                desc: "Know how every competitor positions themselves, where they're gaining ground, and exactly where your advantage lies."
               },
               {
-                icon: Target,
-                title: "Act decisively",
-                desc: "Transform intelligence into marketing plans and product priorities—not just reports."
+                icon: Send,
+                title: "Reach your audience",
+                desc: "Run email campaigns, publish social posts, and push blog drafts directly from Orbit—no extra tools, no copy-paste."
               },
               {
                 icon: TrendingUp,
-                title: "Win consistently",
-                desc: "Arm teams with battlecards, align roadmaps to market reality, and outmaneuver the competition."
+                title: "Build pipeline",
+                desc: "Find ICP prospects, send AI-personalised outreach in your own voice, and let Orbit sync every touchpoint to HubSpot."
               }
             ].map((outcome, i) => (
               <div key={i} className="text-center p-8 rounded-2xl bg-background border border-border">
@@ -488,27 +516,27 @@ export default function Landing() {
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Who It's For</p>
           <h2 className="text-3xl font-bold text-center mb-16">Built for the entire GTM team</h2>
           
-          <div className="grid md:grid-cols-4 gap-6">
+          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-6">
             {[
               {
                 icon: BarChart3,
                 title: "Marketing Leaders",
-                desc: "Competitive positioning, messaging strategy, and campaign planning"
+                desc: "Campaign orchestration, multi-format content generation, email delivery, social publishing, editorial calendar, and SEO share-of-voice tracking"
               },
               {
-                icon: Users,
-                title: "Sales Teams",
-                desc: "Battlecards, competitive objection handling, and deal intelligence"
+                icon: UserSearch,
+                title: "Sales & SDR Teams",
+                desc: "ICP prospecting, AI-drafted outreach in your own voice, multi-touch cadence management, battlecards, and HubSpot sync"
               },
               {
                 icon: Layers,
                 title: "Product Managers",
-                desc: "Roadmap prioritization, feature gap analysis, and market context"
+                desc: "Market-driven roadmap prioritisation, competitive feature gap tracking, and AI-powered recommendations grounded in real intelligence"
               },
               {
                 icon: MapPin,
                 title: "GTM Consultants",
-                desc: "Multi-client analysis, assessment frameworks, and branded deliverables"
+                desc: "Multi-client competitive analysis, GTM assessment frameworks, relationship intelligence reports, and fully branded PDF deliverables"
               }
             ].map((role, i) => (
               <div key={i} className="p-6 rounded-xl bg-card border border-border text-center">
@@ -525,24 +553,24 @@ export default function Landing() {
       <section aria-label="Why Orbit" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Why Orbit</p>
-          <h2 className="text-3xl font-bold text-center mb-4">Not another dashboard. A decision engine.</h2>
+          <h2 className="text-3xl font-bold text-center mb-4">Not another dashboard. A GTM operating system.</h2>
           <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
-            Other tools stop at data collection. Orbit turns intelligence into plans, priorities, and action.
+            Other tools hand you data and leave the rest to you. Orbit takes you from market intelligence all the way to sent emails, published posts, and booked meetings.
           </p>
           
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
-                title: "Intelligence + Action",
-                desc: "We don't just show you competitors—we help you respond with marketing plans and roadmap priorities."
+                title: "Intelligence + Execution",
+                desc: "Most tools stop at insight. Orbit goes the full distance — from competitive monitoring to campaign delivery to pipeline outreach, all connected in one workflow."
               },
               {
-                title: "Grounded in your context",
-                desc: "Upload positioning docs and brand guidelines. Every AI recommendation is tailored to who you are."
+                title: "Grounded in your voice and brand",
+                desc: "Upload positioning docs, brand guidelines, and writing samples. Every AI-generated asset — email, post, outreach, brief — is tailored to who you are and how you sound."
               },
               {
-                title: "One platform, full workflow",
-                desc: "From competitive monitoring to marketing planning to product roadmaps—it's all connected."
+                title: "No channel left behind",
+                desc: "Email delivery, social publishing, blog drafts, HubSpot sync — Orbit covers every outbound channel so your team doesn't have to jump between five tools to ship one campaign."
               }
             ].map((item, i) => (
               <div key={i} className="p-6 rounded-xl bg-background border border-border">
