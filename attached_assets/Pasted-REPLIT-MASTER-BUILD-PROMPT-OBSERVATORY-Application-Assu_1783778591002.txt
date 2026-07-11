@@ -1,0 +1,702 @@
+REPLIT MASTER BUILD PROMPT
+
+OBSERVATORY
+
+Application Assurance & Certification Intelligence Platform
+
+You are an elite product development team consisting of: 
+Principal Product Manager 
+
+Principal Software Architect 
+
+Senior UX Designer 
+
+Accessibility Specialist 
+
+Security Architect 
+
+Compliance Architect 
+
+Full Stack Engineering Team 
+
+DevOps Engineer 
+
+QA Lead 
+
+Your mission is to design and build a production-quality SaaS application called Observatory. 
+Do not build a prototype, mockup, landing page, or demonstration application. 
+Build the foundation of a real commercial software platform that can become a flagship Synozur product. 
+
+
+PRODUCT NAME
+
+Observatory 
+
+
+TAGLINE
+
+Application Assurance and Certification Intelligence 
+
+
+PRODUCT MISSION
+
+Observatory helps organizations assess, document, remediate, and demonstrate readiness for: 
+Accessibility compliance 
+
+Security assurance 
+
+Source code quality 
+
+Privacy and regulatory compliance 
+
+AI governance 
+
+Application certification readiness 
+
+Enterprise procurement reviews 
+
+Microsoft Marketplace readiness 
+
+VPAT creation 
+
+Section 508 reporting 
+
+Observatory is not a certification authority. 
+Observatory is a system of record for application assessment, evidence management, compliance mapping, remediation tracking, and readiness reporting. 
+
+
+PRODUCT VISION
+
+Most organizations manage compliance evidence across spreadsheets, emails, Word documents, screenshots, penetration test reports, tickets, repositories, and disconnected review processes. 
+Observatory centralizes all application assurance activity into a single platform. 
+Every conclusion in a report must be traceable.
+Application<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Version<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Assessment<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Finding<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Evidence<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Control<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Framework<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Readiness Report<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Certification Package<ms-copilot-code-newline>
+Users must always be able to navigate from:
+Executive Report<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Finding<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Evidence<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Assessment<ms-copilot-code-newline>    ↓<ms-copilot-code-newline>Application Version<ms-copilot-code-newline>
+This traceability model is the core differentiator of Observatory. 
+
+
+PRIMARY BUSINESS OBJECTIVES
+
+The platform shall enable organizations to: 
+Inventory applications 
+
+Create assessment programs 
+
+Store findings 
+
+Store evidence 
+
+Map findings to standards 
+
+Track remediation 
+
+Review source code 
+
+Track penetration tests 
+
+Generate executive reporting 
+
+Generate technical reports 
+
+Produce draft VPAT support content 
+
+Generate readiness scores 
+
+Create certification evidence packages 
+
+
+
+TARGET USERS
+
+Executive Sponsor
+
+Views: 
+Readiness scores 
+
+Certification status 
+
+Risks 
+
+Trends 
+
+
+
+Product Owner
+
+Manages: 
+Assessments 
+
+Remediation 
+
+Certification readiness 
+
+
+
+Developer
+
+Manages: 
+Technical findings 
+
+Source code findings 
+
+Remediation activities 
+
+
+
+Accessibility Specialist
+
+Manages: 
+WCAG reviews 
+
+VPAT preparation 
+
+Section 508 assessment 
+
+
+
+Security Reviewer
+
+Manages: 
+Security findings 
+
+Penetration test reviews 
+
+Secure development validation 
+
+
+
+Compliance Reviewer
+
+Manages: 
+Framework mappings 
+
+Evidence 
+
+Audit preparation 
+
+
+
+TECHNOLOGY STACK
+
+Use modern production-ready technologies. 
+Front End
+
+React 
+
+TypeScript 
+
+Vite 
+
+UI
+
+Tailwind CSS 
+
+shadcn/ui 
+
+Lucide Icons 
+
+State Management
+
+React Query 
+
+Context API 
+
+Backend
+
+Node.js 
+
+Express 
+
+Database
+
+Preferred: 
+PostgreSQL 
+
+Fallback: 
+SQLite 
+
+ORM
+
+Prisma 
+
+Authentication
+
+MVP: 
+Local authentication 
+
+Role based authorization 
+
+Future: 
+Microsoft Entra ID 
+
+OAuth 
+
+Azure AD B2C 
+
+Storage
+
+MVP: 
+Local storage abstraction 
+
+Future: 
+Azure Blob Storage 
+
+
+
+APPLICATION BRANDING
+
+Product
+
+Observatory 
+Browser Title
+Observatory | Application Assurance Platform<ms-copilot-code-newline>
+Repository Name
+observatory<ms-copilot-code-newline>
+Namespace
+Synozur.Observatory<ms-copilot-code-newline>
+Database
+observatory<ms-copilot-code-newline>
+
+
+PRODUCT NAVIGATION
+
+Provide a modern left navigation structure.
+Dashboard<ms-copilot-code-newline>Applications<ms-copilot-code-newline>Versions<ms-copilot-code-newline>Assessments<ms-copilot-code-newline>Findings<ms-copilot-code-newline>Evidence Vault<ms-copilot-code-newline>Accessibility<ms-copilot-code-newline>Source Reviews<ms-copilot-code-newline>Penetration Tests<ms-copilot-code-newline>Architecture<ms-copilot-code-newline>Compliance<ms-copilot-code-newline>AI Governance<ms-copilot-code-newline>Standards<ms-copilot-code-newline>Reports<ms-copilot-code-newline>Administration<ms-copilot-code-newline>
+
+
+MODULE 1 — DASHBOARD
+
+Build an executive dashboard. 
+KPI Cards
+
+Display: 
+Applications 
+
+Active Assessments 
+
+Open Findings 
+
+Open Critical Findings 
+
+Accessibility Reviews 
+
+Penetration Tests 
+
+Red Applications 
+
+Green Applications 
+
+
+
+Visualizations
+
+Display: 
+Readiness by Application 
+
+Findings by Severity 
+
+Findings by Domain 
+
+Assessment Status 
+
+Remediation Status 
+
+
+
+Alerts
+
+Show: 
+Certification blockers 
+
+Critical findings 
+
+Overdue findings 
+
+Missing evidence 
+
+Incomplete assessments 
+
+
+
+MODULE 2 — APPLICATION INVENTORY
+
+Manage applications. 
+Application Fields
+Application Name<ms-copilot-code-newline>Product Family<ms-copilot-code-newline>Business Owner<ms-copilot-code-newline>Technical Owner<ms-copilot-code-newline>Description<ms-copilot-code-newline>Application URL<ms-copilot-code-newline>Repository URL<ms-copilot-code-newline>Hosting Platform<ms-copilot-code-newline>Authentication Method<ms-copilot-code-newline>Data Classification<ms-copilot-code-newline>AI Enabled<ms-copilot-code-newline>Current Version<ms-copilot-code-newline>Certification Target<ms-copilot-code-newline>Status<ms-copilot-code-newline>Notes<ms-copilot-code-newline>
+
+
+Product Families
+
+Seed:
+Observatory<ms-copilot-code-newline>Orion<ms-copilot-code-newline>Vega<ms-copilot-code-newline>Constellation<ms-copilot-code-newline>Galaxy<ms-copilot-code-newline>Zenith<ms-copilot-code-newline>Nebula<ms-copilot-code-newline>Other<ms-copilot-code-newline>
+
+
+MODULE 3 — VERSION MANAGEMENT
+
+Each application supports multiple releases. 
+Fields
+Version Number<ms-copilot-code-newline>Release Date<ms-copilot-code-newline>Environment<ms-copilot-code-newline>Build Number<ms-copilot-code-newline>Repository Branch<ms-copilot-code-newline>Commit Hash<ms-copilot-code-newline>Release Notes<ms-copilot-code-newline>Assessment Status<ms-copilot-code-newline>
+
+
+Assessment Status
+Draft<ms-copilot-code-newline>In Review<ms-copilot-code-newline>Ready With Exceptions<ms-copilot-code-newline>Ready<ms-copilot-code-newline>Blocked<ms-copilot-code-newline>Retired<ms-copilot-code-newline>
+
+
+MODULE 4 — ASSESSMENTS
+
+Create assessments. 
+Assessment Types
+Accessibility<ms-copilot-code-newline>Security<ms-copilot-code-newline>Source Code<ms-copilot-code-newline>Architecture<ms-copilot-code-newline>Privacy<ms-copilot-code-newline>Compliance<ms-copilot-code-newline>AI Governance<ms-copilot-code-newline>Penetration Test<ms-copilot-code-newline>Full Certification Review<ms-copilot-code-newline>
+
+
+Fields
+Assessment Name<ms-copilot-code-newline>Assessment Type<ms-copilot-code-newline>Application<ms-copilot-code-newline>Version<ms-copilot-code-newline>Assessor<ms-copilot-code-newline>Assessment Team<ms-copilot-code-newline>Status<ms-copilot-code-newline>Start Date<ms-copilot-code-newline>End Date<ms-copilot-code-newline>Scope<ms-copilot-code-newline>Out Of Scope<ms-copilot-code-newline>Executive Summary<ms-copilot-code-newline>Overall Score<ms-copilot-code-newline>
+
+
+MODULE 5 — FINDINGS
+
+The Findings module is the center of the application. 
+
+
+Finding Fields
+Title<ms-copilot-code-newline>Description<ms-copilot-code-newline>Severity<ms-copilot-code-newline>Domain<ms-copilot-code-newline>Affected Feature<ms-copilot-code-newline>Affected Page<ms-copilot-code-newline>Affected URL<ms-copilot-code-newline>Affected Source File<ms-copilot-code-newline>Affected Line Number<ms-copilot-code-newline>Business Impact<ms-copilot-code-newline>Technical Impact<ms-copilot-code-newline>Recommendation<ms-copilot-code-newline>Remediation Owner<ms-copilot-code-newline>Target Resolution Date<ms-copilot-code-newline>Validation Notes<ms-copilot-code-newline>Status<ms-copilot-code-newline>
+
+
+Severity Levels
+Critical<ms-copilot-code-newline>High<ms-copilot-code-newline>Medium<ms-copilot-code-newline>Low<ms-copilot-code-newline>Informational<ms-copilot-code-newline>
+
+
+Domains
+Accessibility<ms-copilot-code-newline>Security<ms-copilot-code-newline>Source Code<ms-copilot-code-newline>Architecture<ms-copilot-code-newline>Privacy<ms-copilot-code-newline>Compliance<ms-copilot-code-newline>AI Governance<ms-copilot-code-newline>Penetration Testing<ms-copilot-code-newline>Documentation<ms-copilot-code-newline>
+
+
+Statuses
+New<ms-copilot-code-newline>Triaged<ms-copilot-code-newline>Accepted Risk<ms-copilot-code-newline>In Progress<ms-copilot-code-newline>Resolved<ms-copilot-code-newline>Validated<ms-copilot-code-newline>Closed<ms-copilot-code-newline>Deferred<ms-copilot-code-newline>
+
+
+Required Capabilities
+
+Support: 
+Search 
+
+Filtering 
+
+Sorting 
+
+Bulk updates 
+
+Evidence linking 
+
+Standard mapping 
+
+
+
+MODULE 6 — EVIDENCE VAULT
+
+The Evidence Vault is the primary product differentiator. 
+
+
+Purpose
+
+Store every artifact used to support readiness claims. 
+
+
+Evidence Types
+Screenshots<ms-copilot-code-newline>Accessibility Results<ms-copilot-code-newline>Security Results<ms-copilot-code-newline>Penetration Test Reports<ms-copilot-code-newline>Architecture Diagrams<ms-copilot-code-newline>Data Flow Diagrams<ms-copilot-code-newline>Configuration Screenshots<ms-copilot-code-newline>Source Code Snippets<ms-copilot-code-newline>Audit Reports<ms-copilot-code-newline>Vendor Reports<ms-copilot-code-newline>Executive Attestations<ms-copilot-code-newline>Remediation Verification<ms-copilot-code-newline>Manual Review Notes<ms-copilot-code-newline>
+
+
+Evidence Fields
+Title<ms-copilot-code-newline>Description<ms-copilot-code-newline>Evidence Type<ms-copilot-code-newline>Upload<ms-copilot-code-newline>URL<ms-copilot-code-newline>Collection Date<ms-copilot-code-newline>Collected By<ms-copilot-code-newline>Related Application<ms-copilot-code-newline>Related Version<ms-copilot-code-newline>Related Assessment<ms-copilot-code-newline>Related Finding<ms-copilot-code-newline>Related Framework<ms-copilot-code-newline>Related Control<ms-copilot-code-newline>Tags<ms-copilot-code-newline>
+
+
+Requirements
+
+Evidence must support: 
+Multiple findings 
+
+Multiple controls 
+
+Multiple reports 
+
+
+
+MODULE 7 — STANDARDS LIBRARY
+
+Create a standards catalog. 
+
+
+Accessibility Frameworks
+WCAG 2.2<ms-copilot-code-newline>Section 508<ms-copilot-code-newline>EN 301 549<ms-copilot-code-newline>VPAT<ms-copilot-code-newline>
+
+
+Security Frameworks
+OWASP Top 10<ms-copilot-code-newline>OWASP ASVS<ms-copilot-code-newline>Microsoft Security Best Practices<ms-copilot-code-newline>
+
+
+Compliance Frameworks
+SOC 2<ms-copilot-code-newline>ISO 27001<ms-copilot-code-newline>GDPR<ms-copilot-code-newline>
+
+
+AI Governance
+Responsible AI<ms-copilot-code-newline>AI Governance Controls<ms-copilot-code-newline>
+
+
+Control Structure
+
+Each control includes:
+Framework<ms-copilot-code-newline>Control ID<ms-copilot-code-newline>Title<ms-copilot-code-newline>Description<ms-copilot-code-newline>Category<ms-copilot-code-newline>Level<ms-copilot-code-newline>
+
+
+MODULE 8 — ACCESSIBILITY REVIEW
+
+Provide structured accessibility assessments. 
+
+
+Categories
+Images<ms-copilot-code-newline>Forms<ms-copilot-code-newline>Keyboard<ms-copilot-code-newline>Focus<ms-copilot-code-newline>Color Contrast<ms-copilot-code-newline>ARIA<ms-copilot-code-newline>Screen Reader<ms-copilot-code-newline>Tables<ms-copilot-code-newline>Responsive Design<ms-copilot-code-newline>Zoom Testing<ms-copilot-code-newline>Semantic Structure<ms-copilot-code-newline>Error Handling<ms-copilot-code-newline>
+
+
+Review Status
+Pass<ms-copilot-code-newline>Pass With Notes<ms-copilot-code-newline>Supports With Exceptions<ms-copilot-code-newline>Fail<ms-copilot-code-newline>Not Tested<ms-copilot-code-newline>Not Applicable<ms-copilot-code-newline>
+
+
+Review Fields
+Notes<ms-copilot-code-newline>Linked Findings<ms-copilot-code-newline>Linked Evidence<ms-copilot-code-newline>Reviewer<ms-copilot-code-newline>Review Date<ms-copilot-code-newline>
+
+
+MODULE 9 — SOURCE CODE REVIEW
+
+Support source-aware assessment. 
+
+
+Source Metadata
+Repository<ms-copilot-code-newline>Branch<ms-copilot-code-newline>Commit<ms-copilot-code-newline>Language<ms-copilot-code-newline>Framework<ms-copilot-code-newline>Component<ms-copilot-code-newline>Source File<ms-copilot-code-newline>Line Number<ms-copilot-code-newline>
+
+
+Review Categories
+Accessibility<ms-copilot-code-newline>Security<ms-copilot-code-newline>Secrets Exposure<ms-copilot-code-newline>Authentication<ms-copilot-code-newline>Authorization<ms-copilot-code-newline>Input Validation<ms-copilot-code-newline>Logging<ms-copilot-code-newline>Dependency Management<ms-copilot-code-newline>Code Quality<ms-copilot-code-newline>AI Governance<ms-copilot-code-newline>
+
+
+Future Integration Points
+
+Design architecture for:
+GitHub<ms-copilot-code-newline>Azure DevOps<ms-copilot-code-newline>CodeQL<ms-copilot-code-newline>Semgrep<ms-copilot-code-newline>SonarQube<ms-copilot-code-newline>Snyk<ms-copilot-code-newline>Dependabot<ms-copilot-code-newline>Microsoft Security DevOps<ms-copilot-code-newline>
+Do not implement integrations in V1. 
+
+
+MODULE 10 — PENETRATION TEST MANAGEMENT
+
+Track internal and third-party testing. 
+
+
+Pen Test Fields
+Test Name<ms-copilot-code-newline>Assessment Firm<ms-copilot-code-newline>Lead Tester<ms-copilot-code-newline>Methodology<ms-copilot-code-newline>Start Date<ms-copilot-code-newline>Completion Date<ms-copilot-code-newline>Executive Summary<ms-copilot-code-newline>Result<ms-copilot-code-newline>
+
+
+Result Values
+Ready<ms-copilot-code-newline>Ready After Remediation<ms-copilot-code-newline>Remediation Required<ms-copilot-code-newline>Not Ready<ms-copilot-code-newline>
+
+
+Pen Test Findings
+Title<ms-copilot-code-newline>CVSS Score<ms-copilot-code-newline>Severity<ms-copilot-code-newline>Exploitability<ms-copilot-code-newline>Affected Component<ms-copilot-code-newline>Description<ms-copilot-code-newline>Recommendation<ms-copilot-code-newline>Status<ms-copilot-code-newline>Validation Status<ms-copilot-code-newline>
+
+
+MODULE 11 — ARCHITECTURE REVIEW
+
+Review application architecture. 
+
+
+Areas
+Authentication<ms-copilot-code-newline>Authorization<ms-copilot-code-newline>Encryption<ms-copilot-code-newline>Logging<ms-copilot-code-newline>Monitoring<ms-copilot-code-newline>Secrets Management<ms-copilot-code-newline>Data Protection<ms-copilot-code-newline>Network Security<ms-copilot-code-newline>
+
+
+Azure Capabilities
+
+Support evaluation of:
+Entra ID<ms-copilot-code-newline>Managed Identity<ms-copilot-code-newline>Key Vault<ms-copilot-code-newline>Front Door<ms-copilot-code-newline>Web Application Firewall<ms-copilot-code-newline>App Service<ms-copilot-code-newline>AKS<ms-copilot-code-newline>Azure Functions<ms-copilot-code-newline>Storage<ms-copilot-code-newline>SQL<ms-copilot-code-newline>
+
+
+MODULE 12 — PRIVACY & COMPLIANCE
+
+Track compliance readiness. 
+
+
+Areas
+Data Collection<ms-copilot-code-newline>Retention<ms-copilot-code-newline>Deletion<ms-copilot-code-newline>Consent<ms-copilot-code-newline>Classification<ms-copilot-code-newline>Auditability<ms-copilot-code-newline>Privacy Controls<ms-copilot-code-newline>
+
+
+MODULE 13 — AI GOVERNANCE
+
+For AI-enabled products. 
+
+
+Areas
+Model Inventory<ms-copilot-code-newline>Prompt Handling<ms-copilot-code-newline>Human Oversight<ms-copilot-code-newline>Citation Strategy<ms-copilot-code-newline>Grounding<ms-copilot-code-newline>Data Leakage Prevention<ms-copilot-code-newline>Prompt Injection Protection<ms-copilot-code-newline>Model Documentation<ms-copilot-code-newline>
+
+
+MODULE 14 — READINESS ENGINE
+
+Generate readiness scores. 
+
+
+Scoring Weights
+Accessibility         25%<ms-copilot-code-newline>Security              25%<ms-copilot-code-newline>Source Code           15%<ms-copilot-code-newline>Architecture          10%<ms-copilot-code-newline>Privacy               10%<ms-copilot-code-newline>Documentation         10%<ms-copilot-code-newline>AI Governance          5%<ms-copilot-code-newline>
+
+
+Rules
+
+Applications cannot be:
+Ready<ms-copilot-code-newline>
+when: 
+Open Critical Findings exist 
+
+Unvalidated Critical Pen Test Findings exist 
+
+Mandatory evidence is missing 
+
+
+
+Status Definitions
+90-100 Ready<ms-copilot-code-newline>75-89 Ready with Minor Remediation<ms-copilot-code-newline>60-74 Remediation Required<ms-copilot-code-newline>0-59 Not Ready<ms-copilot-code-newline>
+
+
+MODULE 15 — REPORTING ENGINE
+
+Generate printable HTML reports. 
+
+
+Executive Readiness Report
+
+Include:
+Executive Summary<ms-copilot-code-newline>Readiness Score<ms-copilot-code-newline>Status<ms-copilot-code-newline>Top Risks<ms-copilot-code-newline>Recommendations<ms-copilot-code-newline>Evidence Summary<ms-copilot-code-newline>
+
+
+Technical Assessment Report
+
+Include:
+Findings<ms-copilot-code-newline>Evidence<ms-copilot-code-newline>Standards Mapping<ms-copilot-code-newline>Recommendations<ms-copilot-code-newline>Ownership<ms-copilot-code-newline>
+
+
+Accessibility Report
+
+Include:
+WCAG Mapping<ms-copilot-code-newline>Section 508 Mapping<ms-copilot-code-newline>VPAT Support Data<ms-copilot-code-newline>Exceptions<ms-copilot-code-newline>Evidence<ms-copilot-code-newline>
+
+
+Penetration Test Report
+
+Include:
+Scope<ms-copilot-code-newline>Methodology<ms-copilot-code-newline>Findings<ms-copilot-code-newline>Remediation<ms-copilot-code-newline>Validation<ms-copilot-code-newline>
+
+
+Certification Readiness Report
+
+Include:
+Overall Readiness<ms-copilot-code-newline>Framework Coverage<ms-copilot-code-newline>Risk Assessment<ms-copilot-code-newline>Evidence Completeness<ms-copilot-code-newline>Outstanding Issues<ms-copilot-code-newline>
+
+
+MODULE 16 — VPAT ASSISTANT
+
+Provide draft support content generation. 
+
+
+Fields
+Criterion<ms-copilot-code-newline>Conformance<ms-copilot-code-newline>Remarks<ms-copilot-code-newline>Evidence<ms-copilot-code-newline>Findings<ms-copilot-code-newline>Reviewer Notes<ms-copilot-code-newline>
+
+
+Conformance Values
+Supports<ms-copilot-code-newline>Partially Supports<ms-copilot-code-newline>Supports With Exceptions<ms-copilot-code-newline>Does Not Support<ms-copilot-code-newline>Not Applicable<ms-copilot-code-newline>Not Evaluated<ms-copilot-code-newline>
+
+
+Mandatory Disclaimer
+
+Display:
+Draft VPAT support content only.<ms-copilot-code-newline><ms-copilot-code-newline>Requires human review and validation.<ms-copilot-code-newline><ms-copilot-code-newline>Not a legal certification.<ms-copilot-code-newline>
+
+
+DATABASE DESIGN
+
+Build normalized schema. 
+Entities:
+Users<ms-copilot-code-newline>Applications<ms-copilot-code-newline>Versions<ms-copilot-code-newline>Assessments<ms-copilot-code-newline>Findings<ms-copilot-code-newline>Evidence<ms-copilot-code-newline>Standards<ms-copilot-code-newline>Controls<ms-copilot-code-newline>FrameworkMappings<ms-copilot-code-newline>AccessibilityReviews<ms-copilot-code-newline>SourceCodeReviews<ms-copilot-code-newline>PenTests<ms-copilot-code-newline>PenTestFindings<ms-copilot-code-newline>Reports<ms-copilot-code-newline>AuditLogs<ms-copilot-code-newline>
+Use Prisma migrations. 
+
+
+REQUIRED SEED DATA
+
+Applications:
+Observatory<ms-copilot-code-newline>Vega<ms-copilot-code-newline>Orion<ms-copilot-code-newline>Constellation<ms-copilot-code-newline>Galaxy<ms-copilot-code-newline>
+Standards:
+WCAG 2.2<ms-copilot-code-newline>Section 508<ms-copilot-code-newline>VPAT<ms-copilot-code-newline>OWASP Top 10<ms-copilot-code-newline>OWASP ASVS<ms-copilot-code-newline>SOC 2<ms-copilot-code-newline>ISO 27001<ms-copilot-code-newline>
+Include: 
+Sample assessment 
+
+Sample findings 
+
+Sample evidence 
+
+Sample reports 
+
+Sample readiness score 
+
+The application should appear functional immediately after launch. 
+
+
+SECURITY REQUIREMENTS
+
+Implement:
+Role Based Access Control<ms-copilot-code-newline>Audit Logging<ms-copilot-code-newline>Server Side Validation<ms-copilot-code-newline>Input Validation<ms-copilot-code-newline>Secure File Handling<ms-copilot-code-newline>
+
+
+Roles
+Administrator<ms-copilot-code-newline>Reviewer<ms-copilot-code-newline>Developer<ms-copilot-code-newline>Executive<ms-copilot-code-newline>ReadOnly<ms-copilot-code-newline>
+
+
+ACCESSIBILITY REQUIREMENTS
+
+The platform itself must follow accessibility best practices. 
+Implement:
+Keyboard Navigation<ms-copilot-code-newline>Semantic HTML<ms-copilot-code-newline>Visible Focus States<ms-copilot-code-newline>Form Labels<ms-copilot-code-newline>ARIA Support<ms-copilot-code-newline>Color Contrast Compliance<ms-copilot-code-newline>Responsive Layout<ms-copilot-code-newline>
+
+
+OUT OF SCOPE FOR VERSION 1
+
+Do not build:
+Marketplace submission<ms-copilot-code-newline>Actual certification submission<ms-copilot-code-newline>Automated scanners<ms-copilot-code-newline>Real GitHub ingestion<ms-copilot-code-newline>Real SAST execution<ms-copilot-code-newline>Real DAST execution<ms-copilot-code-newline>Azure Blob integration<ms-copilot-code-newline>Jira integration<ms-copilot-code-newline>Azure DevOps integration<ms-copilot-code-newline>Multi-tenant billing<ms-copilot-code-newline>Mobile apps<ms-copilot-code-newline>
+Build extensibility points only. 
+
+
+DELIVERABLES
+
+Deliver: 
+Running application 
+
+Database schema 
+
+Seed data 
+
+Navigation framework 
+
+Dashboard 
+
+CRUD capabilities 
+
+Evidence Vault 
+
+Reporting engine 
+
+Readiness engine 
+
+Documentation 
+
+Include:
+README.md<ms-copilot-code-newline>Architecture Overview<ms-copilot-code-newline>Database Diagram<ms-copilot-code-newline>Roadmap<ms-copilot-code-newline>Future Integration Strategy<ms-copilot-code-newline>
+
+
+FINAL PRODUCT GOAL
+
+Build Observatory as the system of record for application assurance. 
+Optimize every design decision around:
+Evidence Traceability<ms-copilot-code-newline>Certification Readiness<ms-copilot-code-newline>Accessibility<ms-copilot-code-newline>Security<ms-copilot-code-newline>Executive Reporting<ms-copilot-code-newline>Compliance Mapping<ms-copilot-code-newline>Extensibility<ms-copilot-code-newline>Commercial Product Quality<ms-copilot-code-newline>
+This should feel like the first release of a real Synozur SaaS platform, not a prototype.
