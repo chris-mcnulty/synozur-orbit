@@ -4921,3 +4921,356 @@ export type InsertOutreachSettings = z.infer<typeof insertOutreachSettingsSchema
 export const insertOutreachSendLedgerSchema = createInsertSchema(outreachSendLedger).omit({ id: true, occurredAt: true });
 export type OutreachSendLedgerEntry = typeof outreachSendLedger.$inferSelect;
 export type InsertOutreachSendLedgerEntry = z.infer<typeof insertOutreachSendLedgerSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OBSERVATORY — Application Assurance & Certification Intelligence
+// Traceability spine: Application → Version → Assessment → Finding →
+// Evidence → Control → Framework. All tenant-scoped except the shared
+// framework/control catalog (global standards library).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Constants ───────────────────────────────────────────────────────────────
+export const OBS_ASSESSMENT_TYPES = [
+  "accessibility",
+  "security_source_review",
+  "penetration_test",
+  "architecture_review",
+  "privacy_review",
+  "ai_governance",
+  "performance",
+  "code_quality",
+  "compliance",
+] as const;
+export type ObsAssessmentType = (typeof OBS_ASSESSMENT_TYPES)[number];
+
+export const OBS_VERSION_STATUSES = [
+  "Draft",
+  "In Review",
+  "Ready With Exceptions",
+  "Ready",
+  "Blocked",
+  "Retired",
+] as const;
+export type ObsVersionStatus = (typeof OBS_VERSION_STATUSES)[number];
+
+export const OBS_ASSESSMENT_STATUSES = [
+  "planned",
+  "in_progress",
+  "completed",
+  "cancelled",
+] as const;
+
+export const OBS_FINDING_SEVERITIES = [
+  "Critical",
+  "High",
+  "Medium",
+  "Low",
+  "Informational",
+] as const;
+export type ObsFindingSeverity = (typeof OBS_FINDING_SEVERITIES)[number];
+
+export const OBS_FINDING_DOMAINS = [
+  "accessibility",
+  "security",
+  "privacy",
+  "architecture",
+  "performance",
+  "code_quality",
+  "ai_governance",
+  "compliance",
+  "usability",
+] as const;
+export type ObsFindingDomain = (typeof OBS_FINDING_DOMAINS)[number];
+
+export const OBS_FINDING_STATUSES = [
+  "open",
+  "in_progress",
+  "remediated",
+  "verified",
+  "accepted_risk",
+  "deferred",
+  "duplicate",
+  "wont_fix",
+] as const;
+export type ObsFindingStatus = (typeof OBS_FINDING_STATUSES)[number];
+
+export const OBS_EVIDENCE_TYPES = [
+  "screenshot",
+  "document",
+  "log_extract",
+  "scan_report",
+  "test_result",
+  "url",
+  "code_snippet",
+  "attestation",
+  "configuration",
+  "other",
+] as const;
+export type ObsEvidenceType = (typeof OBS_EVIDENCE_TYPES)[number];
+
+// ── Applications ────────────────────────────────────────────────────────────
+export const obsApplications = pgTable("obs_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),
+  productFamily: text("product_family"),
+  description: text("description"),
+  businessOwner: text("business_owner"),
+  technicalOwner: text("technical_owner"),
+  appUrl: text("app_url"),
+  repoUrl: text("repo_url"),
+  hostingPlatform: text("hosting_platform"),
+  authMethod: text("auth_method"),
+  dataClassification: text("data_classification"), // public, internal, confidential, restricted
+  aiEnabled: boolean("ai_enabled").notNull().default(false),
+  certificationTarget: text("certification_target"),
+  status: text("status").notNull().default("active"), // active, archived
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_applications_tenant_idx").on(t.tenantDomain),
+}));
+
+// ── Versions ────────────────────────────────────────────────────────────────
+export const obsVersions = pgTable("obs_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  versionNumber: text("version_number").notNull(),
+  releaseDate: timestamp("release_date"),
+  environment: text("environment"), // development, staging, production
+  buildNumber: text("build_number"),
+  branch: text("branch"),
+  commitHash: text("commit_hash"),
+  notes: text("notes"),
+  assessmentStatus: text("assessment_status").notNull().default("Draft"), // OBS_VERSION_STATUSES
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_versions_tenant_idx").on(t.tenantDomain),
+  appIdx: index("obs_versions_app_idx").on(t.applicationId),
+}));
+
+// ── Assessments ─────────────────────────────────────────────────────────────
+export const obsAssessments = pgTable("obs_assessments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  versionId: varchar("version_id").references(() => obsVersions.id, { onDelete: "set null" }),
+  type: text("type").notNull(), // OBS_ASSESSMENT_TYPES
+  title: text("title").notNull(),
+  assessorName: text("assessor_name"),
+  assessorUserId: varchar("assessor_user_id").references(() => users.id, { onDelete: "set null" }),
+  team: text("team"),
+  status: text("status").notNull().default("planned"), // OBS_ASSESSMENT_STATUSES
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  scope: text("scope"),
+  outOfScope: text("out_of_scope"),
+  executiveSummary: text("executive_summary"),
+  overallScore: integer("overall_score"), // 0-100
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_assessments_tenant_idx").on(t.tenantDomain),
+  appIdx: index("obs_assessments_app_idx").on(t.applicationId),
+  versionIdx: index("obs_assessments_version_idx").on(t.versionId),
+}));
+
+// ── Frameworks & Controls (global standards catalog) ───────────────────────
+export const obsFrameworks = pgTable("obs_frameworks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").notNull().unique(), // e.g. "WCAG22", "OWASP_TOP10"
+  name: text("name").notNull(),
+  version: text("version"),
+  description: text("description"),
+  category: text("category"), // accessibility, security, privacy, compliance, ai
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const obsControls = pgTable("obs_controls", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  frameworkId: varchar("framework_id").notNull().references(() => obsFrameworks.id, { onDelete: "cascade" }),
+  controlId: text("control_id").notNull(), // e.g. "1.1.1", "A01:2021"
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category"), // grouping within the framework
+  level: text("level"), // e.g. WCAG A/AA/AAA, ASVS L1/L2/L3
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => ({
+  frameworkIdx: index("obs_controls_framework_idx").on(t.frameworkId),
+  uniqueControl: uniqueIndex("obs_controls_framework_control_idx").on(t.frameworkId, t.controlId),
+}));
+
+// ── Findings ────────────────────────────────────────────────────────────────
+export const obsFindings = pgTable("obs_findings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  assessmentId: varchar("assessment_id").notNull().references(() => obsAssessments.id, { onDelete: "cascade" }),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  versionId: varchar("version_id").references(() => obsVersions.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  severity: text("severity").notNull().default("Medium"), // OBS_FINDING_SEVERITIES
+  domain: text("domain").notNull(), // OBS_FINDING_DOMAINS
+  status: text("status").notNull().default("open"), // OBS_FINDING_STATUSES
+  recommendation: text("recommendation"),
+  remediationPlan: text("remediation_plan"),
+  affectedComponent: text("affected_component"),
+  stepsToReproduce: text("steps_to_reproduce"),
+  likelihood: text("likelihood"), // low, medium, high
+  impact: text("impact"), // low, medium, high
+  cweId: text("cwe_id"),
+  wcagCriterion: text("wcag_criterion"),
+  dueDate: timestamp("due_date"),
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  assignedToName: text("assigned_to_name"),
+  resolvedAt: timestamp("resolved_at"),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_findings_tenant_idx").on(t.tenantDomain),
+  assessmentIdx: index("obs_findings_assessment_idx").on(t.assessmentId),
+  appIdx: index("obs_findings_app_idx").on(t.applicationId),
+  statusIdx: index("obs_findings_status_idx").on(t.tenantDomain, t.status),
+}));
+
+// ── Evidence ────────────────────────────────────────────────────────────────
+export const obsEvidence = pgTable("obs_evidence", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  evidenceType: text("evidence_type").notNull().default("document"), // OBS_EVIDENCE_TYPES
+  fileUrl: text("file_url"), // object storage path (/objects/…)
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
+  contentType: text("content_type"),
+  externalUrl: text("external_url"), // URL-type evidence
+  source: text("source"), // tool or origin, e.g. "axe-core", "Burp Suite"
+  collectedBy: text("collected_by"),
+  collectedAt: timestamp("collected_at"),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_evidence_tenant_idx").on(t.tenantDomain),
+}));
+
+// ── Link tables (many-to-many) ──────────────────────────────────────────────
+export const obsFindingEvidence = pgTable("obs_finding_evidence", {
+  findingId: varchar("finding_id").notNull().references(() => obsFindings.id, { onDelete: "cascade" }),
+  evidenceId: varchar("evidence_id").notNull().references(() => obsEvidence.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.findingId, t.evidenceId] }),
+}));
+
+export const obsAssessmentEvidence = pgTable("obs_assessment_evidence", {
+  assessmentId: varchar("assessment_id").notNull().references(() => obsAssessments.id, { onDelete: "cascade" }),
+  evidenceId: varchar("evidence_id").notNull().references(() => obsEvidence.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.assessmentId, t.evidenceId] }),
+}));
+
+export const obsVersionEvidence = pgTable("obs_version_evidence", {
+  versionId: varchar("version_id").notNull().references(() => obsVersions.id, { onDelete: "cascade" }),
+  evidenceId: varchar("evidence_id").notNull().references(() => obsEvidence.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.versionId, t.evidenceId] }),
+}));
+
+export const obsControlEvidence = pgTable("obs_control_evidence", {
+  controlId: varchar("control_id").notNull().references(() => obsControls.id, { onDelete: "cascade" }),
+  evidenceId: varchar("evidence_id").notNull().references(() => obsEvidence.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.controlId, t.evidenceId] }),
+}));
+
+export const obsFindingControls = pgTable("obs_finding_controls", {
+  findingId: varchar("finding_id").notNull().references(() => obsFindings.id, { onDelete: "cascade" }),
+  controlId: varchar("control_id").notNull().references(() => obsControls.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.findingId, t.controlId] }),
+}));
+
+// ── Audit log ───────────────────────────────────────────────────────────────
+export const obsAuditLogs = pgTable("obs_audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  entityType: text("entity_type").notNull(), // application, version, assessment, finding, evidence, link
+  entityId: varchar("entity_id").notNull(),
+  action: text("action").notNull(), // create, update, delete, link, unlink, bulk_update
+  summary: text("summary"),
+  changes: jsonb("changes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_audit_logs_tenant_idx").on(t.tenantDomain, t.createdAt),
+  entityIdx: index("obs_audit_logs_entity_idx").on(t.entityType, t.entityId),
+}));
+
+// ── Relations ───────────────────────────────────────────────────────────────
+export const obsApplicationsRelations = relations(obsApplications, ({ many }) => ({
+  versions: many(obsVersions),
+  assessments: many(obsAssessments),
+  findings: many(obsFindings),
+}));
+
+export const obsVersionsRelations = relations(obsVersions, ({ one, many }) => ({
+  application: one(obsApplications, { fields: [obsVersions.applicationId], references: [obsApplications.id] }),
+  assessments: many(obsAssessments),
+}));
+
+export const obsAssessmentsRelations = relations(obsAssessments, ({ one, many }) => ({
+  application: one(obsApplications, { fields: [obsAssessments.applicationId], references: [obsApplications.id] }),
+  version: one(obsVersions, { fields: [obsAssessments.versionId], references: [obsVersions.id] }),
+  findings: many(obsFindings),
+}));
+
+export const obsFindingsRelations = relations(obsFindings, ({ one }) => ({
+  assessment: one(obsAssessments, { fields: [obsFindings.assessmentId], references: [obsAssessments.id] }),
+  application: one(obsApplications, { fields: [obsFindings.applicationId], references: [obsApplications.id] }),
+  version: one(obsVersions, { fields: [obsFindings.versionId], references: [obsVersions.id] }),
+}));
+
+export const obsControlsRelations = relations(obsControls, ({ one }) => ({
+  framework: one(obsFrameworks, { fields: [obsControls.frameworkId], references: [obsFrameworks.id] }),
+}));
+
+// ── Insert schemas + types ──────────────────────────────────────────────────
+export const insertObsApplicationSchema = createInsertSchema(obsApplications).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsApplication = typeof obsApplications.$inferSelect;
+export type InsertObsApplication = z.infer<typeof insertObsApplicationSchema>;
+
+export const insertObsVersionSchema = createInsertSchema(obsVersions).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsVersion = typeof obsVersions.$inferSelect;
+export type InsertObsVersion = z.infer<typeof insertObsVersionSchema>;
+
+export const insertObsAssessmentSchema = createInsertSchema(obsAssessments).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsAssessment = typeof obsAssessments.$inferSelect;
+export type InsertObsAssessment = z.infer<typeof insertObsAssessmentSchema>;
+
+export const insertObsFrameworkSchema = createInsertSchema(obsFrameworks).omit({ id: true, createdAt: true });
+export type ObsFramework = typeof obsFrameworks.$inferSelect;
+export type InsertObsFramework = z.infer<typeof insertObsFrameworkSchema>;
+
+export const insertObsControlSchema = createInsertSchema(obsControls).omit({ id: true });
+export type ObsControl = typeof obsControls.$inferSelect;
+export type InsertObsControl = z.infer<typeof insertObsControlSchema>;
+
+export const insertObsFindingSchema = createInsertSchema(obsFindings).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsFinding = typeof obsFindings.$inferSelect;
+export type InsertObsFinding = z.infer<typeof insertObsFindingSchema>;
+
+export const insertObsEvidenceSchema = createInsertSchema(obsEvidence).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsEvidence = typeof obsEvidence.$inferSelect;
+export type InsertObsEvidence = z.infer<typeof insertObsEvidenceSchema>;
+
+export const insertObsAuditLogSchema = createInsertSchema(obsAuditLogs).omit({ id: true, createdAt: true });
+export type ObsAuditLog = typeof obsAuditLogs.$inferSelect;
+export type InsertObsAuditLog = z.infer<typeof insertObsAuditLogSchema>;

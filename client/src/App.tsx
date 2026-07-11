@@ -97,6 +97,16 @@ import SettingsIntegrationsPage from "@/pages/app/settings-integrations";
 import OAuthClientsAdminPage from "@/pages/app/admin/oauth-clients";
 import GlobalPlatformCredentialsPage from "@/pages/app/admin/platform-credentials";
 import DeveloperPortalPage from "@/pages/app/developer";
+import ObservatoryDashboard from "@/pages/app/observatory/index";
+import ObservatoryApplications from "@/pages/app/observatory/applications";
+import ObservatoryApplicationDetail from "@/pages/app/observatory/application-detail";
+import ObservatoryVersions from "@/pages/app/observatory/versions";
+import ObservatoryAssessments from "@/pages/app/observatory/assessments";
+import ObservatoryAssessmentDetail from "@/pages/app/observatory/assessment-detail";
+import ObservatoryFindings from "@/pages/app/observatory/findings";
+import ObservatoryFindingDetail from "@/pages/app/observatory/finding-detail";
+import ObservatoryEvidence from "@/pages/app/observatory/evidence";
+import ObservatoryStandards from "@/pages/app/observatory/standards";
 
 function GlobalAdminOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
@@ -155,6 +165,16 @@ function Router() {
       <Route path="/app/relationship-reports">{() => <PageFeatureGate featureKey="relationshipReports" label="Relationship Reports" description="On-demand 12-month engagement plans for competitors and market peers. Upgrade to unlock this feature."><RelationshipReportsPage /></PageFeatureGate>}</Route>
       <Route path="/app/relationship-reports/:id">{() => <PageFeatureGate featureKey="relationshipReports" label="Relationship Reports" description="On-demand 12-month engagement plans for competitors and market peers. Upgrade to unlock this feature."><RelationshipReportDetailPage /></PageFeatureGate>}</Route>
       <Route path="/app/documents" component={Documents} />
+      <Route path="/app/observatory" component={ObservatoryDashboard} />
+      <Route path="/app/observatory/applications" component={ObservatoryApplications} />
+      <Route path="/app/observatory/applications/:id" component={ObservatoryApplicationDetail} />
+      <Route path="/app/observatory/versions" component={ObservatoryVersions} />
+      <Route path="/app/observatory/assessments" component={ObservatoryAssessments} />
+      <Route path="/app/observatory/assessments/:id" component={ObservatoryAssessmentDetail} />
+      <Route path="/app/observatory/findings" component={ObservatoryFindings} />
+      <Route path="/app/observatory/findings/:id" component={ObservatoryFindingDetail} />
+      <Route path="/app/observatory/evidence" component={ObservatoryEvidence} />
+      <Route path="/app/observatory/standards" component={ObservatoryStandards} />
       <Route path="/app/assessments" component={Assessments} />
       <Route path="/app/settings" component={Settings} />
       <Route path="/app/settings/integrations">{() => <PageFeatureGate featureKey="outcomeMetrics" label="Integrations" description="Connect Google Analytics and other services to enrich your outcomes data."><SettingsIntegrationsPage /></PageFeatureGate>}</Route>

@@ -49,6 +49,13 @@ import {
   Users,
   HardDrive,
   Crown,
+  Radar,
+  AppWindow,
+  GitBranch,
+  ShieldCheck,
+  AlertTriangle,
+  Archive,
+  BookMarked,
 } from "lucide-react";
 
 export interface AreaNavItem {
@@ -64,7 +71,7 @@ export interface AreaNavItem {
   section?: string;
 }
 
-export type AreaId = "home" | "research" | "product" | "marketing" | "sales" | "settings";
+export type AreaId = "home" | "research" | "product" | "marketing" | "sales" | "observatory" | "settings";
 
 export interface AppArea {
   id: AreaId;
@@ -203,6 +210,24 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       ],
     },
     {
+      id: "observatory",
+      label: "Observatory",
+      icon: Radar,
+      hubHref: "/app/observatory",
+      inHeader: true,
+      items: [
+        { label: "Dashboard", icon: LayoutDashboard, href: "/app/observatory", description: "Assurance posture at a glance: open findings, assessments in flight, and recent activity." },
+        { label: "Applications", icon: AppWindow, href: "/app/observatory/applications", section: "Portfolio", description: "The application portfolio under assurance — owners, hosting, classification, certification targets." },
+        { label: "Versions", icon: GitBranch, href: "/app/observatory/versions", section: "Portfolio", indent: true, description: "Release versions tracked per application with assessment readiness status." },
+        { label: "Assessments", icon: ShieldCheck, href: "/app/observatory/assessments", section: "Assurance", description: "Accessibility, security, privacy, AI, and compliance assessments per application version." },
+        { label: "Findings", icon: AlertTriangle, href: "/app/observatory/findings", section: "Assurance", description: "Every finding across assessments, filterable by severity, domain, and status." },
+        { label: "Evidence Vault", icon: Archive, href: "/app/observatory/evidence", section: "Assurance", description: "Screenshots, scan reports, attestations, and documents linked to findings and assessments." },
+        { label: "Standards", icon: BookMarked, href: "/app/observatory/standards", section: "Reference", description: "The standards library: WCAG 2.2, Section 508, EN 301 549, OWASP, SOC 2, ISO 27001, GDPR, Responsible AI." },
+        { label: "Reports", icon: FileText, href: "/app/observatory/reports", section: "Reference", comingSoon: true, description: "Certification and readiness reporting." },
+        { label: "Settings", icon: Settings, href: "/app/settings", section: "Reference" },
+      ],
+    },
+    {
       id: "settings",
       label: "Admin & Settings",
       icon: Settings,
@@ -283,7 +308,10 @@ function matchesPrefix(path: string, prefixes: string[]): boolean {
   return prefixes.some((p) => path === p || path.startsWith(p + "/") || path.startsWith(p + "?"));
 }
 
+const OBSERVATORY_PREFIXES = ["/app/observatory"];
+
 export function getActiveAreaId(path: string): AreaId {
+  if (matchesPrefix(path, OBSERVATORY_PREFIXES)) return "observatory";
   if (matchesPrefix(path, SETTINGS_PREFIXES)) return "settings";
   if (matchesPrefix(path, SALES_PREFIXES)) return "sales";
   if (matchesPrefix(path, PRODUCT_PREFIXES)) return "product";
