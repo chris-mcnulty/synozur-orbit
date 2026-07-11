@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
 import { useSearch } from "wouter";
-import { Archive, Plus, Loader2, Search, ExternalLink } from "lucide-react";
+import { Archive, Download, Loader2, Paperclip, Plus, Search, ExternalLink, X } from "lucide-react";
 import { EVIDENCE_TYPES, labelFor } from "./shared";
 import { formatDate } from "@/lib/utils";
 
@@ -22,10 +22,29 @@ interface EvidenceRow {
   title: string;
   description: string | null;
   evidenceType: string;
-  sourceTool: string | null;
+  source: string | null;
   externalUrl: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+  fileSize: number | null;
+  contentType: string | null;
   collectedAt: string | null;
   createdAt: string;
+}
+
+const ALLOWED_MIME_TYPES = [
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "text/plain",
+];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function ObservatoryEvidence() {
@@ -41,7 +60,13 @@ export default function ObservatoryEvidence() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(!!linkFindingId || !!linkAssessmentId);
-  const [form, setForm] = useState({ title: "", description: "", evidenceType: "screenshot", sourceTool: "", externalUrl: "", collectedAt: "" });
+  const [form, setForm] = useState({
+    title: "", description: "", evidenceType: "screenshot",
+    sourceTool: "", externalUrl: "", collectedAt: "",
+  });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const qp = new URLSearchParams();
   if (typeFilter !== "all") qp.set("type", typeFilter);
@@ -52,24 +77,81 @@ export default function ObservatoryEvidence() {
     queryKey: [`/api/observatory/evidence${qs ? `?${qs}` : ""}`],
   });
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setUploadError(null);
+    const file = e.target.files?.[0] ?? null;
+    if (!file) { setSelectedFile(null); return; }
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setUploadError("File type not supported. Use images (JPEG, PNG, GIF, WebP), PDF, DOCX, DOC, or TXT.");
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError(`File is too large (max ${formatBytes(MAX_FILE_SIZE)}).`);
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setSelectedFile(file);
+  }
+
+  function clearFile() {
+    setSelectedFile(null);
+    setUploadError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function uploadFile(file: File): Promise<{ fileUrl: string; fileName: string; fileSize: number; contentType: string }> {
+    const { uploadURL, objectPath } = await (
+      await apiRequest("POST", "/api/uploads/request-url", {
+        name: file.name,
+        size: file.size,
+        contentType: file.type,
+      })
+    ).json();
+
+    const putRes = await fetch(uploadURL, {
+      method: "PUT",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    if (!putRes.ok) throw new Error("File upload failed. Please try again.");
+
+    return {
+      fileUrl: objectPath,
+      fileName: file.name,
+      fileSize: file.size,
+      contentType: file.type,
+    };
+  }
+
   const createMutation = useMutation({
-    mutationFn: async () =>
-      (
+    mutationFn: async () => {
+      let fileMeta: { fileUrl: string; fileName: string; fileSize: number; contentType: string } | null = null;
+      if (selectedFile) {
+        fileMeta = await uploadFile(selectedFile);
+      }
+      return (
         await apiRequest("POST", "/api/observatory/evidence", {
           title: form.title,
           description: form.description || null,
           evidenceType: form.evidenceType,
-          sourceTool: form.sourceTool || null,
+          source: form.sourceTool || null,
           externalUrl: form.externalUrl || null,
           collectedAt: form.collectedAt || null,
+          ...(fileMeta ?? {}),
           ...(linkFindingId ? { linkFindingId } : {}),
           ...(linkAssessmentId ? { linkAssessmentId } : {}),
         })
-      ).json(),
+      ).json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/observatory") });
       setDialogOpen(false);
       setForm({ title: "", description: "", evidenceType: "screenshot", sourceTool: "", externalUrl: "", collectedAt: "" });
+      setSelectedFile(null);
+      setUploadError(null);
       toast({
         title: "Evidence added",
         description: linkFindingId ? "Linked to the finding." : linkAssessmentId ? "Linked to the assessment." : undefined,
@@ -131,11 +213,22 @@ export default function ObservatoryEvidence() {
                   <div className="min-w-0">
                     <p className="font-medium text-sm truncate" data-testid={`text-evidence-title-${e.id}`}>{e.title}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {e.sourceTool ? `${e.sourceTool} · ` : ""}
-                      {e.description ?? ""}
+                      {e.source ? `${e.source} · ` : ""}
+                      {e.fileName ? e.fileName : (e.description ?? "")}
                     </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
+                    {e.fileUrl && (
+                      <a
+                        href={e.fileUrl}
+                        download={e.fileName ?? undefined}
+                        className="text-muted-foreground hover:text-foreground"
+                        title={e.fileName ? `Download ${e.fileName}` : "Download file"}
+                        data-testid={`link-evidence-download-${e.id}`}
+                      >
+                        <Download className="h-4 w-4" />
+                      </a>
+                    )}
                     {e.externalUrl && (
                       <a href={e.externalUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" data-testid={`link-evidence-url-${e.id}`}>
                         <ExternalLink className="h-4 w-4" />
@@ -151,7 +244,12 @@ export default function ObservatoryEvidence() {
         )}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        if (!createMutation.isPending) {
+          setDialogOpen(open);
+          if (!open) { setSelectedFile(null); setUploadError(null); }
+        }
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Evidence</DialogTitle>
@@ -195,15 +293,58 @@ export default function ObservatoryEvidence() {
                 <Input placeholder="https://…" value={form.externalUrl} onChange={(e) => setForm({ ...form, externalUrl: e.target.value })} data-testid="input-evidence-url" />
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>Attach file</Label>
+              {selectedFile ? (
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                  <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate flex-1">{selectedFile.name}</span>
+                  <span className="text-muted-foreground shrink-0">{formatBytes(selectedFile.size)}</span>
+                  <button type="button" onClick={clearFile} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Remove file" data-testid="button-remove-file">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className="flex items-center gap-2 rounded-md border border-dashed px-3 py-3 cursor-pointer hover:border-foreground/40 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="dropzone-evidence-file"
+                >
+                  <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-muted-foreground">
+                    Click to attach a screenshot, PDF, or scan report (max 10 MB)
+                  </span>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ALLOWED_MIME_TYPES.join(",")}
+                className="hidden"
+                onChange={handleFileChange}
+                data-testid="input-evidence-file"
+              />
+              {uploadError && (
+                <p className="text-xs text-destructive" data-testid="text-evidence-file-error">{uploadError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Supports JPEG, PNG, GIF, WebP, PDF, DOCX, DOC, TXT. Optional — evidence without a file still works.</p>
+            </div>
+
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="input-evidence-description" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-evidence">Cancel</Button>
-            <Button onClick={() => createMutation.mutate()} disabled={!form.title.trim() || createMutation.isPending} data-testid="button-save-evidence">
-              {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Add evidence
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={createMutation.isPending} data-testid="button-cancel-evidence">Cancel</Button>
+            <Button onClick={() => createMutation.mutate()} disabled={!form.title.trim() || createMutation.isPending || !!uploadError} data-testid="button-save-evidence">
+              {createMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {selectedFile ? "Uploading…" : "Saving…"}
+                </>
+              ) : "Add evidence"}
             </Button>
           </DialogFooter>
         </DialogContent>
