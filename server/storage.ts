@@ -267,6 +267,7 @@ export interface IStorage {
   updateActivitySentiment(id: string, fields: { sentimentScore: number | null; toneLabel: string | null; toneNote: string; analyzerVersion: string }): Promise<void>;
   deleteActivity(id: string, tenantDomain: string): Promise<void>;
   deleteWebsiteChangeActivitiesByCompanyProfile(companyProfileId: string): Promise<number>;
+  deleteWebsiteChangeActivitiesByCompetitor(competitorId: string): Promise<number>;
   deleteOwnProductWebsiteChangeActivities(tenantDomain: string, marketId?: string, includeNullMarket?: boolean): Promise<number>;
   resetProductWebsiteBaselines(companyProfileId: string): Promise<number>;
   getAnalyzedActivitiesByCompetitor(competitorId: string, sinceDays?: number): Promise<Activity[]>;
@@ -1121,6 +1122,19 @@ export class DatabaseStorage implements IStorage {
       .delete(activity)
       .where(and(
         eq(activity.companyProfileId, companyProfileId),
+        eq(activity.type, "website_update"),
+      ));
+    return result.rowCount ?? 0;
+  }
+
+  // Remove existing website-change alerts tied to a competitor.
+  // Used by the "accept-baseline" path (and any future competitor reset) so a
+  // false "content removal" card disappears immediately instead of lingering.
+  async deleteWebsiteChangeActivitiesByCompetitor(competitorId: string): Promise<number> {
+    const result = await db
+      .delete(activity)
+      .where(and(
+        eq(activity.competitorId, competitorId),
         eq(activity.type, "website_update"),
       ));
     return result.rowCount ?? 0;

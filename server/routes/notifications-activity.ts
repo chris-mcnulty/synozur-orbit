@@ -157,6 +157,10 @@ export function registerNotificationsActivityRoutes(app: Express) {
           previousWebsiteContent: null as any,
           lastWebsiteMonitor: null as any,
         });
+        // Clear ALL open website-change alerts for this competitor so every
+        // false "content removal" card disappears immediately, not just the
+        // one the user clicked — mirrors the baseline company-profile behavior.
+        await storage.deleteWebsiteChangeActivitiesByCompetitor(item.competitorId);
       }
 
       // Delete the activity entry
