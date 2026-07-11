@@ -890,7 +890,7 @@ export function registerAdminRoutes(app: Express) {
       if (!profile) return res.status(404).json({ error: "No company profile found" });
       await storage.updateCompanyProfile(profile.id, {
         previousWebsiteContent: null as any,
-        lastWebsiteMonitor: null as any,
+        lastWebsiteMonitor: new Date(),
       });
       // Also clear any existing website-change alerts for this profile so a
       // false "content removal" card disappears from the feed immediately.
