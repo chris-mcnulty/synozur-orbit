@@ -61,6 +61,7 @@ interface ContentAsset {
   websitePostId?: string | null;
   websitePostSlug?: string | null;
   createdAt: string;
+  postCount?: number;
 }
 
 interface SolutionArea {
@@ -142,6 +143,8 @@ export default function ContentLibraryPage() {
   const [showBrandImagePicker, setShowBrandImagePicker] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
+  const [pendingScrollToPosts, setPendingScrollToPosts] = useState(false);
+  const postsAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const [urlInput, setUrlInput] = useState("");
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
@@ -496,6 +499,15 @@ export default function ContentLibraryPage() {
     enabled: !!detailAsset,
   });
 
+  useEffect(() => {
+    if (!pendingScrollToPosts || referencingPosts.length === 0) return;
+    const timer = setTimeout(() => {
+      postsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setPendingScrollToPosts(false);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [pendingScrollToPosts, referencingPosts.length]);
+
   function getReferencingPostStage(post: ReferencingPost) {
     if (post.publishedAt || post.status === "published")
       return { label: "Posted", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
@@ -552,7 +564,7 @@ export default function ContentLibraryPage() {
     }
   };
 
-  const openEditDialog = (asset: ContentAsset) => {
+  const openEditDialog = (asset: ContentAsset, opts?: { scrollToPosts?: boolean }) => {
     setEditForm({
       title: asset.title,
       description: asset.description || "",
@@ -572,6 +584,7 @@ export default function ContentLibraryPage() {
       isExternal: !!asset.isExternal,
     });
     setDetailAsset(asset);
+    setPendingScrollToPosts(!!opts?.scrollToPosts);
     setEditOpen(true);
   };
 
@@ -956,6 +969,17 @@ export default function ContentLibraryPage() {
           {asset.productIds?.map(pid => (
             <Badge key={pid} variant="outline" className="text-xs text-primary">{productName(pid) || pid}</Badge>
           ))}
+          {(asset.postCount ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); openEditDialog(asset, { scrollToPosts: true }); }}
+              data-testid={`badge-post-count-${asset.id}`}
+              className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+            >
+              <Share2 className="w-2.5 h-2.5" />
+              {asset.postCount} {asset.postCount === 1 ? "post" : "posts"}
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-2">
@@ -1779,6 +1803,17 @@ export default function ContentLibraryPage() {
                           >
                             {asset.title}
                           </button>
+                          {(asset.postCount ?? 0) > 0 && (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); openEditDialog(asset, { scrollToPosts: true }); }}
+                              data-testid={`badge-post-count-${asset.id}`}
+                              className="inline-flex items-center gap-1 mt-0.5 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              <Share2 className="w-2.5 h-2.5" />
+                              {asset.postCount} {asset.postCount === 1 ? "post" : "posts"}
+                            </button>
+                          )}
                           {asset.url && (
                             <a href={asset.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-primary truncate block max-w-[280px]">
                               {asset.url.replace(/^https?:\/\//, "").substring(0, 40)}...
@@ -2231,7 +2266,7 @@ export default function ContentLibraryPage() {
                   )}
 
                   {referencingPosts.length > 0 && (
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5" ref={postsAnchorRef}>
                       <div className="flex items-center gap-1.5">
                         <Share2 className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="text-sm font-medium">Referenced in Posts</span>

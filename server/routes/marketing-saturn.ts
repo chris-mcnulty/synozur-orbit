@@ -527,7 +527,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .orderBy(desc(contentAssets.createdAt))
       .limit(pagination.limit)
       .offset(pagination.offset);
-    res.json(buildPaginatedEnvelope(items, Number(total), pagination));
+
+    // Batch-fetch post counts for this page's assets (one extra query, no N+1).
+    const assetIds = items.map(i => i.id);
+    const postCountRows = assetIds.length > 0
+      ? await db.select({ assetId: generatedPosts.sourceAssetId, n: count() })
+          .from(generatedPosts)
+          .where(inArray(generatedPosts.sourceAssetId, assetIds))
+          .groupBy(generatedPosts.sourceAssetId)
+      : [];
+    const postCountMap = new Map(postCountRows.map(r => [r.assetId, Number(r.n)]));
+    const itemsWithCounts = items.map(item => ({ ...item, postCount: postCountMap.get(item.id) ?? 0 }));
+
+    res.json(buildPaginatedEnvelope(itemsWithCounts, Number(total), pagination));
   });
 
   app.get("/api/content-assets/:id", async (req, res) => {
