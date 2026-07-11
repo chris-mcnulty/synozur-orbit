@@ -89,7 +89,11 @@ function getPrevPageCount(prevCrawlData: any): number {
   return Array.isArray(pages) ? pages.length : 0;
 }
 
-export function isCoverageCollapse(prevCrawlData: any, currentPageCount: number): boolean {
+export function isCoverageCollapse(
+  prevCrawlData: any,
+  currentPageCount: number,
+  rowFallbackTimestamp?: Date | null,
+): boolean {
   const prevPages = getPrevPageCount(prevCrawlData);
   if (prevPages < MIN_PREV_PAGES_FOR_COVERAGE) return false;
   if (currentPageCount >= prevPages * COVERAGE_COLLAPSE_FRACTION) return false;
@@ -97,12 +101,19 @@ export function isCoverageCollapse(prevCrawlData: any, currentPageCount: number)
   // Only guard while the richer baseline is still fresh. A stale baseline means
   // no full crawl has succeeded in a long time, so treat the reduction as real.
   const crawledAtRaw = prevCrawlData?.crawledAt;
-  const crawledAt = crawledAtRaw ? new Date(crawledAtRaw).getTime() : 0;
 
-  // Explicit intent: a missing timestamp means we cannot confirm the baseline is
-  // stale, so keep the guard active (conservative). Do NOT collapse this into the
-  // age check below — `if (!crawledAt || age > MAX)` would flip the meaning and
-  // disarm the guard whenever the timestamp is absent.
+  // When crawledAt is absent (rows written before this guard existed), fall back
+  // to the row-level last_full_crawl / last_website_monitor timestamp so that
+  // the 30-day escape hatch can still disarm the guard.  Without this, legacy
+  // rows stay stuck in permanent-guard-active state and silently skip every crawl.
+  const crawledAt = crawledAtRaw
+    ? new Date(crawledAtRaw).getTime()
+    : rowFallbackTimestamp
+      ? rowFallbackTimestamp.getTime()
+      : 0;
+
+  // If we still have no timestamp at all, keep the guard active (conservative)
+  // but this should now only happen for rows with no crawl timestamps whatsoever.
   if (!crawledAt) return true;
 
   if (Date.now() - crawledAt > COVERAGE_COLLAPSE_MAX_AGE_MS) return false;
@@ -329,7 +340,7 @@ export async function monitorCompetitorWebsite(
     // Page-coverage collapse: this run reached far fewer pages than before, so
     // whole sections are missing and would read as false "removals". Skip
     // analysis and preserve the richer baseline for the next full crawl.
-    if (isCoverageCollapse(competitor.crawlData, crawlResult.pages.length)) {
+    if (isCoverageCollapse(competitor.crawlData, crawlResult.pages.length, competitor.lastFullCrawl ?? competitor.lastWebsiteMonitor)) {
       console.log(`[WebsiteMonitoring] Skipping ${competitor.name}: coverage collapse (${crawlResult.pages.length} of ${getPrevPageCount(competitor.crawlData)} pages)`);
       await storage.updateCompetitor(competitor.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
@@ -584,7 +595,7 @@ export async function monitorCompanyProfileWebsite(
     // Page-coverage collapse: this run reached far fewer pages than before, so
     // whole sections are missing and would read as false "removals". Skip
     // analysis and preserve the richer baseline for the next full crawl.
-    if (isCoverageCollapse(companyProfile.crawlData, crawlResult.pages.length)) {
+    if (isCoverageCollapse(companyProfile.crawlData, crawlResult.pages.length, companyProfile.lastFullCrawl ?? companyProfile.lastWebsiteMonitor)) {
       console.log(`[WebsiteMonitoring] Skipping baseline ${companyProfile.companyName}: coverage collapse (${crawlResult.pages.length} of ${getPrevPageCount(companyProfile.crawlData)} pages)`);
       await storage.updateCompanyProfile(companyProfile.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
@@ -843,7 +854,7 @@ export async function monitorProductWebsite(
     // Page-coverage collapse: this run reached far fewer pages than before, so
     // whole sections are missing and would read as false "removals". Skip
     // analysis and preserve the richer baseline for the next full crawl.
-    if (isCoverageCollapse(product.crawlData, crawlResult.pages.length)) {
+    if (isCoverageCollapse(product.crawlData, crawlResult.pages.length, product.lastWebsiteMonitor)) {
       console.log(`[WebsiteMonitoring] Skipping product ${product.name}: coverage collapse (${crawlResult.pages.length} of ${getPrevPageCount(product.crawlData)} pages)`);
       await storage.updateProduct(product.id, { lastWebsiteMonitor: now }).catch(() => {});
       return {
