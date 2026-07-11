@@ -13,7 +13,7 @@ import {
   Library, Plus, Search, ExternalLink, Trash2, Lock, Globe, Loader2, AlertTriangle,
   ImageIcon, Sparkles, Tag, Filter, Settings, ChevronDown, X, Megaphone,
   Download, Upload, LayoutGrid, List, RefreshCw, Mail, Package, Link, FileText,
-  Archive, RotateCcw
+  Archive, RotateCcw, Share2, CheckCircle, XCircle, AlertCircle, Calendar, FileDown, Pencil, Zap
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +36,7 @@ import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
 import { ContentTableSkeleton, ContentCardGridSkeleton } from "@/components/ui/skeletons";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
 import { WebsitePublishDialog } from "@/components/marketing/WebsitePublishDialog";
+import { itemDeepLinkHref } from "@/lib/marketing-deep-links";
 
 interface ContentAsset {
   id: string;
@@ -472,6 +473,47 @@ export default function ContentLibraryPage() {
     },
     enabled: !!detailAsset,
   });
+
+  type ReferencingPost = {
+    id: string;
+    content: string;
+    platform: string;
+    status: string;
+    publishedAt: string | null;
+    publishError: string | null;
+    scheduledDate: string | null;
+    deliveryMode: string | null;
+    campaignId: string | null;
+    createdAt: string;
+  };
+
+  const { data: referencingPosts = [] } = useQuery<ReferencingPost[]>({
+    queryKey: ["/api/content-assets", detailAsset?.id, "posts"],
+    queryFn: async () => {
+      const r = await fetch(`/api/content-assets/${detailAsset!.id}/posts`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: !!detailAsset,
+  });
+
+  function getReferencingPostStage(post: ReferencingPost) {
+    if (post.publishedAt || post.status === "published")
+      return { label: "Posted", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
+    if (post.status === "rejected")
+      return { label: "Rejected", cls: "text-orange-600 border-orange-300", Icon: XCircle };
+    if (post.status === "publish_failed" || post.publishError)
+      return { label: "Failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
+    if (post.status === "exported" || post.status === "scheduled_external")
+      return { label: "Exported", cls: "text-blue-600 border-blue-300", Icon: FileDown };
+    if (post.status === "approved") {
+      if (!post.scheduledDate)
+        return { label: "Approved", cls: "text-amber-600 border-amber-300", Icon: Calendar };
+      if (post.deliveryMode === "csv")
+        return { label: "Approved", cls: "text-sky-600 border-sky-300", Icon: FileDown };
+      return { label: "Scheduled", cls: "text-emerald-600 border-emerald-300", Icon: Zap };
+    }
+    return { label: "Draft", cls: "text-muted-foreground border-muted-foreground/40", Icon: Pencil };
+  }
 
   const downloadDocx = async (asset: ContentAsset) => {
     if (detailAsset && (editForm.title !== detailAsset.title || (editForm.content || "") !== (detailAsset.content || ""))) {
@@ -2179,6 +2221,45 @@ export default function ContentLibraryPage() {
                             <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground/60" />
                           </button>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {referencingPosts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Share2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-sm font-medium">Referenced in Posts</span>
+                        <Badge variant="secondary" className="text-xs px-1.5 py-0" data-testid="badge-referencing-post-count">{referencingPosts.length}</Badge>
+                      </div>
+                      <div className="space-y-1 max-h-36 overflow-y-auto">
+                        {referencingPosts.map(post => {
+                          const stage = getReferencingPostStage(post);
+                          const StageIcon = stage.Icon;
+                          const excerpt = (post.content || "").replace(/\n/g, " ").slice(0, 80) + ((post.content || "").length > 80 ? "…" : "");
+                          return (
+                            <button
+                              key={post.id}
+                              type="button"
+                              className="w-full flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-muted/60 transition-colors border border-border/50"
+                              onClick={() => {
+                                const href = itemDeepLinkHref({ itemType: "social", itemId: post.id, campaignId: post.campaignId });
+                                setEditOpen(false);
+                                setDetailAsset(null);
+                                if (href) navigate(href);
+                              }}
+                              data-testid={`button-referencing-post-${post.id}`}
+                            >
+                              <Share2 className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                              <span className="flex-1 truncate">{excerpt || post.platform}</span>
+                              <Badge variant="outline" className={`text-[10px] px-1 py-0 shrink-0 gap-0.5 ${stage.cls}`}>
+                                <StageIcon className="w-2.5 h-2.5" /> {stage.label}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0 capitalize">{post.platform}</Badge>
+                              <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground/60" />
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

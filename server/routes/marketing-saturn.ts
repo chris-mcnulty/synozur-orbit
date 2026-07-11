@@ -616,6 +616,39 @@ export function registerSaturnMarketingRoutes(app: Express) {
     res.json(rows);
   });
 
+  app.get("/api/content-assets/:id/posts", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const assetId = req.params.id;
+    const [asset] = await db.select({ id: contentAssets.id })
+      .from(contentAssets)
+      .where(and(
+        eq(contentAssets.id, assetId),
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      ))
+      .limit(1);
+    if (!asset) return res.status(404).json({ error: "Not found" });
+    const rows = await db.select({
+      id: generatedPosts.id,
+      content: generatedPosts.content,
+      platform: generatedPosts.platform,
+      status: generatedPosts.status,
+      publishedAt: generatedPosts.publishedAt,
+      publishError: generatedPosts.publishError,
+      scheduledDate: generatedPosts.scheduledDate,
+      deliveryMode: generatedPosts.deliveryMode,
+      campaignId: generatedPosts.campaignId,
+      createdAt: generatedPosts.createdAt,
+    }).from(generatedPosts)
+      .where(and(
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        eq(generatedPosts.sourceAssetId, assetId),
+      ))
+      .orderBy(desc(generatedPosts.createdAt));
+    res.json(rows);
+  });
+
   app.post("/api/content-assets", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
