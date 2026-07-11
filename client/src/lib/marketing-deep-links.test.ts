@@ -129,9 +129,13 @@ describe("target pages still read their deep-link params", () => {
   const read = (file: string) =>
     readFileSync(path.join(pagesDir, file), "utf8");
 
-  it("editorial-calendar reads ?brief= and ?campaignId=", () => {
+  it("editorial-calendar passes paramName: \"brief\" to useDeepLinkFocus and reads ?campaignId=", () => {
     const src = read("editorial-calendar.tsx");
-    expect(src).toContain('.get("brief")');
+    // The ?brief= param is read inside useDeepLinkFocus via the paramName option.
+    // Renaming the string here OR in the hook's URLSearchParams call breaks the
+    // render-level test in use-deep-link-focus.test.tsx.
+    expect(src).toContain('paramName: "brief"');
+    // ?campaignId= is still read inline (separate campaign-filter state).
     expect(src).toContain('.get("campaignId")');
   });
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -282,13 +283,6 @@ function canFinalizeBrief(b: { contentAssetId?: string | null; status: string })
 export default function EditorialCalendarPage() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  // Honor a ?brief=<id> deep link (e.g. "Open editor" from the Master Calendar):
-  // once the brief's card renders, scroll to it and briefly highlight it.
-  const [focusBriefId, setFocusBriefId] = useState<string | null>(() =>
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("brief")
-      : null,
-  );
   // Honor a ?campaignId=<id> deep link (e.g. from the campaign interview /
   // marketing calendar) — scope the visible briefs to that campaign. Also drives
   // the campaign review surface (counts + bulk finalize). null = all campaigns.
@@ -422,6 +416,22 @@ export default function EditorialCalendarPage() {
   });
 
   const briefs = allBriefs ?? [];
+
+  // Honor a ?brief=<id> deep link (e.g. "Open editor" from the Master
+  // Calendar).  useDeepLinkFocus reads the "brief" URL param, waits until the
+  // matching brief is in `briefs`, then scrolls [data-testid="brief-<id>"]
+  // into view and fires onFound.  The param name + testid prefix are the
+  // contract with itemDeepLinkHref — renaming either side breaks the
+  // render-level deep-link test in use-deep-link-focus.test.tsx.
+  const [focusBriefId] = useDeepLinkFocus({
+    paramName: "brief",
+    items: briefs,
+    testIdPrefix: "brief",
+    // onFound uses a stable ref inside the hook so openDraft (defined below)
+    // is safely accessed at call time (after render), not at closure-creation.
+    onFound: (b) => { if (b.contentAssetId) void openDraft(b); },
+  });
+
   // Statuses / campaign statuses considered "closed" — hidden unless showAll=true.
   const CLOSED_CAMPAIGN_STATUSES = ["completed", "archived", "deleted"];
   const activeOnly = (b: ContentBrief) =>
@@ -435,28 +445,6 @@ export default function EditorialCalendarPage() {
     return true;
   });
   const hiddenCount = briefs.filter((b) => !activeOnly(b)).length;
-
-  // Once the deep-linked brief's card is in the DOM, scroll to it and —
-  // if the brief already has a drafted asset — open the editor automatically
-  // so the user lands directly in the content instead of a highlighted card.
-  // Clear the highlight after a moment so it's a one-time cue.
-  useEffect(() => {
-    if (!focusBriefId) return;
-    const brief = briefs.find((b) => b.id === focusBriefId);
-    if (!brief) return;
-    const el = document.querySelector(`[data-testid="brief-${focusBriefId}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      // Auto-open the draft so "Open editor" from the Master Calendar lands
-      // the user directly in the editor rather than a bare highlighted card.
-      if (brief.contentAssetId) void openDraft(brief);
-      const t = setTimeout(() => setFocusBriefId(null), 2500);
-      return () => clearTimeout(t);
-    }
-  // openDraft is excluded from deps intentionally — it only calls stable
-  // setState setters and an imported getJson, so no stale-closure risk.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusBriefId, briefs]);
 
   // Assignment options — campaigns, themes (solution areas), and categories.
   // These are gated behind their own features; when unavailable the lists are
