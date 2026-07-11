@@ -1857,9 +1857,16 @@ export default function CampaignDetailPage() {
   }, []);
 
   useEffect(() => {
+    // Reset all post-tab state to clean defaults when the campaign changes so
+    // stale state from the previous campaign cannot leak into the new one.
+    // The ?post= deep-link effect below is declared later and therefore runs
+    // second in the same React commit, so it correctly overrides these
+    // defaults when a ?post= param is present.
     setActiveTab(tabFromHash(window.location.hash));
-    const f = filterFromSearch(window.location.search);
-    if (f) setPostFilter(f);
+    setPostFilter(filterFromSearch(window.location.search) ?? "active");
+    setPostAccountFilter("all");
+    setBatchFilter(null);
+    setHighlightedPostId(null);
   }, [id]);
 
   // Deep-link to one post (?post=<id>) — e.g. a single-item "Next actions" nudge.

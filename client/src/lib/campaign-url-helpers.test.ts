@@ -1,6 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { tabFromHash, filterFromSearch, CAMPAIGN_TABS } from "./campaign-url-helpers";
 
+/**
+ * Cross-campaign navigation contract
+ * -----------------------------------
+ * When the user navigates from Campaign A to Campaign B, the [id] effect in
+ * campaign-detail.tsx runs with the new URL already in place.  It does:
+ *
+ *   setPostFilter(filterFromSearch(window.location.search) ?? "active");
+ *
+ * The `?? "active"` fallback is critical: it resets stale filter state from
+ * Campaign A when Campaign B's URL carries no ?filter= param.
+ *
+ * The tests in "cross-campaign navigation" below pin the exact helper outputs
+ * that the effect depends on so a future refactor cannot silently break them.
+ */
+
 describe("tabFromHash", () => {
   it("returns the tab for every valid campaign tab (with # prefix)", () => {
     for (const tab of CAMPAIGN_TABS) {
@@ -60,5 +75,56 @@ describe("filterFromSearch", () => {
 
   it("returns 'publish_failed' when the fix-failures nudge link is followed", () => {
     expect(filterFromSearch("?filter=publish_failed")).toBe("publish_failed");
+  });
+});
+
+/**
+ * Cross-campaign navigation contract
+ *
+ * The [id] effect in campaign-detail.tsx evaluates:
+ *
+ *   setPostFilter(filterFromSearch(window.location.search) ?? "active");
+ *
+ * The `?? "active"` fallback resets stale filter state from the previous
+ * campaign when the new URL carries no ?filter= param.  These tests pin the
+ * exact helper outputs the effect depends on so a future refactor cannot
+ * silently regress it.
+ */
+describe("cross-campaign navigation", () => {
+  it("filterFromSearch returns null for a bare campaign URL (no query string) — triggers the ?? 'active' reset", () => {
+    // Campaign B has no ?filter= → stale filter from Campaign A must be cleared.
+    expect(filterFromSearch("")).toBeNull();
+    expect(filterFromSearch("?")).toBeNull();
+  });
+
+  it("filterFromSearch returns null when the URL only carries ?post= (no ?filter=) — ?post= deep-link clears filter itself", () => {
+    expect(filterFromSearch("?post=abc123")).toBeNull();
+  });
+
+  it("filterFromSearch extracts the filter when Campaign B carries ?filter= (e.g. failure nudge link)", () => {
+    // window.location.search never includes the hash — the browser separates them.
+    expect(filterFromSearch("?filter=publish_failed")).toBe("publish_failed");
+    expect(filterFromSearch("?filter=active")).toBe("active");
+  });
+
+  it("tabFromHash returns the correct tab for Campaign B's hash — no bleed from Campaign A", () => {
+    expect(tabFromHash("#posts")).toBe("posts");
+    expect(tabFromHash("#plan")).toBe("plan");
+    // No hash on Campaign B → defaults to 'plan' (does not inherit Campaign A's tab via URL)
+    expect(tabFromHash("")).toBe("plan");
+  });
+
+  it("filterFromSearch + ?? 'active' expression produces the right default for both navigation directions", () => {
+    // A→B where B has no filter: null → "active" (stale filter cleared)
+    const noFilter = filterFromSearch("") ?? "active";
+    expect(noFilter).toBe("active");
+
+    // A→B where B has ?filter=publish_failed: explicit filter applied
+    const withFilter = filterFromSearch("?filter=publish_failed") ?? "active";
+    expect(withFilter).toBe("publish_failed");
+
+    // A→B where B only has ?post= (deep-link): no filter → defaults to "active"
+    const postOnly = filterFromSearch("?post=abc123") ?? "active";
+    expect(postOnly).toBe("active");
   });
 });
