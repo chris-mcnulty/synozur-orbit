@@ -2462,16 +2462,34 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label className="text-xs">Date</Label>
-            <Input
-              type="date"
-              value={dateVal}
-              disabled={locked}
-              onChange={(e) => {
-                setDateVal(e.target.value);
-                pushSchedule(e.target.value, timeVal);
-              }}
-              data-testid="input-detail-date"
-            />
+            <div className="flex items-center gap-1">
+              <Input
+                type="date"
+                value={dateVal}
+                disabled={locked}
+                onChange={(e) => {
+                  setDateVal(e.target.value);
+                  pushSchedule(e.target.value, timeVal);
+                }}
+                data-testid="input-detail-date"
+              />
+              {dateVal && !locked && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  title="Clear scheduled date"
+                  data-testid="button-clear-scheduled-date"
+                  onClick={() => {
+                    setDateVal("");
+                    setTimeVal("");
+                    pushSchedule("", "");
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
           <div>
             <Label className="flex items-center gap-1 text-xs"><Clock className="h-3 w-3" /> Time</Label>
