@@ -1058,8 +1058,8 @@ export function registerIntegrationRoutes(app: Express) {
       if (!file.mimetype.startsWith("image/")) {
         return res.status(400).json({ error: "Only image files are accepted." });
       }
-      if (file.size > 10 * 1024 * 1024) {
-        return res.status(413).json({ error: "Image must be under 10 MB." });
+      if (file.size > 15 * 1024 * 1024) {
+        return res.status(413).json({ error: "Image must be under 15 MB." });
       }
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
       const objectId = `${crypto.randomUUID()}.${ext}`;

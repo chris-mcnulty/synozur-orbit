@@ -48,7 +48,7 @@ interface ObjectUploaderProps {
  * @param props - Component props
  * @param props.maxNumberOfFiles - Maximum number of files allowed to be uploaded
  *   (default: 1)
- * @param props.maxFileSize - Maximum file size in bytes (default: 10MB)
+ * @param props.maxFileSize - Maximum file size in bytes (default: 15MB)
  * @param props.onGetUploadParameters - Function to get upload parameters for each file.
  *   Receives the UppyFile object with file.name, file.size, file.type properties.
  *   Use these to request per-file presigned URLs from your backend. Returns method,
@@ -61,7 +61,7 @@ interface ObjectUploaderProps {
  */
 export function ObjectUploader({
   maxNumberOfFiles = 1,
-  maxFileSize = 10485760, // 10MB default
+  maxFileSize = 15728640, // 15MB default
   onGetUploadParameters,
   onComplete,
   buttonClassName,

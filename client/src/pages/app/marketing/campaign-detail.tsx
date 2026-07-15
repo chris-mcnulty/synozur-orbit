@@ -5393,7 +5393,7 @@ export default function CampaignDetailPage() {
                   >
                     <Upload className="h-8 w-8" />
                     <span className="text-sm font-medium">Click to choose an image</span>
-                    <span className="text-xs">PNG, JPG, WebP — max 10 MB</span>
+                    <span className="text-xs">PNG, JPG, WebP — max 15 MB</span>
                   </button>
                 ) : (
                   <div className="space-y-3">
