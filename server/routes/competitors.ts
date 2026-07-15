@@ -10,6 +10,7 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations,
 import { buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "../services/competitor-document-context";
 import Anthropic from "@anthropic-ai/sdk";
 import { captureVisualAssets } from "../services/visual-capture";
+import { enqueueCrawl } from "../services/job-queue";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "../services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
 import { logAiUsage } from "./helpers";
@@ -472,6 +473,81 @@ export function registerCompetitorRoutes(app: Express) {
           }
         })();
       }
+
+      // Fire an immediate background crawl so new competitors have data right away
+      // instead of waiting for the next hourly sweep. Fire-and-forget; does not
+      // consume manual crawl quota.
+      const competitorSnapshot = { ...competitor, organizationId: org.id };
+      enqueueCrawl(`crawl:initial:${competitor.name}`, async () => {
+        console.log(`[Initial Crawl] Starting crawl for new competitor: ${competitor.name} (${normalizedUrl})`);
+        let crawlResult;
+        try {
+          crawlResult = await crawlCompetitorWebsite(normalizedUrl);
+        } catch (err) {
+          console.warn(`[Initial Crawl] Crawl failed for ${competitor.name}:`, (err as Error).message);
+          return;
+        }
+
+        if (crawlResult.pages.length === 0) {
+          console.warn(`[Initial Crawl] No pages crawled for ${competitor.name}`);
+          return;
+        }
+
+        const updates: any = {
+          crawlData: buildCrawlData(crawlResult),
+          lastFullCrawl: new Date(),
+        };
+
+        if (crawlResult.socialLinks.linkedIn && !competitorSnapshot.linkedInUrl) {
+          updates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+        }
+        if (crawlResult.socialLinks.instagram && !competitorSnapshot.instagramUrl) {
+          updates.instagramUrl = crawlResult.socialLinks.instagram;
+        }
+        if (crawlResult.socialLinks.twitter && !competitorSnapshot.twitterUrl) {
+          updates.twitterUrl = crawlResult.socialLinks.twitter;
+        }
+        if (crawlResult.socialLinks.facebook && !competitorSnapshot.facebookUrl) {
+          updates.facebookUrl = crawlResult.socialLinks.facebook;
+        }
+        if (crawlResult.blogSnapshot) {
+          updates.blogSnapshot = { ...crawlResult.blogSnapshot, capturedAt: new Date().toISOString() };
+        }
+
+        await storage.updateCompetitor(competitor.id, updates);
+        await storage.updateCompetitorLastCrawl(competitor.id, new Date().toISOString());
+
+        // Sync to the org so future sibling competitors (and the freshness check)
+        // see the crawl data.
+        if (competitorSnapshot.organizationId) {
+          await storage.updateOrganization(competitorSnapshot.organizationId, {
+            crawlData: updates.crawlData,
+            lastFullCrawl: updates.lastFullCrawl,
+            lastCrawl: new Date().toISOString(),
+            ...(updates.linkedInUrl ? { linkedInUrl: updates.linkedInUrl } : {}),
+            ...(updates.instagramUrl ? { instagramUrl: updates.instagramUrl } : {}),
+            ...(updates.blogSnapshot ? { blogSnapshot: updates.blogSnapshot } : {}),
+          }).catch(err => console.error(`[Initial Crawl] Org sync failed for ${competitor.name}:`, (err as Error).message));
+        }
+
+        // Capture favicon / screenshot in the background.
+        captureVisualAssets(normalizedUrl, competitor.id).then(async (visualAssets) => {
+          if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+            await storage.updateCompetitor(competitor.id, {
+              faviconUrl: visualAssets.faviconUrl || undefined,
+              screenshotUrl: visualAssets.screenshotUrl || undefined,
+            });
+            if (competitorSnapshot.organizationId) {
+              await storage.updateOrganization(competitorSnapshot.organizationId, {
+                faviconUrl: visualAssets.faviconUrl || undefined,
+                screenshotUrl: visualAssets.screenshotUrl || undefined,
+              }).catch(() => {});
+            }
+          }
+        }).catch(err => console.error(`[Initial Crawl] Visual capture failed for ${competitor.name}:`, err));
+
+        console.log(`[Initial Crawl] Completed for ${competitor.name}`);
+      }).catch(err => console.error(`[Initial Crawl] Enqueue failed for ${competitor.name}:`, (err as Error).message));
 
       res.json(competitor);
     } catch (error: any) {
