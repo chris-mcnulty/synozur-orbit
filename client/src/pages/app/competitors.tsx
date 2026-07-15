@@ -89,6 +89,7 @@ export default function Competitors() {
   const hubspotPortalId = hubspotStatus?.connection?.hubspotPortalId ?? null;
   const isHubspotConnected = !!hubspotStatus?.connected;
   const [addingHubspotId, setAddingHubspotId] = useState<string | null>(null);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
 
   const addHubspotSuggestion = useMutation({
     mutationFn: async (suggestion: { hubspotCompanyId: string; name: string; domain: string | null }) => {
@@ -1075,7 +1076,7 @@ export default function Competitors() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-2">
-                {suggestionsFromHubspot.map((s) => {
+                {(showAllSuggestions ? suggestionsFromHubspot : suggestionsFromHubspot.slice(0, 5)).map((s) => {
                   const isAdding = addingHubspotId === s.hubspotCompanyId;
                   const dealLabel = `${s.numberOfDeals} deal${s.numberOfDeals === 1 ? "" : "s"}`;
                   return (
@@ -1123,6 +1124,17 @@ export default function Competitors() {
                   );
                 })}
               </div>
+              {suggestionsFromHubspot.length > 5 && (
+                <button
+                  onClick={() => setShowAllSuggestions(v => !v)}
+                  className="mt-3 text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-center"
+                  data-testid="button-toggle-all-hubspot-suggestions"
+                >
+                  {showAllSuggestions
+                    ? "Show fewer"
+                    : `Show ${suggestionsFromHubspot.length - 5} more suggestions`}
+                </button>
+              )}
             </CardContent>
           </Card>
         )}
