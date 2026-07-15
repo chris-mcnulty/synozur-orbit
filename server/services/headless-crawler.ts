@@ -327,8 +327,11 @@ async function _fetchPageHeadlessInner(
 
         if (waitForSelector) {
           try {
-            await page.waitForSelector(waitForSelector, { timeout: 5000 });
+            // Allow up to 10 s for slow SPAs to inject OG tags; failure is
+            // non-fatal — we'll snapshot whatever the page has at that point.
+            await page.waitForSelector(waitForSelector, { timeout: 10000 });
           } catch {
+            // Selector never appeared; continue and snapshot what we have.
           }
         }
 

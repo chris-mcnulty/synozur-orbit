@@ -275,32 +275,71 @@ export async function extractContentFromUrl(url: string, groundingContext?: stri
     // (og:url points to "/", metadata is absent, or body is nearly empty) AND
     // the headless crawler is available, re-fetch the page with a real browser
     // so JS runs and the correct page-specific OG tags are populated.
+    //
+    // Strategy for slow SPAs:
+    //   1. First attempt waits for "meta[property='og:title']" (up to 10 s in
+    //      the crawler) plus a 2 s trailing delay.  This covers most lazy-loaded
+    //      OG tags without adding latency on fast pages.
+    //   2. If the result is still thin (OG title absent), a second attempt fires
+    //      with a longer 5 s trailing delay so heavier bundles have more time to
+    //      settle.  Both attempts degrade gracefully if Chromium is unavailable.
     if (looksLikeSpaShell($, safeUrl, title, description, content) && isHeadlessAvailable()) {
       console.log(`[ContentExtraction] headless fallback triggered for ${safeUrl}`);
+
+      const applyHeadlessResult = (headlessResult: { html: string; renderedContent: string } | null) => {
+        if (!headlessResult?.html) return false;
+        const h$ = cheerio.load(headlessResult.html);
+        const hTitle = extractTitle(h$);
+        const hDescription = extractDescription(h$);
+        const hContent = headlessResult.renderedContent || extractVisibleText(headlessResult.html);
+        const hLeadImageUrl = extractLeadImage(h$, safeUrl);
+        const hSiteName = extractMeta(h$, "og:site_name");
+
+        const headlessIsBetter =
+          (hTitle && hTitle.length > (title?.length ?? 0)) ||
+          (hDescription && hDescription.length > (description?.length ?? 0)) ||
+          (hContent && hContent.trim().length > (content?.trim().length ?? 0));
+
+        if (headlessIsBetter) {
+          $ = h$;
+          title = hTitle || title;
+          description = hDescription || description;
+          content = hContent || content;
+          leadImageUrl = hLeadImageUrl || leadImageUrl;
+          siteName = hSiteName || siteName;
+          return true;
+        }
+        return false;
+      };
+
+      const isHeadlessThin = (headlessResult: { html: string } | null): boolean => {
+        if (!headlessResult?.html) return true;
+        const h$ = cheerio.load(headlessResult.html);
+        return !extractTitle(h$);
+      };
+
       try {
-        const headlessResult = await fetchPageHeadless(safeUrl, { waitTime: 2000, timeout: 30000 });
-        if (headlessResult?.html) {
-          const h$ = cheerio.load(headlessResult.html);
-          const hTitle = extractTitle(h$);
-          const hDescription = extractDescription(h$);
-          const hContent = headlessResult.renderedContent || extractVisibleText(headlessResult.html);
-          const hLeadImageUrl = extractLeadImage(h$, safeUrl);
-          const hSiteName = extractMeta(h$, "og:site_name");
+        // Attempt 1: wait for the OG title tag to appear (handled inside the
+        // crawler with a 10 s selector timeout), then a short trailing delay.
+        const headlessResult = await fetchPageHeadless(safeUrl, {
+          waitForSelector: "meta[property='og:title']",
+          waitTime: 2000,
+          timeout: 30000,
+        });
 
-          // Prefer headless result only when it produces richer output.
-          const headlessIsBetter =
-            (hTitle && hTitle.length > (title?.length ?? 0)) ||
-            (hDescription && hDescription.length > (description?.length ?? 0)) ||
-            (hContent && hContent.trim().length > (content?.trim().length ?? 0));
+        const applied = applyHeadlessResult(headlessResult);
 
-          if (headlessIsBetter) {
-            $ = h$;
-            title = hTitle || title;
-            description = hDescription || description;
-            content = hContent || content;
-            leadImageUrl = hLeadImageUrl || leadImageUrl;
-            siteName = hSiteName || siteName;
-          }
+        // Attempt 2: fire a slower retry when the first pass is still thin
+        // (OG title never appeared).  The extra trailing delay gives heavy JS
+        // bundles more time to render before we snapshot.
+        if (!applied && isHeadlessThin(headlessResult)) {
+          console.log(`[ContentExtraction] headless result thin for ${safeUrl}, retrying with longer wait`);
+          const retryResult = await fetchPageHeadless(safeUrl, {
+            waitForSelector: "meta[property='og:title']",
+            waitTime: 5000,
+            timeout: 45000,
+          });
+          applyHeadlessResult(retryResult);
         }
       } catch (err: any) {
         console.warn(`[ContentExtraction] headless fallback failed for ${safeUrl}: ${err.message}`);
