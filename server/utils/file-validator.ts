@@ -180,7 +180,7 @@ export function validateDocumentUpload(file: UploadedFile): FileValidationResult
 
 export function validateImageUpload(file: UploadedFile): FileValidationResult {
   return validateUploadedFile(file, {
-    maxSizeBytes: 5 * 1024 * 1024, // 5MB
+    maxSizeBytes: 15 * 1024 * 1024, // 15MB
     allowedMimeTypes: IMAGE_MIME_TYPES,
     allowedExtensions: IMAGE_EXTENSIONS,
   });

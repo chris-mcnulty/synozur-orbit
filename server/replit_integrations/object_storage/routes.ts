@@ -129,7 +129,8 @@ const ALLOWED_FONT_TYPES = [
 
 const ALLOWED_CONTENT_TYPES = [...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_IMAGE_TYPES, ...ALLOWED_FONT_TYPES];
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_IMAGE_FILE_SIZE = 15 * 1024 * 1024; // 15MB for images
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB for documents and other files
 
 /**
  * Register object storage routes for file uploads.
@@ -179,10 +180,12 @@ export function registerObjectStorageRoutes(app: Express): void {
         });
       }
 
-      // Validate file size
-      if (size && size > MAX_FILE_SIZE) {
+      // Validate file size — images allow up to 15MB, all other files up to 10MB
+      const isImage = contentType && ALLOWED_IMAGE_TYPES.includes(contentType);
+      const effectiveMaxSize = isImage ? MAX_IMAGE_FILE_SIZE : MAX_FILE_SIZE;
+      if (size && size > effectiveMaxSize) {
         return res.status(400).json({
-          error: `File too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB.`,
+          error: `File too large. Maximum size is ${effectiveMaxSize / (1024 * 1024)}MB.`,
         });
       }
 

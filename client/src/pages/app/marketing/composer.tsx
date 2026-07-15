@@ -373,7 +373,7 @@ export default function ComposerPage() {
                       <div className="flex items-center gap-2 mt-1.5">
                         <ObjectUploader
                           maxNumberOfFiles={1}
-                          maxFileSize={10 * 1024 * 1024}
+                          maxFileSize={15 * 1024 * 1024}
                           buttonClassName="h-9 px-3 text-sm gap-1.5 bg-background border border-input text-foreground hover:bg-muted"
                           onGetUploadParameters={async (file) => {
                             const res = await fetch("/api/uploads/request-url", {
