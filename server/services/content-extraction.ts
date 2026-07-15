@@ -4,6 +4,7 @@ import { validateUrlWithDnsCheck } from "../utils/url-validator";
 import { db } from "../db";
 import { groundingDocuments, globalGroundingDocuments } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { fetchPageHeadless, isHeadlessAvailable } from "./headless-crawler";
 
 interface ExtractionResult {
   title: string;
@@ -98,6 +99,53 @@ function extractDescription($: cheerio.CheerioAPI): string {
   if (ogDesc) return ogDesc;
 
   return "";
+}
+
+/**
+ * Returns true when the plain-fetch HTML looks like a generic SPA shell
+ * (homepage OG tags) rather than the specific page requested.
+ *
+ * Signals checked:
+ *  1. The requested URL has a non-root path, but og:url resolves to "/".
+ *  2. The extracted title or description is empty / very short.
+ *  3. The visible text content is suspiciously thin (< 100 chars).
+ */
+function looksLikeSpaShell(
+  $: cheerio.CheerioAPI,
+  requestedUrl: string,
+  title: string,
+  description: string,
+  content: string,
+): boolean {
+  let requestedPath = "/";
+  try {
+    requestedPath = new URL(requestedUrl).pathname;
+  } catch {
+    return false;
+  }
+
+  // Root-path URLs have no SPA-shell problem — nothing to fall back on.
+  if (requestedPath === "/" || requestedPath === "") return false;
+
+  // Signal 1: og:url points to the site root while we asked for a sub-page.
+  const ogUrl = extractMeta($, "og:url");
+  if (ogUrl) {
+    try {
+      const ogPath = new URL(ogUrl, requestedUrl).pathname;
+      if (ogPath === "/" || ogPath === "") return true;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Signal 2: metadata is absent or trivially short.
+  if (!title || title.length < 10) return true;
+  if (!description || description.length < 10) return true;
+
+  // Signal 3: virtually no visible text — classic empty SPA shell.
+  if (!content || content.trim().length < 100) return true;
+
+  return false;
 }
 
 function extractLeadImage($: cheerio.CheerioAPI, baseUrl: string): string | null {
@@ -215,12 +263,50 @@ export async function extractContentFromUrl(url: string, groundingContext?: stri
     }
 
     const html = await response.text();
-    const $ = cheerio.load(html);
-    const title = extractTitle($);
-    const description = extractDescription($);
-    const content = extractVisibleText(html);
-    const leadImageUrl = extractLeadImage($, url);
-    const siteName = extractMeta($, "og:site_name");
+    let $ = cheerio.load(html);
+    let title = extractTitle($);
+    let description = extractDescription($);
+    let content = extractVisibleText(html);
+    let leadImageUrl = extractLeadImage($, url);
+    let siteName = extractMeta($, "og:site_name");
+
+    // ── Headless fallback for JS-rendered SPAs ────────────────────────────────
+    // If the plain fetch returned what looks like a generic homepage shell
+    // (og:url points to "/", metadata is absent, or body is nearly empty) AND
+    // the headless crawler is available, re-fetch the page with a real browser
+    // so JS runs and the correct page-specific OG tags are populated.
+    if (looksLikeSpaShell($, safeUrl, title, description, content) && isHeadlessAvailable()) {
+      console.log(`[ContentExtraction] headless fallback triggered for ${safeUrl}`);
+      try {
+        const headlessResult = await fetchPageHeadless(safeUrl, { waitTime: 2000, timeout: 30000 });
+        if (headlessResult?.html) {
+          const h$ = cheerio.load(headlessResult.html);
+          const hTitle = extractTitle(h$);
+          const hDescription = extractDescription(h$);
+          const hContent = headlessResult.renderedContent || extractVisibleText(headlessResult.html);
+          const hLeadImageUrl = extractLeadImage(h$, safeUrl);
+          const hSiteName = extractMeta(h$, "og:site_name");
+
+          // Prefer headless result only when it produces richer output.
+          const headlessIsBetter =
+            (hTitle && hTitle.length > (title?.length ?? 0)) ||
+            (hDescription && hDescription.length > (description?.length ?? 0)) ||
+            (hContent && hContent.trim().length > (content?.trim().length ?? 0));
+
+          if (headlessIsBetter) {
+            $ = h$;
+            title = hTitle || title;
+            description = hDescription || description;
+            content = hContent || content;
+            leadImageUrl = hLeadImageUrl || leadImageUrl;
+            siteName = hSiteName || siteName;
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[ContentExtraction] headless fallback failed for ${safeUrl}: ${err.message}`);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     let aiSummary: string | null = null;
     try {
