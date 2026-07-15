@@ -13,6 +13,7 @@ interface ExtractionResult {
   leadImageUrl: string | null;
   aiSummary: string | null;
   siteName: string | null;
+  extractionWarning?: boolean;
 }
 
 const USER_AGENTS = [
@@ -354,6 +355,7 @@ export async function extractContentFromUrl(url: string, groundingContext?: stri
       console.error("[ContentExtraction] AI summary generation failed:", err.message);
     }
 
+    const titleFellBack = !title;
     return {
       title: title || url,
       description,
@@ -361,6 +363,7 @@ export async function extractContentFromUrl(url: string, groundingContext?: stri
       leadImageUrl,
       aiSummary,
       siteName,
+      extractionWarning: titleFellBack ? true : undefined,
     };
   } finally {
     clearTimeout(timeout);

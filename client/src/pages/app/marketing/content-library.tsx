@@ -88,6 +88,7 @@ interface ExtractionResult {
   leadImageUrl: string | null;
   aiSummary: string | null;
   siteName: string | null;
+  extractionWarning?: boolean;
 }
 
 const SEASON_OPTIONS = [
@@ -1386,6 +1387,14 @@ export default function ContentLibraryPage() {
                     </div>
                   ) : (
                     <div className="space-y-4">
+                      {extractionResult?.extractionWarning && (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3" data-testid="extraction-warning-notice">
+                          <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                          <p className="text-sm text-amber-700 dark:text-amber-400">
+                            We couldn't read that page automatically — you may want to edit the title and description before saving.
+                          </p>
+                        </div>
+                      )}
                       {form.leadImageUrl && (
                         <div className="relative rounded-lg overflow-hidden bg-muted aspect-video">
                           <img
