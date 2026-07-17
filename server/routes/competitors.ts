@@ -589,21 +589,24 @@ export function registerCompetitorRoutes(app: Express) {
 
       if (!await guardManualAction(req, res, "manualCrawl")) return;
 
+      // Queue the crawl so slow or bot-blocked sites can't hang the HTTP
+      // request (which previously caused proxy timeouts / on-screen errors).
+      enqueueCrawl(
+        `crawl:manual:${competitor.name}`,
+        async (signal) => {
       // Use the robust web crawler service
-      const crawlResult = await crawlCompetitorWebsite(competitor.url);
+      const crawlResult = await crawlCompetitorWebsite(competitor.url, { signal });
       
-      // Check if competitor has existing manual research data
-      const existingAnalysis = competitor.analysisData as any;
+      // Re-fetch current state: manual research may have been added while the
+      // job sat in the queue, and it must not be overwritten by crawl analysis.
+      const freshCompetitor = await storage.getCompetitor(competitor.id).catch(() => null);
+      const existingAnalysis = (freshCompetitor ?? competitor).analysisData as any;
       const hasManualResearch = existingAnalysis?.source === "manual";
       
       if (crawlResult.pages.length === 0) {
-        // Return with manual research option flag
-        return res.json({ 
-          success: false, 
-          message: "Website could not be crawled",
-          canUseManualResearch: true,
-          hasExistingManualResearch: hasManualResearch,
-        });
+        await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+        console.log(`[Manual Crawl] No pages crawled for ${competitor.name} - website could not be crawled`);
+        return { success: false, message: "Website could not be crawled" };
       }
 
       captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
@@ -746,14 +749,14 @@ export function registerCompetitorRoutes(app: Express) {
           marketId: ctx.marketId,
         });
         
-        return res.json({ 
+        return { 
           success: true, 
           lastCrawl, 
           analysisType: "quick",
           message: "Quick refresh completed - webpage data updated",
           pagesCrawled: crawlResult.pages.length,
           totalWordCount: crawlResult.totalWordCount,
-        });
+        };
       }
       
       // Full and full_with_change: perform AI analysis
@@ -890,29 +893,41 @@ Return ONLY the JSON object, no other text.`;
             }
           }
           
-          res.json({ 
+          return { 
             success: true, 
             lastCrawl, 
             analysisType,
-            analysis,
             pagesCrawled: crawlResult.pages.length,
             totalWordCount: crawlResult.totalWordCount,
             socialMonitoring: socialMonitoringResult,
-          });
+          };
         } catch (aiError) {
           console.error("AI analysis failed:", aiError);
-          res.json({ 
+          return { 
             success: true, 
             lastCrawl, 
             analysisType,
             message: "Crawled but AI analysis unavailable",
             pagesCrawled: crawlResult.pages.length,
             totalWordCount: crawlResult.totalWordCount,
-          });
+          };
         }
       } else {
-        res.json({ success: true, lastCrawl, analysisType, message: "Website content could not be extracted" });
+        return { success: true, lastCrawl, analysisType, message: "Website content could not be extracted" };
       }
+        },
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: competitor.id, targetName: competitor.name },
+      ).catch((err) =>
+        console.error(`[Manual Crawl] Queued crawl failed for ${competitor.name}:`, (err as Error).message)
+      );
+
+      res.status(202).json({
+        success: true,
+        queued: true,
+        analysisType,
+        message: `Crawl queued for ${competitor.name}. Data will refresh when it completes.`,
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1336,8 +1351,10 @@ Return ONLY the JSON object, no other text.`;
     }
   });
 
-  // Simple baseline refresh: Crawl company profile website and LinkedIn
-  app.post("/api/company-profile/:id/refresh", async (req, res) => {
+  // Simple baseline refresh: Crawl company profile website and LinkedIn.
+  // Registered on both /refresh and /crawl — several client surfaces call
+  // /crawl, which previously didn't exist and silently 404ed.
+  app.post(["/api/company-profile/:id/refresh", "/api/company-profile/:id/crawl"], async (req, res) => {
     console.log(`[Baseline Refresh] Endpoint called for profile ID: ${req.params.id}`);
     try {
       const ctx = await getRequestContext(req);
@@ -1354,7 +1371,12 @@ Return ONLY the JSON object, no other text.`;
       }
 
       if (!await guardManualAction(req, res, "manualCrawl")) return;
-      
+
+      // Queue the refresh so slow or bot-blocked sites can't hang the HTTP
+      // request (which previously caused proxy timeouts / on-screen errors).
+      enqueueCrawl(
+        `crawl:manual:baseline:${profile.companyName}`,
+        async (signal) => {
       const results: any = { website: null, linkedin: null, blog: null, errors: [] };
       
       console.log(`[Baseline Refresh] Starting refresh for ${profile.companyName} (${profile.id})`);
@@ -1365,7 +1387,7 @@ Return ONLY the JSON object, no other text.`;
         try {
           console.log(`[Baseline Refresh] Starting website crawl for ${profile.websiteUrl}`);
           const { crawlCompetitorWebsite, getCombinedContent } = await import("../services/web-crawler");
-          const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
+          const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl, { signal });
           
           if (crawlResult.pages.length > 0) {
             const combinedContent = getCombinedContent(crawlResult);
@@ -1461,7 +1483,19 @@ Return ONLY the JSON object, no other text.`;
       }
       
       console.log(`[Baseline Refresh] Completed for ${profile.companyName}:`, JSON.stringify(results));
-      res.json({ success: true, results });
+      return { success: true, results };
+        },
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: profile.id, targetName: profile.companyName },
+      ).catch((err) =>
+        console.error(`[Baseline Refresh] Queued refresh failed for ${profile.companyName}:`, (err as Error).message)
+      );
+
+      res.status(202).json({
+        success: true,
+        queued: true,
+        message: `Baseline refresh queued for ${profile.companyName}. Data will refresh when it completes.`,
+      });
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

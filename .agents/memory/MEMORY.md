@@ -45,3 +45,4 @@
 - [Website monitor false abandonment](website-monitor-coverage-collapse.md) — false "abandoned AI" alerts = SPA crawl coverage collapse; fix = sitemap.xml discovery + headless queue-don't-reject semaphore + isCoverageCollapse guard; every skip branch must stamp lastWebsiteMonitor.
 - [Marketing single-item deep-links](marketing-deep-links.md) — all "land on the exact item" links route through itemDeepLinkHref (client/src/lib/marketing-deep-links.ts); target pages honor ?brief=/?emailId=/?post= to scroll+highlight/auto-open.
 - [Marketing calendar deep-link to undated posts](marketing-calendar-deeplink-undated.md) — undated ?post= targets live individually in the backlog query (not the rolled-up grid); highlight them in the rail, never drill an "unscheduled" batch.
+- [Manual crawl endpoints queued](manual-crawl-queued.md) — refresh/crawl HTTP routes must enqueue + return 202; inline crawls caused proxy-timeout on-screen errors (July 2026 incident).
