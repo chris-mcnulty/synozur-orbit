@@ -478,6 +478,24 @@ export default function CompetitorDetail() {
     },
   });
 
+  const resumeCrawlMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/admin/flagged-crawls/competitor/${id}/resume`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to resume crawling");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      toast({ title: "Crawling Resumed", description: "This competitor will be crawled again in the next sweep." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to resume crawling. Please try again.", variant: "destructive" });
+    },
+  });
+
   const hasSocialUrls = competitor?.linkedInUrl || competitor?.instagramUrl || competitor?.twitterUrl || competitor?.facebookUrl;
   const isPremium = monitoringSettings?.isPremium;
 
@@ -561,9 +579,28 @@ export default function CompetitorDetail() {
           )}
 
           {competitor.excludeFromCrawl && (
-            <div className="mb-4 p-3 rounded-lg border border-muted bg-muted/50 flex items-center gap-2 text-sm text-muted-foreground" data-testid="banner-excluded-crawl">
-              <Ban className="h-4 w-4" />
-              <span>This competitor is excluded from automated crawling.</span>
+            <div className="mb-4 p-4 rounded-lg border border-muted bg-muted/50 flex items-start gap-3" data-testid="banner-excluded-crawl">
+              <Ban className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium text-sm">Automated crawling is paused</p>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {competitor.consecutiveCrawlFailures
+                    ? `Crawling was paused after ${competitor.consecutiveCrawlFailures} consecutive failures. The site may be blocking automated requests.`
+                    : "This competitor has been manually excluded from automated crawling."}
+                </p>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => resumeCrawlMutation.mutate()}
+                    disabled={resumeCrawlMutation.isPending}
+                    data-testid="button-resume-crawl"
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" /> Resume Crawling
+                  </Button>
+                )}
+              </div>
             </div>
           )}
           
