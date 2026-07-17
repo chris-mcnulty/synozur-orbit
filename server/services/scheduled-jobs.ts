@@ -1434,7 +1434,7 @@ async function generateBriefingForTenant(tenantDomain: string): Promise<{ briefi
 
   try {
     console.log(`[Scheduled Job] Generating intelligence briefing for tenant ${tenantDomain}...`);
-    const briefing = await generateBriefing(tenantDomain, 7);
+    const briefing = await generateBriefing(tenantDomain, 8);
     const result = {
       briefingId: briefing.id,
       briefingData: briefing.briefingData as BriefingData,
@@ -1650,7 +1650,7 @@ async function runScheduledBriefingJob(): Promise<void> {
         console.log(`[Scheduled Briefing] Processing ${tenantDomain} market=${marketId}: ${subscribers.length} subscribers`);
 
         try {
-          const briefing = await generateBriefing(tenantDomain, 7, marketId);
+          const briefing = await generateBriefing(tenantDomain, 8, marketId);
           if (!briefing || !briefing.briefingData) {
             console.warn(`[Scheduled Briefing] No briefing data for ${tenantDomain} market=${marketId}`);
             continue;
@@ -2423,7 +2423,9 @@ export function startScheduledJobs(): void {
   }, 60 * 60 * 1000);
 
   scheduledBriefingInterval = setInterval(() => {
-    checkAndRunScheduledBriefing();
+    // Delay briefing by 35 min within each hourly tick so the website monitor
+    // (which starts at T+4min and runs ~25min) always finishes first.
+    setTimeout(() => checkAndRunScheduledBriefing(), 35 * 60 * 1000);
   }, 60 * 60 * 1000);
 
   // Planner two-way sync — runs every 15 minutes for all connected plans
@@ -2616,9 +2618,13 @@ export function startScheduledJobs(): void {
   }, 20 * 1000);
 
   setTimeout(() => {
-    console.log("[Scheduled Jobs] Checking if scheduled briefing is overdue...");
+    // Delay startup briefing check by 35 min so the website monitor sweep
+    // (starting at T+60s, running ~25min) always finishes before the briefing
+    // generates. Without this delay the briefing fires at T+25s with zero
+    // fresh signals and the monitor writes its activities 14-39min later.
+    console.log("[Scheduled Jobs] Scheduling briefing check for T+35min (after monitor sweep)...");
     checkAndRunScheduledBriefing();
-  }, 25 * 1000);
+  }, 35 * 60 * 1000);
 
   setTimeout(() => {
     console.log("[Scheduled Jobs] Checking if SEO refresh is overdue...");

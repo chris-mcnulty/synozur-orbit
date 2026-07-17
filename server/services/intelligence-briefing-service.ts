@@ -247,7 +247,7 @@ export async function generateBriefing(
     ? `\n${competitorDocCtx.context.slice(0, 10000)}\n`
     : "";
 
-  const periodLabel = periodDays === 7 
+  const periodLabel = (periodDays === 7 || periodDays === 8)
     ? "Weekly" 
     : periodDays === 14 
       ? "Bi-Weekly" 
@@ -698,7 +698,7 @@ export async function generateBriefingData(
     ? `\n${competitorDocCtx.context.slice(0, 10000)}\n`
     : "";
 
-  const periodLabel = periodDays === 7 
+  const periodLabel = (periodDays === 7 || periodDays === 8)
     ? "Weekly" 
     : periodDays === 14 
       ? "Bi-Weekly" 
