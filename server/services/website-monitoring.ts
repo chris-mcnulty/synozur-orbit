@@ -423,7 +423,8 @@ export async function monitorCompetitorWebsite(
       
       const impactLevel = changeScore >= 40 ? "High" : changeScore >= 25 ? "Medium" : "Low";
 
-      if (isRealChange && userId && tenantDomain) {
+      const resolvedTenantForActivity = tenantDomain || competitor.tenantDomain;
+      if (isRealChange && resolvedTenantForActivity) {
         await storage.createActivity({
           type: "website_update",
           sourceType: "competitor",
@@ -439,8 +440,8 @@ export async function monitorCompetitorWebsite(
           },
           date: now.toISOString().split("T")[0],
           impact: impactLevel,
-          userId,
-          tenantDomain,
+          userId: userId || undefined,
+          tenantDomain: resolvedTenantForActivity,
           marketId: competitor.marketId,
         });
       }
