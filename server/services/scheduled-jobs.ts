@@ -151,8 +151,8 @@ async function cleanupStuckJobs(): Promise<void> {
           .set({
             status: "failed",
             completedAt: new Date(),
-            result: { error: "Job timed out - automatically marked as failed after running too long" },
-            errorMessage: "Job timed out after 1 hour",
+            result: { error: "Stale job record swept - the job was likely interrupted by a server restart or its completion was never recorded" },
+            errorMessage: "Interrupted or unrecorded (stale record swept after 1 hour)",
           })
           .where(eq(scheduledJobRuns.id, job.id));
         console.log(`[Scheduled Jobs] Marked stuck job ${job.id} (${job.jobType}) as failed`);
