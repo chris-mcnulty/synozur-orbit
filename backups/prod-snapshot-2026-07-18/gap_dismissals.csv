@@ -1,0 +1,4 @@
+id,gap_identifier,dedupe_key,status,reason,tenant_domain,market_id,dismissed_by,created_at
+231f4de0-81f6-48ca-9471-09dfbb1160e7,gap-AI-First Positioning and Messaging,aifirstpositioningandmessaging_gap,accepted,,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,116500d0-357e-4ace-a7af-7264ed58e22a,2026-03-25 15:58:15.361984
+e1e359ef-f55a-4fd4-873d-525330408a3a,gap-Thought Leadership and Proprietary Research,thoughtleadershipandproprietaryresearch_gap,dismissed,duplicate,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,116500d0-357e-4ace-a7af-7264ed58e22a,2026-03-25 16:39:52.98666
+716742f4-b99c-4053-a6b4-e45d5814758c,gap-Industry-Specific Vertical Messaging,industryspecificverticalmessaging_gap,dismissed,duplicate,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,116500d0-357e-4ace-a7af-7264ed58e22a,2026-03-25 16:40:46.115661

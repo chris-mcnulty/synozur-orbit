@@ -1,0 +1,24 @@
+id,tenant_domain,market_id,keyword,country,locale,created_by,created_at
+58d56fab-2d51-44ec-ae0e-3ba8da88b4cb,synozur.com,ea07a669-2e2b-4dbc-84fd-42f0009d0955,casino,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-05-06 00:21:39.90323
+ed97ac42-af9c-428c-8d77-0aaefeac88f7,synozur.com,7f49f485-e251-4e51-8114-cce62e5ce6a9,AI,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-05-30 01:50:01.665439
+35b722e5-4d12-4acf-82d9-70bd480fb510,synozur.com,7f49f485-e251-4e51-8114-cce62e5ce6a9,information management,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-05-30 01:50:09.705187
+c5bee1b8-cd9d-4bac-bd83-06da970ccf02,synozur.com,7f49f485-e251-4e51-8114-cce62e5ce6a9,record management,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-05-30 01:50:17.762102
+706108a1-dfe0-4cf2-91b6-19f8417e23e3,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,knowledge platform,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-05-30 01:52:32.312687
+f0c83c3f-afb9-402b-ba25-b314903d2a1a,synozur.com,,strategy,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-01 18:57:42.699731
+d00a901d-8c55-4885-b810-66ed03148f47,synozur.com,,AI,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-01 18:57:48.022645
+b07da724-1700-41fd-ae31-81e2d0dc5aec,synozur.com,,GTM Strategy,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-01 18:57:57.903048
+110707f5-b649-41d3-b897-610fab11a453,synozur.com,,company operating system,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-01 18:58:12.735078
+8e3f4d43-dc70-4cd9-9294-cffebfaae7bc,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,knowledge catalog,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 15:41:23.053497
+f98ffa0d-82e8-4410-9fd7-182238c46006,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,knowledge layer,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 15:41:49.478348
+4407763f-7495-4959-82ab-9e093e58d3c6,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,professional services knowledge,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 15:46:21.454528
+21ba3b7d-8501-465f-bf7a-aaf61eb0fb94,synozur.com,,AI strategy,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 18:19:58.209997
+b27ba16f-008f-451e-8afb-56459d8658e4,synozur.com,,AI value realization,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 18:20:05.944308
+5e2b1197-eaf5-49e8-9db1-41666c100d07,synozur.com,,private equity Ai strategy,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 18:20:45.270213
+dcc71e3b-099e-439a-8039-449adb118885,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,SharePoint intranet solution,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:53:29.820059
+f64e9468-300b-44df-a07a-002fab4cf0b9,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,Microsoft 365 intranet,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:53:39.003692
+f58559e3-fcb1-4ed1-9e2f-3547c3c67576,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,modern intranet software,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:53:46.497651
+c7f9d2a3-d83f-4a1e-bac1-7220f5d922a5,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,knowledge management software for professional services,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:53:57.058884
+79081557-d72a-4af7-915e-266802e4ca2e,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,enterprise knowledge base software,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:54:06.167616
+78567db2-45af-4d57-b1ae-db90c43c6f7a,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,AI knowledge management platform,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:54:17.26239
+205c47e9-95ff-4c32-8727-330b200fa90f,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,digital employee experience tools,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:54:25.59003
+e6a13254-cf69-45e0-b1a0-3637aef86e04,synozur.com,0ac8db60-16c4-4665-a8f3-e4655a5a29b5,employee experience platform Microsoft 365,us,en,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-01 00:54:32.826351
