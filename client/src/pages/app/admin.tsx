@@ -37,6 +37,7 @@ import { AiUsageDashboard } from "@/components/admin/AiUsageDashboard";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
+import { useToast } from "@/hooks/use-toast";
 import type { Tenant } from "@shared/schema";
 import { setTabTenantId, setTabMarketId } from "@/lib/tabContext";
 
@@ -636,6 +637,7 @@ function AdminSupportCard() {
 export default function AdminPage() {
   const { user: currentUser } = useUser();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [selectedTenant, setSelectedTenant] = useState<TenantWithCounts | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [newBlockedDomain, setNewBlockedDomain] = useState("");
@@ -886,6 +888,27 @@ export default function AdminPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/flagged-crawls"] });
+    },
+  });
+
+  const resumeAllCrawlsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/admin/flagged-crawls/resume-all`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to resume all");
+      return response.json() as Promise<{ resumedCompetitors: number; resumedProducts: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/flagged-crawls"] });
+      toast({
+        title: "Crawling re-enabled",
+        description: `${data.resumedCompetitors} competitors and ${data.resumedProducts} products resumed.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to resume all", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1731,14 +1754,28 @@ export default function AdminPage() {
         </Card>
 
         <Card data-testid="card-flagged-crawls">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Flagged Crawl Sites
-            </CardTitle>
-            <CardDescription>
-              Sites that have repeatedly failed crawl attempts. After 6 consecutive failures they are auto-paused and skipped by all scheduled crawls — or pause them manually below.
-            </CardDescription>
+          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Flagged Crawl Sites
+              </CardTitle>
+              <CardDescription>
+                Sites that have repeatedly failed crawl attempts. After 6 consecutive failures they are auto-paused and skipped by all scheduled crawls — or pause them manually below.
+              </CardDescription>
+            </div>
+            {(!!flaggedCrawls?.competitors?.length || !!flaggedCrawls?.products?.length || !!flaggedCrawls?.pausedCompetitors?.length || !!flaggedCrawls?.pausedProducts?.length) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => resumeAllCrawlsMutation.mutate()}
+                disabled={resumeAllCrawlsMutation.isPending}
+                data-testid="button-resume-all-crawls"
+              >
+                <Play className="h-3 w-3 mr-1" />
+                {resumeAllCrawlsMutation.isPending ? "Resuming..." : "Resume All"}
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {(!flaggedCrawls?.competitors?.length && !flaggedCrawls?.products?.length) ? (
