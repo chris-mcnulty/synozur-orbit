@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
+import { storeArtifact } from "../services/artifact-storage-helper";
 import {
   toContextFilter,
   validateResourceContext,
@@ -631,6 +632,20 @@ export function registerRelationshipReportRoutes(app: Express) {
 
       const safeName = title.replace(/[^a-zA-Z0-9]/g, "_");
       const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      // Retain in SPE (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: docBuffer,
+          filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          kind: "docx",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[relationship-reports download-docx] store failed:", e?.message);
+      }
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(docBuffer);

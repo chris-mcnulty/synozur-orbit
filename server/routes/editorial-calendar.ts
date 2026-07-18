@@ -5,6 +5,7 @@ import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
+import { storeArtifact } from "../services/artifact-storage-helper";
 import { generateContentBriefs } from "../services/editorial-calendar-service";
 import { draftFromBrief } from "../services/copywriter-service";
 import { getPersonalVoiceProfile } from "../services/outbound-voice-service";
@@ -865,6 +866,20 @@ export function registerEditorialCalendarRoutes(app: Express) {
       const safeName =
         brief.title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_brief";
       const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      // Retain in SPE (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: docBuffer,
+          filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          kind: "docx",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[content-briefs download-docx] store failed:", e?.message);
+      }
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

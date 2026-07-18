@@ -591,6 +591,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const docBuffer = await buildBrandedDocx(title, parts.join("\n\n"));
       const safeName = title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_draft";
       const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      // Retain in SPE (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: docBuffer,
+          filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          kind: "docx",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[content-assets download-docx] store failed:", e?.message);
+      }
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(docBuffer);
