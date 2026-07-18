@@ -75,6 +75,27 @@ function releaseCrawlSlot(): void {
   }
 }
 
+// Circuit breaker: in some production environments Chromium cannot launch at
+// all (puppeteer waits 30s for the WS endpoint, then throws). Without a
+// breaker every page burns ~90-120s of launch retries before falling back to
+// HTTP, so multi-page crawls always exceed the job timeout and nothing ever
+// completes. After repeated launch failures we disable headless for a
+// cooldown window and callers skip straight to HTTP.
+let launchFailureCount = 0;
+let headlessDisabledUntil = 0;
+const LAUNCH_FAILURE_THRESHOLD = 2;
+const HEADLESS_COOLDOWN_MS = 10 * 60 * 1000;
+
+function recordLaunchFailure(err: unknown): void {
+  launchFailureCount++;
+  if (launchFailureCount >= LAUNCH_FAILURE_THRESHOLD) {
+    headlessDisabledUntil = Date.now() + HEADLESS_COOLDOWN_MS;
+    console.error(
+      `[Headless Crawler] Browser failed to launch ${launchFailureCount}x — disabling headless for ${HEADLESS_COOLDOWN_MS / 60000} min, falling back to HTTP. Last error: ${(err as any)?.message?.substring(0, 150)}`
+    );
+  }
+}
+
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
     try {
