@@ -96,6 +96,12 @@ function recordLaunchFailure(err: unknown): void {
   }
 }
 
+// Only one launch attempt may be in flight at a time. Two concurrent crawls
+// previously both called puppeteer.launch() when the shared instance was dead,
+// spawning two Chromiums simultaneously — on a loaded production box that
+// doubles startup cost and both launches can miss the WS-endpoint window.
+let launchInFlight: Promise<Browser> | null = null;
+
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
     try {
@@ -110,6 +116,16 @@ async function getBrowser(): Promise<Browser> {
     browserInstance = null;
   }
 
+  if (launchInFlight) {
+    return launchInFlight;
+  }
+  launchInFlight = launchBrowser().finally(() => {
+    launchInFlight = null;
+  });
+  return launchInFlight;
+}
+
+async function launchBrowser(): Promise<Browser> {
   const executablePath = await findChromiumPath();
   console.log(`[Headless Crawler] Using chromium path: ${executablePath || 'auto-detect'}`);
 
@@ -117,7 +133,10 @@ async function getBrowser(): Promise<Browser> {
     browserInstance = await puppeteer.launch({
     headless: true,
     executablePath,
-    protocolTimeout: 30000,
+    // Under production load Chromium can take well over the default 30s to
+    // print its WS endpoint; give it 2 minutes before declaring launch failure.
+    timeout: 120000,
+    protocolTimeout: 60000,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -260,6 +279,7 @@ async function _fetchPageHeadlessInner(
   } = options;
 
   let page: Page | null = null;
+  let hardTimeoutHandle: NodeJS.Timeout | undefined;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -270,11 +290,15 @@ async function _fetchPageHeadlessInner(
         await delay(1000 + Math.random() * 2000);
       }
 
+      // If no live browser exists yet this attempt also pays the launch cost
+      // (up to 2 min under load), so widen the hard cap accordingly —
+      // otherwise it would abort mid-launch and waste the whole startup.
+      const launchBudget = browserInstance?.connected ? 0 : 130000;
       const hardTimeout = new Promise<null>((resolve) => {
-        setTimeout(() => {
+        hardTimeoutHandle = setTimeout(() => {
           console.warn(`[Headless] Hard timeout reached for ${url} (attempt ${attempt + 1})`);
           resolve(null);
-        }, timeout + 10000);
+        }, timeout + 10000 + launchBudget);
       });
 
       const crawlWork = async (): Promise<HeadlessCrawlResult | null> => {
@@ -323,6 +347,7 @@ async function _fetchPageHeadlessInner(
       };
 
       const result = await Promise.race([crawlWork(), hardTimeout]);
+      clearTimeout(hardTimeoutHandle);
       if (result) return result;
       
       try { if (page) await (page as Page).close(); } catch {}
@@ -330,6 +355,7 @@ async function _fetchPageHeadlessInner(
       
       if (attempt >= retries) return null;
     } catch (error: any) {
+      clearTimeout(hardTimeoutHandle);
       const isProtocolError = error?.message?.includes("ProtocolError") || 
                                error?.message?.includes("timed out") ||
                                error?.message?.includes("Target closed") ||

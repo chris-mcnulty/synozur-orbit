@@ -1,10 +1,14 @@
 ---
-name: Headless launch circuit breaker
-description: Chromium may be unable to launch in production; the headless crawler must trip a breaker and fall back to HTTP or no crawl ever completes.
+name: Headless crawler under production load
+description: Chromium launch failures in prod were CPU starvation, not a broken browser; fixes are launch serialization + generous launch budget, with a circuit breaker as last resort.
 ---
 
-Chromium can fail to launch entirely in the production deployment (puppeteer times out waiting for the WS endpoint). Without protection, every page burned ~90–120s of launch retries, so multi-page crawls always exceeded the job timeout — over one week prod logged ~942 failed vs 4 completed website crawls before this was caught.
+Production crawls failed for a week (~942 failed vs 4 completed) with puppeteer "Timed out waiting for WS endpoint". The browser binary itself was fine — the same nix Chromium launches instantly in dev. Under a crawl storm the prod box's CPU is saturated, Chromium can't finish startup in 30s, and each failed launch spawns retries that add more load (death spiral). Plain-HTTP fallback is NOT an acceptable primary mode — JS-heavy sites return empty app shells (user explicitly rejected this).
 
-**Why:** Launch failure is environment-level, not per-page. Retrying per page multiplies the cost across the whole crawl and starves the queue.
+**Why:** Launch failure is an environment/load condition, not per-page or per-site. Diagnose via prod deployment logs filtered on `(?i)headless` plus `scheduled_job_runs` status/error_message before touching crawler code.
 
-**How to apply:** The headless crawler has a circuit breaker: after 2 consecutive launch failures, headless is disabled for a 10-minute cooldown (`isHeadlessAvailable()` false) and all fetches go straight to plain HTTP. If crawl success rates crater again with "timed out" jobs, check deployment logs for `[Headless]` launch errors first — and consider extending the breaker to repeated post-launch protocol errors. Diagnosis path: `scheduled_job_runs` in prod (status/error_message) + deployment logs filtered on `(?i)headless`.
+**How to apply:**
+- Browser launches are single-flight (shared in-flight promise) — never let concurrent crawls each spawn a Chromium.
+- Launch budget is generous (120s launch timeout, per-attempt hard cap widened only when a launch is needed).
+- Circuit breaker (2 consecutive launch failures → headless off 10 min → HTTP fallback) is a last-resort safety net only.
+- Crawl job timeout must fit real headless cost (~30-40s/page ⇒ 15 min default); monitors stay tighter (5 min).

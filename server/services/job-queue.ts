@@ -357,7 +357,10 @@ export function enqueuePdf<T>(
 }
 
 export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
-  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 5 * 60 * 1000, ctx });
+  // Full headless crawls render every page (~30-40s each incl. launch cost
+  // under load); 5 min guaranteed timeouts on multi-page sites. DB-pool
+  // starvation that motivated the tight limit is solved via pool isolation.
+  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 15 * 60 * 1000, ctx });
 }
 
 export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
