@@ -113,7 +113,8 @@ async function getBrowser(): Promise<Browser> {
   const executablePath = await findChromiumPath();
   console.log(`[Headless Crawler] Using chromium path: ${executablePath || 'auto-detect'}`);
 
-  browserInstance = await puppeteer.launch({
+  try {
+    browserInstance = await puppeteer.launch({
     headless: true,
     executablePath,
     protocolTimeout: 30000,
@@ -132,7 +133,13 @@ async function getBrowser(): Promise<Browser> {
       "--disable-features=IsolateOrigins,site-per-process",
       "--js-flags=--max-old-space-size=256",
     ],
-  });
+    });
+    launchFailureCount = 0;
+  } catch (err) {
+    browserInstance = null;
+    recordLaunchFailure(err);
+    throw err;
+  }
 
   browserInstance.on("disconnected", () => {
     console.log("[Headless Crawler] Browser disconnected, will recreate on next request");
@@ -223,6 +230,11 @@ export async function fetchPageHeadless(
     timeout?: number;
   } = {}
 ): Promise<HeadlessCrawlResult | null> {
+  // Circuit breaker tripped — skip headless entirely so callers fall back to
+  // HTTP immediately instead of queueing behind doomed launch attempts.
+  if (!isHeadlessAvailable()) {
+    return null;
+  }
   await acquireCrawlSlot();
   try {
     return await _fetchPageHeadlessInner(url, options);
@@ -251,6 +263,9 @@ async function _fetchPageHeadlessInner(
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      // Breaker may have tripped during a previous attempt (or another
+      // concurrent crawl) — stop retrying immediately.
+      if (!isHeadlessAvailable()) return null;
       if (attempt > 0) {
         await delay(1000 + Math.random() * 2000);
       }
@@ -386,7 +401,7 @@ export async function fetchMultiplePagesHeadless(
 }
 
 export function isHeadlessAvailable(): boolean {
-  return true;
+  return Date.now() >= headlessDisabledUntil;
 }
 
 process.on("exit", () => {
