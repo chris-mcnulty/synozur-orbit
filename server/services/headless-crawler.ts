@@ -47,7 +47,7 @@ async function delay(ms: number): Promise<void> {
 
 let browserInstance: Browser | null = null;
 let activeCrawls = 0;
-const MAX_CONCURRENT_CRAWLS = 2;
+const MAX_CONCURRENT_CRAWLS = 4;
 const crawlWaitQueue: Array<() => void> = [];
 
 // Acquire a headless crawl slot, WAITING (queuing) when at capacity rather than
