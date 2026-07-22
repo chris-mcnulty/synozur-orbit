@@ -748,17 +748,35 @@ export function registerEditorialCalendarRoutes(app: Express) {
         );
       if (!brief) return res.status(404).json({ error: "Not found" });
 
+      // blank: true — skip AI generation entirely and create an empty draft
+      // linked to the brief, ready for the user to write themselves.
+      const blank = req.body?.blank === true;
+
       const instructions = typeof req.body?.instructions === "string" ? req.body.instructions : undefined;
       const guest = typeof req.body?.guest === "string" ? req.body.guest : undefined;
-      const voiceProfile = await getPersonalVoiceProfile(ctx.userId);
-      const draft = await draftFromBrief(brief, {
-        isDefaultMarket: ctx.isDefaultMarket,
-        instructions,
-        guest,
-        soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
-      });
+      const draft = blank
+        ? {
+            title: brief.title,
+            subtitle: null as string | null,
+            overview: null as string | null,
+            body: "",
+            meta: null as string | null,
+            tags: null as string[] | null,
+            format: brief.format,
+            usage: undefined,
+            model: undefined,
+          }
+        : await (async () => {
+            const voiceProfile = await getPersonalVoiceProfile(ctx.userId);
+            return draftFromBrief(brief, {
+              isDefaultMarket: ctx.isDefaultMarket,
+              instructions,
+              guest,
+              soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
+            });
+          })();
 
-      if (!draft.body?.trim()) {
+      if (!blank && !draft.body?.trim()) {
         return res.status(502).json({ error: "The AI did not return a usable draft. Please try again." });
       }
 

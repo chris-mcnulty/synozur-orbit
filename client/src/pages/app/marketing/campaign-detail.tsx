@@ -552,7 +552,7 @@ export default function CampaignDetailPage() {
   });
 
   const hubCreateBlogPostMutation = useMutation({
-    mutationFn: async (title?: string) => {
+    mutationFn: async ({ title, writeMyself }: { title?: string; writeMyself?: boolean }) => {
       const res = await fetch("/api/planning-hub/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -560,7 +560,18 @@ export default function CampaignDetailPage() {
         body: JSON.stringify({ scope: "campaign", id, type: "content", format: "blog_post", title: title?.trim() || "New blog post" }),
       });
       if (!res.ok) throw new Error("Failed to create blog post brief");
-      return res.json() as Promise<{ type: string; id: string }>;
+      const brief = (await res.json()) as { type: string; id: string };
+      if (writeMyself) {
+        // Create a blank draft immediately (no AI) so the editor opens ready to write.
+        const draftRes = await fetch(`/api/content-briefs/${brief.id}/draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ blank: true }),
+        });
+        if (!draftRes.ok) throw new Error("Brief created, but the blank draft could not be created. Open it from the Content Briefs page.");
+      }
+      return brief;
     },
     onSuccess: (data) => {
       refreshHub();
@@ -2906,7 +2917,7 @@ export default function CampaignDetailPage() {
                             variant="outline"
                             className="gap-1.5"
                             disabled={hubCreateBlogPostMutation.isPending}
-                            onClick={() => hubCreateBlogPostMutation.mutate()}
+                            onClick={() => hubCreateBlogPostMutation.mutate({})}
                             data-testid="button-hub-new-blog-post"
                           >
                             {hubCreateBlogPostMutation.isPending ? (
@@ -6204,8 +6215,17 @@ export default function CampaignDetailPage() {
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setNewBlogDialogOpen(false)} data-testid="button-cancel-new-blog">Cancel</Button>
             <Button
+              variant="secondary"
               disabled={!suggestedBlogTitle.trim() || hubCreateBlogPostMutation.isPending}
-              onClick={() => hubCreateBlogPostMutation.mutate(suggestedBlogTitle)}
+              onClick={() => hubCreateBlogPostMutation.mutate({ title: suggestedBlogTitle, writeMyself: true })}
+              data-testid="button-write-blog-myself"
+            >
+              {hubCreateBlogPostMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+              Write myself
+            </Button>
+            <Button
+              disabled={!suggestedBlogTitle.trim() || hubCreateBlogPostMutation.isPending}
+              onClick={() => hubCreateBlogPostMutation.mutate({ title: suggestedBlogTitle })}
               data-testid="button-create-blog-post"
             >
               {hubCreateBlogPostMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
