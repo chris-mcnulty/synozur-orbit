@@ -309,7 +309,7 @@ async function _fetchPageHeadlessInner(
         page.setDefaultTimeout(timeout);
 
         await page.goto(url, {
-          waitUntil: "networkidle2",
+          waitUntil: "load",
           timeout,
         });
 
