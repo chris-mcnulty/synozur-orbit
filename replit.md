@@ -153,3 +153,7 @@ Preferred communication style: Simple, everyday language.
 - **Tailwind CSS Documentation**: _Populate as you build_
 - **Express.js Documentation**: _Populate as you build_
 - **Microsoft Entra ID (OAuth 2.0) Docs**: _Populate as you build_
+## Backlog
+
+1. **Collapse website-crawl + website-monitor jobs** (next up, after crawl queue proves itself for a day): one fetch per site per cycle feeds both profile refresh and change detection; monitor becomes the single fetcher, crawl sweep reduced to first-baseline safety net; manual "crawl now" bypasses freshness gates, runs the full merged pass, and stamps both timestamps. Applies to competitors, baseline companies, and products.
+2. **Admin taxonomy cleanup** (lower priority): control surfaces are scattered — settings pages and the Admin dashboard (~16 control surfaces stacked top to bottom) need a coherent information architecture / regrouping.
