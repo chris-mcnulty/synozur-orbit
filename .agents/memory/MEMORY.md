@@ -48,3 +48,4 @@
 - [Crawl auto-pause storm recovery](crawl-auto-pause-storm.md) — infra failure storms auto-pause the whole portfolio (6-fail rule); Global Admin Resume All is the fix, check exclude_from_crawl first.
 - [Marketing calendar deep-link to undated posts](marketing-calendar-deeplink-undated.md) — undated ?post= targets live individually in the backlog query (not the rolled-up grid); highlight them in the rail, never drill an "unscheduled" batch.
 - [Manual crawl endpoints queued](manual-crawl-queued.md) — refresh/crawl HTTP routes must enqueue + return 202; inline crawls caused proxy-timeout on-screen errors (July 2026 incident).
+- [Crawl slot semaphore starvation](crawl-slot-starvation.md) — waiting semaphore for browser slots must cap waits (90s→HTTP fallback) or timed-out jobs' zombie pages starve all crawls to 0%.

@@ -56,14 +56,43 @@ const crawlWaitQueue: Array<() => void> = [];
 // app shell, making multi-page crawls both content-poor and nondeterministic
 // (a different subset of pages won the race each run, causing false "change"
 // alerts). Queuing guarantees every page is actually rendered.
-async function acquireCrawlSlot(): Promise<void> {
+// Cap how long a page may wait for a slot. Without a cap, pages belonging to
+// jobs that already timed out stay queued forever, occupy slots when their
+// turn comes, and starve every live job — the queue fills with zombie work and
+// nothing ever completes. On timeout the caller returns null and falls back to
+// HTTP; the coverage-collapse guard downstream protects against shell-only
+// SPA snapshots being treated as real content changes.
+const SLOT_WAIT_TIMEOUT_MS = 90000;
+
+async function acquireCrawlSlot(): Promise<boolean> {
   if (activeCrawls < MAX_CONCURRENT_CRAWLS) {
     activeCrawls++;
-    return;
+    return true;
   }
-  await new Promise<void>((resolve) => crawlWaitQueue.push(resolve));
-  // Slot ownership was handed directly to us by releaseCrawlSlot (activeCrawls
-  // was left incremented on our behalf), so we do not increment again here.
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const waiter = () => {
+      if (settled) {
+        // We already gave up; hand the slot straight to the next waiter (or
+        // free it) so it is not leaked to a dead consumer.
+        releaseCrawlSlot();
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const idx = crawlWaitQueue.indexOf(waiter);
+      if (idx !== -1) crawlWaitQueue.splice(idx, 1);
+      resolve(false);
+    }, SLOT_WAIT_TIMEOUT_MS);
+    crawlWaitQueue.push(waiter);
+  });
+  // Slot ownership is handed directly to us by releaseCrawlSlot (activeCrawls
+  // is left incremented on our behalf), so we do not increment again here.
 }
 
 function releaseCrawlSlot(): void {
@@ -260,7 +289,11 @@ export async function fetchPageHeadless(
   if (!isHeadlessAvailable()) {
     return null;
   }
-  await acquireCrawlSlot();
+  const gotSlot = await acquireCrawlSlot();
+  if (!gotSlot) {
+    console.warn(`[Headless] Gave up waiting ${SLOT_WAIT_TIMEOUT_MS / 1000}s for a crawl slot — ${url} falls back to HTTP`);
+    return null;
+  }
   try {
     return await _fetchPageHeadlessInner(url, options);
   } finally {
