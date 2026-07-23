@@ -49,3 +49,4 @@
 - [Marketing calendar deep-link to undated posts](marketing-calendar-deeplink-undated.md) — undated ?post= targets live individually in the backlog query (not the rolled-up grid); highlight them in the rail, never drill an "unscheduled" batch.
 - [Manual crawl endpoints queued](manual-crawl-queued.md) — refresh/crawl HTTP routes must enqueue + return 202; inline crawls caused proxy-timeout on-screen errors (July 2026 incident).
 - [Crawl slot semaphore starvation](crawl-slot-starvation.md) — waiting semaphore for browser slots must cap waits (90s→HTTP fallback) or timed-out jobs' zombie pages starve all crawls to 0%.
+- [No-AI-slop integration](no-ai-slop-integration.md) — Task #518 plan + full rollback path; rules may be too aggressive on human-written words; prompt-layer and sharpen endpoint are independently reversible.
