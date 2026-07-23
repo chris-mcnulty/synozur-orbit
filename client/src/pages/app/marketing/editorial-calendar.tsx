@@ -55,6 +55,7 @@ import {
   Lightbulb,
   ChevronDown,
   ChevronRight,
+  Scissors,
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -331,6 +332,8 @@ export default function EditorialCalendarPage() {
   const [aiRefOpen, setAiRefOpen] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [rewriteInstr, setRewriteInstr] = useState("");
+  const [sharpenResult, setSharpenResult] = useState<{ content: string; changelog: string[] } | null>(null);
+  const [sharpenOriginal, setSharpenOriginal] = useState<string>("");
   const [repurpose, setRepurpose] = useState<RepurposeVariantResult[] | null>(null);
   const [repurposeTarget, setRepurposeTarget] = useState<{ id: string; title?: string; calendarId?: string } | null>(null);
   // Per-brief "Do you have a guest in mind?" override for podcast outlines.
@@ -709,6 +712,22 @@ export default function EditorialCalendarPage() {
       setRewriteInstr("");
       queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
       toast.success("Draft rewritten");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const sharpenDraft = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/content-assets/${draftAssetId}/sharpen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to sharpen");
+      return res.json() as Promise<{ content: string; changelog: string[] }>;
+    },
+    onSuccess: (data) => {
+      setSharpenResult(data);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -2055,6 +2074,7 @@ export default function EditorialCalendarPage() {
               setDraftHtml("");
               setDraftDirty(false);
               setRewriteInstr("");
+              setSharpenResult(null);
               setDraftBriefTitle(null);
               setDraftAssetDescription(null);
               setDraftAssetWebsiteSlug(null);
@@ -2163,20 +2183,82 @@ export default function EditorialCalendarPage() {
                         onChange={(e) => setRewriteInstr(e.target.value)}
                         data-testid="input-rewrite"
                       />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
-                        onClick={() => rewriteDraft.mutate()}
-                        data-testid="button-rewrite"
-                      >
-                        {rewriteDraft.isPending ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <PenLine className="mr-2 h-4 w-4" />
-                        )}
-                        Rewrite draft
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
+                          onClick={() => rewriteDraft.mutate()}
+                          data-testid="button-rewrite"
+                        >
+                          {rewriteDraft.isPending ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <PenLine className="mr-2 h-4 w-4" />
+                          )}
+                          Rewrite draft
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={sharpenDraft.isPending}
+                          onClick={() => { setSharpenOriginal(draft?.body ?? ""); setSharpenResult(null); sharpenDraft.mutate(); }}
+                          data-testid="button-sharpen"
+                          title="Remove AI-writing patterns (minimum effective edit)"
+                        >
+                          {sharpenDraft.isPending ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Scissors className="mr-2 h-4 w-4" />
+                          )}
+                          Sharpen writing
+                        </Button>
+                      </div>
+                      {sharpenResult && (
+                        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Before</p>
+                              <div className="max-h-48 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="sharpen-before">{sharpenOriginal}</div>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">After</p>
+                              <div className="max-h-48 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap" data-testid="sharpen-after">{sharpenResult.content}</div>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
+                            <ul className="space-y-0.5">
+                              {sharpenResult.changelog.map((item, i) => (
+                                <li key={i} className="text-xs text-amber-700 dark:text-amber-400">• {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setDraft((d) => (d ? { ...d, body: sharpenResult.content } : d));
+                                setDraftHtml(String(marked.parse(sharpenResult.content ?? "")));
+                                setDraftDirty(true);
+                                setSharpenResult(null);
+                                toast.success("Sharpened draft applied");
+                              }}
+                              data-testid="button-sharpen-accept"
+                            >
+                              Accept changes
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setSharpenResult(null)}
+                              data-testid="button-sharpen-reject"
+                            >
+                              Discard
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2585,20 +2667,81 @@ export default function EditorialCalendarPage() {
                   onChange={(e) => setRewriteInstr(e.target.value)}
                   data-testid="input-rewrite"
                 />
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
-                  onClick={() => rewriteDraft.mutate()}
-                  data-testid="button-rewrite"
-                >
-                  {rewriteDraft.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <PenLine className="mr-2 h-4 w-4" />
-                  )}
-                  Rewrite draft
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={rewriteDraft.isPending || !rewriteInstr.trim()}
+                    onClick={() => rewriteDraft.mutate()}
+                    data-testid="button-rewrite"
+                  >
+                    {rewriteDraft.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <PenLine className="mr-2 h-4 w-4" />
+                    )}
+                    Rewrite draft
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={sharpenDraft.isPending}
+                    onClick={() => { setSharpenOriginal(draft?.body ?? ""); setSharpenResult(null); sharpenDraft.mutate(); }}
+                    data-testid="button-sharpen"
+                    title="Remove AI-writing patterns (minimum effective edit)"
+                  >
+                    {sharpenDraft.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Scissors className="mr-2 h-4 w-4" />
+                    )}
+                    Sharpen writing
+                  </Button>
+                </div>
+                {sharpenResult && (
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Before</p>
+                        <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="sharpen-before">{sharpenOriginal}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">After</p>
+                        <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap" data-testid="sharpen-after">{sharpenResult.content}</div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
+                      <ul className="space-y-0.5">
+                        {sharpenResult.changelog.map((item, i) => (
+                          <li key={i} className="text-xs text-amber-700 dark:text-amber-400">• {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setDraft((d) => (d ? { ...d, body: sharpenResult.content } : d));
+                          setDraftDirty(true);
+                          setSharpenResult(null);
+                          toast.success("Sharpened draft applied");
+                        }}
+                        data-testid="button-sharpen-accept"
+                      >
+                        Accept changes
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSharpenResult(null)}
+                        data-testid="button-sharpen-reject"
+                      >
+                        Discard
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {draft?.format !== "blog_post" && draftAssetId && (

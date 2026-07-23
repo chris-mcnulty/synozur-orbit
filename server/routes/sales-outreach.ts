@@ -33,6 +33,7 @@ import {
 } from "../services/discovery-service";
 import type { DiscoveryCandidate } from "../services/discovery-provider-core";
 import { composeTouch, loadComplianceContext } from "../services/outreach-composer-service";
+import { sharpenContent } from "../services/copywriter-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
@@ -676,6 +677,46 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach:touch-edit]", err);
       res.status(500).json({ error: err.message || "Failed to update draft" });
+    }
+  });
+
+  // Sharpen a touch draft — remove AI-slop patterns (minimum effective edit).
+  // Accepts the current edited body+subject from the client (may differ from DB).
+  // Returns { body, subject, changelog } without auto-saving.
+  app.post("/api/sales-outreach/touches/:id/sharpen", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [touch] = await db.select().from(outreachTouches).where(eq(outreachTouches.id, req.params.id));
+      if (!touch || touch.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Touch not found" });
+      }
+
+      const body = typeof req.body?.body === "string" ? req.body.body.trim() : (touch.body ?? "").trim();
+      const subject = typeof req.body?.subject === "string" ? req.body.subject.trim() : touch.subject ?? null;
+      if (!body) return res.status(409).json({ error: "This touch has no content to sharpen." });
+
+      const result = await sharpenContent({
+        tenantDomain: ctx.tenantDomain,
+        content: body,
+        subject,
+      });
+
+      if (!result.content.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable result. Please try again." });
+      }
+
+      res.json({
+        body: result.content,
+        subject: result.subject ?? subject,
+        changelog: result.changelog,
+        usage: result.usage,
+        model: result.model,
+      });
+    } catch (err: any) {
+      console.error("[outreach sharpen]", err);
+      res.status(500).json({ error: err.message || "Failed to sharpen draft" });
     }
   });
 

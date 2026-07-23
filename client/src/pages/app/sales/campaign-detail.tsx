@@ -27,6 +27,7 @@ import {
   ChevronUp,
   ChevronsUpDown,
   UserSearch,
+  Scissors,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -445,6 +446,8 @@ export default function OutreachCampaignDetailPage() {
   const [draftProspect, setDraftProspect] = useState<Prospect | null>(null);
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
+  const [sharpenResult, setSharpenResult] = useState<{ body: string; subject: string | null; changelog: string[] } | null>(null);
+  const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
 
   // Discovery dialog state.
   const [discovering, setDiscovering] = useState(false);
@@ -818,6 +821,20 @@ export default function OutreachCampaignDetailPage() {
       toast({ title: "Saved", description: "Compliance re-scanned." });
     },
     onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
+  });
+
+  const sharpenTouch = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/sharpen`, {
+        body: draftBody,
+        subject: draftSubject || undefined,
+      });
+      return res.json() as Promise<{ body: string; subject: string | null; changelog: string[] }>;
+    },
+    onSuccess: (data) => {
+      setSharpenResult(data);
+    },
+    onError: (err: any) => toast({ title: "Sharpen failed", description: err?.message, variant: "destructive" }),
   });
 
   const markReplied = useMutation({
@@ -2206,7 +2223,7 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       {/* Draft review dialog */}
-      <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
+      <Dialog open={!!draft} onOpenChange={(o) => { if (!o) { setDraft(null); setSharpenResult(null); } }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2318,7 +2335,63 @@ export default function OutreachCampaignDetailPage() {
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          {sharpenResult && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
+              {sharpenResult.subject && sharpenOriginal.subject && sharpenResult.subject !== sharpenOriginal.subject && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Subject — before</p>
+                    <div className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs text-muted-foreground">{sharpenOriginal.subject}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Subject — after</p>
+                    <div className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs">{sharpenResult.subject}</div>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Body — before</p>
+                  <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="sharpen-before">{sharpenOriginal.body}</div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Body — after</p>
+                  <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap" data-testid="sharpen-after">{sharpenResult.body}</div>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
+                <ul className="space-y-0.5">
+                  {sharpenResult.changelog.map((item, i) => (
+                    <li key={i} className="text-xs text-amber-700 dark:text-amber-400">• {item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setDraftBody(sharpenResult.body);
+                    if (sharpenResult.subject) setDraftSubject(sharpenResult.subject);
+                    setSharpenResult(null);
+                  }}
+                  data-testid="button-sharpen-accept"
+                >
+                  Accept changes
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSharpenResult(null)} data-testid="button-sharpen-reject">
+                  Discard
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => { setSharpenOriginal({ body: draftBody, subject: draftSubject }); setSharpenResult(null); sharpenTouch.mutate(); }} disabled={sharpenTouch.isPending} data-testid="button-sharpen-touch">
+              {sharpenTouch.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Scissors className="w-4 h-4 mr-1" />}
+              Sharpen writing
+            </Button>
+            <div className="flex-1" />
             <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending} data-testid="button-save-draft">
               {saveDraft.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PenLine className="w-4 h-4 mr-1" />}
               Save & re-scan

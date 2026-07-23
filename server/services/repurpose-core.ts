@@ -7,6 +7,7 @@
 
 import type { CarouselSlide, RepurposeMeta } from "@shared/schema";
 import { POLARIS_OUTLINE_GUIDANCE } from "./polaris-outline";
+import { BANNED_WORDS, STRUCTURAL_ANTI_PATTERNS } from "./copywriter-service";
 
 export const SUPPORTED_PLATFORMS = ["linkedin", "twitter", "instagram", "facebook"] as const;
 export type RepurposePlatform = (typeof SUPPORTED_PLATFORMS)[number];
@@ -131,6 +132,8 @@ export const SYNOZUR_VOICE_RULES = [
   "Do not use em dashes. Use a period or a comma instead.",
   "Do not use hashtags anywhere.",
   "Do not fabricate statistics, customer names, or quotes. Stay grounded in the source and the brand positioning.",
+  `Banned words — never use: ${BANNED_WORDS}.`,
+  STRUCTURAL_ANTI_PATTERNS,
 ].join("\n- ");
 
 /**
