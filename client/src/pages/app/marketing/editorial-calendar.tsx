@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import AppLayout from "@/components/layout/AppLayout";
+import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2216,16 +2217,7 @@ export default function EditorialCalendarPage() {
                       </div>
                       {sharpenResult && (
                         <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Before</p>
-                              <div className="max-h-48 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="sharpen-before">{sharpenOriginal}</div>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">After</p>
-                              <div className="max-h-48 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap" data-testid="sharpen-after">{sharpenResult.content}</div>
-                            </div>
-                          </div>
+                          <SharpenDiffPanel before={sharpenOriginal} after={sharpenResult.content} />
                           <div>
                             <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
                             <ul className="space-y-0.5">
@@ -2700,16 +2692,7 @@ export default function EditorialCalendarPage() {
                 </div>
                 {sharpenResult && (
                   <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Before</p>
-                        <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="sharpen-before">{sharpenOriginal}</div>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">After</p>
-                        <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap" data-testid="sharpen-after">{sharpenResult.content}</div>
-                      </div>
-                    </div>
+                    <SharpenDiffPanel before={sharpenOriginal} after={sharpenResult.content} maxHeight="max-h-40" />
                     <div>
                       <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
                       <ul className="space-y-0.5">

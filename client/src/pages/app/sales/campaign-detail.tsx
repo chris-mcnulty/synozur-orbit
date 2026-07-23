@@ -30,6 +30,7 @@ import {
   Scissors,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
+import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2338,27 +2339,21 @@ export default function OutreachCampaignDetailPage() {
           {sharpenResult && (
             <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
               {sharpenResult.subject && sharpenOriginal.subject && sharpenResult.subject !== sharpenOriginal.subject && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Subject — before</p>
-                    <div className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs text-muted-foreground">{sharpenOriginal.subject}</div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Subject — after</p>
-                    <div className="rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs">{sharpenResult.subject}</div>
-                  </div>
-                </div>
+                <SharpenDiffPanel
+                  before={sharpenOriginal.subject}
+                  after={sharpenResult.subject}
+                  beforeLabel="Subject — before"
+                  afterLabel="Subject — after"
+                  maxHeight="max-h-16"
+                />
               )}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Body — before</p>
-                  <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap text-muted-foreground" data-testid="sharpen-before">{sharpenOriginal.body}</div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Body — after</p>
-                  <div className="max-h-40 overflow-y-auto rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-black/20 p-2 text-xs whitespace-pre-wrap" data-testid="sharpen-after">{sharpenResult.body}</div>
-                </div>
-              </div>
+              <SharpenDiffPanel
+                before={sharpenOriginal.body}
+                after={sharpenResult.body}
+                beforeLabel="Body — before"
+                afterLabel="Body — after"
+                maxHeight="max-h-40"
+              />
               <div>
                 <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
                 <ul className="space-y-0.5">
