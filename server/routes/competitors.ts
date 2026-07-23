@@ -594,21 +594,88 @@ export function registerCompetitorRoutes(app: Express) {
       enqueueCrawl(
         `crawl:manual:${competitor.name}`,
         async (signal) => {
-      // Use the robust web crawler service
-      const crawlResult = await crawlCompetitorWebsite(competitor.url, { signal });
-      
-      // Re-fetch current state: manual research may have been added while the
-      // job sat in the queue, and it must not be overwritten by crawl analysis.
-      const freshCompetitor = await storage.getCompetitor(competitor.id).catch(() => null);
-      const existingAnalysis = (freshCompetitor ?? competitor).analysisData as any;
-      const hasManualResearch = existingAnalysis?.source === "manual";
-      
-      if (crawlResult.pages.length === 0) {
-        await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
-        console.log(`[Manual Crawl] No pages crawled for ${competitor.name} - website could not be crawled`);
-        return { success: false, message: "Website could not be crawled" };
+      // Quick analysis: crawl only, no change detection or AI
+      if (analysisType === "quick") {
+        const crawlResult = await crawlCompetitorWebsite(competitor.url, { signal });
+
+        if (crawlResult.pages.length === 0) {
+          await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+          console.log(`[Manual Crawl] No pages crawled for ${competitor.name} - website could not be crawled`);
+          return { success: false, message: "Website could not be crawled" };
+        }
+
+        captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+          if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+            await storage.updateCompetitor(competitor.id, {
+              faviconUrl: visualAssets.faviconUrl,
+              screenshotUrl: visualAssets.screenshotUrl,
+            });
+            if (competitor.organizationId) {
+              await storage.updateOrganization(competitor.organizationId, {
+                faviconUrl: visualAssets.faviconUrl || undefined,
+                screenshotUrl: visualAssets.screenshotUrl || undefined,
+              }).catch(() => {});
+            }
+          }
+        }).catch(err => console.error("Visual capture failed:", err));
+
+        const now = new Date();
+        const lastCrawl = now.toISOString();
+        const socialUpdates: any = {};
+
+        if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) socialUpdates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+        if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
+        if (crawlResult.socialLinks.twitter && !competitor.twitterUrl) socialUpdates.twitterUrl = crawlResult.socialLinks.twitter;
+        if (crawlResult.socialLinks.facebook && !competitor.facebookUrl) socialUpdates.facebookUrl = crawlResult.socialLinks.facebook;
+
+        if (crawlResult.blogSnapshot) {
+          socialUpdates.blogSnapshot = { ...crawlResult.blogSnapshot, capturedAt: now.toISOString() };
+        }
+
+        socialUpdates.crawlData = buildCrawlData(crawlResult);
+        socialUpdates.lastFullCrawl = now;
+        socialUpdates.lastWebsiteMonitor = now;
+        socialUpdates.previousWebsiteContent = getCombinedContent(crawlResult).substring(0, 100000);
+
+        await storage.updateCompetitor(competitor.id, socialUpdates);
+        await storage.updateCompetitorLastCrawl(competitor.id, lastCrawl);
+
+        if (competitor.organizationId) {
+          await storage.updateOrganization(competitor.organizationId, {
+            crawlData: socialUpdates.crawlData,
+            lastFullCrawl: socialUpdates.lastFullCrawl,
+            lastCrawl,
+            lastWebsiteMonitor: socialUpdates.lastWebsiteMonitor,
+            previousWebsiteContent: socialUpdates.previousWebsiteContent,
+            ...(socialUpdates.linkedInUrl && { linkedInUrl: socialUpdates.linkedInUrl }),
+            ...(socialUpdates.instagramUrl && { instagramUrl: socialUpdates.instagramUrl }),
+            ...(socialUpdates.blogSnapshot && { blogSnapshot: socialUpdates.blogSnapshot }),
+          }).catch(err => console.error("[Org Update] Failed to sync crawl to org:", err.message));
+        }
+
+        await storage.createActivity({
+          type: "crawl",
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          description: `Quick refresh: crawled ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words)`,
+          date: lastCrawl,
+          impact: "Low",
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+        });
+
+        return {
+          success: true,
+          lastCrawl,
+          analysisType: "quick",
+          message: "Quick refresh completed - webpage data updated",
+          pagesCrawled: crawlResult.pages.length,
+          totalWordCount: crawlResult.totalWordCount,
+        };
       }
 
+      // Full / full_with_change: merged monitor pass — one fetch performs
+      // change detection + profile AI refresh (bypasses all freshness gates).
       captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
         if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
           await storage.updateCompetitor(competitor.id, {
@@ -624,297 +691,47 @@ export function registerCompetitorRoutes(app: Express) {
         }
       }).catch(err => console.error("Visual capture failed:", err));
 
-      const now = new Date();
-      const lastCrawl = now.toISOString();
-      
-      // Update social links only if not already set
-      const socialUpdates: any = {};
-      if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) {
-        socialUpdates.linkedInUrl = crawlResult.socialLinks.linkedIn;
-      }
-      if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) {
-        socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
-      }
-      if (crawlResult.socialLinks.twitter && !competitor.twitterUrl) {
-        socialUpdates.twitterUrl = crawlResult.socialLinks.twitter;
-      }
-      if (crawlResult.socialLinks.facebook && !competitor.facebookUrl) {
-        socialUpdates.facebookUrl = crawlResult.socialLinks.facebook;
-      }
-      
-      // Update blog snapshot if detected
-      if (crawlResult.blogSnapshot) {
-        const previousSnapshot = competitor.blogSnapshot as any;
-        const previousCount = previousSnapshot?.postCount || 0;
-        const newPosts = crawlResult.blogSnapshot.postCount - previousCount;
-        
-        socialUpdates.blogSnapshot = {
-          ...crawlResult.blogSnapshot,
-          capturedAt: now.toISOString(),
+      const monitorResult = await monitorCompetitorWebsite(
+        competitor.id,
+        ctx.userId,
+        ctx.tenantDomain,
+        signal,
+        { profileRefreshIntervalMs: 0 }, // bypass freshness gate — manual always refreshes
+      );
+
+      const lastCrawl = new Date().toISOString();
+      await storage.updateCompetitorLastCrawl(competitor.id, lastCrawl).catch(() => {});
+
+      if (monitorResult.status === "no_content") {
+        return {
+          success: false,
+          analysisType,
+          message: monitorResult.message || "Website could not be crawled",
         };
-        
-        // Create activity if new posts detected
-        if (previousCount > 0 && newPosts > 0) {
-          await storage.createActivity({
-            type: "blog_update",
-            competitorId: competitor.id,
-            competitorName: competitor.name,
-            description: `Published ${newPosts} new blog post${newPosts > 1 ? 's' : ''}: "${crawlResult.blogSnapshot.latestTitles[0]}"${newPosts > 1 ? ' and more' : ''}`,
-            date: now.toISOString(),
-            impact: newPosts >= 3 ? "High" : "Medium",
-            tenantDomain: ctx.tenantDomain,
-            marketId: ctx.marketId,
-          });
+      }
+
+      // For full_with_change, also trigger social media monitoring
+      let socialMonitoringResult = null;
+      if (analysisType === "full_with_change") {
+        if (competitor.linkedInUrl || competitor.instagramUrl) {
+          try {
+            socialMonitoringResult = await monitorCompetitorSocialMedia(competitor.id, ctx.userId, ctx.tenantDomain);
+          } catch (socialError) {
+            console.error("Social monitoring failed:", socialError);
+            socialMonitoringResult = { error: "Social monitoring unavailable" };
+          }
         }
       }
-      
-      // Store crawl data (pages summary, not full content for storage efficiency)
-      socialUpdates.crawlData = buildCrawlData(crawlResult);
-      socialUpdates.lastFullCrawl = now;
-      
-      // Store blog snapshot if discovered
-      if (crawlResult.blogSnapshot && crawlResult.blogSnapshot.postCount > 0) {
-        const existingBlogSnapshot = competitor.blogSnapshot as any;
-        const previousCount = existingBlogSnapshot?.postCount || 0;
-        const newCount = crawlResult.blogSnapshot.postCount;
-        
-        socialUpdates.blogSnapshot = {
-          ...crawlResult.blogSnapshot,
-          capturedAt: new Date().toISOString(),
-        };
-        
-        // Create activity entry for blog discovery or significant changes
-        const isFirstDiscovery = !existingBlogSnapshot || !existingBlogSnapshot.postCount;
-        const hasNewPosts = newCount > previousCount;
-        
-        if (isFirstDiscovery || hasNewPosts) {
-          const newPostCount = newCount - previousCount;
-          await storage.createActivity({
-            type: "blog_activity",
-            sourceType: "competitor",
-            competitorId: competitor.id,
-            competitorName: competitor.name,
-            description: isFirstDiscovery 
-              ? `Discovered ${newCount} blog post${newCount > 1 ? 's' : ''}`
-              : `Published ${newPostCount} new blog post${newPostCount > 1 ? 's' : ''}`,
-            summary: crawlResult.blogSnapshot.latestTitles.length > 0 
-              ? `Latest: "${crawlResult.blogSnapshot.latestTitles[0]}"${crawlResult.blogSnapshot.latestTitles.length > 1 ? ` and ${crawlResult.blogSnapshot.latestTitles.length - 1} more` : ''}`
-              : `Found ${newCount} blog posts on the website`,
-            details: {
-              postCount: newCount,
-              previousCount,
-              newPosts: newPostCount,
-              latestTitles: crawlResult.blogSnapshot.latestTitles,
-            },
-            date: new Date().toISOString(),
-            impact: isFirstDiscovery 
-              ? (newCount >= 10 ? "High" : newCount >= 5 ? "Medium" : "Low")
-              : (newPostCount >= 3 ? "High" : "Medium"),
-            tenantDomain: ctx.tenantDomain,
-            marketId: ctx.marketId,
-          });
-        }
-      }
-      
-      if (Object.keys(socialUpdates).length > 0) {
-        await storage.updateCompetitor(competitor.id, socialUpdates);
-      }
-      
-      await storage.updateCompetitorLastCrawl(req.params.id, lastCrawl);
 
-      if (competitor.organizationId) {
-        const orgUpdates: any = {
-          crawlData: socialUpdates.crawlData,
-          lastFullCrawl: socialUpdates.lastFullCrawl,
-          lastCrawl,
-        };
-        if (socialUpdates.linkedInUrl) orgUpdates.linkedInUrl = socialUpdates.linkedInUrl;
-        if (socialUpdates.instagramUrl) orgUpdates.instagramUrl = socialUpdates.instagramUrl;
-        if (socialUpdates.blogSnapshot) orgUpdates.blogSnapshot = socialUpdates.blogSnapshot;
-        await storage.updateOrganization(competitor.organizationId, orgUpdates).catch(err =>
-          console.error("[Org Update] Failed to sync crawl to org:", err.message)
-        );
-      }
-      
-      // Quick analysis: just refresh webpage data, no AI analysis
-      if (analysisType === "quick") {
-        await storage.createActivity({
-          type: "crawl",
-          competitorId: competitor.id,
-          competitorName: competitor.name,
-          description: `Quick refresh: crawled ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words)`,
-          date: lastCrawl,
-          impact: "Low",
-          tenantDomain: ctx.tenantDomain,
-          marketId: ctx.marketId,
-        });
-        
-        return { 
-          success: true, 
-          lastCrawl, 
-          analysisType: "quick",
-          message: "Quick refresh completed - webpage data updated",
-          pagesCrawled: crawlResult.pages.length,
-          totalWordCount: crawlResult.totalWordCount,
-        };
-      }
-      
-      // Full and full_with_change: perform AI analysis
-      const websiteContent = getCombinedContent(crawlResult);
-      
-      if (websiteContent.length > 100) {
-        try {
-          // Extract LinkedIn data from competitor record if available
-          const linkedInEngagement = competitor.linkedInEngagement as {
-            followers?: number;
-            posts?: number;
-            employees?: number;
-            recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
-          } | null;
-          
-          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
-            followerCount: linkedInEngagement.followers,
-            employeeCount: linkedInEngagement.employees,
-            recentPosts: linkedInEngagement.recentPosts,
-          } : undefined;
-          
-          const analysis = await analyzeCompetitorWebsite(
-            competitor.name,
-            competitor.url,
-            websiteContent,
-            undefined, // grounding context
-            linkedInData
-          );
-          
-          // Store analysis data on the competitor record
-          // But protect manual research data from being overwritten
-          if (hasManualResearch) {
-            console.log(`Skipping analysis update for ${competitor.name} - has manual research data`);
-          } else {
-            await storage.updateCompetitorAnalysis(competitor.id, analysis);
-          }
-          
-          if (competitor.organizationId) {
-            const orgEnrichment: any = {};
-            if (analysis.description) orgEnrichment.description = analysis.description;
-            if (analysis.category) orgEnrichment.category = analysis.category;
-            if (analysis.industry) orgEnrichment.industry = analysis.industry;
-            if (Object.keys(orgEnrichment).length > 0) {
-              await storage.updateOrganization(competitor.organizationId, orgEnrichment)
-                .catch(err => console.error(`[Crawl] Org enrichment failed for ${competitor.name}:`, err.message));
-            }
-          }
-          
-          // Extract company profile data from about/homepage content (if not already set)
-          if (!competitor.headquarters && !competitor.founded && !competitor.revenue && !competitor.fundingRaised) {
-            try {
-              // Find about page content for company info extraction
-              const aboutPage = crawlResult.pages.find(p => p.pageType === "about");
-              const homePage = crawlResult.pages.find(p => p.pageType === "homepage");
-              const contentForProfile = (aboutPage?.content || "") + "\n\n" + (homePage?.content || "");
-              
-              if (contentForProfile.length > 200) {
-                const profilePrompt = `Extract company profile information from this website content. Return ONLY a JSON object with these fields (use null if not found):
-{
-  "headquarters": "City, State/Country or null",
-  "founded": "Year as string or null",
-  "revenue": "Revenue range or null", 
-  "fundingRaised": "Funding amount or null"
-}
-
-Website content:
-${contentForProfile.substring(0, 8000)}
-
-Return ONLY the JSON object, no other text.`;
-
-                const anthropic = new Anthropic({
-                  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY,
-                });
-                
-                const profileResponse = await anthropic.messages.create({
-                  model: "claude-sonnet-4-5",
-                  max_tokens: 500,
-                  messages: [{ role: "user", content: profilePrompt }],
-                });
-                
-                const profileText = (profileResponse.content[0] as any).text;
-                const jsonMatch = profileText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                  const profileData = JSON.parse(jsonMatch[0]);
-                  const profileUpdates: any = {};
-                  
-                  if (profileData.headquarters && profileData.headquarters !== "null") {
-                    profileUpdates.headquarters = profileData.headquarters;
-                  }
-                  if (profileData.founded && profileData.founded !== "null") {
-                    profileUpdates.founded = String(profileData.founded);
-                  }
-                  if (profileData.revenue && profileData.revenue !== "null") {
-                    profileUpdates.revenue = profileData.revenue;
-                  }
-                  if (profileData.fundingRaised && profileData.fundingRaised !== "null") {
-                    profileUpdates.fundingRaised = profileData.fundingRaised;
-                  }
-                  
-                  if (Object.keys(profileUpdates).length > 0) {
-                    await storage.updateCompetitor(competitor.id, profileUpdates);
-                    console.log(`[Crawl] Extracted company profile for ${competitor.name}:`, profileUpdates);
-                  }
-                }
-              }
-            } catch (profileError) {
-              console.error(`[Crawl] Failed to extract company profile for ${competitor.name}:`, profileError);
-              // Non-blocking - continue even if profile extraction fails
-            }
-          }
-          
-          // Create activity entry for the crawl
-          await storage.createActivity({
-            type: "crawl",
-            competitorId: competitor.id,
-            competitorName: competitor.name,
-            description: `Analyzed ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words): ${analysis.summary}`,
-            date: lastCrawl,
-            impact: "Medium",
-            tenantDomain: ctx.tenantDomain,
-            marketId: ctx.marketId,
-          });
-          
-          // For full_with_change, also trigger social media monitoring
-          let socialMonitoringResult = null;
-          if (analysisType === "full_with_change") {
-            if (competitor.linkedInUrl || competitor.instagramUrl) {
-              try {
-                socialMonitoringResult = await monitorCompetitorSocialMedia(competitor.id, ctx.userId, ctx.tenantDomain);
-              } catch (socialError) {
-                console.error("Social monitoring failed:", socialError);
-                socialMonitoringResult = { error: "Social monitoring unavailable" };
-              }
-            }
-          }
-          
-          return { 
-            success: true, 
-            lastCrawl, 
-            analysisType,
-            pagesCrawled: crawlResult.pages.length,
-            totalWordCount: crawlResult.totalWordCount,
-            socialMonitoring: socialMonitoringResult,
-          };
-        } catch (aiError) {
-          console.error("AI analysis failed:", aiError);
-          return { 
-            success: true, 
-            lastCrawl, 
-            analysisType,
-            message: "Crawled but AI analysis unavailable",
-            pagesCrawled: crawlResult.pages.length,
-            totalWordCount: crawlResult.totalWordCount,
-          };
-        }
-      } else {
-        return { success: true, lastCrawl, analysisType, message: "Website content could not be extracted" };
-      }
+      return {
+        success: true,
+        lastCrawl,
+        analysisType,
+        pagesCrawled: monitorResult.pagesMonitored,
+        changeScore: monitorResult.changeScore,
+        hasChanges: monitorResult.hasChanges,
+        socialMonitoring: socialMonitoringResult,
+      };
         },
         undefined,
         { tenantDomain: ctx.tenantDomain, targetId: competitor.id, targetName: competitor.name },
@@ -1378,80 +1195,32 @@ Return ONLY the JSON object, no other text.`;
         `crawl:manual:baseline:${profile.companyName}`,
         async (signal) => {
       const results: any = { website: null, linkedin: null, blog: null, errors: [] };
-      
+
       console.log(`[Baseline Refresh] Starting refresh for ${profile.companyName} (${profile.id})`);
       console.log(`[Baseline Refresh] URLs: website=${profile.websiteUrl}, linkedin=${profile.linkedInUrl}, blog=${profile.blogUrl}`);
-      
-      // Crawl website - wrapped in try/catch so LinkedIn still runs even if this fails
+
+      // Website: merged monitor pass — one fetch performs change detection
+      // and profile AI refresh (bypasses all freshness gates).
       if (profile.websiteUrl) {
         try {
-          console.log(`[Baseline Refresh] Starting website crawl for ${profile.websiteUrl}`);
-          const { crawlCompetitorWebsite, getCombinedContent } = await import("../services/web-crawler");
-          const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl, { signal });
-          
-          if (crawlResult.pages.length > 0) {
-            const combinedContent = getCombinedContent(crawlResult);
-            const updateData: any = {
-              crawlData: {
-                ...buildCrawlData(crawlResult),
-                socialLinks: crawlResult.socialLinks,
-              },
-              previousWebsiteContent: combinedContent.substring(0, 100000),
-              lastCrawl: new Date().toISOString(),
-              lastFullCrawl: new Date(),
-            };
-            
-            // Capture blog snapshot if found
-            if (crawlResult.blogSnapshot) {
-              updateData.blogSnapshot = {
-                ...crawlResult.blogSnapshot,
-                capturedAt: new Date().toISOString(),
-              };
-            }
-            
-            // Update social URLs if discovered during crawl and not already set
-            if (crawlResult.socialLinks) {
-              if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
-                updateData.linkedInUrl = crawlResult.socialLinks.linkedIn;
-              }
-              if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
-                updateData.twitterUrl = crawlResult.socialLinks.twitter;
-              }
-              if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
-                updateData.instagramUrl = crawlResult.socialLinks.instagram;
-              }
-              if (crawlResult.socialLinks.facebook && !profile.facebookUrl) {
-                updateData.facebookUrl = crawlResult.socialLinks.facebook;
-              }
-            }
-            
-            await storage.updateCompanyProfile(profile.id, updateData);
-
-            if (profile.organizationId) {
-              await storage.updateOrganization(profile.organizationId, {
-                crawlData: updateData.crawlData,
-                previousWebsiteContent: updateData.previousWebsiteContent,
-                lastCrawl: updateData.lastCrawl,
-                lastFullCrawl: updateData.lastFullCrawl,
-                blogSnapshot: updateData.blogSnapshot,
-                linkedInUrl: updateData.linkedInUrl,
-                twitterUrl: updateData.twitterUrl,
-                instagramUrl: updateData.instagramUrl,
-              }).catch(err => console.error("[Org Update] Baseline crawl sync failed:", err.message));
-            }
-
-            results.website = { 
-              success: true, 
-              pages: crawlResult.pages.length,
-              blogPosts: crawlResult.blogSnapshot?.postCount || 0,
-            };
-            console.log(`[Baseline Refresh] Website crawl success: ${crawlResult.pages.length} pages`);
-          } else {
-            console.log(`[Baseline Refresh] Website crawl returned no pages`);
-            results.website = { success: false, error: "No pages found" };
-          }
+          console.log(`[Baseline Refresh] Starting merged monitor pass for ${profile.websiteUrl}`);
+          const monitorResult = await monitorCompanyProfileWebsite(
+            profile.id,
+            ctx.userId,
+            ctx.tenantDomain,
+            ctx.marketId,
+            { profileRefreshIntervalMs: 0 }, // bypass freshness gate — manual always refreshes
+          );
+          results.website = {
+            success: monitorResult.status !== "error",
+            pages: monitorResult.pagesMonitored,
+            changeScore: monitorResult.changeScore,
+            hasChanges: monitorResult.hasChanges,
+            message: monitorResult.message,
+          };
+          console.log(`[Baseline Refresh] Monitor pass: status=${monitorResult.status}, pages=${monitorResult.pagesMonitored}`);
         } catch (websiteError: any) {
-          console.error(`[Baseline Refresh] Website crawl failed:`, websiteError.message);
+          console.error(`[Baseline Refresh] Monitor pass failed:`, websiteError.message);
           results.website = { success: false, error: websiteError.message };
           results.errors.push(`Website: ${websiteError.message}`);
         }

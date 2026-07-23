@@ -2,6 +2,8 @@ import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
 import { notifications } from "./notifications";
+import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
+import { identifySuggestedAssets } from "./asset-suggestion-service";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -283,7 +285,8 @@ export async function monitorCompetitorWebsite(
   competitorId: string,
   userId?: string,
   tenantDomain?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { profileRefreshIntervalMs?: number }
 ): Promise<WebsiteMonitoringResult> {
   const competitor = await storage.getCompetitor(competitorId);
   if (!competitor) {
@@ -375,6 +378,7 @@ export async function monitorCompetitorWebsite(
       const baselineUpdates: any = {
         previousWebsiteContent: newContent.substring(0, 100000),
         lastWebsiteMonitor: now,
+        lastCrawl: now.toISOString(),
         crawlData: buildCrawlData(crawlResult),
         lastFullCrawl: now,
         blogSnapshot: crawlResult.blogSnapshot ? {
@@ -391,12 +395,42 @@ export async function monitorCompetitorWebsite(
         await storage.updateOrganization(competitor.organizationId, {
           previousWebsiteContent: baselineUpdates.previousWebsiteContent,
           lastWebsiteMonitor: now,
+          lastCrawl: now.toISOString(),
           crawlData: baselineUpdates.crawlData,
           lastFullCrawl: now,
           blogSnapshot: baselineUpdates.blogSnapshot,
           linkedInUrl: baselineUpdates.linkedInUrl,
           instagramUrl: baselineUpdates.instagramUrl,
         }).catch(err => console.error("[Org Update] Baseline sync failed:", err.message));
+      }
+      // Profile refresh: first-time crawl always qualifies for AI analysis
+      if (options?.profileRefreshIntervalMs !== undefined && newContent.length > 100) {
+        const existingAnalysis = competitor.analysisData as any;
+        if (existingAnalysis?.source === "manual") {
+          console.log(`[WebsiteMonitoring] Skipping profile AI (first-time) for ${competitor.name} - has manual research`);
+        } else try {
+          const linkedInEngagement = competitor.linkedInEngagement as { followers?: number; employees?: number; recentPosts?: any[] } | null;
+          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+            followerCount: linkedInEngagement.followers,
+            employeeCount: linkedInEngagement.employees,
+            recentPosts: linkedInEngagement.recentPosts,
+          } : undefined;
+          const analysis = await analyzeCompetitorWebsite(competitor.name, competitor.url, newContent, undefined, linkedInData);
+          await storage.updateCompetitorAnalysis(competitor.id, analysis);
+          if (competitor.organizationId) {
+            const orgEnrichment: any = {};
+            if (analysis.description) orgEnrichment.description = analysis.description;
+            if (analysis.category) orgEnrichment.category = analysis.category;
+            if (analysis.industry) orgEnrichment.industry = analysis.industry;
+            if (Object.keys(orgEnrichment).length > 0) {
+              await storage.updateOrganization(competitor.organizationId, orgEnrichment)
+                .catch(err => console.error(`[WebsiteMonitoring] Org enrichment (baseline) failed for ${competitor.name}:`, err.message));
+            }
+          }
+          console.log(`[WebsiteMonitoring] Profile AI analysis (first-time) completed for ${competitor.name}`);
+        } catch (aiErr) {
+          console.error(`[WebsiteMonitoring] Profile AI analysis (first-time) failed for ${competitor.name}:`, (aiErr as Error).message);
+        }
       }
       return {
         competitorId: competitor.id,
@@ -470,6 +504,7 @@ export async function monitorCompetitorWebsite(
     const monitorUpdates: any = {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
+      lastCrawl: now.toISOString(),
       crawlData: buildCrawlData(crawlResult),
       lastFullCrawl: now,
       blogSnapshot: crawlResult.blogSnapshot ? {
@@ -488,6 +523,7 @@ export async function monitorCompetitorWebsite(
       await storage.updateOrganization(competitor.organizationId, {
         previousWebsiteContent: monitorUpdates.previousWebsiteContent,
         lastWebsiteMonitor: now,
+        lastCrawl: now.toISOString(),
         crawlData: monitorUpdates.crawlData,
         lastFullCrawl: now,
         blogSnapshot: monitorUpdates.blogSnapshot,
@@ -495,7 +531,43 @@ export async function monitorCompetitorWebsite(
         instagramUrl: monitorUpdates.instagramUrl,
       }).catch(err => console.error("[Org Update] Monitor sync failed:", err.message));
     }
-    
+
+    // Merged profile refresh: run AI analysis when the profile is due for a refresh.
+    // The profile freshness interval is passed from the monitor sweep and is gated by
+    // the same interval as the old crawl job, so AI analysis runs no more often than before.
+    const profileRefreshIntervalMs = options?.profileRefreshIntervalMs;
+    if (profileRefreshIntervalMs !== undefined && newContent.length > 100) {
+      const lastFullCrawlMs = competitor.lastFullCrawl
+        ? new Date(competitor.lastFullCrawl).getTime()
+        : 0;
+      const hasManualResearch = (competitor.analysisData as any)?.source === "manual";
+      if (Date.now() - lastFullCrawlMs >= profileRefreshIntervalMs && !hasManualResearch) {
+        try {
+          const linkedInEngagement = competitor.linkedInEngagement as { followers?: number; employees?: number; recentPosts?: any[] } | null;
+          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+            followerCount: linkedInEngagement.followers,
+            employeeCount: linkedInEngagement.employees,
+            recentPosts: linkedInEngagement.recentPosts,
+          } : undefined;
+          const analysis = await analyzeCompetitorWebsite(competitor.name, competitor.url, newContent, undefined, linkedInData);
+          await storage.updateCompetitorAnalysis(competitor.id, analysis);
+          if (competitor.organizationId) {
+            const orgEnrichment: any = {};
+            if (analysis.description) orgEnrichment.description = analysis.description;
+            if (analysis.category) orgEnrichment.category = analysis.category;
+            if (analysis.industry) orgEnrichment.industry = analysis.industry;
+            if (Object.keys(orgEnrichment).length > 0) {
+              await storage.updateOrganization(competitor.organizationId, orgEnrichment)
+                .catch(err => console.error(`[WebsiteMonitoring] Org enrichment failed for ${competitor.name}:`, err.message));
+            }
+          }
+          console.log(`[WebsiteMonitoring] Profile AI refresh completed for ${competitor.name}`);
+        } catch (aiErr) {
+          console.error(`[WebsiteMonitoring] Profile AI refresh failed for ${competitor.name}:`, (aiErr as Error).message);
+        }
+      }
+    }
+
     return {
       competitorId: competitor.id,
       competitorName: competitor.name,
@@ -541,7 +613,8 @@ export async function monitorCompanyProfileWebsite(
   companyProfileId: string,
   userId: string,
   tenantDomain: string,
-  marketId?: string
+  marketId?: string,
+  options?: { profileRefreshIntervalMs?: number }
 ): Promise<CompanyProfileMonitoringResult> {
   const companyProfile = await storage.getCompanyProfile(companyProfileId);
   if (!companyProfile) {
@@ -623,6 +696,7 @@ export async function monitorCompanyProfileWebsite(
       const baselineUpdates: any = {
         previousWebsiteContent: newContent.substring(0, 100000),
         lastWebsiteMonitor: now,
+        lastCrawl: now.toISOString(),
         crawlData: buildCrawlData(crawlResult),
         lastFullCrawl: now,
         blogSnapshot: crawlResult.blogSnapshot ? {
@@ -631,6 +705,24 @@ export async function monitorCompanyProfileWebsite(
         } : undefined,
       };
       await storage.updateCompanyProfile(companyProfile.id, baselineUpdates);
+      // Profile refresh: first-time crawl always qualifies for AI analysis
+      if (options?.profileRefreshIntervalMs !== undefined && newContent.length > 100) {
+        try {
+          const linkedInEngagement = companyProfile.linkedInEngagement as { followers?: number; employees?: number; recentPosts?: any[] } | null;
+          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+            followerCount: linkedInEngagement.followers,
+            employeeCount: linkedInEngagement.employees,
+            recentPosts: linkedInEngagement.recentPosts,
+          } : undefined;
+          const analysis = await analyzeCompetitorWebsite(companyProfile.companyName, companyProfile.websiteUrl, newContent, undefined, linkedInData);
+          await storage.updateCompanyProfile(companyProfile.id, { analysisData: analysis });
+          await identifySuggestedAssets(crawlResult as any, companyProfile.id, tenantDomain, marketId || companyProfile.marketId || undefined)
+            .catch(err => console.error(`[WebsiteMonitoring] Asset suggestion (first-time) failed for baseline ${companyProfile.companyName}:`, err.message));
+          console.log(`[WebsiteMonitoring] Profile AI analysis (first-time) completed for baseline ${companyProfile.companyName}`);
+        } catch (aiErr) {
+          console.error(`[WebsiteMonitoring] Profile AI analysis (first-time) failed for baseline ${companyProfile.companyName}:`, (aiErr as Error).message);
+        }
+      }
       return {
         companyProfileId: companyProfile.id,
         companyName: companyProfile.companyName,
@@ -680,6 +772,7 @@ export async function monitorCompanyProfileWebsite(
     const profileMonitorUpdates: any = {
       previousWebsiteContent: newContent.substring(0, 100000),
       lastWebsiteMonitor: now,
+      lastCrawl: now.toISOString(),
       crawlData: buildCrawlData(crawlResult),
       lastFullCrawl: now,
       blogSnapshot: crawlResult.blogSnapshot ? {
@@ -698,6 +791,7 @@ export async function monitorCompanyProfileWebsite(
       await storage.updateOrganization(companyProfile.organizationId, {
         previousWebsiteContent: profileMonitorUpdates.previousWebsiteContent,
         lastWebsiteMonitor: now,
+        lastCrawl: now.toISOString(),
         crawlData: profileMonitorUpdates.crawlData,
         lastFullCrawl: now,
         blogSnapshot: profileMonitorUpdates.blogSnapshot,
@@ -705,7 +799,32 @@ export async function monitorCompanyProfileWebsite(
         instagramUrl: profileMonitorUpdates.instagramUrl,
       }).catch(err => console.error("[Org Update] Baseline monitor sync failed:", err.message));
     }
-    
+
+    // Merged profile refresh: run AI analysis when the profile is due for a refresh.
+    const profileRefreshIntervalMs = options?.profileRefreshIntervalMs;
+    if (profileRefreshIntervalMs !== undefined && newContent.length > 100) {
+      const lastFullCrawlMs = companyProfile.lastFullCrawl
+        ? new Date(companyProfile.lastFullCrawl).getTime()
+        : 0;
+      if (Date.now() - lastFullCrawlMs >= profileRefreshIntervalMs) {
+        try {
+          const linkedInEngagement = companyProfile.linkedInEngagement as { followers?: number; employees?: number; recentPosts?: any[] } | null;
+          const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+            followerCount: linkedInEngagement.followers,
+            employeeCount: linkedInEngagement.employees,
+            recentPosts: linkedInEngagement.recentPosts,
+          } : undefined;
+          const analysis = await analyzeCompetitorWebsite(companyProfile.companyName, companyProfile.websiteUrl, newContent, undefined, linkedInData);
+          await storage.updateCompanyProfile(companyProfile.id, { analysisData: analysis });
+          await identifySuggestedAssets(crawlResult as any, companyProfile.id, tenantDomain, marketId || companyProfile.marketId || undefined)
+            .catch(err => console.error(`[WebsiteMonitoring] Asset suggestion failed for baseline ${companyProfile.companyName}:`, err.message));
+          console.log(`[WebsiteMonitoring] Profile AI refresh completed for baseline ${companyProfile.companyName}`);
+        } catch (aiErr) {
+          console.error(`[WebsiteMonitoring] Profile AI refresh failed for baseline ${companyProfile.companyName}:`, (aiErr as Error).message);
+        }
+      }
+    }
+
     return {
       companyProfileId: companyProfile.id,
       companyName: companyProfile.companyName,

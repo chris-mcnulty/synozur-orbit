@@ -273,38 +273,45 @@ async function runWebsiteCrawlJob(): Promise<void> {
           continue;
         }
 
+        // Baseline safety-net: skip sites that have already been crawled at least once.
+        // Recurring crawls are handled entirely by the merged website-monitor pass.
+        if (competitor.crawlData || competitor.previousWebsiteContent) {
+          continue;
+        }
+
         if (competitor.organizationId) {
           try {
             const org = await storage.getOrganization(competitor.organizationId);
 
             if (orgsQueuedThisSweep.has(competitor.organizationId)) {
               sweepMetrics.crawlsSkippedOrgQueued++;
-              console.log(`[Scheduled Job] Skipping crawl for ${competitor.name} - org already queued this sweep, will receive fresh data via post-crawl fan-out`);
+              console.log(`[Scheduled Job] Skipping baseline crawl for ${competitor.name} - org already queued this sweep`);
               continue;
             }
 
-            if (org?.lastFullCrawl) {
-              const orgLastCrawl = new Date(org.lastFullCrawl).getTime();
-              if (Number.isFinite(orgLastCrawl) && now - orgLastCrawl < intervalMs && org.crawlData) {
-                const syncUpdates: any = {};
-                if (org.crawlData) syncUpdates.crawlData = org.crawlData;
-                if (org.lastFullCrawl) syncUpdates.lastFullCrawl = org.lastFullCrawl;
-                if (org.lastCrawl) syncUpdates.lastCrawl = org.lastCrawl;
-                if (org.previousWebsiteContent) syncUpdates.previousWebsiteContent = org.previousWebsiteContent;
-                if (org.blogSnapshot) syncUpdates.blogSnapshot = org.blogSnapshot;
-                if (org.linkedInUrl && !competitor.linkedInUrl) syncUpdates.linkedInUrl = org.linkedInUrl;
-                if (org.instagramUrl && !competitor.instagramUrl) syncUpdates.instagramUrl = org.instagramUrl;
-                if (org.faviconUrl && !competitor.faviconUrl) syncUpdates.faviconUrl = org.faviconUrl;
-                if (org.screenshotUrl && !competitor.screenshotUrl) syncUpdates.screenshotUrl = org.screenshotUrl;
+            if (org?.crawlData) {
+              // Org already has a baseline — sync it to the competitor and skip
+              const syncUpdates: any = {};
+              if (org.crawlData) syncUpdates.crawlData = org.crawlData;
+              if (org.lastFullCrawl) syncUpdates.lastFullCrawl = org.lastFullCrawl;
+              if (org.lastCrawl) syncUpdates.lastCrawl = org.lastCrawl;
+              // Propagate lastWebsiteMonitor so monitor sweep freshness gate
+              // suppresses a same-cycle second fetch for org siblings.
+              if (org.lastWebsiteMonitor) syncUpdates.lastWebsiteMonitor = org.lastWebsiteMonitor;
+              if (org.previousWebsiteContent) syncUpdates.previousWebsiteContent = org.previousWebsiteContent;
+              if (org.blogSnapshot) syncUpdates.blogSnapshot = org.blogSnapshot;
+              if (org.linkedInUrl && !competitor.linkedInUrl) syncUpdates.linkedInUrl = org.linkedInUrl;
+              if (org.instagramUrl && !competitor.instagramUrl) syncUpdates.instagramUrl = org.instagramUrl;
+              if (org.faviconUrl && !competitor.faviconUrl) syncUpdates.faviconUrl = org.faviconUrl;
+              if (org.screenshotUrl && !competitor.screenshotUrl) syncUpdates.screenshotUrl = org.screenshotUrl;
 
-                if (Object.keys(syncUpdates).length > 0) {
-                  await storage.updateCompetitor(competitor.id, syncUpdates);
-                }
-
-                sweepMetrics.crawlsSkippedOrgFresh++;
-                console.log(`[Scheduled Job] Skipping crawl for ${competitor.name} - org ${org.name} already crawled recently, synced data`);
-                continue;
+              if (Object.keys(syncUpdates).length > 0) {
+                await storage.updateCompetitor(competitor.id, syncUpdates);
               }
+
+              sweepMetrics.crawlsSkippedOrgFresh++;
+              console.log(`[Scheduled Job] Skipping baseline crawl for ${competitor.name} - org ${org.name} already has a baseline, synced data`);
+              continue;
             }
           } catch (orgErr) {
             console.error(`[Scheduled Job] Org freshness check failed for ${competitor.name}:`, (orgErr as Error).message);
@@ -343,6 +350,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
             const updates: any = {
               crawlData: buildCrawlData(crawlResult),
               lastFullCrawl: new Date(),
+              // Stamp lastWebsiteMonitor so the monitor sweep freshness gate
+              // suppresses a same-cycle second fetch for newly onboarded sites.
+              lastWebsiteMonitor: new Date(),
             };
 
             if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) {
@@ -390,6 +400,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
                 crawlData: updates.crawlData,
                 lastFullCrawl: updates.lastFullCrawl,
                 lastCrawl: new Date().toISOString(),
+                // Stamp org's lastWebsiteMonitor so sibling fan-out propagates it
+                // and monitor freshness gate suppresses same-cycle re-fetch.
+                lastWebsiteMonitor: updates.lastWebsiteMonitor,
                 linkedInUrl: updates.linkedInUrl,
                 instagramUrl: updates.instagramUrl,
                 blogSnapshot: updates.blogSnapshot,
@@ -405,6 +418,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
                     if (freshOrg.crawlData) siblingSync.crawlData = freshOrg.crawlData;
                     if (freshOrg.lastFullCrawl) siblingSync.lastFullCrawl = freshOrg.lastFullCrawl;
                     if (freshOrg.lastCrawl) siblingSync.lastCrawl = freshOrg.lastCrawl;
+                    // Propagate lastWebsiteMonitor so monitor freshness gate
+                    // suppresses same-cycle re-fetch for all org siblings.
+                    if (freshOrg.lastWebsiteMonitor) siblingSync.lastWebsiteMonitor = freshOrg.lastWebsiteMonitor;
                     if (freshOrg.previousWebsiteContent) siblingSync.previousWebsiteContent = freshOrg.previousWebsiteContent;
                     if (freshOrg.blogSnapshot) siblingSync.blogSnapshot = freshOrg.blogSnapshot;
                     if (freshOrg.linkedInUrl && !sibling.linkedInUrl) siblingSync.linkedInUrl = freshOrg.linkedInUrl;
@@ -522,16 +538,13 @@ async function runWebsiteCrawlJob(): Promise<void> {
 
         if (!profile.websiteUrl) continue;
 
-        const lastCrawl = profile.lastFullCrawl
-          ? new Date(profile.lastFullCrawl).getTime()
-          : 0;
-        const now = Date.now();
-
-        if (now - lastCrawl < intervalMs) {
+        // Baseline safety-net: only crawl profiles that have never been crawled.
+        // Recurring crawls are handled entirely by the merged website-monitor pass.
+        if (profile.crawlData || profile.previousWebsiteContent) {
           continue;
         }
 
-        console.log(`[Scheduled Job] Queuing baseline crawl for ${profile.companyName} (${profile.websiteUrl})...`);
+        console.log(`[Scheduled Job] Queuing first-time baseline crawl for ${profile.companyName} (${profile.websiteUrl})...`);
 
         enqueueCrawl(`crawl:baseline:${profile.companyName}`, () => trackJobRun(
           "websiteCrawl",
@@ -549,6 +562,9 @@ async function runWebsiteCrawlJob(): Promise<void> {
               crawlData: buildCrawlData(crawlResult),
               lastFullCrawl: new Date(),
               lastCrawl: new Date().toISOString(),
+              // Stamp lastWebsiteMonitor so the monitor sweep freshness gate
+              // suppresses a same-cycle second fetch for newly onboarded baseline profiles.
+              lastWebsiteMonitor: new Date(),
             };
 
             // Update social links if found
@@ -1021,7 +1037,8 @@ async function runWebsiteMonitorJob(): Promise<void> {
               competitor.id, 
               competitor.userId,
               tenant.domain,
-              signal
+              signal,
+              { profileRefreshIntervalMs: intervalMs }
             );
 
             if (competitor.organizationId) {
@@ -1093,7 +1110,8 @@ async function runWebsiteMonitorJob(): Promise<void> {
               profile.id,
               profile.userId,
               tenant.domain,
-              profile.marketId || undefined
+              profile.marketId || undefined,
+              { profileRefreshIntervalMs: intervalMs }
             );
             return {
               status: "success",
