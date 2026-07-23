@@ -44,3 +44,38 @@ No em dashes, no hashtags, no synergy/leverage/unlock/empower/game-changer/deep 
 **Sharpen endpoint** — purely on-demand; user clicks a button and can reject the rewrite. Disabling it is removing the button. The endpoint itself is harmless if unused.
 
 **Why:** The user explicitly asked (July 23, 2026) to remember this plan and the rollback path, in case the rules prove too aggressive against genuinely human-authored words within the next month or so.
+
+## Self-evaluation checklist (runs after every sharpen rewrite)
+
+This is the quality gate the sharpen endpoint must apply to itself before returning the edited draft. Every check must pass; if any fails, fix the draft and re-check.
+
+### Editing principles
+- Does the edit preserve the user's point without adding claims, examples, stats, quotes, or opinions?
+- Does it preserve the writer's distinctive vocabulary, cadence, bluntness, humor, uncertainty, digressions, and level of polish?
+- Does it leave strong human sentences alone instead of rewriting them for consistency?
+- Is the amount of cutting proportional to the actual slop — no aggressive compression that strips character?
+- Does the draft lead with what the reader needs while keeping personal setup that adds context, tension, or character?
+- Are points front-loaded where that improves clarity, without forcing every unit into the same structure?
+- Do sentences earn their place, with concrete facts, protected details, and direct verbs?
+- Does the draft use active voice with human subjects where possible?
+- Does the edit keep useful edge and preserve structure unless the structure was hurting the piece?
+- Are genuinely tangled sentences fixed while clear spoken cadence, fragments, and changes of pace remain intact?
+
+### Words and patterns
+- Are banned words, filler phrases, often-empty adverbs, and inflated claims removed (unless quoted as examples)?
+- Are binary contrasts, negative listings, rhetorical setups, and throat-clearing openers removed?
+- Are faux-insight setups, colon reveals, superficial analysis, fake-strong verbs, synonym cycling, dramatic fragments, and robotic rhythm fixed?
+- Are importance puffery and weasel attribution replaced with plain facts and named sources — or flagged for the user when no source exists?
+- Are fake-profound kicker lines deleted (not rewritten into better metaphors)?
+- Are summary-recap endings cut so the piece ends on a concrete point, takeaway, or next action?
+- Is formatting slop removed: emoji headings, decorative bold, bullets that should be prose, headers over tiny sections?
+- Are colons sentence case unless grammar, a proper noun, a title, or code requires otherwise?
+- Are em dashes used sparingly — usually none in short copy, only 1–2 in longer drafts when they clearly help?
+
+### Final read
+- Was the edit checked against this list in a single pass (no separate evaluator agent needed)?
+- Does the draft avoid robotic symmetry, repeated sentence shapes, and stacked punchy fragments?
+- Would the writer recognize the edited draft as their own voice?
+- Would the edited draft sound natural if read aloud to a sharp colleague?
+- Does the final output include the full edited draft and a short "What changed" section?
+- For detect requests: does the response name each pattern with a quoted line and a short fix, without rewriting, scoring, or claiming AI authorship?
