@@ -791,6 +791,18 @@ function apolloPersonToCandidate(p: ApolloPerson): DiscoveryCandidate {
 }
 
 /**
+ * Hard cap on the number of people-search batches issued per
+ * `searchApolloCompaniesFirst` call (applies to both the primary pass and the
+ * optional seniority retry). Apollo bills per request, so this keeps the total
+ * call count predictable as the org cluster grows.
+ *
+ * With 25 orgs fetched in Step 1 (per_page=25) and 10 orgs per batch, the
+ * natural batch count is ceil(25/10) = 3, which already fits within this cap.
+ * The cap prevents future edits from quietly multiplying paid API calls.
+ */
+export const MAX_PEOPLE_SEARCH_BATCHES = 3;
+
+/**
  * Companies-first discovery: the way a human fills an event room.
  *
  * Instead of one people-search where every filter must match at once, this:
@@ -847,8 +859,17 @@ export async function searchApolloCompaniesFirst(
     if (titles.length) peopleBase.person_titles = titles;
     else peopleBase.person_seniorities = DECISION_MAKER_SENIORITIES;
 
-    const batches: string[][] = [];
-    for (let i = 0; i < orgNames.length; i += 10) batches.push(orgNames.slice(i, i + 10));
+    const allBatches: string[][] = [];
+    for (let i = 0; i < orgNames.length; i += 10) allBatches.push(orgNames.slice(i, i + 10));
+    // Enforce the hard cap so future org-cluster growth can't silently multiply
+    // paid Apollo calls.
+    const batches = allBatches.slice(0, MAX_PEOPLE_SEARCH_BATCHES);
+    if (allBatches.length > MAX_PEOPLE_SEARCH_BATCHES) {
+      console.warn(
+        `[Apollo] companies-first: capped people-search batches at ${MAX_PEOPLE_SEARCH_BATCHES} ` +
+          `(${allBatches.length} batches would have been needed for ${orgNames.length} orgs)`,
+      );
+    }
 
     const results = await Promise.allSettled(
       batches.map((batch) => apolloPeopleSearch(apiKey, { ...peopleBase, organization_names: batch })),
