@@ -598,8 +598,10 @@ export async function searchApollo(
   }
 
   // Fall back to q_keywords blob for any labels without a structured match.
+  // Apollo's "Value too long" error fires well below 255 chars in practice —
+  // keep to ≤3 terms and 100 chars to stay safe.
   if (industryFallback.length) {
-    const kw = industryFallback.join(" ").slice(0, 255);
+    const kw = industryFallback.slice(0, 3).join(" ").slice(0, 100);
     baseBody.q_keywords = kw;
   }
 

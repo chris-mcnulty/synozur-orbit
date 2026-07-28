@@ -235,8 +235,14 @@ export async function discoverProspects(
         input.broaden = true;
       }
     } catch (err) {
-      if (err instanceof ApolloDiscoveryError && err.code === "not_available") {
+      if (err instanceof ApolloDiscoveryError) {
+        // Any Apollo error (not_available, api_error, 422 "Value too long", etc.)
+        // falls back to web rather than surfacing a 500 to the user.
+        console.warn(`[discovery] Apollo error (${err.code}) — falling back to web:`, err.message);
+        apolloDiagnostics = undefined; // no filters to show since the call never succeeded
+        fallbackReason = `Apollo search failed (${err.message}) — showing web discovery results instead.`;
         backend = "web";
+        input.broaden = true;
       } else {
         throw err;
       }
