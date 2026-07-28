@@ -247,6 +247,7 @@ interface DiscoveryCandidate {
   industry: string | null;
   segment: string | null;
   sourceUrl: string | null;
+  confidence?: "verified" | "reconfirm" | null;
   source: "web" | "salesnav" | "apollo";
 }
 interface ScoredDiscoveryCandidate {
@@ -271,6 +272,12 @@ interface DiscoverResult {
   /** Filters actually sent to Apollo when it returned 0 results. */
   apolloDiagnostics?: ApolloDiagnostics;
   expansionSummary?: { seedCompanies: string[]; expandedCount: number };
+  /** Set when the strict query returned 0 and a broader retry produced results. */
+  relaxationApplied?: string;
+  /** What the intent-expansion pass added to the targeting before searching. */
+  intentExpansion?: { addedGeographies: string[]; addedIndustries: string[]; addedRoles: string[]; method: "ai" | "static" | "none" };
+  /** Companies-first (event campaigns): the fitting orgs that seeded the people lookup. */
+  accountCluster?: string[];
 }
 interface DiscoveryBackend {
   id: "web" | "salesnav" | "apollo";
@@ -2173,13 +2180,25 @@ export default function OutreachCampaignDetailPage() {
                           {c.scored.disqualified ? "DQ" : c.scored.score}
                         </TableCell>
                         <TableCell>
-                          {c.candidate.sourceUrl ? (
-                            <a href={c.candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs inline-flex items-center gap-1">
-                              source <ExternalLink className="w-3 h-3" />
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {c.candidate.sourceUrl ? (
+                              <a href={c.candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs inline-flex items-center gap-1">
+                                source <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {c.candidate.confidence === "verified" && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-0" data-testid={`discovery-confidence-${i}`}>
+                                verified
+                              </Badge>
+                            )}
+                            {c.candidate.confidence === "reconfirm" && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700" data-testid={`discovery-confidence-${i}`}>
+                                re-confirm
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -2204,6 +2223,24 @@ export default function OutreachCampaignDetailPage() {
               </p>
             </div>
           ) : null}
+          {discoverResult?.relaxationApplied && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-relaxation-notice">
+              The exact filters returned no one, so the search was automatically broadened: {discoverResult.relaxationApplied}.
+            </p>
+          )}
+          {discoverResult?.intentExpansion && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-intent-expansion-notice">
+              Targeting interpreted broadly
+              {discoverResult.intentExpansion.addedGeographies.length > 0 && <> — nearby areas: {discoverResult.intentExpansion.addedGeographies.slice(0, 4).join(", ")}{discoverResult.intentExpansion.addedGeographies.length > 4 ? "…" : ""}</>}
+              {discoverResult.intentExpansion.addedIndustries.length > 0 && <> — adjacent industries: {discoverResult.intentExpansion.addedIndustries.slice(0, 4).join(", ")}{discoverResult.intentExpansion.addedIndustries.length > 4 ? "…" : ""}</>}
+              {discoverResult.intentExpansion.addedRoles.length > 0 && <> — title variants: {discoverResult.intentExpansion.addedRoles.slice(0, 4).join(", ")}{discoverResult.intentExpansion.addedRoles.length > 4 ? "…" : ""}</>}
+            </p>
+          )}
+          {discoverResult?.accountCluster && discoverResult.accountCluster.length > 0 && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-account-cluster-notice">
+              Included decision-makers from {discoverResult.accountCluster.length} fitting compan{discoverResult.accountCluster.length === 1 ? "y" : "ies"} in your target area (companies-first search for event invites).
+            </p>
+          )}
           {discoverResult?.expansionSummary && (
             <p className="text-[11px] text-muted-foreground border-t pt-2 flex items-center gap-1" data-testid="discovery-expansion-notice">
               <Search className="w-3 h-3 shrink-0" />

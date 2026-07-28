@@ -458,7 +458,8 @@ export function registerSalesOutreachRoutes(app: Express) {
           industry: c.industry ?? null,
           segment: c.segment ?? null,
           sourceUrl: safeImportUrl(c.sourceUrl),
-          source: c.source === "salesnav" ? "salesnav" : "web",
+          source: c.source === "salesnav" ? "salesnav" : c.source === "apollo" ? "apollo" : "web",
+          confidence: c.confidence === "verified" ? "verified" : c.confidence === "reconfirm" ? "reconfirm" : null,
         }));
       if (candidates.length === 0) {
         return res.status(400).json({ error: "No valid candidates to import" });

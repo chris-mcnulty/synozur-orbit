@@ -334,6 +334,75 @@ export interface ApolloSearchResult {
   appliedFilters: ApolloAppliedFilters;
   /** Set when seed companies were expanded into a broader similar-company list. */
   expansionSummary?: ApolloExpansionSummary;
+  /**
+   * Set when the strict query returned 0 results and a relaxation tier
+   * produced the candidates instead. Human-readable, shown in the UI.
+   */
+  relaxationApplied?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Progressive filter relaxation
+// ---------------------------------------------------------------------------
+
+/**
+ * Apollo seniority values covering decision-maker seats. Used when the
+ * relaxation ladder drops exact titles in favor of seniority-level matching.
+ */
+const DECISION_MAKER_SENIORITIES = ["owner", "founder", "c_suite", "partner", "vp", "head", "director"];
+
+export interface RelaxationTier {
+  /** Human-readable description surfaced to the user. */
+  label: string;
+  /** The modified request body for this tier. */
+  body: Record<string, unknown>;
+}
+
+/**
+ * Build the ladder of progressively-broader request bodies tried when the
+ * strict query returns 0 results. Each tier relaxes ONE additional dimension
+ * (cumulatively) in order of least → most information lost:
+ *
+ *   1. Drop the company-size (headcount) filter.
+ *   2. Also drop the industry filters (keyword tags + free-text blob).
+ *   3. Also replace exact titles with decision-maker seniority levels.
+ *
+ * Tiers that would be identical to the previous body (nothing to relax at
+ * that step) are skipped. Pure — unit-testable.
+ */
+export function buildRelaxationTiers(baseBody: Record<string, unknown>): RelaxationTier[] {
+  const tiers: RelaxationTier[] = [];
+  let current = { ...baseBody };
+
+  if (current.organization_num_employees_ranges) {
+    const { organization_num_employees_ranges: _drop, ...rest } = current;
+    current = rest;
+    tiers.push({ label: "company-size filter removed", body: { ...current } });
+  }
+
+  if (current.q_organization_keyword_tags || current.q_keywords) {
+    const { q_organization_keyword_tags: _t, q_keywords: _k, ...rest } = current;
+    current = rest;
+    tiers.push({
+      label: tiers.length
+        ? "company-size and industry filters removed"
+        : "industry filter removed",
+      body: { ...current },
+    });
+  }
+
+  if (current.person_titles) {
+    const { person_titles: _p, ...rest } = current;
+    current = { ...rest, person_seniorities: DECISION_MAKER_SENIORITIES };
+    tiers.push({
+      label: tiers.length
+        ? "broadened to all senior decision-makers in the target locations"
+        : "exact titles relaxed to senior decision-makers",
+      body: { ...current },
+    });
+  }
+
+  return tiers;
 }
 
 /**
@@ -575,9 +644,10 @@ export async function searchApollo(
   // ── Batch execution ────────────────────────────────────────────────────────
 
   let allPeople: ApolloPerson[] = [];
+  let relaxationApplied: string | undefined;
 
   if (finalAccountList.length === 0) {
-    // No named accounts — single call.
+    // No named accounts — single call, then a relaxation ladder on 0 results.
     console.log("[Apollo] request body (no accounts):", JSON.stringify(baseBody));
     try {
       allPeople = await apolloPeopleSearch(apiKey, baseBody);
@@ -587,6 +657,25 @@ export async function searchApollo(
         `Apollo request failed: ${(err as Error).message}`,
         "api_error",
       );
+    }
+
+    // Progressive relaxation: retry with each broader tier until one hits.
+    if (allPeople.length === 0) {
+      for (const tier of buildRelaxationTiers(baseBody)) {
+        console.log(`[Apollo] 0 results — relaxing: ${tier.label}`);
+        try {
+          const people = await apolloPeopleSearch(apiKey, tier.body);
+          if (people.length > 0) {
+            allPeople = people;
+            relaxationApplied = tier.label;
+            break;
+          }
+        } catch (err) {
+          // A relaxed retry failing shouldn't kill the whole search — the
+          // strict query already succeeded (with 0 rows).
+          console.warn(`[Apollo] relaxation tier "${tier.label}" failed:`, (err as Error).message);
+        }
+      }
     }
   } else if (finalAccountList.length <= 10) {
     // Fits in a single call.
@@ -675,7 +764,138 @@ export async function searchApollo(
     candidates: candidates.filter((c) => c.name && c.name !== "Unknown"),
     appliedFilters,
     expansionSummary,
+    relaxationApplied,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Companies-first search (event campaigns)
+// ---------------------------------------------------------------------------
+
+function apolloPersonToCandidate(p: ApolloPerson): DiscoveryCandidate {
+  const name = p.name?.trim() || [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+  const locationParts = [p.city, p.state, p.country].filter(Boolean);
+  const li = p.linkedin_url ? (p.linkedin_url.startsWith("http") ? p.linkedin_url : `https://${p.linkedin_url}`) : null;
+  return {
+    name: name || "Unknown",
+    title: p.title ?? null,
+    companyName: p.organization?.name ?? null,
+    email: p.email ?? null,
+    linkedinUrl: li,
+    geography: locationParts.length ? locationParts.join(", ") : null,
+    industry: p.organization?.industry ?? null,
+    segment: null,
+    sourceUrl: li,
+    source: "apollo" as const,
+  };
+}
+
+/**
+ * Companies-first discovery: the way a human fills an event room.
+ *
+ * Instead of one people-search where every filter must match at once, this:
+ * 1. Finds fitting organizations in the target geography/industry (an
+ *    "account cluster") via Apollo's org search.
+ * 2. Looks up the senior decision-makers at each of those companies.
+ *
+ * Used for event-invite campaigns when the regular people-search yields
+ * little. Returns [] rather than throwing on any failure.
+ */
+export async function searchApolloCompaniesFirst(
+  input: DiscoverySearchInput,
+): Promise<{ candidates: DiscoveryCandidate[]; accountCluster: string[] }> {
+  const apiKey = process.env.APOLLO_API_KEY?.trim();
+  if (!apiKey) return { candidates: [], accountCluster: [] };
+
+  const { criteria, limit } = input;
+
+  try {
+    // ── Step 1: account cluster — orgs in the geography + industry ─────────
+    const { structured: industryTags } = mapIndustriesToTags(criteria.industries ?? []);
+    const orgBody: Record<string, unknown> = { page: 1, per_page: 25 };
+    if (criteria.geographies?.length) {
+      orgBody.organization_locations = criteria.geographies.slice(0, 10);
+    }
+    if (industryTags.length) {
+      orgBody.q_organization_keyword_tags = industryTags.slice(0, 5);
+    } else if (criteria.industries?.length) {
+      orgBody.q_keywords = criteria.industries.join(" ").slice(0, 255);
+    }
+
+    console.log("[Apollo] companies-first org search:", JSON.stringify(orgBody));
+    const orgRes = await fetch(APOLLO_ORG_SEARCH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": apiKey, "Cache-Control": "no-cache" },
+      body: JSON.stringify(orgBody),
+    });
+    if (!orgRes.ok) {
+      console.warn(`[Apollo] companies-first org search ${orgRes.status} — skipping`);
+      return { candidates: [], accountCluster: [] };
+    }
+    const orgData = (await orgRes.json()) as ApolloOrgSearchResponse;
+    const orgNames = (orgData.organizations ?? orgData.accounts ?? [])
+      .map((o) => (o.name ?? "").trim())
+      .filter(Boolean);
+    if (orgNames.length === 0) return { candidates: [], accountCluster: [] };
+
+    // ── Step 2: senior people at those companies ───────────────────────────
+    const titles = criteria.roles?.length ? normalizePersonTitles(criteria.roles) : [];
+    const peopleBase: Record<string, unknown> = {
+      page: 1,
+      per_page: Math.min(limit, 100),
+    };
+    if (titles.length) peopleBase.person_titles = titles;
+    else peopleBase.person_seniorities = DECISION_MAKER_SENIORITIES;
+
+    const batches: string[][] = [];
+    for (let i = 0; i < orgNames.length; i += 10) batches.push(orgNames.slice(i, i + 10));
+
+    const results = await Promise.allSettled(
+      batches.map((batch) => apolloPeopleSearch(apiKey, { ...peopleBase, organization_names: batch })),
+    );
+
+    const allPeople: ApolloPerson[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled") allPeople.push(...r.value);
+      else console.warn("[Apollo] companies-first people batch failed:", r.reason?.message);
+    }
+
+    // If titles were too strict for these accounts, retry once with seniorities.
+    if (allPeople.length === 0 && titles.length) {
+      const retry = await Promise.allSettled(
+        batches.map((batch) =>
+          apolloPeopleSearch(apiKey, {
+            ...peopleBase,
+            person_titles: undefined,
+            person_seniorities: DECISION_MAKER_SENIORITIES,
+            organization_names: batch,
+          }),
+        ),
+      );
+      for (const r of retry) {
+        if (r.status === "fulfilled") allPeople.push(...r.value);
+      }
+    }
+
+    const seenIds = new Set<string>();
+    const deduped = allPeople.filter((p) => {
+      if (!p.id) return true;
+      if (seenIds.has(p.id)) return false;
+      seenIds.add(p.id);
+      return true;
+    });
+
+    const candidates = deduped
+      .slice(0, limit)
+      .map(apolloPersonToCandidate)
+      .filter((c) => c.name && c.name !== "Unknown");
+
+    console.log(`[Apollo] companies-first: ${orgNames.length} orgs → ${candidates.length} people`);
+    return { candidates, accountCluster: orgNames };
+  } catch (err) {
+    console.warn("[Apollo] companies-first search failed:", (err as Error).message);
+    return { candidates: [], accountCluster: [] };
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,13 @@ export interface DiscoveryCandidate {
   sourceUrl?: string | null;
   /** Which backend surfaced this candidate. */
   source: DiscoveryBackendId;
+  /**
+   * How confident the source is (web discovery only): "verified" when the
+   * title/company was confirmed on a current authoritative source, "reconfirm"
+   * when it came from an aggregator or possibly-stale page and should be
+   * re-checked before outreach.
+   */
+  confidence?: "verified" | "reconfirm" | null;
 }
 
 /** The inputs a discovery search needs, flattened from a campaign. */
@@ -43,6 +50,12 @@ export interface DiscoverySearchInput {
   goal?: string | null;
   /** Max candidates to return (the model is told to stop here). */
   limit: number;
+  /**
+   * Broadened research mode: instructs web discovery to widen beyond the
+   * literal filters (metro suburbs, adjacent industries, title variants) —
+   * used when a strict database search already came up empty.
+   */
+  broaden?: boolean;
 }
 
 const MAX_LIMIT = 50;
@@ -66,7 +79,7 @@ function bulletList(label: string, items?: string[]): string | null {
  * Pure string assembly so it is unit-testable.
  */
 export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
-  const { criteria, namedAccounts, goal, limit } = input;
+  const { criteria, namedAccounts, goal, limit, broaden } = input;
 
   const targeting = [
     bulletList("Target roles / titles", criteria.roles),
@@ -89,7 +102,19 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
     "",
     "Every candidate MUST have a full name (first name AND last name). If you can only find a first name for someone — for example because a source only lists a first name — skip that person entirely and do not include them in the results.",
     "",
-    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null}. If you find no one, return [].',
+    broaden
+      ? [
+          "IMPORTANT — a strict database search with these exact filters already returned zero results, so interpret the intent broadly rather than literally:",
+          "- Treat each city as its whole metro area (include surrounding suburbs and nearby business hubs).",
+          "- Include adjacent industries that share the same buyers and problems (e.g. fintech also means banks, credit unions, insurers, wealth managers).",
+          "- Accept title variants for the same seat (e.g. CTO also means CIO, EVP Technology, Head of Engineering).",
+          "- Research iteratively: try company leadership pages, local business journals, conference speaker lists, industry association rosters, and recent press.",
+          "",
+        ].join("\n")
+      : "",
+    'For each candidate set "confidence": "verified" when the title and company were confirmed on a current authoritative source (the company\'s own site, a recent press release, or an official event page), or "reconfirm" when it came from an aggregator, directory, or possibly-outdated page.',
+    "",
+    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null, "confidence": "verified"|"reconfirm"}. If you find no one, return [].',
   ]
     .filter(Boolean)
     .join("\n");
@@ -235,6 +260,7 @@ export function parseDiscoveryCandidates(
       segment: asStringOrNull(r.segment),
       sourceUrl: safeHttpUrl(r.sourceUrl),
       source,
+      confidence: r.confidence === "verified" ? "verified" : r.confidence === "reconfirm" ? "reconfirm" : null,
     });
     if (out.length >= limit) break;
   }
