@@ -374,30 +374,34 @@ export function buildRelaxationTiers(baseBody: Record<string, unknown>): Relaxat
   const tiers: RelaxationTier[] = [];
   let current = { ...baseBody };
 
+  // Tier 1: drop company-size — least information lost; sector + titles intact.
   if (current.organization_num_employees_ranges) {
     const { organization_num_employees_ranges: _drop, ...rest } = current;
     current = rest;
     tiers.push({ label: "company-size filter removed", body: { ...current } });
   }
 
-  if (current.q_organization_keyword_tags || current.q_keywords) {
-    const { q_organization_keyword_tags: _t, q_keywords: _k, ...rest } = current;
-    current = rest;
-    tiers.push({
-      label: tiers.length
-        ? "company-size and industry filters removed"
-        : "industry filter removed",
-      body: { ...current },
-    });
-  }
-
+  // Tier 2: replace exact titles with decision-maker seniorities — still scoped
+  // to the right industry and geography; catches "EVP & CTO" / "Head of Tech"
+  // variants that exact-title matching misses.
   if (current.person_titles) {
     const { person_titles: _p, ...rest } = current;
     current = { ...rest, person_seniorities: DECISION_MAKER_SENIORITIES };
     tiers.push({
       label: tiers.length
-        ? "broadened to all senior decision-makers in the target locations"
-        : "exact titles relaxed to senior decision-makers",
+        ? "company-size filter removed and titles broadened to senior decision-makers"
+        : "exact titles broadened to senior decision-makers",
+      body: { ...current },
+    });
+  }
+
+  // Tier 3: last resort — also drop the industry filter. Keeps geography so we
+  // stay in the right market; returns any senior leader in the area.
+  if (current.q_organization_keyword_tags || current.q_keywords) {
+    const { q_organization_keyword_tags: _t, q_keywords: _k, ...rest } = current;
+    current = rest;
+    tiers.push({
+      label: "broadened to senior decision-makers across all industries in the target locations",
       body: { ...current },
     });
   }
@@ -759,9 +763,25 @@ export async function searchApollo(
     };
   });
 
-  // Drop any rows with no usable name.
+  // Drop rows with no usable name, single-token names, and company/role-label names.
+  // Apollo sometimes returns records where `name` is only a first name or a role
+  // label (e.g. "Skylar", "Hunter", "VP of Engineering") — the same quality gate
+  // that the web parser applies must also run here.
+  const filtered = candidates.filter((c) => {
+    if (!c.name || c.name === "Unknown") return false;
+    if (!c.name.includes(" ")) {
+      console.debug(`[Apollo] dropped single-token name: "${c.name}"`);
+      return false;
+    }
+    if (isBadName(c.name)) {
+      console.debug(`[Apollo] dropped non-person name: "${c.name}"`);
+      return false;
+    }
+    return true;
+  });
+
   return {
-    candidates: candidates.filter((c) => c.name && c.name !== "Unknown"),
+    candidates: filtered,
     appliedFilters,
     expansionSummary,
     relaxationApplied,
@@ -909,7 +929,12 @@ export async function searchApolloCompaniesFirst(
     const candidates = deduped
       .slice(0, limit)
       .map(apolloPersonToCandidate)
-      .filter((c) => c.name && c.name !== "Unknown");
+      .filter((c) => {
+        if (!c.name || c.name === "Unknown") return false;
+        if (!c.name.includes(" ")) return false;
+        if (isBadName(c.name)) return false;
+        return true;
+      });
 
     console.log(`[Apollo] companies-first: ${orgNames.length} orgs → ${candidates.length} people`);
     return { candidates, accountCluster: orgNames };

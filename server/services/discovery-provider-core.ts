@@ -218,7 +218,7 @@ function extractJsonArray(text: string): string | null {
 }
 
 /** Corporate-entity suffixes that indicate a company name, not a person. */
-const COMPANY_SUFFIXES = /\b(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|gmbh|plc|llp|l\.p\.|s\.a\.?|b\.v\.?|pty\.?|ag)\b/i;
+export const COMPANY_SUFFIXES = /\b(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|gmbh|plc|llp|l\.p\.|s\.a\.?|b\.v\.?|pty\.?|ag)\b/i;
 
 /**
  * Common job-title tokens. A name consisting entirely of these words is a role
@@ -242,8 +242,10 @@ const JOB_TITLE_TOKENS = new Set([
 /**
  * Return true if `name` looks like a company name, role label, all-caps
  * placeholder, or other non-person string. Real full names are unaffected.
+ *
+ * Exported so Apollo and other non-web backends can apply the same gate.
  */
-function isBadName(name: string): boolean {
+export function isBadName(name: string): boolean {
   // All-caps (2+ words, e.g. "ACME CORP", "VP SALES") — real names use title case
   if (name === name.toUpperCase() && /[A-Z]{2}/.test(name)) return true;
 

@@ -16,18 +16,19 @@ describe("buildRelaxationTiers", () => {
     const tiers = buildRelaxationTiers(fullBody);
     expect(tiers).toHaveLength(3);
 
-    // Tier 1: size dropped, everything else intact.
+    // Tier 1: size dropped; industry + titles intact.
     expect(tiers[0].body.organization_num_employees_ranges).toBeUndefined();
     expect(tiers[0].body.q_organization_keyword_tags).toEqual(["fintech"]);
     expect(tiers[0].body.person_titles).toEqual(["CTO", "CIO"]);
 
-    // Tier 2: size AND industry dropped.
-    expect(tiers[1].body.q_organization_keyword_tags).toBeUndefined();
-    expect(tiers[1].body.q_keywords).toBeUndefined();
-    expect(tiers[1].body.person_titles).toEqual(["CTO", "CIO"]);
+    // Tier 2: size dropped + titles replaced with seniorities; industry still active.
+    expect(tiers[1].body.person_titles).toBeUndefined();
+    expect(tiers[1].body.person_seniorities).toContain("c_suite");
+    expect(tiers[1].body.q_organization_keyword_tags).toEqual(["fintech"]);
 
-    // Tier 3: titles replaced with seniorities; location always kept.
-    expect(tiers[2].body.person_titles).toBeUndefined();
+    // Tier 3: industry also dropped; seniorities + location kept.
+    expect(tiers[2].body.q_organization_keyword_tags).toBeUndefined();
+    expect(tiers[2].body.q_keywords).toBeUndefined();
     expect(tiers[2].body.person_seniorities).toContain("c_suite");
     expect(tiers[2].body.person_locations).toEqual(["Seattle, Washington"]);
   });
