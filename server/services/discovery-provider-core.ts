@@ -120,6 +120,77 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
     .join("\n");
 }
 
+/**
+ * Stage-1 of two-stage agentic discovery: find fitting companies.
+ *
+ * Returns a prompt that asks the model to produce a JSON array of company
+ * names (strings only). The resulting list seeds Stage 2 (people lookup).
+ */
+export function buildCompanyResearchPrompt(input: DiscoverySearchInput): string {
+  const { criteria, namedAccounts, goal, limit } = input;
+  const companyCount = Math.min(limit + 5, 20); // slight over-fetch
+
+  const targeting = [
+    bulletList("Industries / sectors", criteria.industries),
+    bulletList("Geographies (treat each as its metro area — include suburbs)", criteria.geographies),
+    bulletList("Company size / segment", criteria.segments),
+    bulletList("Must include these named accounts", namedAccounts),
+    bulletList("Hard exclusions", criteria.disqualifiers),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return [
+    goal ? `Campaign goal: ${goal}` : "",
+    `Find ${companyCount} real, currently-operating companies in this market that would be worth reaching out to for the campaign above.`,
+    "",
+    targeting || "(No specific filters — use the campaign goal to infer suitable companies.)",
+    "",
+    "Use web search to ground every company: search local business journals, industry directories, conference sponsor lists, chamber-of-commerce rosters, LinkedIn company search, and any sector-specific registries. Prefer companies that are headquartered or have a significant presence in the stated geography.",
+    "Be broad: include banks, credit unions, insurers, and wealth-management firms if the industry is fintech or financial services. Include surrounding metro cities, not just the exact city named.",
+    "",
+    "Respond with ONLY a JSON array of company name strings, no prose, no fences. Example: [\"Acme Corp\", \"Beta Financial\", \"Gamma Health\"]",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Stage-2 of two-stage agentic discovery: find decision-makers at each company.
+ *
+ * Given a list of companies from Stage 1, asks the model to look up the senior
+ * decision-maker(s) matching the ICP roles at each company and verify from
+ * authoritative sources.
+ */
+export function buildPeopleLookupPrompt(
+  input: DiscoverySearchInput,
+  companies: string[],
+): string {
+  const { criteria, goal, limit } = input;
+
+  return [
+    goal ? `Campaign goal: ${goal}` : "",
+    `For each of the following ${companies.length} companies, find the current senior decision-maker who matches the target roles below. Verify each person from an authoritative source (the company's own team/leadership page, a recent press release, a conference speaker list, or an official event page — NOT from an aggregator or directory).`,
+    "",
+    bulletList("Target roles / titles (accept variants — CTO also means CIO, VP Engineering, Head of Technology, etc.)", criteria.roles),
+    "",
+    "Companies to research:",
+    companies.map((c, i) => `  ${i + 1}. ${c}`).join("\n"),
+    "",
+    "Rules:",
+    "- One person per company (the most senior match). Skip the company entirely if you cannot verify a current person from a live authoritative source.",
+    "- Full name required (first AND last). Skip first-name-only results.",
+    "- Only include email or LinkedIn URL if you actually found it on a source — leave null otherwise.",
+    "- Set confidence: 'verified' when confirmed on the company's own site, a recent press release, or official event page; 'reconfirm' when from an aggregator, directory, or possibly-outdated page.",
+    "",
+    `Return at most ${limit} candidates total.`,
+    "",
+    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null, "confidence": "verified"|"reconfirm"}. If you find no one for a company, skip it.',
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function asStringOrNull(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();

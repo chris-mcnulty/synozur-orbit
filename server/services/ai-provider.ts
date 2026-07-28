@@ -558,7 +558,7 @@ export async function completeWithWebSearch(
     baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
   });
   const model = "claude-sonnet-4-5";
-  const maxUses = Math.max(1, Math.min(options?.maxSearches ?? 5, 10));
+  const maxUses = Math.max(1, Math.min(options?.maxSearches ?? 5, 20));
 
   const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }];
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: userPrompt }];
