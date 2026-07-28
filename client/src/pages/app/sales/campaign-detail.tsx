@@ -196,6 +196,7 @@ interface Prospect {
   hubspotContactId: string | null;
   disqualifiedReason: string | null;
   researchDossier: string | null;
+  signals?: { discoveryConfidence?: "verified" | "reconfirm" | null } | null;
 }
 
 interface HubspotContact {
@@ -333,6 +334,31 @@ function SortIcon({ col, sortKey, sortDir }: { col: ProspectSortKey; sortKey: Pr
   return sortDir === "asc"
     ? <ChevronUp className="ml-1 inline h-3 w-3" />
     : <ChevronDown className="ml-1 inline h-3 w-3" />;
+}
+
+/** Small badge shown when a web-discovered prospect has a confidence flag. */
+function DiscoveryConfidenceBadge({ confidence }: { confidence?: "verified" | "reconfirm" | null }) {
+  if (!confidence) return null;
+  if (confidence === "verified") {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
+        data-testid="badge-discovery-verified"
+        title="Title and company verified via public sources"
+      >
+        <ShieldCheck className="w-2.5 h-2.5" /> Verified
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
+      data-testid="badge-discovery-reconfirm"
+      title="Title or company may need re-checking before outreach"
+    >
+      <ShieldAlert className="w-2.5 h-2.5" /> Re-confirm
+    </span>
+  );
 }
 
 function initEditForm(c: OutreachCampaign) {
@@ -1337,6 +1363,7 @@ export default function OutreachCampaignDetailPage() {
                       <TableCell>
                         <div className="font-medium">{p.name}</div>
                         {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
+                        <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
                       </TableCell>
                       <TableCell className="text-sm">{p.companyName ?? "—"}</TableCell>
                       <TableCell className={`text-center font-semibold ${scoreColor(p.icpScore)}`}>
@@ -1782,6 +1809,11 @@ export default function OutreachCampaignDetailPage() {
               {dossier?.icpScore != null ? ` · ICP ${dossier.icpScore}/100` : ""}
             </DialogDescription>
           </DialogHeader>
+          {dossier?.signals?.discoveryConfidence && (
+            <div className="mb-1">
+              <DiscoveryConfidenceBadge confidence={dossier.signals.discoveryConfidence} />
+            </div>
+          )}
           {dossier?.disqualifiedReason && <p className="text-sm text-destructive">{dossier.disqualifiedReason}</p>}
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{dossier?.researchDossier}</p>
           {marketingTouches.length > 0 && (
