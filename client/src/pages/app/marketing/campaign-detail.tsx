@@ -6254,12 +6254,17 @@ export default function CampaignDetailPage() {
             <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Step 1 — Fetch posts from LinkedIn</p>
               <div className="space-y-2">
-                <input
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="https://www.linkedin.com/in/your-profile"
-                  value={digestScrapeUrl}
-                  onChange={(e) => { setDigestScrapeUrl(e.target.value); setDigestScrapeError(""); }}
-                />
+                <div className="flex h-9 w-full rounded-md border border-input bg-background text-sm shadow-sm focus-within:ring-1 focus-within:ring-ring overflow-hidden">
+                  <span className="flex items-center px-3 text-muted-foreground bg-muted/50 border-r border-input shrink-0 select-none text-xs">
+                    linkedin.com/in/
+                  </span>
+                  <input
+                    className="flex-1 bg-transparent px-3 py-1 focus:outline-none placeholder:text-muted-foreground"
+                    placeholder="your-username"
+                    value={digestScrapeUrl}
+                    onChange={(e) => { setDigestScrapeUrl(e.target.value.replace(/.*linkedin\.com\/in\//i, "").replace(/\/$/, "")); setDigestScrapeError(""); }}
+                  />
+                </div>
                 <div className="flex gap-2 items-center">
                   <input
                     type="date"
@@ -6286,7 +6291,7 @@ export default function CampaignDetailPage() {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           credentials: "include",
-                          body: JSON.stringify({ profileUrl: digestScrapeUrl.trim(), startDate: digestScrapeFrom, endDate: digestScrapeTo }),
+                          body: JSON.stringify({ profileUrl: `https://www.linkedin.com/in/${digestScrapeUrl.trim()}`, startDate: digestScrapeFrom, endDate: digestScrapeTo }),
                         });
                         const data = await r.json();
                         if (!r.ok) throw new Error(data.error || "Failed to fetch posts");
