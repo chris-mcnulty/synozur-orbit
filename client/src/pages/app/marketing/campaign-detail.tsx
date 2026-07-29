@@ -6367,12 +6367,12 @@ export default function CampaignDetailPage() {
             {allSocialAccounts.filter((a) => a.platform === "linkedin").length > 0 && (
               <div className="space-y-1.5">
                 <Label htmlFor="digest-account">LinkedIn account for teaser post <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
-                <Select value={digestSocialAccountId} onValueChange={setDigestSocialAccountId}>
+                <Select value={digestSocialAccountId || "__none__"} onValueChange={(v) => setDigestSocialAccountId(v === "__none__" ? "" : v)}>
                   <SelectTrigger id="digest-account">
                     <SelectValue placeholder="Skip social post" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Skip social post</SelectItem>
+                    <SelectItem value="__none__">Skip social post</SelectItem>
                     {allSocialAccounts.filter((a) => a.platform === "linkedin").map((a) => (
                       <SelectItem key={a.id} value={a.id}>{a.accountName}</SelectItem>
                     ))}
