@@ -1702,6 +1702,8 @@ export const AI_FEATURES = {
   // Observatory (application assurance) — AI-assisted drafting of finding
   // descriptions/recommendations from workbench review notes.
   OBSERVATORY_ASSIST: 'observatory_assist',
+  // Observatory reporting — executive summary drafts and VPAT remark drafting.
+  OBSERVATORY_REPORT: 'observatory_report',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1726,6 +1728,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   outreach_composer: 'Outreach Draft Composer',
   outreach_voice_extract: 'Outbound Voice Extraction',
   observatory_assist: 'Observatory Finding Drafting',
+  observatory_report: 'Observatory Report Summaries',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -5558,3 +5561,173 @@ export type InsertObsPenTest = z.infer<typeof insertObsPenTestSchema>;
 export const insertObsPenTestFindingSchema = createInsertSchema(obsPenTestFindings).omit({ id: true, createdAt: true, updatedAt: true });
 export type ObsPenTestFinding = typeof obsPenTestFindings.$inferSelect;
 export type InsertObsPenTestFinding = z.infer<typeof insertObsPenTestFindingSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Observatory — readiness engine, reporting engine, VPAT assistant
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Readiness scoring domains and their weights (percent of overall score). */
+export const OBS_READINESS_DOMAINS = [
+  "accessibility",
+  "security",
+  "source_code",
+  "architecture",
+  "privacy",
+  "documentation",
+  "ai_governance",
+] as const;
+export type ObsReadinessDomain = (typeof OBS_READINESS_DOMAINS)[number];
+
+export const OBS_READINESS_WEIGHTS: Record<ObsReadinessDomain, number> = {
+  accessibility: 25,
+  security: 25,
+  source_code: 15,
+  architecture: 10,
+  privacy: 10,
+  documentation: 10,
+  ai_governance: 5,
+};
+
+export const OBS_READINESS_DOMAIN_LABELS: Record<ObsReadinessDomain, string> = {
+  accessibility: "Accessibility",
+  security: "Security",
+  source_code: "Source Code",
+  architecture: "Architecture",
+  privacy: "Privacy",
+  documentation: "Documentation",
+  ai_governance: "AI Governance",
+};
+
+/** Readiness status bands (derived from the weighted overall score). */
+export const OBS_READINESS_BANDS = [
+  "Ready",                          // 90–100
+  "Ready With Minor Remediation",   // 75–89
+  "Remediation Required",           // 60–74
+  "Not Ready",                      // 0–59
+] as const;
+export type ObsReadinessBand = (typeof OBS_READINESS_BANDS)[number];
+
+/** One domain's contribution to a readiness score snapshot. */
+export interface ObsDomainScore {
+  domain: ObsReadinessDomain;
+  score: number | null;      // 0–100, null when not applicable
+  weight: number;            // effective weight after renormalization
+  applicable: boolean;
+  assessed: boolean;         // any assessment/evidence data exists for the domain
+  openFindings: number;
+  note?: string;
+}
+
+/** A hard blocker preventing a version from being certified Ready. */
+export interface ObsReadinessBlocker {
+  type: "open_critical_findings" | "unvalidated_critical_pen_test" | "missing_mandatory_evidence";
+  reason: string;
+  count: number;
+  refs?: { id: string; title: string }[];
+}
+
+// ── Readiness score snapshots (one row per computation) ────────────────────
+export const obsReadinessScores = pgTable("obs_readiness_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  versionId: varchar("version_id").notNull().references(() => obsVersions.id, { onDelete: "cascade" }),
+  overallScore: integer("overall_score").notNull(), // 0–100 weighted
+  band: text("band").notNull(), // OBS_READINESS_BANDS (after blocker enforcement)
+  rawBand: text("raw_band").notNull(), // band implied by score alone
+  blocked: boolean("blocked").notNull().default(false),
+  domainScores: jsonb("domain_scores").notNull(), // ObsDomainScore[]
+  blockers: jsonb("blockers").notNull().default(sql`'[]'::jsonb`), // ObsReadinessBlocker[]
+  computedBy: varchar("computed_by").references(() => users.id, { onDelete: "set null" }),
+  computedAt: timestamp("computed_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_readiness_scores_tenant_idx").on(t.tenantDomain),
+  versionIdx: index("obs_readiness_scores_version_idx").on(t.versionId, t.computedAt),
+}));
+
+// ── Reports (async generation records; printable HTML + PDF export) ────────
+export const OBS_REPORT_TYPES = [
+  "executive_readiness",
+  "technical_assessment",
+  "accessibility_vpat",
+  "pen_test",
+  "certification_readiness",
+] as const;
+export type ObsReportType = (typeof OBS_REPORT_TYPES)[number];
+
+export const OBS_REPORT_TYPE_LABELS: Record<ObsReportType, string> = {
+  executive_readiness: "Executive Readiness Report",
+  technical_assessment: "Technical Assessment Report",
+  accessibility_vpat: "Accessibility Report (WCAG/508 + VPAT)",
+  pen_test: "Penetration Test Report",
+  certification_readiness: "Certification Readiness Report",
+};
+
+export const OBS_REPORT_STATUSES = ["generating", "generated", "failed"] as const;
+export type ObsReportStatus = (typeof OBS_REPORT_STATUSES)[number];
+
+export const obsReports = pgTable("obs_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  versionId: varchar("version_id").references(() => obsVersions.id, { onDelete: "set null" }),
+  reportType: text("report_type").notNull(), // OBS_REPORT_TYPES
+  title: text("title").notNull(),
+  status: text("status").notNull().default("generating"), // OBS_REPORT_STATUSES
+  html: text("html"), // printable HTML (set when generated)
+  aiSummary: text("ai_summary"), // AI-drafted executive summary (editable)
+  includeAiSummary: boolean("include_ai_summary").notNull().default(false),
+  error: text("error"),
+  generatedAt: timestamp("generated_at"),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_reports_tenant_idx").on(t.tenantDomain, t.createdAt),
+}));
+
+// ── VPAT assistant ──────────────────────────────────────────────────────────
+export const OBS_VPAT_CONFORMANCE = [
+  "Supports",
+  "Partially Supports",
+  "Supports With Exceptions",
+  "Does Not Support",
+  "Not Applicable",
+  "Not Evaluated",
+] as const;
+export type ObsVpatConformance = (typeof OBS_VPAT_CONFORMANCE)[number];
+
+/** Mandatory disclaimer shown on every VPAT screen and output. */
+export const OBS_VPAT_DISCLAIMER =
+  "Draft VPAT support content only. Requires human review and validation. Not a legal certification.";
+
+export const obsVpatEntries = pgTable("obs_vpat_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  versionId: varchar("version_id").notNull().references(() => obsVersions.id, { onDelete: "cascade" }),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  controlRef: varchar("control_ref").notNull().references(() => obsControls.id, { onDelete: "cascade" }),
+  conformance: text("conformance").notNull().default("Not Evaluated"), // OBS_VPAT_CONFORMANCE
+  remarks: text("remarks"),
+  reviewerNotes: text("reviewer_notes"),
+  aiDrafted: boolean("ai_drafted").notNull().default(false),
+  updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_vpat_entries_tenant_idx").on(t.tenantDomain),
+  versionIdx: index("obs_vpat_entries_version_idx").on(t.versionId),
+  uniqueEntry: uniqueIndex("obs_vpat_entries_version_control_idx").on(t.versionId, t.controlRef),
+}));
+
+// ── Insert schemas + types ──────────────────────────────────────────────────
+export const insertObsReadinessScoreSchema = createInsertSchema(obsReadinessScores).omit({ id: true, computedAt: true });
+export type ObsReadinessScore = typeof obsReadinessScores.$inferSelect;
+export type InsertObsReadinessScore = z.infer<typeof insertObsReadinessScoreSchema>;
+
+export const insertObsReportSchema = createInsertSchema(obsReports).omit({ id: true, createdAt: true });
+export type ObsReport = typeof obsReports.$inferSelect;
+export type InsertObsReport = z.infer<typeof insertObsReportSchema>;
+
+export const insertObsVpatEntrySchema = createInsertSchema(obsVpatEntries).omit({ id: true, createdAt: true, updatedAt: true });
+export type ObsVpatEntry = typeof obsVpatEntries.$inferSelect;
+export type InsertObsVpatEntry = z.infer<typeof insertObsVpatEntrySchema>;

@@ -46,5 +46,5 @@
 - [Marketing single-item deep-links](marketing-deep-links.md) — all "land on the exact item" links route through itemDeepLinkHref (client/src/lib/marketing-deep-links.ts); target pages honor ?brief=/?emailId=/?post= to scroll+highlight/auto-open.
 - [Marketing calendar deep-link to undated posts](marketing-calendar-deeplink-undated.md) — undated ?post= targets live individually in the backlog query (not the rolled-up grid); highlight them in the rail, never drill an "unscheduled" batch.
 - [Drizzle correlated subquery counts](drizzle-correlated-subquery.md) — sql`` correlated count subqueries silently return 0; use leftJoin+groupBy instead and verify aggregates against direct SQL.
-- [Observatory workbenches](observatory-workbenches.md) — six modules on one obs_review_items table; pen-test findings wrap shared obs_findings (CVSS→severity); AI Governance init gated server-side on aiEnabled.
+- [Observatory workbenches](observatory-workbenches.md) — six modules on one table; pen-test findings wrap shared obs_findings; readiness weights/bands/blockers are a product contract; VPAT disclaimer mandatory.
 - [E2E API auth verification](e2e-api-auth-verification.md) — preview is login-gated; verify via temp bcrypt password on e2e-test user + curl session + X-Active-Tenant-Id header; dev AI provider 404s (env, not code).

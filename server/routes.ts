@@ -27,6 +27,7 @@ import { registerProductRoutes } from "./routes/products";
 import { registerProductFeedbackRoutes } from "./routes/product-feedback";
 import { registerObservatoryRoutes } from "./routes/observatory";
 import { registerObservatoryModuleRoutes } from "./routes/observatory-modules";
+import { registerObservatoryInsightRoutes } from "./routes/observatory-insights";
 import { registerIntelligenceRoutes } from "./routes/intelligence";
 import { registerExecutiveRegenRoutes } from "./routes/executive-regen";
 import { registerRelationshipReportRoutes } from "./routes/relationship-reports";
@@ -119,6 +120,7 @@ export async function registerRoutes(
   registerProductFeedbackRoutes(app);
   registerObservatoryRoutes(app);
   registerObservatoryModuleRoutes(app);
+  registerObservatoryInsightRoutes(app);
   registerIntelligenceRoutes(app);
   registerExecutiveRegenRoutes(app);
   registerRelationshipReportRoutes(app);
