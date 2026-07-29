@@ -1192,6 +1192,23 @@ export function registerObservatoryRoutes(app: Express) {
     }
   });
 
+  // ── Audit log history ────────────────────────────────────────────────────
+  app.get("/api/observatory/audit-logs", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    try {
+      const rows = await db
+        .select()
+        .from(obsAuditLogs)
+        .where(eq(obsAuditLogs.tenantDomain, ctx.tenantDomain))
+        .orderBy(desc(obsAuditLogs.createdAt))
+        .limit(200);
+      res.json(rows);
+    } catch (err) {
+      handleError(res, err, "audit-logs");
+    }
+  });
+
   // ── Demo seed ─────────────────────────────────────────────────────────────
   app.post("/api/observatory/seed-demo", async (req, res) => {
     const ctx = await ctxOr401(req, res);

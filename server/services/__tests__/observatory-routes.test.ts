@@ -1030,4 +1030,61 @@ describe("observatory routes", () => {
       expect(res.body.recentActivity).toEqual([]);
     });
   });
+
+  // ── GET /api/observatory/audit-logs ────────────────────────────────────────
+
+  describe("audit-log history", () => {
+    const AUDIT_ROW = {
+      id: "al-1",
+      tenantDomain: "acme.com",
+      userId: "user-1",
+      entityType: "finding",
+      entityId: "find-1",
+      action: "create",
+      description: "Created finding",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    };
+
+    it("returns 401 when no valid context is present", async () => {
+      const { ContextError } = await import("../../context");
+      vi.mocked(getRequestContext).mockRejectedValue(
+        new (ContextError as any)("No tenant context", 401),
+      );
+
+      const res = await request(app).get("/api/observatory/audit-logs");
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns only audit log rows belonging to the active tenant", async () => {
+      // The DB mock returns the single row we push; the endpoint must scope its
+      // query to ctx.tenantDomain so a different-tenant row never appears.
+      pushDb(AUDIT_ROW);
+
+      const res = await request(app).get("/api/observatory/audit-logs");
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].tenantDomain).toBe("acme.com");
+      expect(res.body[0].id).toBe("al-1");
+    });
+
+    it("does not return audit rows from a different tenant", async () => {
+      const OTHER_CTX = {
+        ...WRITER_CTX,
+        tenantId: "tenant-2",
+        tenantDomain: "other.com",
+      };
+      vi.mocked(getRequestContext).mockResolvedValue(OTHER_CTX as any);
+
+      // Simulate the DB returning nothing for the other tenant's domain.
+      pushDb();
+
+      const res = await request(app).get("/api/observatory/audit-logs");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+  });
 });
