@@ -701,7 +701,11 @@ export function registerConferencePromotionRoutes(app: Express) {
     const rows = await db
       .select()
       .from(generatedPosts)
-      .where(and(eq(generatedPosts.conferenceId, conf.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)))
+      .where(and(
+        eq(generatedPosts.conferenceId, conf.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        ne(generatedPosts.status, "deleted"),
+      ))
       .orderBy(generatedPosts.scheduledDate);
     res.json(rows);
   });
@@ -723,10 +727,15 @@ export function registerConferencePromotionRoutes(app: Express) {
       const platform: string | undefined = req.body?.platform; // filter by platform when set
       const postIds: string[] | undefined = Array.isArray(req.body?.postIds) ? req.body.postIds : undefined;
 
-      const where: Parameters<typeof db.update>[0] extends never ? never : any[] = [
+      // "unreject" and "reject" need to touch rejected rows too; other actions skip them.
+      const statusGuard = (action === "unreject" || action === "reject")
+        ? notInArray(generatedPosts.status, ["deleted", "posted"])
+        : notInArray(generatedPosts.status, ["deleted", "rejected", "posted"]);
+
+      const where: any[] = [
         eq(generatedPosts.conferenceId, conf.id),
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
-        notInArray(generatedPosts.status, ["deleted", "rejected", "posted"]),
+        statusGuard,
       ];
       if (platform) where.push(eq(generatedPosts.platform, platform));
       if (postIds?.length) where.push(inArray(generatedPosts.id, postIds));
@@ -737,9 +746,11 @@ export function registerConferencePromotionRoutes(app: Express) {
         updates.deliveryMode = null;
       } else if (action === "csv_only") {
         updates.deliveryMode = "csv";
-        // Keep status as-is (draft/approved) — the worker skips csv deliveryMode.
+      } else if (action === "reject") {
+        updates.status = "rejected";
+        updates.deliveryMode = null;
       } else {
-        // unapprove
+        // unapprove / unreject → back to draft
         updates.status = "draft";
         updates.deliveryMode = null;
       }
