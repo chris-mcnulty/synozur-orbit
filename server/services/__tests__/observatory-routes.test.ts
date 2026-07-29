@@ -116,7 +116,7 @@ vi.mock("../observatory-demo-seed", () => ({
 
 // ── Import under test AFTER mocks ────────────────────────────────────────────
 
-import { registerObservatoryRoutes } from "../../routes/observatory";
+import { registerObservatoryRoutes, selectOrphanedEvidenceIds } from "../../routes/observatory";
 import { getRequestContext } from "../../context";
 
 // ── Shared test fixtures ─────────────────────────────────────────────────────
@@ -285,9 +285,13 @@ describe("observatory routes", () => {
   describe("DELETE /api/observatory/applications/:id", () => {
     it("deletes an application and returns { success: true }", async () => {
       pushDb(APP);  // select(obsApplications).where() — existence check
+      pushDb();     // evidence from findings junction (none → candidateIds = [])
+      pushDb();     // evidence from assessments junction (none)
+      pushDb();     // evidence from versions junction (none)
       pushDb();     // delete(obsFindings).where()
       pushDb();     // delete(obsAssessments).where()
       pushDb();     // delete(obsVersions).where()
+      // candidateEvidenceIds = [] → skip the 5 still-linked checks and evidence delete
       pushDb(APP);  // delete(obsApplications).where().returning()
       pushDb();     // audit
 
@@ -329,19 +333,116 @@ describe("observatory routes", () => {
 
       const FINDING_2 = { ...FINDING, id: "find-2", title: "Open redirect" };
 
-      pushDb(APP);             // select — confirm app exists
-      pushDb(FINDING, FINDING_2); // delete(obsFindings).where() — 2 findings removed
-      pushDb(ASSESSMENT);      // delete(obsAssessments).where() — 1 assessment removed
-      pushDb(VERSION);         // delete(obsVersions).where() — 1 version removed
-      pushDb(APP);             // delete(obsApplications).where().returning()
-      pushDb();                // audit
+      pushDb(APP);                  // select — confirm app exists
+      pushDb();                     // evidence from findings (none → candidateIds = [])
+      pushDb();                     // evidence from assessments (none)
+      pushDb();                     // evidence from versions (none)
+      pushDb(FINDING, FINDING_2);   // delete(obsFindings) — 2 findings removed
+      pushDb(ASSESSMENT);           // delete(obsAssessments) — 1 assessment removed
+      pushDb(VERSION);              // delete(obsVersions) — 1 version removed
+      // candidateEvidenceIds = [] → skip the 5 still-linked checks and evidence delete
+      pushDb(APP);                  // delete(obsApplications).where().returning()
+      pushDb();                     // audit
 
       const res = await request(app).delete("/api/observatory/applications/app-1");
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ success: true });
-      // All 6 queue entries were consumed — no DB call was skipped.
+      // All 9 queue entries were consumed — no DB call was skipped.
       expect(dbQ).toHaveLength(0);
+    });
+
+    it("deletes orphaned evidence rows when an application is deleted", async () => {
+      // ev-1 is linked via a finding that belongs only to app-1.
+      // After app-1 is deleted, ev-1 has no remaining junction links → must be deleted.
+      pushDb(APP);              // existence check
+      pushDb({ id: "ev-1" });   // evidence from findings junction → candidate: ev-1
+      pushDb();                 // evidence from assessments junction (none)
+      pushDb();                 // evidence from versions junction (none)
+      // candidateEvidenceIds = ["ev-1"]
+      pushDb();                 // delete findings
+      pushDb();                 // delete assessments
+      pushDb();                 // delete versions
+      // Now check which candidates are still linked — all five junction tables:
+      pushDb();                 // obsFindingEvidence still-linked? → [] (none left)
+      pushDb();                 // obsAssessmentEvidence still-linked? → []
+      pushDb();                 // obsVersionEvidence still-linked? → []
+      pushDb();                 // obsControlEvidence still-linked? → []
+      pushDb();                 // obsReviewItemEvidence still-linked? → []
+      // orphanedIds = ["ev-1"] → delete evidence row
+      pushDb();                 // delete(obsEvidence) for ev-1
+      pushDb(APP);              // delete(obsApplications).where().returning()
+      pushDb();                 // audit
+
+      const res = await request(app).delete("/api/observatory/applications/app-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+      // All 15 queue entries were consumed — evidence delete was reached.
+      expect(dbQ).toHaveLength(0);
+    });
+
+    it("keeps evidence that is still linked to another application or control", async () => {
+      // ev-1 appears in this app's finding-evidence links, but after the cascade
+      // it is STILL referenced by another entity (e.g. a finding in a different
+      // application). The route must NOT delete it.
+      pushDb(APP);              // existence check
+      pushDb({ id: "ev-1" });   // evidence from findings junction → candidate: ev-1
+      pushDb();                 // evidence from assessments junction (none)
+      pushDb();                 // evidence from versions junction (none)
+      // candidateEvidenceIds = ["ev-1"]
+      pushDb();                 // delete findings
+      pushDb();                 // delete assessments
+      pushDb();                 // delete versions
+      // Still-linked check — ev-1 is STILL referenced via another finding:
+      pushDb({ id: "ev-1" });   // obsFindingEvidence still-linked → ev-1 present
+      pushDb();                 // obsAssessmentEvidence → []
+      pushDb();                 // obsVersionEvidence → []
+      pushDb();                 // obsControlEvidence → []
+      pushDb();                 // obsReviewItemEvidence → []
+      // orphanedIds = [] → no evidence delete issued
+      pushDb(APP);              // delete(obsApplications).where().returning()
+      pushDb();                 // audit
+
+      const res = await request(app).delete("/api/observatory/applications/app-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+      // All 14 queue entries were consumed — evidence delete was skipped (correct).
+      expect(dbQ).toHaveLength(0);
+    });
+  });
+
+  // ── selectOrphanedEvidenceIds (pure-function unit tests) ─────────────────────
+
+  describe("selectOrphanedEvidenceIds", () => {
+    it("returns all candidates when none are still linked", () => {
+      expect(selectOrphanedEvidenceIds(["ev1", "ev2", "ev3"], []).sort()).toEqual([
+        "ev1",
+        "ev2",
+        "ev3",
+      ]);
+    });
+
+    it("returns empty array when all candidates are still linked", () => {
+      expect(selectOrphanedEvidenceIds(["ev1", "ev2"], ["ev1", "ev2", "ev3"])).toEqual([]);
+    });
+
+    it("returns only candidates with no remaining links", () => {
+      expect(selectOrphanedEvidenceIds(["ev1", "ev2", "ev3", "ev4"], ["ev2", "ev4"]).sort()).toEqual([
+        "ev1",
+        "ev3",
+      ]);
+    });
+
+    it("returns empty array when candidate list is empty", () => {
+      expect(selectOrphanedEvidenceIds([], ["ev1", "ev2"])).toEqual([]);
+    });
+
+    it("handles duplicate still-linked IDs without error", () => {
+      expect(selectOrphanedEvidenceIds(["ev1", "ev2", "ev3"], ["ev1", "ev1", "ev2"])).toEqual([
+        "ev3",
+      ]);
     });
   });
 

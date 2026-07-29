@@ -28,6 +28,7 @@ import {
   obsAssessmentEvidence,
   obsVersionEvidence,
   obsControlEvidence,
+  obsReviewItemEvidence,
   obsFindingControls,
   obsAuditLogs,
   insertObsApplicationSchema,
@@ -51,6 +52,19 @@ import { ObjectStorageService } from "../replit_integrations/object_storage/obje
 const objectStorageService = new ObjectStorageService();
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Given a set of candidate evidence IDs and a set of IDs that still appear in
+ * at least one junction table, returns only the IDs that are now fully orphaned
+ * (no remaining links anywhere).  Exported for unit-testing.
+ */
+export function selectOrphanedEvidenceIds(
+  candidateIds: string[],
+  stillLinkedIds: string[],
+): string[] {
+  const linked = new Set(stillLinkedIds);
+  return candidateIds.filter((id) => !linked.has(id));
+}
 
 async function ctxOr401(req: Request, res: Response): Promise<RequestContext | null> {
   try {
@@ -244,6 +258,33 @@ export function registerObservatoryRoutes(app: Express) {
         .where(and(eq(obsApplications.id, appId), eq(obsApplications.tenantDomain, ctx.tenantDomain)));
       if (!existing) return res.status(404).json({ message: "Application not found" });
 
+      // Collect evidence IDs linked to this application's entities BEFORE deletion
+      // so we can clean up obs_evidence rows that become orphaned.
+      const [evFromFindings, evFromAssessments, evFromVersions] = await Promise.all([
+        db
+          .select({ id: obsFindingEvidence.evidenceId })
+          .from(obsFindingEvidence)
+          .innerJoin(obsFindings, eq(obsFindings.id, obsFindingEvidence.findingId))
+          .where(and(eq(obsFindings.applicationId, appId), eq(obsFindings.tenantDomain, ctx.tenantDomain))),
+        db
+          .select({ id: obsAssessmentEvidence.evidenceId })
+          .from(obsAssessmentEvidence)
+          .innerJoin(obsAssessments, eq(obsAssessments.id, obsAssessmentEvidence.assessmentId))
+          .where(and(eq(obsAssessments.applicationId, appId), eq(obsAssessments.tenantDomain, ctx.tenantDomain))),
+        db
+          .select({ id: obsVersionEvidence.evidenceId })
+          .from(obsVersionEvidence)
+          .innerJoin(obsVersions, eq(obsVersions.id, obsVersionEvidence.versionId))
+          .where(and(eq(obsVersions.applicationId, appId), eq(obsVersions.tenantDomain, ctx.tenantDomain))),
+      ]);
+      const candidateEvidenceIds = [
+        ...new Set([
+          ...evFromFindings.map((r) => r.id),
+          ...evFromAssessments.map((r) => r.id),
+          ...evFromVersions.map((r) => r.id),
+        ]),
+      ];
+
       // Explicit cascade cleanup — defensive layer on top of DB-level FK cascades.
       // Order matters: most-dependent rows first so that nothing is left dangling
       // even if a future migration accidentally drops a cascade rule.
@@ -261,6 +302,51 @@ export function registerObservatoryRoutes(app: Express) {
       await db.delete(obsVersions).where(
         and(eq(obsVersions.applicationId, appId), eq(obsVersions.tenantDomain, ctx.tenantDomain)),
       );
+
+      // Delete obs_evidence rows that are now orphaned (no remaining junction links).
+      // Candidates that were also linked to OTHER applications/controls/review-items
+      // will still have junction rows and will NOT be deleted.
+      if (candidateEvidenceIds.length > 0) {
+        const [stillFinding, stillAssessment, stillVersion, stillControl, stillReviewItem] =
+          await Promise.all([
+            db
+              .select({ id: obsFindingEvidence.evidenceId })
+              .from(obsFindingEvidence)
+              .where(inArray(obsFindingEvidence.evidenceId, candidateEvidenceIds)),
+            db
+              .select({ id: obsAssessmentEvidence.evidenceId })
+              .from(obsAssessmentEvidence)
+              .where(inArray(obsAssessmentEvidence.evidenceId, candidateEvidenceIds)),
+            db
+              .select({ id: obsVersionEvidence.evidenceId })
+              .from(obsVersionEvidence)
+              .where(inArray(obsVersionEvidence.evidenceId, candidateEvidenceIds)),
+            db
+              .select({ id: obsControlEvidence.evidenceId })
+              .from(obsControlEvidence)
+              .where(inArray(obsControlEvidence.evidenceId, candidateEvidenceIds)),
+            db
+              .select({ id: obsReviewItemEvidence.evidenceId })
+              .from(obsReviewItemEvidence)
+              .where(inArray(obsReviewItemEvidence.evidenceId, candidateEvidenceIds)),
+          ]);
+
+        const orphanedIds = selectOrphanedEvidenceIds(candidateEvidenceIds, [
+          ...stillFinding.map((r) => r.id),
+          ...stillAssessment.map((r) => r.id),
+          ...stillVersion.map((r) => r.id),
+          ...stillControl.map((r) => r.id),
+          ...stillReviewItem.map((r) => r.id),
+        ]);
+
+        if (orphanedIds.length > 0) {
+          await db
+            .delete(obsEvidence)
+            .where(
+              and(inArray(obsEvidence.id, orphanedIds), eq(obsEvidence.tenantDomain, ctx.tenantDomain)),
+            );
+        }
+      }
 
       const [deleted] = await db
         .delete(obsApplications)
