@@ -433,6 +433,10 @@ export default function CampaignDetailPage() {
       return next;
     });
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [digestDialogOpen, setDigestDialogOpen] = useState(false);
+  const [digestSourceContent, setDigestSourceContent] = useState("");
+  const [digestTitle, setDigestTitle] = useState("");
+  const [digestSocialAccountId, setDigestSocialAccountId] = useState("");
   const [newBlogDialogOpen, setNewBlogDialogOpen] = useState(false);
   const [blogIdeaText, setBlogIdeaText] = useState("");
   const [suggestedBlogTitle, setSuggestedBlogTitle] = useState("");
@@ -549,6 +553,34 @@ export default function CampaignDetailPage() {
       refreshHub();
     },
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const generateDigestMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/generate-digest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          sourceContent: digestSourceContent.trim(),
+          title: digestTitle.trim() || undefined,
+          socialAccountId: digestSocialAccountId || undefined,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to generate digest");
+      return r.json() as Promise<{ title: string; digestBriefId: string; newsletterBriefId: string; postId: string | null; calendarId: string }>;
+    },
+    onSuccess: (data) => {
+      refreshHub();
+      setDigestDialogOpen(false);
+      setDigestSourceContent("");
+      setDigestTitle("");
+      setDigestSocialAccountId("");
+      const parts = ["digest article", "newsletter"];
+      if (data.postId) parts.push("LinkedIn post");
+      toast({ title: `"${data.title}" created`, description: `${parts.join(", ")} — all linked to this campaign.` });
+    },
+    onError: (e: any) => toast({ title: "Failed to generate digest", description: e.message, variant: "destructive" }),
   });
 
   const hubCreateBlogPostMutation = useMutation({
@@ -2392,11 +2424,7 @@ export default function CampaignDetailPage() {
                   className="gap-2"
                   data-testid="button-linkedin-digest"
                   onClick={() => {
-                    const calId = contentPlan?.calendar?.id;
-                    const url = calId
-                      ? `/app/marketing/editorial-calendar?calendar=${calId}&openDigest=1`
-                      : `/app/marketing/editorial-calendar?openDigest=1`;
-                    navigate(url);
+                    setDigestDialogOpen(true);
                   }}
                 >
                   <Newspaper className="w-4 h-4" />
@@ -6168,6 +6196,88 @@ export default function CampaignDetailPage() {
               {schedulePostsMutation.isPending ? "Scheduling..." : "Schedule Posts"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* LinkedIn Digest dialog — paste source content, generate digest + newsletter + social post */}
+      <Dialog
+        open={digestDialogOpen}
+        onOpenChange={(o) => {
+          if (!o) { setDigestSourceContent(""); setDigestTitle(""); setDigestSocialAccountId(""); }
+          setDigestDialogOpen(o);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Newspaper className="w-4 h-4" /> LinkedIn Digest
+            </DialogTitle>
+            <DialogDescription>
+              Paste the LinkedIn posts, news snippets, or notes you've been tracking. Orbit generates a digest article, a newsletter, and a LinkedIn teaser post — all linked to this campaign.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="digest-title">Title <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <input
+                id="digest-title"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder={`LinkedIn Digest — ${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}`}
+                value={digestTitle}
+                onChange={(e) => setDigestTitle(e.target.value)}
+                data-testid="input-digest-title"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="digest-source">Source content <span className="text-destructive">*</span></Label>
+              <Textarea
+                id="digest-source"
+                placeholder={"Paste your LinkedIn posts, industry articles, or notes here\u2026\n\nExample:\n\u2014 AI adoption in mid-market is accelerating\u2026\n\u2014 Three things I learned at the conference this week\u2026\n\u2014 Article: [paste headline + key points]"}
+                value={digestSourceContent}
+                onChange={(e) => setDigestSourceContent(e.target.value)}
+                className="min-h-[180px] text-sm font-mono leading-relaxed"
+                data-testid="textarea-digest-source"
+              />
+              <p className="text-xs text-muted-foreground">The AI synthesizes this into a structured article, newsletter, and social post — no facts are invented.</p>
+            </div>
+            {allSocialAccounts.filter((a) => a.platform === "linkedin").length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="digest-account">LinkedIn account for the teaser post <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Select value={digestSocialAccountId} onValueChange={setDigestSocialAccountId}>
+                  <SelectTrigger id="digest-account" data-testid="select-digest-account">
+                    <SelectValue placeholder="Skip social post" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Skip social post</SelectItem>
+                    {allSocialAccounts.filter((a) => a.platform === "linkedin").map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.accountName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+              <p className="font-medium text-foreground">What gets created:</p>
+              <p>• Digest article (full LinkedIn Digest format)</p>
+              <p>• Newsletter (email-ready version)</p>
+              {(digestSocialAccountId || allSocialAccounts.filter((a) => a.platform === "linkedin").length === 0) ? null : <p className="text-muted-foreground">• LinkedIn teaser post (if you select an account above)</p>}
+              {digestSocialAccountId && <p>• LinkedIn teaser post → {allSocialAccounts.find((a) => a.id === digestSocialAccountId)?.accountName}</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDigestDialogOpen(false)} disabled={generateDigestMutation.isPending}>Cancel</Button>
+            <Button
+              onClick={() => generateDigestMutation.mutate()}
+              disabled={generateDigestMutation.isPending || !digestSourceContent.trim()}
+              data-testid="button-generate-digest"
+            >
+              {generateDigestMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating…</>
+              ) : (
+                <><Sparkles className="w-4 h-4 mr-2" />Generate digest</>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

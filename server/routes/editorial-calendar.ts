@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas, marketingTasks, marketingPlans, marketingLinks } from "@shared/schema";
+import { editorialCalendars, contentBriefs, contentAssets, campaigns, solutionAreas, personas, marketingTasks, marketingPlans, marketingLinks, generatedPosts, socialAccounts } from "@shared/schema";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { getRequestContext } from "../context";
@@ -1118,6 +1118,249 @@ export function registerEditorialCalendarRoutes(app: Express) {
     } catch (err: any) {
       console.error("[linkedin-digest preview]", err);
       res.status(500).json({ error: err.message || "Failed to fetch LinkedIn posts" });
+    }
+  });
+
+  // ── Campaign-scoped LinkedIn Digest ─────────────────────────────────────────
+  // One call from a campaign generates three linked outputs:
+  //   1. linkedin_digest content brief + draft (the full article)
+  //   2. newsletter content brief + draft
+  //   3. LinkedIn social teaser post (generatedPost, status=draft)
+  // Source is pasted content — no LinkedIn API scraping required.
+  app.post("/api/campaigns/:id/generate-digest", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [campaign] = await db
+        .select()
+        .from(campaigns)
+        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain), eq(campaigns.marketId, ctx.marketId)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const sourceContent = typeof req.body?.sourceContent === "string" ? req.body.sourceContent.trim() : "";
+      if (!sourceContent) return res.status(400).json({ error: "sourceContent is required — paste your LinkedIn posts or notes." });
+
+      const customTitle = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const socialAccountId = typeof req.body?.socialAccountId === "string" ? req.body.socialAccountId.trim() : "";
+
+      const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      const digestTitle = customTitle || `LinkedIn Digest — ${monthLabel}`;
+
+      // Find or create the campaign's editorial calendar.
+      let [calendar] = await db
+        .select()
+        .from(editorialCalendars)
+        .where(and(eq(editorialCalendars.campaignId, campaign.id), eq(editorialCalendars.tenantDomain, ctx.tenantDomain)))
+        .limit(1);
+      if (!calendar) {
+        [calendar] = await db
+          .insert(editorialCalendars)
+          .values({
+            id: randomUUID(),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            campaignId: campaign.id,
+            name: campaign.name,
+            description: campaign.description || null,
+            funnelTargets: DEFAULT_FUNNEL_TARGETS,
+            status: "active",
+            createdBy: ctx.userId,
+          })
+          .returning();
+      }
+      const calendarId = calendar.id;
+
+      const voiceProfile = await getPersonalVoiceProfile(ctx.userId);
+
+      // Insert the two briefs.
+      const digestBriefId = randomUUID();
+      const newsletterBriefId = randomUUID();
+
+      const [digestBrief, newsletterBrief] = await db.transaction(async (tx) => {
+        const [db1] = await tx
+          .insert(contentBriefs)
+          .values({
+            id: digestBriefId,
+            calendarId,
+            campaignId: campaign.id,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            title: digestTitle,
+            format: "linkedin_digest",
+            demandSignal: "Synthesized from curated LinkedIn posts and industry news",
+            funnelStage: "awareness",
+            differentiationAngle: "First-person perspective, own voice and experience",
+            targetReader: "LinkedIn connections, newsletter subscribers, and blog readers",
+            cta: "Follow for more or connect to continue the conversation",
+            status: "accepted",
+            aiGenerated: false,
+            sortOrder: 0,
+          })
+          .returning();
+
+        const [nb] = await tx
+          .insert(contentBriefs)
+          .values({
+            id: newsletterBriefId,
+            calendarId,
+            campaignId: campaign.id,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            title: `Newsletter: ${digestTitle}`,
+            format: "newsletter",
+            demandSignal: "Subscriber-ready version of the LinkedIn digest",
+            funnelStage: "awareness",
+            differentiationAngle: "Curated insights formatted for email delivery",
+            targetReader: "Email subscribers",
+            cta: "Share with a colleague or subscribe for more",
+            status: "accepted",
+            aiGenerated: false,
+            sortOrder: 1,
+          })
+          .returning();
+
+        return [db1, nb];
+      });
+
+      // Draft both in parallel — each gets the source content injected.
+      const [digestDraft, newsletterDraft] = await Promise.all([
+        draftFromBrief(digestBrief, {
+          isDefaultMarket: ctx.isDefaultMarket,
+          sourceContext: sourceContent,
+          soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
+        }),
+        draftFromBrief(newsletterBrief, {
+          isDefaultMarket: ctx.isDefaultMarket,
+          sourceContext: sourceContent,
+          soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
+        }),
+      ]);
+
+      if (!digestDraft.body?.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable digest draft. Please try again." });
+      }
+
+      // Persist assets and flip brief status.
+      const [digestAsset, newsletterAsset] = await db.transaction(async (tx) => {
+        const [da] = await tx
+          .insert(contentAssets)
+          .values({
+            id: randomUUID(),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            title: digestDraft.title || digestTitle,
+            description: digestDraft.meta || null,
+            content: digestDraft.body,
+            subtitle: digestDraft.subtitle || null,
+            overview: digestDraft.overview || null,
+            assetType: briefFormatToAssetType("linkedin_digest"),
+            status: "active",
+            sourceBriefId: digestBriefId,
+            createdBy: ctx.userId,
+          })
+          .returning();
+        await tx
+          .update(contentBriefs)
+          .set({ contentAssetId: da.id, status: "drafted", updatedAt: new Date() })
+          .where(eq(contentBriefs.id, digestBriefId));
+
+        const [na] = await tx
+          .insert(contentAssets)
+          .values({
+            id: randomUUID(),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            title: newsletterDraft.title || `Newsletter: ${digestTitle}`,
+            description: newsletterDraft.meta || null,
+            content: newsletterDraft.body || "",
+            assetType: briefFormatToAssetType("newsletter"),
+            status: "active",
+            sourceBriefId: newsletterBriefId,
+            createdBy: ctx.userId,
+          })
+          .returning();
+        await tx
+          .update(contentBriefs)
+          .set({ contentAssetId: na.id, status: "drafted", updatedAt: new Date() })
+          .where(eq(contentBriefs.id, newsletterBriefId));
+
+        return [da, na];
+      });
+
+      // Generate LinkedIn teaser post if an account was selected — non-fatal if it fails.
+      let postId: string | null = null;
+      if (socialAccountId) {
+        try {
+          const [account] = await db
+            .select()
+            .from(socialAccounts)
+            .where(and(eq(socialAccounts.id, socialAccountId), eq(socialAccounts.tenantDomain, ctx.tenantDomain)));
+
+          if (account) {
+            // Create a linkedin_post brief, draft it using the digest body as source.
+            const teaserBriefId = randomUUID();
+            const [teaserBrief] = await db
+              .insert(contentBriefs)
+              .values({
+                id: teaserBriefId,
+                calendarId,
+                campaignId: campaign.id,
+                tenantDomain: ctx.tenantDomain,
+                marketId: ctx.marketId || null,
+                title: `LinkedIn post: ${digestTitle}`,
+                format: "linkedin_post",
+                funnelStage: "awareness",
+                cta: "Read the full digest — link in comments",
+                status: "accepted",
+                aiGenerated: false,
+                sortOrder: 2,
+              })
+              .returning();
+
+            const teaserDraft = await draftFromBrief(teaserBrief, {
+              isDefaultMarket: ctx.isDefaultMarket,
+              // Feed the digest body as source so the teaser previews it faithfully.
+              sourceContext: `Here is the full digest article — write a compelling LinkedIn teaser that makes connections want to read it:\n\n${digestDraft.body.slice(0, 5000)}`,
+              soundLikeMeInstructions: voiceProfile?.soundLikeMeInstructions ?? null,
+            });
+
+            if (teaserDraft.body?.trim()) {
+              const newPostId = randomUUID();
+              await db.insert(generatedPosts).values({
+                id: newPostId,
+                tenantDomain: ctx.tenantDomain,
+                campaignId: campaign.id,
+                sourceBriefId: teaserBriefId,
+                socialAccountId: account.id,
+                platform: account.platform,
+                content: teaserDraft.body.trim(),
+                status: "draft",
+              });
+              await db
+                .update(contentBriefs)
+                .set({ status: "drafted", updatedAt: new Date() })
+                .where(eq(contentBriefs.id, teaserBriefId));
+              postId = newPostId;
+            }
+          }
+        } catch (teaserErr: any) {
+          console.warn("[generate-digest] Teaser post generation failed (non-fatal):", teaserErr?.message);
+        }
+      }
+
+      res.status(201).json({
+        title: digestDraft.title || digestTitle,
+        digestBriefId,
+        digestAssetId: digestAsset.id,
+        newsletterBriefId,
+        newsletterAssetId: newsletterAsset.id,
+        postId,
+        calendarId,
+      });
+    } catch (err: any) {
+      console.error("[generate-digest]", err);
+      res.status(500).json({ error: err.message || "Failed to generate digest" });
     }
   });
 
