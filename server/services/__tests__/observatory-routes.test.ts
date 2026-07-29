@@ -482,6 +482,68 @@ describe("observatory routes", () => {
     });
   });
 
+  describe("DELETE /api/observatory/versions/:id", () => {
+    it("deletes a version and returns { success: true }", async () => {
+      pushDb(VERSION);  // select(obsVersions).where() — existence check
+      pushDb();         // delete(obsFindings).where()
+      pushDb();         // delete(obsAssessments).where()
+      pushDb(VERSION);  // delete(obsVersions).where().returning()
+      pushDb();         // audit
+
+      const res = await request(app).delete("/api/observatory/versions/ver-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+    });
+
+    it("returns 404 when the version does not exist for this tenant", async () => {
+      pushDb();  // select(obsVersions).where() returns [] → not found
+      // no child deletes and no audit because we return early
+
+      const res = await request(app).delete("/api/observatory/versions/nonexistent");
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toMatch(/not found/i);
+    });
+
+    it("explicitly deletes findings and assessments before removing the version — cascade regression guard", async () => {
+      // This test is the cascade regression guard.
+      //
+      // The version→finding and version→assessment FKs use ON DELETE SET NULL
+      // (not CASCADE), meaning DB-level FK rules do NOT remove child rows when
+      // a version is deleted. Without the explicit application-level cleanup in
+      // the route, findings and assessments would be left behind with a null
+      // versionId. This test verifies that:
+      //   1. The route issues child-cleanup deletes (findings → assessments)
+      //      BEFORE deleting the version row.
+      //   2. Any future removal of those cleanup calls causes a queue underrun
+      //      and a test failure — catching the regression immediately.
+      //
+      // Cascade order verified:
+      //   obs_findings    (version-scoped) → cascades obs_finding_evidence,
+      //                                               obs_finding_controls,
+      //                                               obs_review_item_findings
+      //   obs_assessments (version-scoped) → cascades obs_review_items
+      //                                               (→ obs_review_item_evidence),
+      //                                               obs_assessment_evidence
+
+      const FINDING_2 = { ...FINDING, id: "find-2", title: "Open redirect" };
+
+      pushDb(VERSION);              // select — confirm version exists
+      pushDb(FINDING, FINDING_2);   // delete(obsFindings).where() — 2 findings removed
+      pushDb(ASSESSMENT);           // delete(obsAssessments).where() — 1 assessment removed
+      pushDb(VERSION);              // delete(obsVersions).where().returning()
+      pushDb();                     // audit
+
+      const res = await request(app).delete("/api/observatory/versions/ver-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+      // All 5 queue entries were consumed — no DB call was skipped.
+      expect(dbQ).toHaveLength(0);
+    });
+  });
+
   // ── Assessments ──────────────────────────────────────────────────────────────
 
   describe("POST /api/observatory/assessments", () => {

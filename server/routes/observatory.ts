@@ -442,9 +442,33 @@ export function registerObservatoryRoutes(app: Express) {
     if (!ctx) return;
     if (!canDelete(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
     try {
+      const versionId = req.params.id;
+
+      // Verify the version exists and belongs to this tenant before touching children.
+      const [existing] = await db
+        .select()
+        .from(obsVersions)
+        .where(and(eq(obsVersions.id, versionId), eq(obsVersions.tenantDomain, ctx.tenantDomain)));
+      if (!existing) return res.status(404).json({ message: "Version not found" });
+
+      // Explicit cascade cleanup — defensive layer on top of DB-level FK cascades.
+      // The version→finding and version→assessment FKs use ON DELETE SET NULL (not
+      // CASCADE), so without this block those rows would be orphaned with a null
+      // versionId rather than removed.
+      //   findings    → cascades obs_finding_evidence, obs_finding_controls,
+      //                           obs_review_item_findings
+      //   assessments → cascades obs_review_items (→ obs_review_item_evidence,
+      //                           obs_review_item_findings), obs_assessment_evidence
+      await db.delete(obsFindings).where(
+        and(eq(obsFindings.versionId, versionId), eq(obsFindings.tenantDomain, ctx.tenantDomain)),
+      );
+      await db.delete(obsAssessments).where(
+        and(eq(obsAssessments.versionId, versionId), eq(obsAssessments.tenantDomain, ctx.tenantDomain)),
+      );
+
       const [deleted] = await db
         .delete(obsVersions)
-        .where(and(eq(obsVersions.id, req.params.id), eq(obsVersions.tenantDomain, ctx.tenantDomain)))
+        .where(and(eq(obsVersions.id, versionId), eq(obsVersions.tenantDomain, ctx.tenantDomain)))
         .returning();
       if (!deleted) return res.status(404).json({ message: "Version not found" });
       await audit(ctx, "version", deleted.id, "delete", `Deleted version ${deleted.versionNumber}`);
