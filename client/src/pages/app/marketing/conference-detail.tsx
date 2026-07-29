@@ -1880,7 +1880,7 @@ function GenerateTab({
                 <SelectContent>
                   <SelectItem value="all">All targets</SelectItem>
                   <SelectItem value="__anchor__">Anchor posts</SelectItem>
-                  {sessions.map(s => (
+                  {sessions.filter(s => s.id).map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
                   ))}
                 </SelectContent>
