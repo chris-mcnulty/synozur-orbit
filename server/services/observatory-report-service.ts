@@ -149,7 +149,7 @@ interface ReportData {
   readiness: ReadinessResult | null;
 }
 
-async function loadReportData(tenantDomain: string, applicationId: string, versionId?: string | null): Promise<ReportData> {
+export async function loadReportData(tenantDomain: string, applicationId: string, versionId?: string | null): Promise<ReportData> {
   const [application] = await db
     .select()
     .from(obsApplications)
@@ -339,7 +339,7 @@ function renderTechnicalAssessment(data: ReportData, aiSummary: string | null): 
   return reportShell(`Technical Assessment Report — ${application.name}`, `${version ? `Version ${version.versionNumber}` : "All versions"}`, body);
 }
 
-async function renderAccessibilityVpat(tenantDomain: string, data: ReportData, aiSummary: string | null): Promise<string> {
+export async function renderAccessibilityVpat(tenantDomain: string, data: ReportData, aiSummary: string | null): Promise<string> {
   const { application, version, findings, evidenceByFinding } = data;
   const a11yFindings = findings.filter((f) => f.domain === "accessibility");
 

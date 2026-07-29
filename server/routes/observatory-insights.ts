@@ -42,7 +42,7 @@ import {
   snapshotReadiness,
   computePortfolioReadiness,
 } from "../services/observatory-readiness";
-import { generateReportAsync, renderReportPdf } from "../services/observatory-report-service";
+import { generateReportAsync, renderReportPdf, renderAccessibilityVpat, loadReportData } from "../services/observatory-report-service";
 import { completeForFeature } from "../services/ai-provider";
 
 // ── helpers (mirror server/routes/observatory.ts) ───────────────────────────
@@ -584,6 +584,28 @@ export function registerObservatoryInsightRoutes(app: Express) {
       res.json(updated);
     } catch (err) {
       handleError(res, err, "VPAT entry");
+    }
+  });
+
+  // Synchronous VPAT PDF export — renders on demand and streams back the file.
+  app.get("/api/observatory/versions/:id/vpat/export/pdf", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    try {
+      const found = await getTenantVersion(ctx, req.params.id);
+      if (!found) return res.status(404).json({ message: "Version not found" });
+      const data = await loadReportData(ctx.tenantDomain, found.application.id, found.version.id);
+      const html = await renderAccessibilityVpat(ctx.tenantDomain, data, null);
+      const pdf = await renderReportPdf(html, `VPAT export ${found.application.name} ${found.version.versionNumber}`);
+      const filename = `VPAT_${found.application.name}_v${found.version.versionNumber}`
+        .replace(/[^a-zA-Z0-9 _-]/g, "")
+        .replace(/\s+/g, "_");
+      await audit(ctx, "vpat", found.version.id, "export", `Exported VPAT PDF for ${found.application.name} ${found.version.versionNumber}`);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}.pdf"`);
+      res.send(pdf);
+    } catch (err) {
+      handleError(res, err, "VPAT PDF export");
     }
   });
 

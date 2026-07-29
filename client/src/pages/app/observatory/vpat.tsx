@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, Sparkles, AlertTriangle, ClipboardList, Pencil } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, AlertTriangle, ClipboardList, Pencil, Download } from "lucide-react";
 import { SeverityBadge } from "./shared";
 
 interface RelatedFinding {
@@ -72,6 +72,7 @@ export default function ObservatoryVpat() {
   const [editNotes, setEditNotes] = useState("");
   const [aiDrafting, setAiDrafting] = useState(false);
   const [aiDrafted, setAiDrafted] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const { data: apps } = useQuery<AppRow[]>({ queryKey: ["/api/observatory/applications"] });
   const { data: versions } = useQuery<VersionRow[]>({ queryKey: ["/api/observatory/versions"] });
@@ -122,6 +123,33 @@ export default function ObservatoryVpat() {
     setEditRemarks(entry.remarks ?? "");
     setEditNotes(entry.reviewerNotes ?? "");
     setAiDrafted(entry.aiDrafted);
+  };
+
+  const exportPdf = async () => {
+    if (!versionId) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/observatory/versions/${versionId}/vpat/export/pdf`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Export failed" }));
+        toast({ title: "Export failed", description: err.message ?? "Could not generate PDF.", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : "VPAT_export.pdf";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: "Export failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const draftWithAi = async () => {
@@ -208,9 +236,21 @@ export default function ObservatoryVpat() {
               </Button>
             </div>
             {data && data.entries.length > 0 && (
-              <p className="text-sm text-muted-foreground mt-3" data-testid="text-vpat-progress">
-                {evaluated} of {data.entries.length} criteria evaluated.
-              </p>
+              <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
+                <p className="text-sm text-muted-foreground" data-testid="text-vpat-progress">
+                  {evaluated} of {data.entries.length} criteria evaluated.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportPdf}
+                  disabled={exporting}
+                  data-testid="button-export-vpat-pdf"
+                >
+                  {exporting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
+                  Export PDF
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
