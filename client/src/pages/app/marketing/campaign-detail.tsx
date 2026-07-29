@@ -437,6 +437,12 @@ export default function CampaignDetailPage() {
   const [digestSourceContent, setDigestSourceContent] = useState("");
   const [digestTitle, setDigestTitle] = useState("");
   const [digestSocialAccountId, setDigestSocialAccountId] = useState("");
+  const [digestScrapeUrl, setDigestScrapeUrl] = useState("");
+  const [digestScrapeFrom, setDigestScrapeFrom] = useState("");
+  const [digestScrapeTo, setDigestScrapeTo] = useState("");
+  const [digestScrapedPosts, setDigestScrapedPosts] = useState<Array<{ id: string; text: string; postedAt: string; kept: boolean }>>([]);
+  const [digestScrapeLoading, setDigestScrapeLoading] = useState(false);
+  const [digestScrapeError, setDigestScrapeError] = useState("");
   const [newBlogDialogOpen, setNewBlogDialogOpen] = useState(false);
   const [blogIdeaText, setBlogIdeaText] = useState("");
   const [suggestedBlogTitle, setSuggestedBlogTitle] = useState("");
@@ -557,12 +563,17 @@ export default function CampaignDetailPage() {
 
   const generateDigestMutation = useMutation({
     mutationFn: async () => {
+      const keptPosts = digestScrapedPosts.filter((p) => p.kept).map((p) => {
+        const dateLabel = p.postedAt ? `[${new Date(p.postedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}] ` : "";
+        return `${dateLabel}${p.text}`;
+      });
+      const combined = [...keptPosts, digestSourceContent.trim()].filter(Boolean).join("\n\n---\n\n");
       const r = await fetch(`/api/campaigns/${id}/generate-digest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          sourceContent: digestSourceContent.trim(),
+          sourceContent: combined,
           title: digestTitle.trim() || undefined,
           socialAccountId: digestSocialAccountId || undefined,
         }),
@@ -576,6 +587,11 @@ export default function CampaignDetailPage() {
       setDigestSourceContent("");
       setDigestTitle("");
       setDigestSocialAccountId("");
+      setDigestScrapeUrl("");
+      setDigestScrapeFrom("");
+      setDigestScrapeTo("");
+      setDigestScrapedPosts([]);
+      setDigestScrapeError("");
       const parts = ["digest article", "newsletter"];
       if (data.postId) parts.push("LinkedIn post");
       toast({ title: `"${data.title}" created`, description: `${parts.join(", ")} — all linked to this campaign.` });
@@ -6199,52 +6215,154 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* LinkedIn Digest dialog — paste source content, generate digest + newsletter + social post */}
+      {/* LinkedIn Digest dialog */}
       <Dialog
         open={digestDialogOpen}
         onOpenChange={(o) => {
-          if (!o) { setDigestSourceContent(""); setDigestTitle(""); setDigestSocialAccountId(""); }
+          if (!o) {
+            setDigestSourceContent(""); setDigestTitle(""); setDigestSocialAccountId("");
+            setDigestScrapeUrl(""); setDigestScrapeFrom(""); setDigestScrapeTo("");
+            setDigestScrapedPosts([]); setDigestScrapeError("");
+          }
           setDigestDialogOpen(o);
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Newspaper className="w-4 h-4" /> LinkedIn Digest
             </DialogTitle>
             <DialogDescription>
-              Paste the LinkedIn posts, news snippets, or notes you've been tracking. Orbit generates a digest article, a newsletter, and a LinkedIn teaser post — all linked to this campaign.
+              Pull in posts automatically, remove anything irrelevant, then add anything missing. Orbit generates a digest article, newsletter, and LinkedIn teaser — all linked to this campaign.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+
+          <div className="space-y-5 py-2">
+            {/* ── Title ── */}
             <div className="space-y-1.5">
-              <Label htmlFor="digest-title">Title <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="digest-title">Title <span className="text-muted-foreground font-normal text-xs">(optional — AI picks one if blank)</span></Label>
               <input
                 id="digest-title"
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                placeholder={`LinkedIn Digest — ${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}`}
+                placeholder={`LinkedIn Digest \u2014 ${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}`}
                 value={digestTitle}
                 onChange={(e) => setDigestTitle(e.target.value)}
-                data-testid="input-digest-title"
               />
             </div>
+
+            {/* ── Fetch from LinkedIn ── */}
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Step 1 — Fetch posts from LinkedIn</p>
+              <div className="space-y-2">
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="https://www.linkedin.com/in/your-profile"
+                  value={digestScrapeUrl}
+                  onChange={(e) => { setDigestScrapeUrl(e.target.value); setDigestScrapeError(""); }}
+                />
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="date"
+                    className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={digestScrapeFrom}
+                    onChange={(e) => setDigestScrapeFrom(e.target.value)}
+                  />
+                  <span className="text-muted-foreground text-xs shrink-0">to</span>
+                  <input
+                    type="date"
+                    className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={digestScrapeTo}
+                    onChange={(e) => setDigestScrapeTo(e.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={digestScrapeLoading || !digestScrapeUrl.trim() || !digestScrapeFrom || !digestScrapeTo}
+                    onClick={async () => {
+                      setDigestScrapeError("");
+                      setDigestScrapeLoading(true);
+                      try {
+                        const r = await fetch("/api/linkedin-digest/preview", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: "include",
+                          body: JSON.stringify({ profileUrl: digestScrapeUrl.trim(), startDate: digestScrapeFrom, endDate: digestScrapeTo }),
+                        });
+                        const data = await r.json();
+                        if (!r.ok) throw new Error(data.error || "Failed to fetch posts");
+                        const incoming: Array<{ id: string; text: string; postedAt: string; kept: boolean }> =
+                          (data.posts ?? []).map((p: any, i: number) => ({ id: `scraped-${i}-${Date.now()}`, text: p.text, postedAt: p.postedAt ?? "", kept: true }));
+                        setDigestScrapedPosts(incoming);
+                        if (incoming.length === 0) setDigestScrapeError("No posts found in that date range.");
+                      } catch (e: any) {
+                        setDigestScrapeError(e.message);
+                      } finally {
+                        setDigestScrapeLoading(false);
+                      }
+                    }}
+                  >
+                    {digestScrapeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Fetch"}
+                  </Button>
+                </div>
+                {digestScrapeError && <p className="text-xs text-destructive">{digestScrapeError}</p>}
+              </div>
+
+              {/* Fetched posts list */}
+              {digestScrapedPosts.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">{digestScrapedPosts.filter((p) => p.kept).length} of {digestScrapedPosts.length} posts selected</p>
+                    <div className="flex gap-2">
+                      <button className="text-xs text-primary hover:underline" onClick={() => setDigestScrapedPosts((ps) => ps.map((p) => ({ ...p, kept: true })))}>Select all</button>
+                      <button className="text-xs text-muted-foreground hover:underline" onClick={() => setDigestScrapedPosts((ps) => ps.map((p) => ({ ...p, kept: false })))}>Deselect all</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                    {digestScrapedPosts.map((post) => (
+                      <div
+                        key={post.id}
+                        className={`flex gap-2 rounded-md border p-2 text-xs cursor-pointer transition-colors ${post.kept ? "bg-background border-border" : "bg-muted/20 border-dashed opacity-50"}`}
+                        onClick={() => setDigestScrapedPosts((ps) => ps.map((p) => p.id === post.id ? { ...p, kept: !p.kept } : p))}
+                      >
+                        <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm border flex items-center justify-center ${post.kept ? "bg-primary border-primary" : "border-muted-foreground"}`}>
+                          {post.kept && <span className="text-[9px] text-primary-foreground font-bold leading-none">✓</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {post.postedAt && <p className="text-[10px] text-muted-foreground mb-0.5">{new Date(post.postedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>}
+                          <p className="line-clamp-3 leading-relaxed">{post.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Add anything missing ── */}
             <div className="space-y-1.5">
-              <Label htmlFor="digest-source">Source content <span className="text-destructive">*</span></Label>
+              <Label htmlFor="digest-source">
+                {digestScrapedPosts.length > 0
+                  ? <span>Step 2 — Add anything missing <span className="text-muted-foreground font-normal text-xs">(optional)</span></span>
+                  : <span>Source content <span className="text-destructive">*</span></span>}
+              </Label>
               <Textarea
                 id="digest-source"
-                placeholder={"Paste your LinkedIn posts, industry articles, or notes here\u2026\n\nExample:\n\u2014 AI adoption in mid-market is accelerating\u2026\n\u2014 Three things I learned at the conference this week\u2026\n\u2014 Article: [paste headline + key points]"}
+                placeholder={digestScrapedPosts.length > 0
+                  ? "Paste any extra articles, news snippets, or notes not captured above\u2026"
+                  : "Paste your LinkedIn posts, industry articles, or notes here\u2026\n\nExample:\n\u2014 AI adoption in mid-market is accelerating\u2026\n\u2014 Three things I learned at the conference this week\u2026\n\u2014 Article: [paste headline + key points]"}
                 value={digestSourceContent}
                 onChange={(e) => setDigestSourceContent(e.target.value)}
-                className="min-h-[180px] text-sm font-mono leading-relaxed"
-                data-testid="textarea-digest-source"
+                className="min-h-[120px] text-sm leading-relaxed"
               />
               <p className="text-xs text-muted-foreground">The AI synthesizes this into a structured article, newsletter, and social post — no facts are invented.</p>
             </div>
+
+            {/* ── LinkedIn account for teaser ── */}
             {allSocialAccounts.filter((a) => a.platform === "linkedin").length > 0 && (
               <div className="space-y-1.5">
-                <Label htmlFor="digest-account">LinkedIn account for the teaser post <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Label htmlFor="digest-account">LinkedIn account for teaser post <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                 <Select value={digestSocialAccountId} onValueChange={setDigestSocialAccountId}>
-                  <SelectTrigger id="digest-account" data-testid="select-digest-account">
+                  <SelectTrigger id="digest-account">
                     <SelectValue placeholder="Skip social post" />
                   </SelectTrigger>
                   <SelectContent>
@@ -6256,20 +6374,28 @@ export default function CampaignDetailPage() {
                 </Select>
               </div>
             )}
+
+            {/* ── What gets created ── */}
             <div className="rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground space-y-0.5">
               <p className="font-medium text-foreground">What gets created:</p>
-              <p>• Digest article (full LinkedIn Digest format)</p>
+              <p>• Digest article (LinkedIn Digest format)</p>
               <p>• Newsletter (email-ready version)</p>
-              {(digestSocialAccountId || allSocialAccounts.filter((a) => a.platform === "linkedin").length === 0) ? null : <p className="text-muted-foreground">• LinkedIn teaser post (if you select an account above)</p>}
-              {digestSocialAccountId && <p>• LinkedIn teaser post → {allSocialAccounts.find((a) => a.id === digestSocialAccountId)?.accountName}</p>}
+              {digestSocialAccountId
+                ? <p>• LinkedIn teaser post → {allSocialAccounts.find((a) => a.id === digestSocialAccountId)?.accountName}</p>
+                : allSocialAccounts.filter((a) => a.platform === "linkedin").length > 0
+                  ? <p className="text-muted-foreground/70">• LinkedIn teaser post (select an account above to enable)</p>
+                  : null}
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDigestDialogOpen(false)} disabled={generateDigestMutation.isPending}>Cancel</Button>
             <Button
               onClick={() => generateDigestMutation.mutate()}
-              disabled={generateDigestMutation.isPending || !digestSourceContent.trim()}
-              data-testid="button-generate-digest"
+              disabled={
+                generateDigestMutation.isPending ||
+                (digestScrapedPosts.filter((p) => p.kept).length === 0 && !digestSourceContent.trim())
+              }
             >
               {generateDigestMutation.isPending ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating…</>
