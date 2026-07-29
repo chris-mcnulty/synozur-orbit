@@ -1789,11 +1789,14 @@ async function runGeneration(
       moment.kind === "anchor"
         ? moment.img
         : sessionImageBySession.get(moment.session.id);
-    const variantGroup = randomUUID();
 
     for (const account of accounts) {
       const variants = await getVariants(momentIdx, account);
       if (variants.length === 0) continue;
+      // Each (slot × account) is its own post; give it a unique variantGroup so
+      // the review UI shows one card per platform rather than collapsing all
+      // platforms for a slot into a single group.
+      const variantGroup = randomUUID();
 
       // Cycle: appearance 0→v0, 1→v1, 2→v2, 3→v0, …
       const content = variants[appearance % variants.length];
