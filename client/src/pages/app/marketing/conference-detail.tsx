@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X } from "lucide-react";
 
 interface Speaker {
   name: string;
@@ -207,6 +207,7 @@ interface Post {
   scheduledDate?: string | null;
   overrideImageUrl?: string | null;
   status: string;
+  deliveryMode?: string | null;
 }
 interface SocialAccount {
   id: string;
@@ -1079,9 +1080,29 @@ function GraphicsTab({
 
   const deleteAnchorImage = async (imgId: string) => {
     try {
-      await fetch(`/api/conference-images/${imgId}/archive`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/conference-images/${imgId}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to delete image");
       onChange();
-    } catch { /* ignore */ }
+      toast({ title: "Anchor image removed" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const removeEventLogo = async () => {
+    try {
+      const r = await fetch(`/api/conferences/${conf.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ eventLogoFileUrl: null, eventLogoFileType: null }),
+      });
+      if (!r.ok) throw new Error("Failed to remove event logo");
+      onChange();
+      toast({ title: "Event logo removed" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
   };
 
   const uploadEventLogo = async (file: File) => {
@@ -1155,6 +1176,17 @@ function GraphicsTab({
                   <span><Upload className="w-3.5 h-3.5 mr-1" /> {conf.eventLogoFileUrl ? "Replace" : "Upload logo"}</span>
                 </Button>
               </label>
+              {conf.eventLogoFileUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={removeEventLogo}
+                  data-testid="button-remove-event-logo"
+                >
+                  <X className="w-3.5 h-3.5 mr-1" /> Remove
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1561,8 +1593,53 @@ function GenerateTab({
     onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
   });
 
+  const approveGroup = useMutation({
+    mutationFn: async ({ postIds, action }: { postIds: string[]; action: "approve" | "csv_only" | "unapprove" }) => {
+      const r = await fetch(`/api/conferences/${conferenceId}/posts/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ postIds, action }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update posts");
+    },
+    onSuccess: () => refetchPosts(),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const bulkApprove = useMutation({
+    mutationFn: async ({ platform, action }: { platform: string; action: "approve" | "csv_only" | "unapprove" }) => {
+      const r = await fetch(`/api/conferences/${conferenceId}/posts/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ platform, action }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update posts");
+    },
+    onSuccess: (_, vars) => {
+      refetchPosts();
+      const label = vars.action === "approve" ? "Approved for auto-publish" : vars.action === "csv_only" ? "Marked as CSV-only" : "Reset to draft";
+      toast({ title: label });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const groups = useMemo(() => groupPosts(posts), [posts]);
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  // Platforms that have connected accounts (for showing Twitter hint)
+  const connectedPlatforms = useMemo(() => new Set(accounts.map((a) => a.platform)), [accounts]);
+
+  // Group counts per platform for bulk actions
+  const platformGroups = useMemo(() => {
+    const map = new Map<string, PostGroup[]>();
+    for (const g of groups) {
+      if (!map.has(g.platform)) map.set(g.platform, []);
+      map.get(g.platform)!.push(g);
+    }
+    return map;
+  }, [groups]);
 
   return (
     <div className="space-y-4">
@@ -1595,6 +1672,15 @@ function GenerateTab({
                   </button>
                 ))}
               </div>
+            )}
+            {!connectedPlatforms.has("twitter") && !connectedPlatforms.has("x_post") && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Want to generate X/Twitter posts?{" "}
+                <Link href="/app/marketing/social-accounts" className="underline">
+                  Connect an X account
+                </Link>{" "}
+                and it will appear here.
+              </p>
             )}
           </div>
 
@@ -1632,6 +1718,90 @@ function GenerateTab({
         </CardContent>
       </Card>
 
+      {posts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Approve posts for publishing</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Generated posts are drafts. <strong>Approve</strong> posts on a connected account and Orbit will
+              auto-publish them on schedule. Mark others as <strong>CSV-only</strong> to export them for external
+              schedulers (Buffer, Hootsuite, SocialPilot, etc.) instead.
+            </p>
+            {Array.from(platformGroups.entries()).map(([platform, pgs]) => {
+              const approvedCount = pgs.filter((g) => g.approvalState === "approved").length;
+              const csvCount = pgs.filter((g) => g.approvalState === "csv_only").length;
+              const draftCount = pgs.length - approvedCount - csvCount;
+              const isLinkedIn = platform === "linkedin";
+              const hasAccount = connectedPlatforms.has(platform) || connectedPlatforms.has(platform.replace("x_post", "twitter"));
+              return (
+                <div key={platform} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium capitalize">{platform === "twitter" || platform === "x_post" ? "X / Twitter" : platform}</span>
+                      <span className="text-xs text-muted-foreground">{pgs.length} post{pgs.length !== 1 ? "s" : ""}</span>
+                      {approvedCount > 0 && (
+                        <Badge variant="default" className="text-xs gap-1">
+                          <CheckCircle2 className="w-3 h-3" />{approvedCount} approved
+                        </Badge>
+                      )}
+                      {csvCount > 0 && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <Ban className="w-3 h-3" />{csvCount} CSV-only
+                        </Badge>
+                      )}
+                      {draftCount > 0 && (
+                        <Badge variant="outline" className="text-xs">{draftCount} draft</Badge>
+                      )}
+                    </div>
+                    {hasAccount ? (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="gap-1.5 h-7 text-xs"
+                          disabled={bulkApprove.isPending}
+                          onClick={() => bulkApprove.mutate({ platform, action: "approve" })}
+                          data-testid={`button-approve-all-${platform}`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />Approve all
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 h-7 text-xs"
+                          disabled={bulkApprove.isPending}
+                          onClick={() => bulkApprove.mutate({ platform, action: "csv_only" })}
+                          data-testid={`button-csvonly-all-${platform}`}
+                        >
+                          <Ban className="w-3.5 h-3.5" />CSV-only
+                        </Button>
+                        {(approvedCount > 0 || csvCount > 0) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-muted-foreground"
+                            disabled={bulkApprove.isPending}
+                            onClick={() => bulkApprove.mutate({ platform, action: "unapprove" })}
+                          >
+                            Reset
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {isLinkedIn ? "Connect a LinkedIn account to approve for auto-publish" : "No connected account — use CSV export"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1668,19 +1838,53 @@ function GenerateTab({
           ) : (
             groups.map((g) => (
               <div key={g.key} className="rounded-md border p-3">
-                <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Badge variant={g.postRole === "anchor" ? "default" : "secondary"}>
                       {g.postRole === "anchor" ? "Anchor" : "Session"}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">{g.platform}</span>
+                    <span className="text-xs text-muted-foreground capitalize">{g.platform}</span>
+                    {g.approvalState === "approved" && (
+                      <Badge variant="default" className="text-xs gap-1 bg-green-600">
+                        <CheckCircle2 className="w-3 h-3" />Approved
+                      </Badge>
+                    )}
+                    {g.approvalState === "csv_only" && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        <Ban className="w-3 h-3" />CSV-only
+                      </Badge>
+                    )}
                   </div>
-                  {g.scheduledDate && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(g.scheduledDate).toLocaleString()}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {g.scheduledDate && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {new Date(g.scheduledDate).toLocaleString()}
+                      </span>
+                    )}
+                    {g.approvalState !== "approved" && connectedPlatforms.has(g.platform) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs gap-1 text-green-600 hover:text-green-700 hover:bg-green-50"
+                        disabled={approveGroup.isPending}
+                        onClick={() => approveGroup.mutate({ postIds: g.variants.map((v) => v.id), action: "approve" })}
+                      >
+                        <CheckCircle2 className="w-3 h-3" />Approve
+                      </Button>
+                    )}
+                    {g.approvalState !== "csv_only" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-xs gap-1 text-muted-foreground"
+                        disabled={approveGroup.isPending}
+                        onClick={() => approveGroup.mutate({ postIds: g.variants.map((v) => v.id), action: "csv_only" })}
+                      >
+                        <Ban className="w-3 h-3" />CSV only
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-[120px,1fr]">
                   <div className="aspect-video rounded border bg-muted/40 flex items-center justify-center overflow-hidden">
@@ -1718,6 +1922,8 @@ interface PostGroup {
   scheduledDate?: string | null;
   imageUrl?: string | null;
   variants: Post[];
+  // Derived from variants: all approved, all csv_only, or mixed
+  approvalState?: "approved" | "csv_only" | "draft";
 }
 
 function groupPosts(posts: Post[]): PostGroup[] {
@@ -1736,7 +1942,13 @@ function groupPosts(posts: Post[]): PostGroup[] {
     }
     map.get(key)!.variants.push(p);
   }
-  return Array.from(map.values()).sort((a, b) => {
+  const groups = Array.from(map.values());
+  for (const g of groups) {
+    const approved = g.variants.every((v) => v.status === "approved");
+    const csvOnly = g.variants.every((v) => v.deliveryMode === "csv");
+    g.approvalState = approved ? "approved" : csvOnly ? "csv_only" : "draft";
+  }
+  return groups.sort((a, b) => {
     if (a.postRole === "anchor" && b.postRole !== "anchor") return -1;
     if (b.postRole === "anchor" && a.postRole !== "anchor") return 1;
     return (a.scheduledDate || "").localeCompare(b.scheduledDate || "");

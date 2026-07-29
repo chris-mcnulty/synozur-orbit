@@ -706,6 +706,52 @@ export function registerConferencePromotionRoutes(app: Express) {
     res.json(rows);
   });
 
+  // Bulk approve / mark-CSV-only for conference posts so they flow through
+  // the Marketing Publish Worker (which requires status="approved") or are
+  // explicitly reserved for CSV export (deliveryMode="csv").
+  app.post("/api/conferences/:id/posts/approve", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
+      if (!conf) return res.status(404).json({ error: "Conference not found" });
+
+      // action: "approve" → status=approved, deliveryMode=null (eligible for auto-publish)
+      //         "csv_only" → deliveryMode="csv" (excluded from worker)
+      //         "unapprove" → status=draft, deliveryMode=null
+      const action: string = req.body?.action ?? "approve";
+      const platform: string | undefined = req.body?.platform; // filter by platform when set
+      const postIds: string[] | undefined = Array.isArray(req.body?.postIds) ? req.body.postIds : undefined;
+
+      const where: Parameters<typeof db.update>[0] extends never ? never : any[] = [
+        eq(generatedPosts.conferenceId, conf.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        notInArray(generatedPosts.status, ["deleted", "rejected", "posted"]),
+      ];
+      if (platform) where.push(eq(generatedPosts.platform, platform));
+      if (postIds?.length) where.push(inArray(generatedPosts.id, postIds));
+
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (action === "approve") {
+        updates.status = "approved";
+        updates.deliveryMode = null;
+      } else if (action === "csv_only") {
+        updates.deliveryMode = "csv";
+        // Keep status as-is (draft/approved) — the worker skips csv deliveryMode.
+      } else {
+        // unapprove
+        updates.status = "draft";
+        updates.deliveryMode = null;
+      }
+
+      await db.update(generatedPosts).set(updates).where(and(...where));
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[conference-posts:approve]", err);
+      res.status(500).json({ error: err.message || "Failed to update posts" });
+    }
+  });
+
   // Export generated conference posts as CSV, reusing the same scheduler
   // formats (generic / socialpilot / hootsuite / sproutsocial) as campaigns.
   app.post("/api/conferences/:id/export-csv", async (req, res) => {
