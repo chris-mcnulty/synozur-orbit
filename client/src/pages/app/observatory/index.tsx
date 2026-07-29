@@ -35,6 +35,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  LineChart,
+  Line,
+  Legend,
+  CartesianGrid,
+  ReferenceLine,
 } from "recharts";
 
 interface DomainScore {
@@ -64,6 +69,23 @@ interface ReadinessEntry {
   blocked: boolean;
   domainScores: DomainScore[];
   blockers: Blocker[];
+}
+
+interface TrendPoint {
+  id: string;
+  versionId: string;
+  overallScore: number;
+  band: string;
+  blocked: boolean;
+  computedAt: string;
+}
+
+interface TrendEntry {
+  applicationId: string;
+  applicationName: string;
+  versionId: string;
+  versionNumber: string;
+  history: TrendPoint[];
 }
 
 interface DashboardData {
@@ -123,6 +145,75 @@ function BandBadge({ band }: { band: string }) {
     <Badge variant="outline" className={BAND_STYLES[band] ?? ""} data-testid={`badge-band-${band.toLowerCase().replace(/\s+/g, "-")}`}>
       {band}
     </Badge>
+  );
+}
+
+// Stable palette for up to 10 applications in the trend chart.
+const TREND_COLORS = [
+  "#7c6bd6", "#4f9cf9", "#34b3a0", "#f97316", "#e879f9",
+  "#22c55e", "#ef4444", "#eab308", "#06b6d4", "#8b5cf6",
+];
+
+function ReadinessTrendChart({ trends }: { trends: TrendEntry[] }) {
+  // Merge all snapshots into a time-keyed dataset: { date, appName1: score, appName2: score }
+  const dateSet = new Set<string>();
+  for (const t of trends) {
+    for (const p of t.history) {
+      dateSet.add(p.computedAt);
+    }
+  }
+  const sortedDates = [...dateSet].sort();
+
+  // Build chart rows
+  const rows = sortedDates.map((date) => {
+    const row: Record<string, string | number> = {
+      date: new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }),
+      rawDate: date,
+    };
+    for (const t of trends) {
+      // Use the most-recent snapshot at or before this date
+      const point = t.history.filter((p) => p.computedAt <= date).at(-1);
+      if (point !== undefined) row[t.applicationName] = point.overallScore;
+    }
+    return row;
+  });
+
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground" data-testid="text-no-trend-data">
+        No snapshots yet. Click <strong>Snapshot all</strong> to record the first data point.
+      </p>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <LineChart data={rows} margin={{ left: -10, right: 10, top: 4, bottom: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.12)" />
+        <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+        <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}`} />
+        <Tooltip
+          formatter={(value: number, name: string) => [`${value}/100`, name]}
+          contentStyle={{ fontSize: 12 }}
+        />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        <ReferenceLine y={90} stroke="#16a34a" strokeDasharray="4 2" label={{ value: "Ready", position: "right", fontSize: 9, fill: "#16a34a" }} />
+        <ReferenceLine y={75} stroke="#ca8a04" strokeDasharray="4 2" label={{ value: "Minor rem.", position: "right", fontSize: 9, fill: "#ca8a04" }} />
+        <ReferenceLine y={60} stroke="#ea580c" strokeDasharray="4 2" label={{ value: "Rem. req.", position: "right", fontSize: 9, fill: "#ea580c" }} />
+        {trends.map((t, i) => (
+          <Line
+            key={t.applicationId}
+            type="monotone"
+            dataKey={t.applicationName}
+            stroke={TREND_COLORS[i % TREND_COLORS.length]}
+            strokeWidth={2}
+            dot={{ r: 3 }}
+            connectNulls
+            data-testid={`line-trend-${t.applicationId}`}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -193,6 +284,28 @@ export default function ObservatoryDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery<DashboardData>({ queryKey: ["/api/observatory/exec-dashboard"] });
+  const { data: trends, isLoading: trendsLoading } = useQuery<TrendEntry[]>({
+    queryKey: ["/api/observatory/readiness-trends"],
+    enabled: !isLoading && !!data && data.kpis.applications > 0,
+  });
+
+  const snapshotAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/observatory/readiness-snapshot-all");
+      return res.json() as Promise<{ snapshotted: number; errors?: string[] }>;
+    },
+    onSuccess: (d) => {
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/observatory") });
+      toast({
+        title: `${d.snapshotted} readiness snapshot${d.snapshotted === 1 ? "" : "s"} recorded`,
+        description: d.errors?.length
+          ? `Completed with errors: ${d.errors.join("; ")}`
+          : "Trend data updated. Snapshot regularly to build a meaningful history.",
+        variant: d.errors?.length ? "destructive" : "default",
+      });
+    },
+    onError: (err: Error) => toast({ title: "Snapshot failed", description: err.message, variant: "destructive" }),
+  });
 
   const seedMutation = useMutation({
     mutationFn: async () => {
@@ -249,7 +362,18 @@ export default function ObservatoryDashboard() {
               Executive dashboard — portfolio readiness, risk, and certification blockers at a glance.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {data && data.kpis.applications > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => snapshotAllMutation.mutate()}
+                disabled={snapshotAllMutation.isPending}
+                data-testid="button-snapshot-all"
+              >
+                {snapshotAllMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Snapshot all
+              </Button>
+            )}
             <Link href="/app/observatory/reports">
               <Button variant="outline" data-testid="link-reports">
                 <FileText className="h-4 w-4 mr-2" /> Reports
@@ -344,6 +468,24 @@ export default function ObservatoryDashboard() {
                   <p className="text-sm text-muted-foreground">No active applications with versions yet.</p>
                 ) : (
                   data.readinessByApplication.map((entry) => <ReadinessRow key={entry.versionId} entry={entry} />)
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Readiness trends</CardTitle>
+                <CardDescription>
+                  Score history per application. Click <strong>Snapshot all</strong> to record a new data point — repeat weekly to see progress over time.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {trendsLoading ? (
+                  <div className="flex items-center justify-center py-10 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : (
+                  <ReadinessTrendChart trends={trends ?? []} />
                 )}
               </CardContent>
             </Card>

@@ -168,6 +168,124 @@ export function registerObservatoryInsightRoutes(app: Express) {
     }
   });
 
+  // Portfolio readiness trend history (one entry per application/version with snapshots).
+  app.get("/api/observatory/readiness-trends", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    try {
+      const t = ctx.tenantDomain;
+      const apps = await db
+        .select()
+        .from(obsApplications)
+        .where(and(eq(obsApplications.tenantDomain, t), eq(obsApplications.status, "active")));
+      if (apps.length === 0) return res.json([]);
+
+      const versions = await db
+        .select()
+        .from(obsVersions)
+        .where(and(eq(obsVersions.tenantDomain, t), inArray(obsVersions.applicationId, apps.map((a) => a.id))));
+
+      // For each app, use the most-recent non-retired version.
+      const appById = new Map(apps.map((a) => [a.id, a]));
+      const latestVersionPerApp = new Map<string, (typeof versions)[number]>();
+      for (const v of versions) {
+        if (v.assessmentStatus === "Retired") continue;
+        const cur = latestVersionPerApp.get(v.applicationId);
+        if (!cur || new Date(v.createdAt) > new Date(cur.createdAt)) {
+          latestVersionPerApp.set(v.applicationId, v);
+        }
+      }
+
+      const versionIds = [...latestVersionPerApp.values()].map((v) => v.id);
+      if (versionIds.length === 0) return res.json([]);
+
+      const snapshots = await db
+        .select({
+          id: obsReadinessScores.id,
+          versionId: obsReadinessScores.versionId,
+          overallScore: obsReadinessScores.overallScore,
+          band: obsReadinessScores.band,
+          blocked: obsReadinessScores.blocked,
+          computedAt: obsReadinessScores.computedAt,
+        })
+        .from(obsReadinessScores)
+        .where(and(eq(obsReadinessScores.tenantDomain, t), inArray(obsReadinessScores.versionId, versionIds)))
+        .orderBy(asc(obsReadinessScores.computedAt));
+
+      const byVersion = new Map<string, typeof snapshots>();
+      for (const s of snapshots) {
+        const arr = byVersion.get(s.versionId) ?? [];
+        arr.push(s);
+        byVersion.set(s.versionId, arr);
+      }
+
+      const result = [];
+      for (const [appId, version] of latestVersionPerApp) {
+        const app = appById.get(appId);
+        if (!app) continue;
+        result.push({
+          applicationId: appId,
+          applicationName: app.name,
+          versionId: version.id,
+          versionNumber: version.versionNumber,
+          history: (byVersion.get(version.id) ?? []).slice(-30), // last 30 snapshots
+        });
+      }
+      // Sort by application name for stable ordering
+      result.sort((a, b) => a.applicationName.localeCompare(b.applicationName));
+      res.json(result);
+    } catch (err) {
+      handleError(res, err, "readiness trends");
+    }
+  });
+
+  // Snapshot readiness for all active versions at once (idempotent — safe to call repeatedly).
+  app.post("/api/observatory/readiness-snapshot-all", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    if (!canWrite(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
+    try {
+      const t = ctx.tenantDomain;
+      const apps = await db
+        .select()
+        .from(obsApplications)
+        .where(and(eq(obsApplications.tenantDomain, t), eq(obsApplications.status, "active")));
+      if (apps.length === 0) return res.json({ snapshotted: 0 });
+
+      const versions = await db
+        .select()
+        .from(obsVersions)
+        .where(and(eq(obsVersions.tenantDomain, t), inArray(obsVersions.applicationId, apps.map((a) => a.id))));
+
+      const appById = new Map(apps.map((a) => [a.id, a]));
+      const latestVersionPerApp = new Map<string, (typeof versions)[number]>();
+      for (const v of versions) {
+        if (v.assessmentStatus === "Retired") continue;
+        const cur = latestVersionPerApp.get(v.applicationId);
+        if (!cur || new Date(v.createdAt) > new Date(cur.createdAt)) {
+          latestVersionPerApp.set(v.applicationId, v);
+        }
+      }
+
+      let snapshotted = 0;
+      const errors: string[] = [];
+      for (const [appId, version] of latestVersionPerApp) {
+        const app = appById.get(appId);
+        if (!app) continue;
+        try {
+          const snap = await snapshotReadiness(t, version, app, ctx.userId);
+          await audit(ctx, "readiness_score", snap.id, "create", `Auto-snapshot readiness ${snap.overallScore}/100 (${snap.band}) for ${app.name} ${version.versionNumber}`);
+          snapshotted++;
+        } catch (err) {
+          errors.push(`${app.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      res.json({ snapshotted, errors: errors.length ? errors : undefined });
+    } catch (err) {
+      handleError(res, err, "readiness snapshot-all");
+    }
+  });
+
   // ── Executive dashboard ──────────────────────────────────────────────────
   app.get("/api/observatory/exec-dashboard", async (req, res) => {
     const ctx = await ctxOr401(req, res);
