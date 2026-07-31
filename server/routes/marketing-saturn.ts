@@ -5119,6 +5119,11 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             generatedRows.push({
               ...buildBaseRow(v),
               overrideBrandAssetId: img.id,
+              // Populate overrideImageUrl so the posting queue, publishers, and
+              // CSV export all see a non-null image URL without a separate lookup.
+              // overrideBrandAssetId is kept for the asset FK; overrideImageUrl
+              // is the resolved URL every consumer already reads.
+              ...(brandUrl ? { overrideImageUrl: brandUrl } : {}),
             });
             comboIndex++;
           }
