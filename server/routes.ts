@@ -29,14 +29,9 @@ import { registerObservatoryRoutes } from "./routes/observatory";
 import { registerObservatoryModuleRoutes } from "./routes/observatory-modules";
 import { registerObservatoryInsightRoutes } from "./routes/observatory-insights";
 import { registerScanner } from "./services/observatory-scanners";
-import { accessibilityScanner } from "./services/accessibility-scanner";
+import { axeCoreScanner } from "./services/accessibility-scanner";
 import { securityScanner } from "./services/security-scanner";
 import { performanceScanner } from "./services/performance-scanner";
-
-// Register built-in scanner providers at startup
-registerScanner(accessibilityScanner);
-registerScanner(securityScanner);
-registerScanner(performanceScanner);
 import { registerIntelligenceRoutes } from "./routes/intelligence";
 import { registerExecutiveRegenRoutes } from "./routes/executive-regen";
 import { registerRelationshipReportRoutes } from "./routes/relationship-reports";
@@ -72,7 +67,11 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+  // Register built-in scanner providers before any route handler runs
+  registerScanner(axeCoreScanner);
+  registerScanner(securityScanner);
+  registerScanner(performanceScanner);
+
   registerObjectStorageRoutes(app);
   registerEntraRoutes(app);
   registerGoogleRoutes(app);

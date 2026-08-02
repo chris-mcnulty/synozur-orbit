@@ -5,7 +5,7 @@
  *  1. Look up the assessment + application to get the target URL
  *  2. Find the right ScannerProvider for the assessment type
  *  3. Run the scan (via the job queue — never called inline)
- *  4. Write ScannerFindings → obs_findings (dedup by ruleId + URL)
+ *  4. Write ScannerFindings → obs_findings (dedup by title + selector within assessment)
  *  5. Persist the raw report as obs_evidence (type: scan_report)
  *  6. Link evidence to assessment + each finding
  *  7. Update assessment status to "completed"
@@ -20,11 +20,12 @@ import {
   obsEvidence,
   obsAssessmentEvidence,
   obsFindingEvidence,
+  obsReviewItems,
+  obsReviewItemFindings,
 } from "@shared/schema";
 import { findScannerForType } from "./observatory-scanners";
 import type { ScanRequest } from "./observatory-scanners";
-import { assertScanUrlSafe } from "./ssrf-guard";
-
+import { validateUrlWithDnsCheck } from "../utils/url-validator";
 export interface ScanRunOptions {
   assessmentId: string;
   tenantDomain: string;
@@ -59,15 +60,22 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
 
   if (!application) throw new Error(`Application ${assessment.applicationId} not found`);
 
-  const targetUrl = application.appUrl;
-  if (!targetUrl) {
+  const rawTargetUrl = application.appUrl;
+  if (!rawTargetUrl) {
     throw new Error(
       `Application "${application.name}" has no URL configured. Add an App URL in the application settings before running a scan.`,
     );
   }
 
-  // SSRF guard — validate before any scanner path issues a network request.
-  await assertScanUrlSafe(targetUrl);
+  // ── SSRF guard: validate scheme and DNS before any scanner network request ──
+  const urlCheck = await validateUrlWithDnsCheck(rawTargetUrl);
+  if (!urlCheck.isValid) {
+    throw new Error(
+      `Application URL "${rawTargetUrl}" failed safety validation: ${urlCheck.error ?? "invalid URL"}. ` +
+      `Private/internal addresses and non-HTTP(S) schemes are blocked.`,
+    );
+  }
+  const targetUrl = urlCheck.normalizedUrl ?? rawTargetUrl;
 
   // ── 2. Find scanner ───────────────────────────────────────────────────────
   const scanner = await findScannerForType(assessment.type, tenantDomain);
@@ -95,7 +103,7 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
   console.log(`[ScanRunner] Starting ${scanner.key} scan for assessment ${assessmentId} (${assessment.type}) → ${targetUrl}`);
   const result = await scanner.runScan(request);
 
-  // ── 5. Persist raw report as evidence ────────────────────────────────────
+  // ── 5. Persist raw report as evidence (including full JSON body) ────────────
   let evidenceId: string | null = null;
   if (result.rawReport) {
     const [evidenceRow] = await db
@@ -109,10 +117,11 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
         source: result.tool,
         collectedAt: result.startedAt,
         createdBy: triggeredByUserId ?? null,
-        // Store the raw JSON inline in the description (no file upload needed for JSON reports)
         externalUrl: null,
         fileName: `scan-report-${assessmentId}-${Date.now()}.json`,
         fileSize: result.rawReport.body.length,
+        // Persist the raw JSON payload in the body column for analyst inspection
+        body: result.rawReport.body,
       })
       .returning({ id: obsEvidence.id });
 
@@ -125,23 +134,35 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
     }).onConflictDoNothing();
   }
 
-  // ── 6. Write findings (dedup by ruleId + URL within this assessment) ──────
-  // Fetch existing finding ruleIds for this assessment to avoid duplicates
+  // ── 6. Write findings (dedup by title + selector within this assessment) ────
   const existingFindings = await db
-    .select({ id: obsFindings.id, affectedComponent: obsFindings.affectedComponent })
+    .select({ title: obsFindings.title, affectedComponent: obsFindings.affectedComponent })
     .from(obsFindings)
     .where(and(eq(obsFindings.assessmentId, assessmentId), eq(obsFindings.tenantDomain, tenantDomain)));
 
-  // Build dedup key: ruleId:url
+  // Consistent dedup key: title|selector — same key used when inserting below
   const existingKeys = new Set(
-    existingFindings.map(f => `${f.affectedComponent ?? ""}`),
+    existingFindings.map(f => `${f.title}|${f.affectedComponent ?? ""}`),
   );
+
+  // For accessibility assessments, pre-load review items to link findings
+  const reviewItemsByCategory = new Map<string, string>();
+  if (assessment.type === "accessibility") {
+    const reviewItems = await db
+      .select({ id: obsReviewItems.id, category: obsReviewItems.category })
+      .from(obsReviewItems)
+      .where(and(eq(obsReviewItems.assessmentId, assessmentId), eq(obsReviewItems.module, "accessibility")));
+    for (const ri of reviewItems) {
+      if (ri.category) reviewItemsByCategory.set(ri.category, ri.id);
+    }
+  }
 
   let findingsCreated = 0;
   let findingsSkipped = 0;
 
   for (const finding of result.findings) {
-    const dedupKey = `${finding.ruleId}:${finding.location?.url ?? ""}`;
+    const selector = finding.location?.selector ?? finding.location?.file ?? "";
+    const dedupKey = `${finding.title}|${selector}`;
     if (existingKeys.has(dedupKey)) {
       findingsSkipped++;
       continue;
@@ -160,7 +181,7 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
         severity: finding.severity,
         domain: mapDomain(assessment.type),
         status: "open",
-        affectedComponent: finding.location?.selector ?? finding.location?.file ?? null,
+        affectedComponent: selector || null,
         wcagCriterion: finding.wcagCriterion ?? null,
         cweId: finding.cweId ?? null,
         sourceLine: finding.location?.line ?? null,
@@ -177,6 +198,18 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
         findingId: inserted.id,
         evidenceId,
       }).onConflictDoNothing();
+    }
+
+    // For accessibility: link finding to the matching review item by category
+    if (assessment.type === "accessibility") {
+      const extended = finding as typeof finding & { _category?: string };
+      const category = extended._category;
+      if (category && reviewItemsByCategory.has(category)) {
+        await db.insert(obsReviewItemFindings).values({
+          reviewItemId: reviewItemsByCategory.get(category)!,
+          findingId: inserted.id,
+        }).onConflictDoNothing();
+      }
     }
 
     findingsCreated++;

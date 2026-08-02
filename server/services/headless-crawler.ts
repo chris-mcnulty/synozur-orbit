@@ -1,5 +1,77 @@
 import puppeteer, { Browser, Page } from "puppeteer";
 import * as fs from "fs";
+import * as dns from "dns";
+import { promisify } from "util";
+import { checkIsPrivateIp, checkIsIpAddress } from "../utils/url-validator";
+
+const _dnsResolve4 = promisify(dns.resolve4);
+const _dnsResolve6 = promisify(dns.resolve6);
+
+/**
+ * Install a Puppeteer request interceptor that aborts any navigation
+ * (including redirects) whose destination resolves to a private/loopback IP.
+ * Must be called BEFORE page.goto().
+ */
+async function setupNavigationSsrfGuard(page: Page): Promise<void> {
+  await page.setRequestInterception(true);
+  page.on("request", (request) => {
+    // Only gate document-level navigations; pass through everything else
+    if (!request.isNavigationRequest()) {
+      request.continue().catch(() => {});
+      return;
+    }
+
+    const rawUrl = request.url();
+    // Allow data: / about:blank used by Puppeteer internals
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+      request.continue().catch(() => {});
+      return;
+    }
+
+    let hostname: string;
+    try {
+      hostname = new URL(rawUrl).hostname;
+    } catch {
+      request.abort("addressunreachable").catch(() => {});
+      return;
+    }
+
+    // Synchronously block bare IP addresses that are private
+    if (checkIsIpAddress(hostname)) {
+      const cleanIP = hostname.replace(/^\[|\]$/g, "");
+      if (checkIsPrivateIp(cleanIP)) {
+        console.warn(`[Headless SSRF] Blocked navigation to private IP ${rawUrl}`);
+        request.abort("addressunreachable").catch(() => {});
+        return;
+      }
+      request.continue().catch(() => {});
+      return;
+    }
+
+    // Resolve hostname async and abort if any resolved IP is private
+    Promise.all([
+      _dnsResolve4(hostname).catch(() => [] as string[]),
+      _dnsResolve6(hostname).catch(() => [] as string[]),
+    ]).then(([v4, v6]) => {
+      const all = [...v4, ...v6];
+      if (all.length === 0) {
+        // Fail closed: cannot verify an unresolvable hostname
+        console.warn(`[Headless SSRF] Blocked navigation to unresolvable host ${rawUrl}`);
+        request.abort("namenotresolved").catch(() => {});
+        return;
+      }
+      const blocked = all.some((ip) => checkIsPrivateIp(ip));
+      if (blocked) {
+        console.warn(`[Headless SSRF] Blocked redirect to private IP via ${rawUrl}`);
+        request.abort("addressunreachable").catch(() => {});
+      } else {
+        request.continue().catch(() => {});
+      }
+    }).catch(() => {
+      request.abort("addressunreachable").catch(() => {});
+    });
+  });
+}
 
 interface HeadlessCrawlResult {
   html: string;
@@ -366,6 +438,25 @@ export function isHeadlessAvailable(): boolean {
 }
 
 /**
+ * Open a page, wait for it to render, then call `callback` with the live
+ * Puppeteer Page so callers can inject scripts and evaluate JS in-context.
+ * The page is closed when the callback returns (or throws).
+ * Returns null if the browser cannot load the URL.
+ */
+export async function runInPage<T>(
+  url: string,
+  callback: (page: Page) => Promise<T>,
+  options: { waitTime?: number; timeout?: number; ssrfProtect?: boolean } = {},
+): Promise<T | null> {
+  await acquireCrawlSlot();
+  try {
+    return await _runInPageInner(url, callback, options);
+  } finally {
+    releaseCrawlSlot();
+  }
+}
+
+/**
  * Acquire a headless browser page for use by scanner services.
  * Caller MUST call releaseBrowserPage() when done — even on error — to free
  * the crawl slot and close the page.
@@ -407,3 +498,44 @@ process.on("SIGTERM", async () => {
   await closeBrowser();
   process.exit(0);
 });
+
+async function _runInPageInner<T>(
+  url: string,
+  callback: (page: Page) => Promise<T>,
+  options: { waitTime?: number; timeout?: number; ssrfProtect?: boolean } = {},
+): Promise<T | null> {
+  const { waitTime = 2000, timeout = 30000, ssrfProtect = false } = options;
+  let page: Page | null = null;
+  try {
+    const browser = await getBrowser();
+    page = await setupStealthPage(browser);
+    page.setDefaultNavigationTimeout(timeout);
+    page.setDefaultTimeout(timeout);
+    // Install SSRF guard before navigation so all redirects are also checked
+    if (ssrfProtect) {
+      await setupNavigationSsrfGuard(page);
+    }
+    await page.goto(url, { waitUntil: "networkidle2", timeout });
+    await delay(waitTime);
+    const result = await callback(page);
+    await page.close();
+    page = null;
+    return result;
+  } catch (error: any) {
+    const isProtocolError =
+      error?.message?.includes("ProtocolError") ||
+      error?.message?.includes("timed out") ||
+      error?.message?.includes("Target closed") ||
+      error?.message?.includes("Session closed");
+    if (isProtocolError) {
+      console.warn(`[Headless] Protocol error in runInPage for ${url}, resetting browser: ${error.message?.substring(0, 100)}`);
+      try { if (browserInstance) await browserInstance.close(); } catch {}
+      browserInstance = null;
+    } else {
+      console.error(`[runInPage] failed for ${url}:`, error);
+    }
+    return null;
+  } finally {
+    try { if (page) await (page as Page).close(); } catch {}
+  }
+}

@@ -114,10 +114,42 @@ vi.mock("../observatory-demo-seed", () => ({
   seedObservatoryDemo: vi.fn().mockResolvedValue({ seeded: false, message: "Already seeded" }),
 }));
 
+// enqueueScan + getJobStatusByLabel are called by the assessment creation and
+// /scan routes — mock so no real job queue or DB side-effects happen in tests.
+vi.mock("../job-queue", () => ({
+  enqueueScan: vi.fn().mockReturnValue(Promise.resolve()),
+  getJobStatusByLabel: vi.fn().mockReturnValue({ status: "not_found" }),
+  enqueue: vi.fn().mockReturnValue(Promise.resolve()),
+}));
+
+// runObservatoryScan is called inside the enqueueScan callback — mock it so
+// tests don't require a real headless browser or DB scan pipeline.
+vi.mock("../observatory-scan-runner", () => ({
+  runObservatoryScan: vi.fn().mockResolvedValue({
+    findingsCreated: 2,
+    findingsSkipped: 0,
+    evidenceId: "ev-scan-1",
+    tool: "axe-core",
+    durationMs: 1200,
+  }),
+}));
+
+// accessibility-scanner side-effect import: mock so headless-crawler/puppeteer
+// is not loaded during tests.
+vi.mock("../../services/accessibility-scanner", () => ({
+  axeCoreScanner: {
+    key: "axe_core",
+    name: "axe-core (built-in, WCAG 2.1/2.2)",
+    supportedTypes: ["accessibility"],
+    runScan: vi.fn(),
+  },
+}));
+
 // ── Import under test AFTER mocks ────────────────────────────────────────────
 
 import { registerObservatoryRoutes, selectOrphanedEvidenceIds } from "../../routes/observatory";
 import { getRequestContext } from "../../context";
+import { enqueueScan } from "../job-queue";
 
 // ── Shared test fixtures ─────────────────────────────────────────────────────
 
@@ -595,6 +627,63 @@ describe("observatory routes", () => {
         .send({ applicationId: "foreign-app", title: "Test", type: "penetration_test" });
 
       expect(res.status).toBe(404);
+    });
+
+    it("queues a built-in accessibility scan and returns scanQueued:true when the application has an appUrl", async () => {
+      vi.mocked(enqueueScan).mockClear();
+
+      const APP_WITH_URL = { ...APP, appUrl: "https://portal.example.com" };
+      const A11Y_ASSESSMENT = {
+        ...ASSESSMENT,
+        id: "asmnt-a11y",
+        type: "accessibility",
+        title: "Q3 Accessibility Review",
+      };
+
+      pushDb(APP_WITH_URL);    // select(obsApplications).where() → app with appUrl
+      pushDb(A11Y_ASSESSMENT); // insert(obsAssessments).values().returning()
+      pushDb();                // audit log — assessment created
+      pushDb();                // audit log — scan_triggered
+
+      const res = await request(app)
+        .post("/api/observatory/assessments")
+        .send({ applicationId: "app-1", title: "Q3 Accessibility Review", type: "accessibility" });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ id: "asmnt-a11y", type: "accessibility" });
+      // The auto-trigger sets scanQueued:true on the response
+      expect(res.body.scanQueued).toBe(true);
+      // enqueueScan must be called with the correct label format
+      expect(vi.mocked(enqueueScan)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(enqueueScan)).toHaveBeenCalledWith(
+        "scan:accessibility:asmnt-a11y",
+        expect.any(Function),
+        expect.objectContaining({ ctx: expect.objectContaining({ tenantDomain: "acme.com" }) }),
+      );
+    });
+
+    it("does not queue a scan when the application has no appUrl", async () => {
+      vi.mocked(enqueueScan).mockClear();
+
+      const A11Y_ASSESSMENT = {
+        ...ASSESSMENT,
+        id: "asmnt-no-url",
+        type: "accessibility",
+        title: "Accessibility Review (no URL)",
+      };
+
+      // APP has no appUrl — auto-trigger should be skipped
+      pushDb(APP);              // select(obsApplications).where()
+      pushDb(A11Y_ASSESSMENT);  // insert(obsAssessments).values().returning()
+      pushDb();                 // audit log — assessment created (no scan_triggered audit)
+
+      const res = await request(app)
+        .post("/api/observatory/assessments")
+        .send({ applicationId: "app-1", title: "Accessibility Review (no URL)", type: "accessibility" });
+
+      expect(res.status).toBe(201);
+      expect(res.body.scanQueued).toBe(false);
+      expect(vi.mocked(enqueueScan)).not.toHaveBeenCalled();
     });
   });
 

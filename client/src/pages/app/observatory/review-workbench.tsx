@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Loader2, NotebookPen, Paperclip, Plus, Sparkles, Wand2, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, NotebookPen, Paperclip, Plus, ScanLine, Sparkles, Wand2, X } from "lucide-react";
 import {
   workbenchBySlug,
   REVIEW_STATUSES,
@@ -42,8 +42,15 @@ interface AssessmentDetail {
   title: string;
   type: string;
   status: string;
-  application: { id: string; name: string };
+  application: { id: string; name: string; appUrl?: string | null };
   version?: { id: string; versionNumber: string } | null;
+}
+
+interface ScanJobStatus {
+  status: "active" | "pending" | "not_found";
+  progress?: { percent?: number; phase?: string };
+  runningSec?: number;
+  queuePosition?: number;
 }
 
 interface SourceMeta {
@@ -80,6 +87,48 @@ export default function ObservatoryReviewWorkbench() {
   const [selectedEvidenceId, setSelectedEvidenceId] = useState("");
   const [metaEditing, setMetaEditing] = useState(false);
   const [metaForm, setMetaForm] = useState({ repositoryUrl: "", branch: "", commitHash: "", language: "", framework: "", component: "", reviewTool: "", notes: "" });
+
+  // ── Accessibility scan state ─────────────────────────────────────────────
+  const isAccessibility = wb?.moduleKey === "accessibility";
+  const [scanPolling, setScanPolling] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const { data: scanStatus, refetch: refetchScanStatus } = useQuery<ScanJobStatus>({
+    queryKey: [`/api/observatory/assessments/${assessmentId}/scan-status`],
+    enabled: !!assessmentId && isAccessibility,
+    refetchInterval: scanPolling ? 3000 : false,
+  });
+
+  // When scan goes from active/pending → not_found, the job completed — refresh findings
+  const prevScanStatusRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevScanStatusRef.current;
+    const curr = scanStatus?.status;
+    if ((prev === "active" || prev === "pending") && curr === "not_found") {
+      setScanPolling(false);
+      invalidate();
+      toast({ title: "Scan complete", description: "Accessibility findings have been added to the workbench." });
+    }
+    prevScanStatusRef.current = curr;
+  }, [scanStatus?.status]);
+
+  // Start polling as soon as the component mounts if a scan is already running
+  useEffect(() => {
+    if (scanStatus?.status === "active" || scanStatus?.status === "pending") {
+      setScanPolling(true);
+    }
+  }, []);
+
+  const triggerScanMutation = useMutation({
+    mutationFn: async () =>
+      (await apiRequest("POST", `/api/observatory/assessments/${assessmentId}/scan`)).json(),
+    onSuccess: () => {
+      setScanPolling(true);
+      refetchScanStatus();
+      toast({ title: "Scan queued", description: "Accessibility scan is running. Findings will appear here when complete." });
+    },
+    onError: (err: Error) => toast({ title: "Could not start scan", description: err.message, variant: "destructive" }),
+  });
 
   const { data: assessment } = useQuery<AssessmentDetail>({
     queryKey: [`/api/observatory/assessments/${assessmentId}`],
@@ -344,6 +393,25 @@ export default function ObservatoryReviewWorkbench() {
           </div>
           <div className="flex items-center gap-2">
             {assessment && <AssessmentStatusBadge status={assessment.status} />}
+            {isAccessibility && canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => triggerScanMutation.mutate()}
+                disabled={
+                  triggerScanMutation.isPending ||
+                  scanStatus?.status === "active" ||
+                  scanStatus?.status === "pending"
+                }
+                data-testid="button-run-a11y-scan"
+              >
+                {(triggerScanMutation.isPending || scanStatus?.status === "active" || scanStatus?.status === "pending") ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Scanning…</>
+                ) : (
+                  <><ScanLine className="h-4 w-4 mr-2" /> Run accessibility scan</>
+                )}
+              </Button>
+            )}
             {assessment && (
               <Link href={`/app/observatory/assessments/${assessment.id}`}>
                 <Button variant="outline" size="sm" data-testid="button-open-assessment">Assessment record</Button>
@@ -351,6 +419,25 @@ export default function ObservatoryReviewWorkbench() {
             )}
           </div>
         </div>
+
+        {/* Scan status banner */}
+        {isAccessibility && scanStatus && scanStatus.status !== "not_found" && (
+          <Card className="border-blue-500/30 bg-blue-500/5" data-testid="card-scan-status">
+            <CardContent className="py-3 px-4 flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  {scanStatus.status === "pending" ? "Scan queued" : "Accessibility scan running"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {scanStatus.status === "active"
+                    ? `Running for ${scanStatus.runningSec ?? 0}s — WCAG 2.1/2.2 violations are being checked with axe-core`
+                    : `Position ${scanStatus.queuePosition ?? "—"} in queue`}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isSource && (
           <Card data-testid="card-source-meta">

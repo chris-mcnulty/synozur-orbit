@@ -49,6 +49,8 @@ import { seedStandardsCatalog } from "../services/observatory-standards";
 import { seedObservatoryDemo } from "../services/observatory-demo-seed";
 import { enqueueScan, getJobStatusByLabel } from "../services/job-queue";
 import { runObservatoryScan } from "../services/observatory-scan-runner";
+// Ensure the axe-core scanner is registered in the global registry at startup
+import "../services/accessibility-scanner";
 const objectStorageService = new ObjectStorageService();
 
 // Scannable assessment types — these have a built-in scanner
@@ -564,7 +566,31 @@ export function registerObservatoryRoutes(app: Express) {
         .values({ ...data, tenantDomain: ctx.tenantDomain, createdBy: ctx.userId })
         .returning();
       await audit(ctx, "assessment", created.id, "create", `Created assessment "${created.title}"`);
-      res.status(201).json(created);
+
+      // Auto-trigger a built-in scan when a scannable assessment is created and
+      // the application has a URL. SSRF validation is handled inside the scanner.
+      let scanQueued = false;
+      if (SCANNABLE_TYPES.has(created.type) && parent.appUrl) {
+        try {
+          const assessmentId = created.id;
+          const scanLabel = `scan:${created.type}:${assessmentId}`;
+          enqueueScan(
+            scanLabel,
+            async () => runObservatoryScan({ assessmentId, tenantDomain: ctx.tenantDomain, triggeredByUserId: ctx.userId }),
+            { ctx: { tenantDomain: ctx.tenantDomain, targetId: assessmentId } },
+          ).catch((err) => {
+            console.error(`[Observatory] Auto-triggered scan failed for ${assessmentId}:`, err);
+          });
+          scanQueued = true;
+          await audit(ctx, "assessment", assessmentId, "scan_triggered", `Auto-triggered ${created.type} scan on assessment creation`);
+          console.log(`[Observatory] Auto-queued ${created.type} scan for assessment ${assessmentId} → ${parent.appUrl}`);
+        } catch (err: any) {
+          // Non-fatal: scanner unavailable or URL invalid — log and continue
+          console.warn(`[Observatory] Could not auto-queue ${created.type} scan: ${err?.message}`);
+        }
+      }
+
+      res.status(201).json({ ...created, scanQueued });
     } catch (err) {
       handleError(res, err, "assessment");
     }

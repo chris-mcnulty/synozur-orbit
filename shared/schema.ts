@@ -5167,6 +5167,7 @@ export const obsEvidence = pgTable("obs_evidence", {
   fileSize: integer("file_size"),
   contentType: text("content_type"),
   externalUrl: text("external_url"), // URL-type evidence
+  body: text("body"), // Raw report payload for scan_report evidence (e.g. axe-core JSON output)
   source: text("source"), // tool or origin, e.g. "axe-core", "Burp Suite"
   collectedBy: text("collected_by"),
   collectedAt: timestamp("collected_at"),

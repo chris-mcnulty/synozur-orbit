@@ -148,6 +148,10 @@ export async function validateUrlWithDnsCheck(urlString: string): Promise<UrlVal
   const hostname = parsedUrl.hostname;
 
   if (isIPAddress(hostname)) {
+    const cleanIP = hostname.replace(/^\[|\]$/g, "");
+    if (isPrivateIP(cleanIP)) {
+      return { isValid: false, error: "URL points to a private or internal IP address (potential SSRF attempt)" };
+    }
     return formatResult;
   }
 
@@ -167,7 +171,8 @@ export async function validateUrlWithDnsCheck(urlString: string): Promise<UrlVal
     }
 
     if (resolvedIPs.length === 0) {
-      return formatResult;
+      // Fail closed: unresolvable hostnames are blocked to prevent DNS-rebinding SSRF
+      return { isValid: false, error: `Could not resolve hostname "${hostname}" — unresolvable hosts are not allowed` };
     }
 
     for (const ip of resolvedIPs) {
@@ -181,8 +186,25 @@ export async function validateUrlWithDnsCheck(urlString: string): Promise<UrlVal
 
     return formatResult;
   } catch {
-    return formatResult;
+    // Fail closed on unexpected DNS errors
+    return { isValid: false, error: "DNS validation failed — URL cannot be used as a scan target" };
   }
+}
+
+/**
+ * Check whether a single IP address string is private/loopback/reserved.
+ * Exported for use by headless browser SSRF guards.
+ */
+export function checkIsPrivateIp(ip: string): boolean {
+  return isPrivateIP(ip);
+}
+
+/**
+ * Check whether a string looks like an IP address (v4 or v6).
+ * Exported for use by headless browser SSRF guards.
+ */
+export function checkIsIpAddress(hostname: string): boolean {
+  return isIPAddress(hostname);
 }
 
 export async function validateUrlSoft(urlString: string): Promise<UrlValidationResult> {
