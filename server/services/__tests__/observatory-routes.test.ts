@@ -598,6 +598,65 @@ describe("observatory routes", () => {
     });
   });
 
+  // ── Assessment delete ─────────────────────────────────────────────────────
+
+  describe("DELETE /api/observatory/assessments/:id", () => {
+    it("deletes an assessment and returns { success: true }", async () => {
+      pushDb(ASSESSMENT);  // select(obsAssessments).where() — existence check
+      // inside transaction:
+      pushDb();            // delete(obsFindings).where()
+      pushDb();            // delete(obsAssessments).where()
+      pushDb();            // audit
+
+      const res = await request(app).delete("/api/observatory/assessments/asmnt-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+    });
+
+    it("returns 404 when the assessment does not exist for this tenant", async () => {
+      pushDb();  // select(obsAssessments).where() returns [] → not found
+
+      const res = await request(app).delete("/api/observatory/assessments/nonexistent");
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toMatch(/not found/i);
+    });
+
+    it("explicitly deletes findings before removing the assessment — cascade regression guard", async () => {
+      // This test is the cascade regression guard.
+      //
+      // The route deletes obs_findings for the assessment BEFORE deleting the
+      // assessment row, inside a transaction. This:
+      //   1. Ensures scan-created findings (incl. pen-test findings) are cleaned
+      //      up even if a future migration accidentally drops a DB-level cascade.
+      //   2. Causes a queue underrun (and test failure) if either of the two
+      //      in-transaction deletes is removed from the route.
+      //
+      // Deletion order verified:
+      //   obs_findings    (assessment-scoped) → cascades obs_pen_test_findings
+      //                                         (findingId FK), obs_finding_evidence,
+      //                                         obs_finding_controls,
+      //                                         obs_review_item_findings
+      //   obs_assessments (the row itself)    → cascades obs_pen_tests,
+      //                                         obs_review_items,
+      //                                         obs_assessment_evidence
+
+      pushDb(ASSESSMENT);  // existence check
+      // inside transaction:
+      pushDb(FINDING);     // delete(obsFindings).where() — 1 finding removed
+      pushDb(ASSESSMENT);  // delete(obsAssessments).where()
+      pushDb();            // audit
+
+      const res = await request(app).delete("/api/observatory/assessments/asmnt-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true });
+      // All 4 queue entries consumed — no DB call was skipped.
+      expect(dbQ).toHaveLength(0);
+    });
+  });
+
   // ── Findings ─────────────────────────────────────────────────────────────────
   //
   // KEY REGRESSION: the client does NOT send applicationId — the server must

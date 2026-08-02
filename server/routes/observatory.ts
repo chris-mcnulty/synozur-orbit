@@ -601,12 +601,39 @@ export function registerObservatoryRoutes(app: Express) {
     if (!ctx) return;
     if (!canDelete(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
     try {
-      const [deleted] = await db
-        .delete(obsAssessments)
-        .where(and(eq(obsAssessments.id, req.params.id), eq(obsAssessments.tenantDomain, ctx.tenantDomain)))
-        .returning();
-      if (!deleted) return res.status(404).json({ message: "Assessment not found" });
-      await audit(ctx, "assessment", deleted.id, "delete", `Deleted assessment "${deleted.title}"`);
+      const assessmentId = req.params.id;
+
+      // Verify existence before entering the transaction (cheap exit path).
+      const [existing] = await db
+        .select()
+        .from(obsAssessments)
+        .where(and(eq(obsAssessments.id, assessmentId), eq(obsAssessments.tenantDomain, ctx.tenantDomain)));
+      if (!existing) return res.status(404).json({ message: "Assessment not found" });
+
+      // Wrap the cleanup in a transaction so a mid-operation DB failure cannot
+      // leave orphaned findings behind.
+      //
+      // Deletion order (matters):
+      //   1. obs_findings (assessment-scoped) — cascades obs_pen_test_findings via
+      //      the findingId FK, and also cascades obs_finding_evidence,
+      //      obs_finding_controls, obs_review_item_findings.
+      //   2. obs_assessments — cascades obs_pen_tests, obs_review_items, and
+      //      obs_assessment_evidence via DB-level FK rules.
+      //
+      // Deleting findings first is the defensive layer: even if the DB-level
+      // assessmentId cascade rule were ever accidentally dropped, scan-created
+      // findings would still be removed before the assessment row disappears.
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(obsFindings)
+          .where(and(eq(obsFindings.assessmentId, assessmentId), eq(obsFindings.tenantDomain, ctx.tenantDomain)));
+
+        await tx
+          .delete(obsAssessments)
+          .where(and(eq(obsAssessments.id, assessmentId), eq(obsAssessments.tenantDomain, ctx.tenantDomain)));
+      });
+
+      await audit(ctx, "assessment", existing.id, "delete", `Deleted assessment "${existing.title}"`);
       res.json({ success: true });
     } catch (err) {
       handleError(res, err, "assessment");

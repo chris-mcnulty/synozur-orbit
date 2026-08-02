@@ -621,12 +621,53 @@ export function registerObservatoryModuleRoutes(app: Express) {
     if (!ctx) return;
     if (!canDelete(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
     try {
-      const [deleted] = await db
-        .delete(obsPenTests)
-        .where(and(eq(obsPenTests.id, req.params.id), eq(obsPenTests.tenantDomain, ctx.tenantDomain)))
-        .returning();
-      if (!deleted) return res.status(404).json({ message: "Pen test not found" });
-      await audit(ctx, "pen_test", deleted.id, "delete", `Deleted pen test "${deleted.testName}" (findings remain in the shared register)`);
+      const penTestId = req.params.id;
+
+      // Verify existence before entering the transaction (cheap exit path).
+      const [existing] = await db
+        .select()
+        .from(obsPenTests)
+        .where(and(eq(obsPenTests.id, penTestId), eq(obsPenTests.tenantDomain, ctx.tenantDomain)));
+      if (!existing) return res.status(404).json({ message: "Pen test not found" });
+
+      // Wrap the entire cleanup in a transaction so that a mid-operation DB failure
+      // cannot leave orphaned obs_findings rows behind.
+      //
+      // Why findings are not removed automatically:
+      //   obs_pen_test_findings.penTestId  → onDelete: "cascade" (junction rows go away)
+      //   obs_pen_test_findings.findingId  → onDelete: "cascade" (finding→junction, not the reverse)
+      //   obs_findings.assessmentId        → onDelete: "cascade"  (handles assessment-scoped deletes)
+      // Deleting the pen test alone cascades only the junction rows, leaving the
+      // underlying obs_findings rows alive. They must be removed explicitly.
+      const findingIds = await db.transaction(async (tx) => {
+        // Collect obs_findings IDs while inside the transaction so the read and
+        // the subsequent deletes are atomic — no partial cleanup on DB failure.
+        const ptFindingRows = await tx
+          .select({ findingId: obsPenTestFindings.findingId })
+          .from(obsPenTestFindings)
+          .where(eq(obsPenTestFindings.penTestId, penTestId));
+        const ids = ptFindingRows.map((r) => r.findingId);
+
+        // Delete the pen test — cascades obs_pen_test_findings rows via penTestId FK.
+        // Any concurrent scanner that inserted a new finding + junction row after
+        // our read above will have its junction row removed by this cascade; the
+        // findings delete below clears the IDs we already collected.
+        await tx
+          .delete(obsPenTests)
+          .where(and(eq(obsPenTests.id, penTestId), eq(obsPenTests.tenantDomain, ctx.tenantDomain)));
+
+        // Remove the underlying findings. Deleting obs_findings also cascades
+        // obs_finding_evidence, obs_finding_controls, and obs_review_item_findings.
+        if (ids.length > 0) {
+          await tx
+            .delete(obsFindings)
+            .where(and(inArray(obsFindings.id, ids), eq(obsFindings.tenantDomain, ctx.tenantDomain)));
+        }
+
+        return ids;
+      });
+
+      await audit(ctx, "pen_test", existing.id, "delete", `Deleted pen test "${existing.testName}" (${findingIds.length} finding(s) removed)`);
       res.json({ success: true });
     } catch (err) {
       handleError(res, err, "pen test");
