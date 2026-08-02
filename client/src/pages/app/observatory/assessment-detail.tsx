@@ -14,7 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
-import { ArrowLeft, Plus, Loader2, Trash2, AlertTriangle, Archive, ScanLine, CheckCircle2, Clock } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Trash2, AlertTriangle, Archive, ScanLine, CheckCircle2, Clock, Gauge } from "lucide-react";
 import {
   AssessmentStatusBadge,
   SeverityBadge,
@@ -26,6 +26,7 @@ import {
   labelFor,
 } from "./shared";
 import { formatDate } from "@/lib/utils";
+import PerformanceScanPanel from "./performance-scan";
 
 interface Detail {
   id: string;
@@ -40,7 +41,8 @@ interface Detail {
   executiveSummary: string | null;
   scope: string | null;
   outOfScope: string | null;
-  application: { id: string; name: string } | null;
+  applicationId: string;
+  application: { id: string; name: string; appUrl?: string | null; perfSlaConfig?: SlaConfig | null } | null;
   version: { id: string; versionNumber: string } | null;
   findings: { id: string; title: string; severity: string; status: string; domain: string }[];
   evidence: { id: string; title: string; evidenceType: string }[];
@@ -85,9 +87,19 @@ export default function ObservatoryAssessmentDetail() {
   const { data: assessment, isLoading } = useQuery<Detail>({ queryKey: [`/api/observatory/assessments/${id}`] });
 
   // ── Scan status polling ──────────────────────────────────────────────────
+  // Performance assessments use a dedicated scan endpoint with its own status
+  // URL so saved SLA config and scan history are always applied correctly.
+  const isPerformanceType = !!assessment && assessment.type === "performance";
+  const scanStatusUrl = isPerformanceType
+    ? `/api/observatory/assessments/${id}/performance-scan/status`
+    : `/api/observatory/assessments/${id}/scan-status`;
+  const scanTriggerUrl = isPerformanceType
+    ? `/api/observatory/assessments/${id}/performance-scan`
+    : `/api/observatory/assessments/${id}/scan`;
+
   const [scanPolling, setScanPolling] = useState(false);
   const { data: scanStatus } = useQuery<ScanStatus>({
-    queryKey: [`/api/observatory/assessments/${id}/scan-status`],
+    queryKey: [scanStatusUrl],
     enabled: !!assessment && SCANNABLE_TYPES.has(assessment.type),
     refetchInterval: scanPolling ? 2000 : false,
   });
@@ -105,10 +117,10 @@ export default function ObservatoryAssessmentDetail() {
   }, [scanStatus?.status]);
 
   const triggerScan = useMutation({
-    mutationFn: async () => (await apiRequest("POST", `/api/observatory/assessments/${id}/scan`, {})).json(),
+    mutationFn: async () => (await apiRequest("POST", scanTriggerUrl, {})).json(),
     onSuccess: () => {
       setScanPolling(true);
-      queryClient.invalidateQueries({ queryKey: [`/api/observatory/assessments/${id}/scan-status`] });
+      queryClient.invalidateQueries({ queryKey: [scanStatusUrl] });
       toast({ title: "Scan queued", description: "The automated scan has been queued. Findings will appear when it completes." });
     },
     onError: (err: Error) => toast({ title: "Scan failed to start", description: err.message, variant: "destructive" }),
@@ -372,6 +384,24 @@ export default function ObservatoryAssessmentDetail() {
             )}
           </CardContent>
         </Card>
+
+        {assessment.type === "performance" && assessment.application && (
+          <Card data-testid="card-performance-scan">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Gauge className="h-4 w-4" /> Performance Scans
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PerformanceScanPanel
+                assessmentId={assessment.id}
+                applicationId={assessment.application.id}
+                applicationSlaConfig={assessment.application.perfSlaConfig ?? null}
+                canWrite={canWrite}
+              />
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Dialog open={findingDialogOpen} onOpenChange={setFindingDialogOpen}>
@@ -442,4 +472,12 @@ export default function ObservatoryAssessmentDetail() {
       </Dialog>
     </AppLayout>
   );
+}
+
+interface SlaConfig {
+  ttfbMs: number;
+  loadTimeMs: number;
+  lcpMs: number;
+  clsScore: number;
+  ttiMs: number;
 }

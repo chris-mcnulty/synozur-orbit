@@ -49,7 +49,6 @@ import { seedStandardsCatalog } from "../services/observatory-standards";
 import { seedObservatoryDemo } from "../services/observatory-demo-seed";
 import { enqueueScan, getJobStatusByLabel } from "../services/job-queue";
 import { runObservatoryScan } from "../services/observatory-scan-runner";
-
 const objectStorageService = new ObjectStorageService();
 
 // Scannable assessment types — these have a built-in scanner

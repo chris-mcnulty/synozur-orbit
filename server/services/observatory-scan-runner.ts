@@ -23,6 +23,7 @@ import {
 } from "@shared/schema";
 import { findScannerForType } from "./observatory-scanners";
 import type { ScanRequest } from "./observatory-scanners";
+import { assertScanUrlSafe } from "./ssrf-guard";
 
 export interface ScanRunOptions {
   assessmentId: string;
@@ -64,6 +65,9 @@ export async function runObservatoryScan(opts: ScanRunOptions): Promise<ScanRunR
       `Application "${application.name}" has no URL configured. Add an App URL in the application settings before running a scan.`,
     );
   }
+
+  // SSRF guard — validate before any scanner path issues a network request.
+  await assertScanUrlSafe(targetUrl);
 
   // ── 2. Find scanner ───────────────────────────────────────────────────────
   const scanner = await findScannerForType(assessment.type, tenantDomain);

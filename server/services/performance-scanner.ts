@@ -1,13 +1,26 @@
 /**
- * Built-in performance scanner — loads the application URL in the headless
- * browser and captures Core Web Vitals, navigation timing, and resource
- * metrics. Flags findings where measurements breach configurable SLA thresholds.
+ * Observatory — Performance Scanner
+ *
+ * Provides two scan surfaces:
+ *
+ * 1. ScannerProvider (`performanceScanner`) — integrates with the unified
+ *    Observatory scan runner (used by the automated /scan endpoint). Reuses
+ *    the shared headless browser pool via getBrowserPage/releaseBrowserPage.
+ *
+ * 2. Standalone `runPerformanceScan()` — called directly by the performance
+ *    workbench scan panel. Opens a dedicated browser instance so it can
+ *    disable cache and inject observers without affecting shared pool pages.
+ *
+ * Metrics captured: TTFB, Load Time, LCP (ms), CLS (score), TTI (ms).
  */
 
 import { getBrowserPage, releaseBrowserPage } from "./headless-crawler";
 import type { ScannerProvider, ScanRequest, ScanResult, ScannerFinding } from "./observatory-scanners";
+import puppeteer, { Browser, Page } from "puppeteer";
+import * as fs from "fs";
+import { assertScanUrlSafe, installSsrfRequestInterceptor } from "./ssrf-guard";
 
-// Default SLA thresholds (ms). Override via request.options.thresholds.
+// Default thresholds for the ScannerProvider (override via request.options.thresholds).
 const DEFAULT_THRESHOLDS = {
   ttfbMs: 800,        // Time to First Byte
   fcp: 2500,          // First Contentful Paint (Core Web Vital)
@@ -48,9 +61,16 @@ export const performanceScanner: ScannerProvider = {
     let page: Awaited<ReturnType<typeof getBrowserPage>> | null = null;
     let timing: PerfTiming | null = null;
 
+    // SSRF guard — validate before any browser navigation.
+    await assertScanUrlSafe(targetUrl);
+
     try {
       console.log(`[PerformanceScanner] Scanning ${targetUrl}`);
       page = await getBrowserPage();
+
+      // Block redirect-to-private attacks at browser network time.
+      await page.setRequestInterception(true);
+      installSsrfRequestInterceptor(page);
 
       // Disable cache for accurate measurement
       await page.setCacheEnabled(false);
@@ -187,3 +207,321 @@ export const performanceScanner: ScannerProvider = {
     };
   },
 };
+
+export interface PerfSlaConfig {
+  ttfbMs: number;
+  loadTimeMs: number;
+  lcpMs: number;
+  clsScore: number;
+  ttiMs: number;
+}
+
+export interface PagePerfMetrics {
+  ttfbMs: number | null;
+  loadTimeMs: number | null;
+  lcpMs: number | null;
+  clsScore: number | null;
+  ttiMs: number | null;
+  /** ISO timestamp when the measurement started. */
+  scannedAt: string;
+  /** Final URL after any redirects. */
+  finalUrl: string;
+  /** Any non-fatal warnings encountered during measurement. */
+  warnings: string[];
+}
+
+function severityFromRatio(ratio: number): string {
+  if (ratio >= 4) return "Critical";
+  if (ratio >= 2) return "High";
+  return "Medium";
+}
+
+export async function measurePagePerformance(
+  url: string,
+  options: { timeoutMs?: number } = {},
+): Promise<PagePerfMetrics> {
+  const { timeoutMs = 45_000 } = options;
+  const scannedAt = new Date().toISOString();
+  const warnings: string[] = [];
+
+  const executablePath = await findChromiumPath();
+  const browser: Browser = await puppeteer.launch({
+    headless: true,
+    executablePath,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
+      "--window-size=1920,1080",
+      "--js-flags=--max-old-space-size=256",
+    ],
+  });
+
+  let page: Page | null = null;
+  try {
+    page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    page.setDefaultNavigationTimeout(timeoutMs);
+    page.setDefaultTimeout(timeoutMs);
+
+    // Block redirect-to-private attacks at browser network time.
+    await page.setRequestInterception(true);
+    installSsrfRequestInterceptor(page);
+
+    // Inject PerformanceObserver shim before navigation to collect LCP + CLS.
+    await page.evaluateOnNewDocument(() => {
+      (window as any).__perfData = {
+        lcp: null as number | null,
+        cls: 0,
+        longTasks: [] as number[],
+      };
+
+      try {
+        const lcpObserver = new PerformanceObserver((list) => {
+          const entries = list.getEntries();
+          const last = entries[entries.length - 1];
+          if (last) (window as any).__perfData.lcp = last.startTime;
+        });
+        lcpObserver.observe({ type: "largest-contentful-paint", buffered: true });
+      } catch {
+        // LCP not supported in this browser version
+      }
+
+      try {
+        const clsObserver = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            const e = entry as any;
+            if (!e.hadRecentInput) {
+              (window as any).__perfData.cls += e.value;
+            }
+          }
+        });
+        clsObserver.observe({ type: "layout-shift", buffered: true });
+      } catch {
+        // CLS not supported
+      }
+
+      try {
+        const ttiObserver = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            (window as any).__perfData.longTasks.push(entry.startTime + entry.duration);
+          }
+        });
+        ttiObserver.observe({ type: "longtask", buffered: true });
+      } catch {
+        // Long Tasks API not supported
+      }
+    });
+
+    await page.goto(url, { waitUntil: "networkidle2", timeout: timeoutMs });
+
+    // Allow a short settle period so deferred content and observers flush.
+    await new Promise<void>((r) => setTimeout(r, 1500));
+
+    const finalUrl = page.url();
+
+    const metrics = await page.evaluate(() => {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      const perfData = (window as any).__perfData as {
+        lcp: number | null;
+        cls: number;
+        longTasks: number[];
+      };
+
+      const ttfbMs = nav ? Math.round(nav.responseStart - nav.startTime) : null;
+      const loadTimeMs = nav ? Math.round(nav.loadEventEnd - nav.startTime) : null;
+      const lcpMs = perfData.lcp !== null ? Math.round(perfData.lcp) : null;
+      const clsScore = perfData.cls;
+
+      // TTI approximation: last long-task end + 5 s quiet window heuristic.
+      // If no long tasks observed, use DOM interactive.
+      let ttiMs: number | null = null;
+      if (perfData.longTasks.length > 0) {
+        ttiMs = Math.round(Math.max(...perfData.longTasks));
+      } else if (nav) {
+        ttiMs = Math.round(nav.domInteractive - nav.startTime);
+      }
+
+      return { ttfbMs, loadTimeMs, lcpMs, clsScore, ttiMs };
+    });
+
+    // Warn about any zero/negative values that indicate a measurement failure.
+    if (metrics.ttfbMs !== null && metrics.ttfbMs < 0) {
+      warnings.push("TTFB measurement returned a negative value; the metric may be unreliable.");
+      metrics.ttfbMs = null;
+    }
+
+    return {
+      ...metrics,
+      clsScore: metrics.clsScore > 0 ? Math.round(metrics.clsScore * 10000) / 10000 : 0,
+      scannedAt,
+      finalUrl,
+      warnings,
+    };
+  } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch {}
+    }
+    try {
+      await browser.close();
+    } catch {}
+  }
+}
+
+async function findChromiumPath(): Promise<string | undefined> {
+  const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+  ].filter(Boolean) as string[];
+
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+export async function runPerformanceScan(
+  url: string,
+  sla: PerfSlaConfig,
+  options: { timeoutMs?: number } = {},
+): Promise<PerfScanResult> {
+  const metrics = await measurePagePerformance(url, options);
+  const findings = buildPerfFindings(metrics, sla, url);
+  return { metrics, findings };
+}
+
+export const DEFAULT_PERF_SLA: PerfSlaConfig = {
+  ttfbMs: 800,
+  loadTimeMs: 3000,
+  lcpMs: 2500,
+  clsScore: 0.1,
+  ttiMs: 3800,
+};
+
+export function buildPerfFindings(
+  metrics: PagePerfMetrics,
+  sla: PerfSlaConfig,
+  url: string,
+): PerfScannerFinding[] {
+  const findings: PerfScannerFinding[] = [];
+
+  const check = (
+    ruleId: string,
+    label: string,
+    value: number | null,
+    threshold: number,
+    unit: string,
+    format: (v: number) => string,
+    recommendation: string,
+  ) => {
+    if (value === null) return; // metric not captured — skip
+    if (value <= threshold) return; // within SLA — no finding
+    const ratio = value / threshold;
+    const severity = severityFromRatio(ratio);
+    const measured = format(value);
+    const thresholdStr = format(threshold);
+    findings.push({
+      ruleId,
+      title: `${label} SLA breach on ${new URL(url).pathname || "/"}`,
+      description: `${label} was measured at ${measured}, exceeding the configured SLA threshold of ${thresholdStr}. The ratio of measured to threshold is ${ratio.toFixed(1)}×.`,
+      recommendation,
+      severity,
+      measured,
+      threshold: thresholdStr,
+    });
+  };
+
+  check(
+    "ttfb_sla_breach",
+    "Time to First Byte (TTFB)",
+    metrics.ttfbMs,
+    sla.ttfbMs,
+    "ms",
+    fmtMs,
+    "Reduce server response time: optimise database queries, add caching (CDN, Redis), or move compute closer to users with edge functions.",
+  );
+
+  check(
+    "load_time_sla_breach",
+    "Page Load Time",
+    metrics.loadTimeMs,
+    sla.loadTimeMs,
+    "ms",
+    fmtMs,
+    "Defer non-critical scripts, lazy-load images, reduce render-blocking resources, and enable HTTP/2 or HTTP/3.",
+  );
+
+  check(
+    "lcp_sla_breach",
+    "Largest Contentful Paint (LCP)",
+    metrics.lcpMs,
+    sla.lcpMs,
+    "ms",
+    fmtMs,
+    "Preload the LCP resource, serve images in next-gen formats (WebP/AVIF), and ensure the origin responds quickly (see TTFB finding).",
+  );
+
+  if (metrics.clsScore !== null && metrics.clsScore > sla.clsScore) {
+    const ratio = metrics.clsScore / sla.clsScore;
+    const severity = severityFromRatio(ratio);
+    findings.push({
+      ruleId: "cls_sla_breach",
+      title: `Cumulative Layout Shift (CLS) SLA breach on ${new URL(url).pathname || "/"}`,
+      description: `CLS score was ${metrics.clsScore.toFixed(4)}, exceeding the SLA threshold of ${sla.clsScore}. Layout instability can cause users to click the wrong elements.`,
+      recommendation:
+        "Set explicit width/height on images and video, avoid inserting content above existing content, and use CSS transform for animations instead of layout-triggering properties.",
+      severity,
+      measured: metrics.clsScore.toFixed(4),
+      threshold: String(sla.clsScore),
+    });
+  }
+
+  check(
+    "tti_sla_breach",
+    "Time to Interactive (TTI)",
+    metrics.ttiMs,
+    sla.ttiMs,
+    "ms",
+    fmtMs,
+    "Reduce main-thread JavaScript work: code-split large bundles, remove unused polyfills, defer third-party scripts, and minimise long tasks (>50 ms).",
+  );
+
+  return findings;
+}
+
+function fmtMs(ms: number): string {
+  if (ms >= 1000) return `${(ms / 1000).toFixed(2)} s`;
+  return `${Math.round(ms)} ms`;
+}
+
+export interface PerfScanResult {
+  metrics: PagePerfMetrics;
+  findings: PerfScannerFinding[];
+}
+
+export interface PerfScannerFinding {
+  /** Stable key identifying which metric breached, e.g. "lcp_sla_breach". */
+  ruleId: string;
+  title: string;
+  description: string;
+  recommendation: string;
+  /** Observatory severity: Critical | High | Medium | Low | Informational */
+  severity: string;
+  /** Measured value (formatted for display, e.g. "3 200 ms"). */
+  measured: string;
+  /** Threshold value (formatted for display). */
+  threshold: string;
+}

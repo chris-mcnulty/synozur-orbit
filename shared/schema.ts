@@ -5032,6 +5032,8 @@ export const obsApplications = pgTable("obs_applications", {
   aiEnabled: boolean("ai_enabled").notNull().default(false),
   certificationTarget: text("certification_target"),
   status: text("status").notNull().default("active"), // active, archived
+  /** Optional custom SLA thresholds for performance scans. Falls back to platform defaults when null. */
+  perfSlaConfig: jsonb("perf_sla_config"),
   createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5719,6 +5721,44 @@ export const obsVpatEntries = pgTable("obs_vpat_entries", {
   uniqueEntry: uniqueIndex("obs_vpat_entries_version_control_idx").on(t.versionId, t.controlRef),
 }));
 
+// ── Performance scan history ────────────────────────────────────────────────
+export const OBS_PERF_SCAN_STATUSES = ["running", "completed", "failed"] as const;
+
+export const obsPerformanceScans = pgTable("obs_performance_scans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  assessmentId: varchar("assessment_id").notNull().references(() => obsAssessments.id, { onDelete: "cascade" }),
+  applicationId: varchar("application_id").notNull().references(() => obsApplications.id, { onDelete: "cascade" }),
+  /** URL actually scanned (resolved from application.appUrl at scan time). */
+  scanUrl: text("scan_url").notNull(),
+  status: text("status").notNull().default("running"), // OBS_PERF_SCAN_STATUSES
+  /** Time to First Byte in milliseconds. */
+  ttfbMs: integer("ttfb_ms"),
+  /** Page load event time from navigation start, in milliseconds. */
+  loadTimeMs: integer("load_time_ms"),
+  /** Largest Contentful Paint in milliseconds. */
+  lcpMs: integer("lcp_ms"),
+  /** Cumulative Layout Shift score (multiplied by 10000 and stored as integer for precision). */
+  clsScore: real("cls_score"),
+  /** Time to Interactive approximation in milliseconds. */
+  ttiMs: integer("tti_ms"),
+  /** SLA config used for this scan (snapshot of thresholds at scan time). */
+  slaConfig: jsonb("sla_config"),
+  /** Number of SLA-breach findings created. */
+  findingCount: integer("finding_count").notNull().default(0),
+  /** Error message if status=failed. */
+  scanError: text("scan_error"),
+  /** Warnings recorded during measurement (non-fatal). */
+  warnings: jsonb("warnings").default(sql`'[]'::jsonb`),
+  /** ISO timestamp when the headless measurement was taken. */
+  scannedAt: timestamp("scanned_at"),
+  triggeredBy: varchar("triggered_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("obs_perf_scans_tenant_idx").on(t.tenantDomain),
+  assessmentIdx: index("obs_perf_scans_assessment_idx").on(t.assessmentId, t.createdAt),
+}));
+
 // ── Insert schemas + types ──────────────────────────────────────────────────
 export const insertObsReadinessScoreSchema = createInsertSchema(obsReadinessScores).omit({ id: true, computedAt: true });
 export type ObsReadinessScore = typeof obsReadinessScores.$inferSelect;
@@ -5731,3 +5771,7 @@ export type InsertObsReport = z.infer<typeof insertObsReportSchema>;
 export const insertObsVpatEntrySchema = createInsertSchema(obsVpatEntries).omit({ id: true, createdAt: true, updatedAt: true });
 export type ObsVpatEntry = typeof obsVpatEntries.$inferSelect;
 export type InsertObsVpatEntry = z.infer<typeof insertObsVpatEntrySchema>;
+
+export const insertObsPerformanceScanSchema = createInsertSchema(obsPerformanceScans).omit({ id: true, createdAt: true });
+export type ObsPerformanceScan = typeof obsPerformanceScans.$inferSelect;
+export type InsertObsPerformanceScan = z.infer<typeof insertObsPerformanceScanSchema>;

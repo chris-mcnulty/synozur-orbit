@@ -66,6 +66,7 @@ import { registerMarketingPerformanceRoutes } from "./routes/marketing-performan
 import { registerPlanningHubRoutes } from "./routes/planning-hub";
 import { registerMarketingNextActionsRoutes } from "./routes/marketing-next-actions";
 import { registerTestHelperRoutes } from "./routes/test-helpers";
+import { registerObservatoryPerformanceRoutes } from "./routes/observatory-performance";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -130,6 +131,7 @@ export async function registerRoutes(
   registerObservatoryRoutes(app);
   registerObservatoryModuleRoutes(app);
   registerObservatoryInsightRoutes(app);
+  registerObservatoryPerformanceRoutes(app);
   registerIntelligenceRoutes(app);
   registerExecutiveRegenRoutes(app);
   registerRelationshipReportRoutes(app);
