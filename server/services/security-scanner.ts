@@ -1,273 +1,695 @@
 /**
- * Built-in security scanner — checks registered application URLs for common
- * security misconfigurations: missing/weak security headers, information
- * disclosure, insecure cookies, mixed content, and exposed sensitive paths.
+ * Observatory — Built-in security scanner.
  *
- * Runs entirely in-process using Node fetch + the existing headless browser.
- * No external scanning service required.
+ * Implements the ScannerProvider interface from observatory-scanners.ts.
+ * Runs HTTP-based security checks against a registered application URL:
+ *   - Security response headers (CSP, HSTS, X-Frame-Options, etc.)
+ *   - TLS / HTTPS enforcement
+ *   - TLS certificate validity and expiry
+ *   - Cookie security flags (Secure, HttpOnly, SameSite)
+ *   - Server version disclosure via Server / X-Powered-By headers
+ *   - Common sensitive path exposure (/.env, /.git/HEAD, /phpinfo.php, etc.)
+ *   - HTTP→HTTPS redirect enforcement
+ *
+ * All checks are performed with plain HTTPS/HTTP requests — no headless
+ * browser — so the scanner is lightweight and can run within the existing
+ * job-queue concurrency limits.
  */
 
-import { getBrowserPage, releaseBrowserPage } from "./headless-crawler";
-import type { ScannerProvider, ScanRequest, ScanResult, ScannerFinding } from "./observatory-scanners";
+import https from "https";
+import http from "http";
+import { URL } from "url";
+import type {
+  ScannerProvider,
+  ScanRequest,
+  ScanResult,
+  ScannerFinding,
+} from "./observatory-scanners";
 
 // ── Header checks ────────────────────────────────────────────────────────────
 
 interface HeaderCheck {
+  header: string;
   ruleId: string;
   title: string;
   description: string;
-  recommendation: string;
   severity: string;
-  wcagOrCwe?: string;
-  test: (headers: Record<string, string>, url: string) => boolean; // true = finding (bad)
+  recommendation: string;
+  cweId?: string;
+  /** Return true if the header value looks misconfigured (beyond just missing). */
+  checkValue?: (value: string) => { pass: boolean; note?: string } | null;
 }
 
 const HEADER_CHECKS: HeaderCheck[] = [
   {
+    header: "strict-transport-security",
     ruleId: "missing-hsts",
-    title: "Strict-Transport-Security (HSTS) header missing",
-    description: "The server does not set the Strict-Transport-Security header. Without HSTS, browsers may connect over plain HTTP, exposing users to downgrade attacks.",
-    recommendation: "Add: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload",
+    title: "Missing HTTP Strict Transport Security (HSTS)",
+    description:
+      "The Strict-Transport-Security header is absent. Without HSTS, browsers will not enforce HTTPS, leaving users vulnerable to downgrade attacks and man-in-the-middle interception.",
     severity: "High",
-    wcagOrCwe: "CWE-319",
-    test: (h, url) => url.startsWith("https") && !h["strict-transport-security"],
+    recommendation:
+      "Add `Strict-Transport-Security: max-age=31536000; includeSubDomains` to every HTTPS response.",
+    cweId: "CWE-319",
+    checkValue: (v) => {
+      const maxAgeMatch = v.match(/max-age=(\d+)/i);
+      if (!maxAgeMatch) return { pass: false, note: "max-age directive missing" };
+      const maxAge = parseInt(maxAgeMatch[1], 10);
+      if (maxAge < 15768000) {
+        return {
+          pass: false,
+          note: `max-age is only ${maxAge}s (< 6 months). Increase to at least 31536000.`,
+        };
+      }
+      return { pass: true };
+    },
   },
   {
+    header: "x-frame-options",
+    ruleId: "missing-x-frame-options",
+    title: "Missing X-Frame-Options Header",
+    description:
+      "The X-Frame-Options header is not set. Without it, attackers can embed this page in an iframe and trick users into clicking elements they cannot see (clickjacking).",
+    severity: "Medium",
+    recommendation:
+      "Add `X-Frame-Options: DENY` or `SAMEORIGIN`. Alternatively use `Content-Security-Policy: frame-ancestors 'none'`.",
+    cweId: "CWE-1021",
+  },
+  {
+    header: "x-content-type-options",
+    ruleId: "missing-x-content-type-options",
+    title: "Missing X-Content-Type-Options Header",
+    description:
+      "The X-Content-Type-Options header is absent. Without `nosniff`, browsers may MIME-sniff responses and execute content as a different type, enabling XSS.",
+    severity: "Low",
+    recommendation: "Add `X-Content-Type-Options: nosniff` to all responses.",
+    cweId: "CWE-693",
+  },
+  {
+    header: "content-security-policy",
     ruleId: "missing-csp",
-    title: "Content-Security-Policy header missing",
-    description: "No Content-Security-Policy header found. CSP reduces XSS risk by controlling which resources the browser is allowed to load.",
-    recommendation: "Define a restrictive CSP appropriate to your application's resource requirements.",
-    severity: "High",
-    wcagOrCwe: "CWE-1021",
-    test: (h) => !h["content-security-policy"],
-  },
-  {
-    ruleId: "missing-xcto",
-    title: "X-Content-Type-Options header missing",
-    description: "The X-Content-Type-Options: nosniff header is absent. This allows browsers to MIME-sniff responses away from the declared content type.",
-    recommendation: "Add: X-Content-Type-Options: nosniff",
+    title: "No Content Security Policy (CSP)",
+    description:
+      "No Content-Security-Policy header was found. A CSP prevents cross-site scripting (XSS), data injection, and clickjacking by declaring approved content sources.",
     severity: "Medium",
-    wcagOrCwe: "CWE-693",
-    test: (h) => !h["x-content-type-options"],
+    recommendation:
+      "Define a Content-Security-Policy. Start with `default-src 'self'` and add exceptions as needed. Avoid `unsafe-inline` and `unsafe-eval`.",
+    cweId: "CWE-693",
   },
   {
-    ruleId: "missing-xframe",
-    title: "Clickjacking protection missing",
-    description: "No X-Frame-Options or frame-ancestors CSP directive found. The page may be embeddable in iframes, enabling clickjacking attacks.",
-    recommendation: "Add X-Frame-Options: DENY or SAMEORIGIN, or include frame-ancestors in your CSP.",
-    severity: "Medium",
-    wcagOrCwe: "CWE-1021",
-    test: (h) => {
-      const hasXFrame = !!h["x-frame-options"];
-      const csp = h["content-security-policy"] ?? "";
-      const hasFrameAncestors = csp.includes("frame-ancestors");
-      return !hasXFrame && !hasFrameAncestors;
-    },
-  },
-  {
+    header: "referrer-policy",
     ruleId: "missing-referrer-policy",
-    title: "Referrer-Policy header missing",
-    description: "No Referrer-Policy header found. Browsers may send the full URL as a Referer, leaking sensitive path or query parameters to third parties.",
-    recommendation: "Add: Referrer-Policy: strict-origin-when-cross-origin",
+    title: "Missing Referrer-Policy Header",
+    description:
+      "The Referrer-Policy header is absent. Without it, the browser may send the full URL (including query strings with tokens or IDs) in the Referer header to third-party requests.",
     severity: "Low",
-    test: (h) => !h["referrer-policy"],
+    recommendation:
+      "Add `Referrer-Policy: strict-origin-when-cross-origin` or `no-referrer` for stricter control.",
+    cweId: "CWE-116",
   },
   {
-    ruleId: "server-version-disclosure",
-    title: "Server version information disclosed in headers",
-    description: "The Server or X-Powered-By header includes version information that helps attackers fingerprint the stack and target known vulnerabilities.",
-    recommendation: "Remove version tokens from Server and X-Powered-By headers.",
-    severity: "Low",
-    wcagOrCwe: "CWE-200",
-    test: (h) => {
-      const server = h["server"] ?? "";
-      const xPoweredBy = h["x-powered-by"] ?? "";
-      return /[\d.]/.test(server) || xPoweredBy.length > 0;
-    },
+    header: "permissions-policy",
+    ruleId: "missing-permissions-policy",
+    title: "Missing Permissions-Policy Header",
+    description:
+      "The Permissions-Policy (formerly Feature-Policy) header is not set. This header restricts access to browser APIs such as camera, microphone, and geolocation.",
+    severity: "Informational",
+    recommendation:
+      "Add a `Permissions-Policy` header to explicitly disable features your application does not need (e.g. `camera=(), microphone=(), geolocation=()`).",
+    cweId: "CWE-693",
   },
 ];
 
-// Sensitive paths to probe (returns 200 = potential exposure)
-const SENSITIVE_PATHS = [
-  { path: "/.env",              ruleId: "exposed-env-file",        title: "Environment file (.env) publicly accessible",       severity: "Critical", cwe: "CWE-538" },
-  { path: "/.git/config",       ruleId: "exposed-git-config",      title: "Git repository config publicly accessible",          severity: "Critical", cwe: "CWE-538" },
-  { path: "/phpinfo.php",       ruleId: "exposed-phpinfo",         title: "PHP configuration info page publicly accessible",    severity: "High",     cwe: "CWE-200" },
-  { path: "/admin",             ruleId: "exposed-admin-path",      title: "Admin interface accessible without authentication",  severity: "High",     cwe: "CWE-287" },
-  { path: "/wp-admin",          ruleId: "exposed-wp-admin",        title: "WordPress admin panel accessible",                  severity: "Medium",   cwe: "CWE-287" },
-  { path: "/.DS_Store",         ruleId: "exposed-ds-store",        title: "macOS .DS_Store metadata file exposed",             severity: "Low",      cwe: "CWE-538" },
-  { path: "/server-status",     ruleId: "exposed-server-status",   title: "Apache server-status page accessible",              severity: "Medium",   cwe: "CWE-200" },
-  { path: "/actuator/health",   ruleId: "exposed-actuator",        title: "Spring Boot actuator endpoints accessible",         severity: "Medium",   cwe: "CWE-200" },
-  { path: "/swagger-ui.html",   ruleId: "exposed-swagger",         title: "Swagger UI accessible in production",               severity: "Low",      cwe: "CWE-200" },
-  { path: "/api-docs",          ruleId: "exposed-api-docs",        title: "API documentation exposed publicly",                severity: "Low",      cwe: "CWE-200" },
-];
+// ── Sensitive paths ──────────────────────────────────────────────────────────
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function headersToLower(raw: Record<string, string> | Headers): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (raw instanceof Headers) {
-    raw.forEach((v, k) => { out[k.toLowerCase()] = v; });
-  } else {
-    for (const [k, v] of Object.entries(raw)) out[k.toLowerCase()] = v;
-  }
-  return out;
+interface SensitivePath {
+  path: string;
+  ruleId: string;
+  title: string;
+  description: string;
+  severity: string;
+  cweId: string;
+  /** If true, finding is only raised when the response body matches this pattern. */
+  bodyMatch?: RegExp;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 10000): Promise<Response | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+const SENSITIVE_PATHS: SensitivePath[] = [
+  {
+    path: "/.env",
+    ruleId: "exposed-env-file",
+    title: "Environment Configuration File Accessible",
+    description:
+      "The /.env file is publicly readable. It commonly contains database credentials, API keys, and other secrets that would give an attacker full access to backend systems.",
+    severity: "Critical",
+    cweId: "CWE-200",
+    bodyMatch: /(?:DB_|DATABASE_URL|APP_KEY|SECRET|PASSWORD|TOKEN|API_KEY)/i,
+  },
+  {
+    path: "/.git/HEAD",
+    ruleId: "exposed-git-head",
+    title: "Git Repository Metadata Exposed",
+    description:
+      "The /.git/HEAD file is publicly accessible. This indicates the full git repository may be downloadable, potentially leaking all source code and history.",
+    severity: "Critical",
+    cweId: "CWE-538",
+    bodyMatch: /^ref: refs\//,
+  },
+  {
+    path: "/.git/config",
+    ruleId: "exposed-git-config",
+    title: "Git Configuration File Exposed",
+    description:
+      "The /.git/config file is accessible. It may contain repository remote URLs and credential helpers.",
+    severity: "High",
+    cweId: "CWE-538",
+    bodyMatch: /\[core\]/,
+  },
+  {
+    path: "/phpinfo.php",
+    ruleId: "exposed-phpinfo",
+    title: "PHP Info Page Exposed",
+    description:
+      "phpinfo() output is publicly accessible. It reveals PHP configuration, loaded extensions, server environment variables, and file system paths — a reconnaissance goldmine.",
+    severity: "High",
+    cweId: "CWE-200",
+    bodyMatch: /<title>phpinfo\(\)<\/title>/i,
+  },
+  {
+    path: "/.htaccess",
+    ruleId: "exposed-htaccess",
+    title: "Apache .htaccess File Accessible",
+    description:
+      "The Apache .htaccess configuration file is readable. It may disclose rewrite rules, authentication configuration, or other security-relevant server settings.",
+    severity: "Medium",
+    cweId: "CWE-538",
+    bodyMatch: /^(?:Options|RewriteEngine|AuthType|Deny from)/im,
+  },
+  {
+    path: "/web.config",
+    ruleId: "exposed-webconfig",
+    title: "IIS web.config File Accessible",
+    description:
+      "The IIS web.config file is publicly readable. It may contain connection strings, encryption keys, and authentication configuration.",
+    severity: "High",
+    cweId: "CWE-538",
+    bodyMatch: /<configuration>/i,
+  },
+  {
+    path: "/server-status",
+    ruleId: "exposed-server-status",
+    title: "Apache Server Status Page Exposed",
+    description:
+      "The Apache mod_status page is publicly accessible. It reveals active requests, client IP addresses, and server load — useful for attack planning.",
+    severity: "Medium",
+    cweId: "CWE-200",
+    bodyMatch: /Apache Server Status/i,
+  },
+  {
+    path: "/wp-login.php",
+    ruleId: "wordpress-login-exposed",
+    title: "WordPress Login Page Exposed",
+    description:
+      "The WordPress admin login page is reachable from the internet, allowing brute-force or credential stuffing attacks on the CMS.",
+    severity: "Low",
+    cweId: "CWE-307",
+    bodyMatch: /wp-login|WordPress/i,
+  },
+];
+
+// ── HTTP helper ──────────────────────────────────────────────────────────────
+
+interface FetchResult {
+  statusCode: number;
+  headers: Record<string, string | string[]>;
+  body: string;
+  finalUrl: string;
+  redirectChain: string[];
+  tlsCert?: {
+    valid: boolean;
+    daysUntilExpiry: number | null;
+    subject?: string;
+    issuer?: string;
+    error?: string;
+  };
+}
+
+function makeRequest(
+  url: string,
+  options: { followRedirects?: boolean; timeout?: number; method?: string } = {},
+): Promise<FetchResult | null> {
+  return new Promise((resolve) => {
+    const { followRedirects = false, timeout = 10000, method = "GET" } = options;
+    const redirectChain: string[] = [];
+    let tlsCert: FetchResult["tlsCert"];
+
+    const doRequest = (currentUrl: string, depth: number) => {
+      if (depth > 6) {
+        resolve(null);
+        return;
+      }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(currentUrl);
+      } catch {
+        resolve(null);
+        return;
+      }
+
+      const isHttps = parsedUrl.protocol === "https:";
+      const lib = isHttps ? https : http;
+      const port = parsedUrl.port
+        ? parseInt(parsedUrl.port, 10)
+        : isHttps
+        ? 443
+        : 80;
+
+      const reqOptions: https.RequestOptions = {
+        hostname: parsedUrl.hostname,
+        port,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method,
+        headers: {
+          "User-Agent": "Observatory-SecurityScanner/1.0 (internal)",
+          "Accept": "text/html,application/xhtml+xml,*/*",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        // Allow self-signed certs so we can inspect the cert ourselves
+        rejectUnauthorized: false,
+        timeout,
+      };
+
+      const req = (lib as typeof https).request(reqOptions, (res) => {
+        // Capture TLS info on HTTPS connections
+        if (isHttps) {
+          const socket = res.socket as any;
+          try {
+            const cert = socket.getPeerCertificate?.();
+            if (cert && cert.subject) {
+              const now = Date.now();
+              const validTo = cert.valid_to ? new Date(cert.valid_to).getTime() : null;
+              const validFrom = cert.valid_from ? new Date(cert.valid_from).getTime() : null;
+              const daysUntilExpiry = validTo
+                ? Math.floor((validTo - now) / 86400000)
+                : null;
+              const isNotYetValid = validFrom ? now < validFrom : false;
+              const isExpired = validTo ? now > validTo : false;
+
+              tlsCert = {
+                valid: !isExpired && !isNotYetValid && !socket.isSessionReused?.(),
+                daysUntilExpiry,
+                subject: cert.subject?.CN,
+                issuer: cert.issuer?.O,
+              };
+            } else {
+              tlsCert = { valid: false, daysUntilExpiry: null, error: "No certificate" };
+            }
+          } catch {
+            tlsCert = { valid: false, daysUntilExpiry: null, error: "Certificate inspection failed" };
+          }
+        }
+
+        const location = res.headers["location"] as string | undefined;
+        const statusCode = res.statusCode ?? 0;
+
+        if (followRedirects && [301, 302, 303, 307, 308].includes(statusCode) && location) {
+          redirectChain.push(currentUrl);
+          const nextUrl = location.startsWith("http") ? location : new URL(location, currentUrl).href;
+          doRequest(nextUrl, depth + 1);
+          res.resume();
+          return;
+        }
+
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => {
+          // Cap body at 64 KB to avoid memory issues
+          if (body.length < 65536) body += chunk;
+        });
+        res.on("end", () => {
+          const headers: Record<string, string | string[]> = {};
+          for (const [k, v] of Object.entries(res.headers)) {
+            if (v !== undefined) headers[k.toLowerCase()] = v as string | string[];
+          }
+          resolve({
+            statusCode,
+            headers,
+            body,
+            finalUrl: currentUrl,
+            redirectChain,
+            tlsCert,
+          });
+        });
+      });
+
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(null);
+      });
+      req.on("error", () => {
+        resolve(null);
+      });
+
+      req.end();
+    };
+
+    doRequest(url, 0);
+  });
+}
+
+// ── Scanner implementation ────────────────────────────────────────────────────
+
+async function checkHttpToHttpsRedirect(
+  appUrl: string,
+): Promise<ScannerFinding | null> {
+  let parsed: URL;
   try {
-    return await fetch(url, { signal: controller.signal, redirect: "follow" });
+    parsed = new URL(appUrl);
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
+  if (parsed.protocol !== "https:") return null;
+
+  const httpUrl = appUrl.replace(/^https:/, "http:");
+  const result = await makeRequest(httpUrl, { followRedirects: false, timeout: 8000 });
+  if (!result) return null;
+
+  const location = result.headers["location"] as string | undefined;
+  const isRedirectToHttps =
+    [301, 302, 307, 308].includes(result.statusCode) &&
+    location?.startsWith("https://");
+
+  if (!isRedirectToHttps) {
+    return {
+      ruleId: "http-no-redirect",
+      title: "HTTP Requests Not Redirected to HTTPS",
+      description: `Accessing ${httpUrl} over plain HTTP returned status ${result.statusCode} without redirecting to HTTPS. Users connecting over HTTP are not protected by TLS.`,
+      severity: "High",
+      cweId: "CWE-319",
+      location: { url: httpUrl },
+      raw: { statusCode: result.statusCode, location },
+    };
+  }
+  return null;
 }
 
-// ── Scanner implementation ───────────────────────────────────────────────────
+async function checkTlsCertificate(
+  appUrl: string,
+  fetchResult: FetchResult,
+): Promise<ScannerFinding[]> {
+  const findings: ScannerFinding[] = [];
+  const cert = fetchResult.tlsCert;
+  if (!cert) return findings;
+
+  if (cert.error || !cert.valid) {
+    findings.push({
+      ruleId: "invalid-tls-cert",
+      title: "TLS Certificate Invalid or Missing",
+      description: `The TLS certificate for ${appUrl} is invalid or could not be verified. ${cert.error ?? "Certificate validation failed."}`,
+      severity: "Critical",
+      cweId: "CWE-295",
+      location: { url: appUrl },
+      raw: cert,
+    });
+  } else if (cert.daysUntilExpiry !== null && cert.daysUntilExpiry < 30) {
+    findings.push({
+      ruleId: "tls-cert-expiring-soon",
+      title: `TLS Certificate Expires in ${cert.daysUntilExpiry} Day${cert.daysUntilExpiry === 1 ? "" : "s"}`,
+      description: `The TLS certificate for ${appUrl} (issued by ${cert.issuer ?? "unknown"}) expires in ${cert.daysUntilExpiry} days. Expired certificates will cause browser security warnings and break HTTPS.`,
+      severity: cert.daysUntilExpiry < 7 ? "High" : "Medium",
+      cweId: "CWE-298",
+      location: { url: appUrl },
+      raw: cert,
+    });
+  }
+  return findings;
+}
+
+function checkSecurityHeaders(
+  appUrl: string,
+  fetchResult: FetchResult,
+): ScannerFinding[] {
+  const findings: ScannerFinding[] = [];
+  const headers = fetchResult.headers;
+
+  for (const check of HEADER_CHECKS) {
+    const value = headers[check.header];
+
+    if (!value) {
+      // CSP absence is less critical if X-Frame-Options is set (partial overlap)
+      if (check.ruleId === "missing-x-frame-options" && headers["content-security-policy"]) {
+        const csp = Array.isArray(headers["content-security-policy"])
+          ? headers["content-security-policy"].join("; ")
+          : headers["content-security-policy"];
+        if (/frame-ancestors/i.test(csp)) continue; // CSP covers clickjacking
+      }
+      findings.push({
+        ruleId: check.ruleId,
+        title: check.title,
+        description: check.description,
+        severity: check.severity,
+        cweId: check.cweId,
+        location: { url: appUrl },
+        raw: { checkedHeader: check.header, responseHeaders: Object.keys(headers) },
+      });
+      continue;
+    }
+
+    // Header present — check value quality
+    if (check.checkValue) {
+      const rawValue = Array.isArray(value) ? value[0] : value;
+      const result = check.checkValue(rawValue);
+      if (result && !result.pass) {
+        findings.push({
+          ruleId: `${check.ruleId}-weak`,
+          title: `Weak ${check.title.replace("Missing ", "")} Configuration`,
+          description: `${check.description} Current value: \`${rawValue}\`. ${result.note ?? ""}`.trim(),
+          severity: check.severity === "High" ? "Medium" : check.severity,
+          cweId: check.cweId,
+          location: { url: appUrl },
+          raw: { checkedHeader: check.header, value: rawValue },
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+function checkServerDisclosure(
+  appUrl: string,
+  fetchResult: FetchResult,
+): ScannerFinding[] {
+  const findings: ScannerFinding[] = [];
+  const serverHeader = fetchResult.headers["server"] as string | undefined;
+  const poweredByHeader = fetchResult.headers["x-powered-by"] as string | undefined;
+
+  // Check for version numbers in Server header
+  if (serverHeader && /[\d.]/.test(serverHeader)) {
+    findings.push({
+      ruleId: "server-version-disclosure",
+      title: "Server Version Disclosed in Response Header",
+      description: `The Server header discloses the software version: \`${serverHeader}\`. Version disclosure helps attackers identify known vulnerabilities without active scanning.`,
+      severity: "Low",
+      cweId: "CWE-200",
+      location: { url: appUrl },
+      raw: { header: "Server", value: serverHeader },
+    });
+  }
+
+  if (poweredByHeader) {
+    findings.push({
+      ruleId: "x-powered-by-disclosure",
+      title: "Technology Stack Disclosed via X-Powered-By Header",
+      description: `The X-Powered-By header reveals the server-side technology: \`${poweredByHeader}\`. This aids attacker reconnaissance and should be removed.`,
+      severity: "Informational",
+      cweId: "CWE-200",
+      location: { url: appUrl },
+      raw: { header: "X-Powered-By", value: poweredByHeader },
+    });
+  }
+
+  return findings;
+}
+
+function checkCookieFlags(
+  appUrl: string,
+  fetchResult: FetchResult,
+): ScannerFinding[] {
+  const findings: ScannerFinding[] = [];
+  const setCookieRaw = fetchResult.headers["set-cookie"];
+  if (!setCookieRaw) return findings;
+
+  const cookies = Array.isArray(setCookieRaw) ? setCookieRaw : [setCookieRaw];
+  const insecure: string[] = [];
+  const noHttpOnly: string[] = [];
+  const noSameSite: string[] = [];
+
+  for (const cookie of cookies) {
+    const nameMatch = cookie.match(/^([^=]+)=/);
+    const name = nameMatch ? nameMatch[1].trim() : "unknown";
+
+    if (!/;\s*secure/i.test(cookie)) insecure.push(name);
+    if (!/;\s*httponly/i.test(cookie)) noHttpOnly.push(name);
+    if (!/;\s*samesite/i.test(cookie)) noSameSite.push(name);
+  }
+
+  if (insecure.length) {
+    findings.push({
+      ruleId: "cookie-missing-secure-flag",
+      title: "Cookies Missing the Secure Flag",
+      description: `The following cookies lack the Secure flag and will be transmitted over HTTP: ${insecure.join(", ")}. This exposes session tokens to network interception.`,
+      severity: "Medium",
+      cweId: "CWE-614",
+      location: { url: appUrl },
+      raw: { cookies: insecure },
+    });
+  }
+
+  if (noHttpOnly.length) {
+    findings.push({
+      ruleId: "cookie-missing-httponly-flag",
+      title: "Cookies Missing the HttpOnly Flag",
+      description: `The following cookies lack the HttpOnly flag and are accessible from JavaScript: ${noHttpOnly.join(", ")}. If XSS is present, session tokens can be exfiltrated.`,
+      severity: "Medium",
+      cweId: "CWE-1004",
+      location: { url: appUrl },
+      raw: { cookies: noHttpOnly },
+    });
+  }
+
+  if (noSameSite.length) {
+    findings.push({
+      ruleId: "cookie-missing-samesite-flag",
+      title: "Cookies Missing the SameSite Attribute",
+      description: `The following cookies have no SameSite attribute: ${noSameSite.join(", ")}. Without SameSite, cookies are included in cross-site requests, enabling CSRF attacks.`,
+      severity: "Low",
+      cweId: "CWE-352",
+      location: { url: appUrl },
+      raw: { cookies: noSameSite },
+    });
+  }
+
+  return findings;
+}
+
+async function checkSensitivePaths(
+  baseUrl: string,
+): Promise<ScannerFinding[]> {
+  const findings: ScannerFinding[] = [];
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return findings;
+  }
+
+  const origin = `${base.protocol}//${base.host}`;
+
+  const results = await Promise.all(
+    SENSITIVE_PATHS.map(async (sp) => {
+      const url = origin + sp.path;
+      try {
+        const result = await makeRequest(url, { followRedirects: false, timeout: 6000 });
+        return { sp, url, result };
+      } catch {
+        return { sp, url, result: null };
+      }
+    }),
+  );
+
+  for (const { sp, url, result } of results) {
+    if (!result) continue;
+    if (result.statusCode !== 200) continue;
+    // Body match guard — only report if the response looks like the real file
+    if (sp.bodyMatch && !sp.bodyMatch.test(result.body)) continue;
+
+    findings.push({
+      ruleId: sp.ruleId,
+      title: sp.title,
+      description: `${sp.description} The path \`${sp.path}\` returned HTTP 200.`,
+      severity: sp.severity,
+      cweId: sp.cweId,
+      location: { url },
+      raw: { statusCode: result.statusCode, bodyPreview: result.body.substring(0, 200) },
+    });
+  }
+
+  return findings;
+}
+
+// ── ScannerProvider implementation ───────────────────────────────────────────
 
 export const securityScanner: ScannerProvider = {
-  key: "observatory_security",
-  name: "Observatory Security Scanner (built-in)",
-  assessmentTypes: ["penetration_test", "security_source_review"],
+  key: "builtin_security",
+  name: "Built-in Security Scanner",
+  assessmentTypes: ["security", "pen_test"],
 
-  async isAvailable(): Promise<boolean> {
-    return true;
+  async isAvailable(_tenantDomain: string): Promise<boolean> {
+    return true; // Always available — no external dependencies
   },
 
   async runScan(request: ScanRequest): Promise<ScanResult> {
     const startedAt = new Date();
     const targetUrl = request.target.url;
-    if (!targetUrl) throw new Error("security scan requires a target URL");
+    if (!targetUrl) {
+      throw new Error("Security scanner requires a target URL");
+    }
 
     const findings: ScannerFinding[] = [];
-    const rawReport: Record<string, unknown> = { url: targetUrl, checks: [] };
 
-    // ── 1. Header analysis ─────────────────────────────────────────────────
-    console.log(`[SecurityScanner] Checking headers for ${targetUrl}`);
-    const headResp = await fetchWithTimeout(targetUrl);
-    if (headResp) {
-      const headers = headersToLower(headResp.headers);
-      rawReport.responseStatus = headResp.status;
-      rawReport.headers = headers;
+    // 1. Fetch the main page (follow redirects to final destination)
+    const fetchResult = await makeRequest(targetUrl, {
+      followRedirects: true,
+      timeout: 15000,
+    });
 
-      for (const check of HEADER_CHECKS) {
-        if (check.test(headers, targetUrl)) {
-          findings.push({
-            ruleId: check.ruleId,
-            title: check.title,
-            description: check.description,
-            severity: check.severity,
-            cweId: check.wcagOrCwe?.startsWith("CWE") ? check.wcagOrCwe : undefined,
+    if (!fetchResult) {
+      return {
+        findings: [
+          {
+            ruleId: "target-unreachable",
+            title: "Target URL Unreachable",
+            description: `The scanner could not connect to ${targetUrl}. The application may be down, behind authentication, or blocking automated requests.`,
+            severity: "Informational",
             location: { url: targetUrl },
-            raw: { header: check.ruleId, presentHeaders: Object.keys(headers) },
-          });
-        }
-      }
-    } else {
-      findings.push({
-        ruleId: "unreachable-url",
-        title: "Application URL not reachable",
-        description: `Could not connect to ${targetUrl}. Verify the URL is correct and publicly accessible from the scanner.`,
-        severity: "High",
-        location: { url: targetUrl },
-      });
+          },
+        ],
+        rawReport: {
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Target unreachable", url: targetUrl }),
+        },
+        tool: "builtin_security@1.0",
+        startedAt,
+        finishedAt: new Date(),
+      };
     }
 
-    // ── 2. Sensitive path probe ────────────────────────────────────────────
-    console.log(`[SecurityScanner] Probing sensitive paths on ${targetUrl}`);
-    const baseUrl = new URL(targetUrl).origin;
-    const pathResults = await Promise.all(
-      SENSITIVE_PATHS.map(async (sp) => {
-        const probeUrl = `${baseUrl}${sp.path}`;
-        const resp = await fetchWithTimeout(probeUrl, 8000);
-        return { sp, status: resp?.status ?? null, probeUrl };
-      }),
-    );
+    // 2. Parallel checks against HTTP redirect, TLS, and sensitive paths
+    const [httpRedirectFinding, tlsFindings, sensitivePathFindings] = await Promise.all([
+      checkHttpToHttpsRedirect(targetUrl),
+      checkTlsCertificate(targetUrl, fetchResult),
+      checkSensitivePaths(targetUrl),
+    ]);
 
-    for (const { sp, status, probeUrl } of pathResults) {
-      if (status === 200) {
-        findings.push({
-          ruleId: sp.ruleId,
-          title: sp.title,
-          description: `The path \`${sp.path}\` returned HTTP 200. This resource may expose sensitive information or allow unauthorised access.`,
-          severity: sp.severity,
-          cweId: sp.cwe,
-          location: { url: probeUrl },
-          raw: { path: sp.path, status },
-        });
-      }
-    }
-    rawReport.sensitivePathResults = pathResults.map(({ sp, status }) => ({ path: sp.path, status }));
+    if (httpRedirectFinding) findings.push(httpRedirectFinding);
+    findings.push(...tlsFindings);
+    findings.push(...checkSecurityHeaders(fetchResult.finalUrl, fetchResult));
+    findings.push(...checkServerDisclosure(fetchResult.finalUrl, fetchResult));
+    findings.push(...checkCookieFlags(fetchResult.finalUrl, fetchResult));
+    findings.push(...sensitivePathFindings);
 
-    // ── 3. Mixed content detection (headless) ──────────────────────────────
-    if (targetUrl.startsWith("https://")) {
-      let page: Awaited<ReturnType<typeof getBrowserPage>> | null = null;
-      try {
-        console.log(`[SecurityScanner] Checking mixed content on ${targetUrl}`);
-        page = await getBrowserPage();
-        const mixedContentUrls: string[] = [];
+    const finishedAt = new Date();
 
-        page.on("response", (response) => {
-          const url = response.url();
-          if (url.startsWith("http://") && response.status() < 400) {
-            mixedContentUrls.push(url);
-          }
-        });
-
-        await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 20000 });
-        await new Promise(r => setTimeout(r, 1000));
-
-        if (mixedContentUrls.length > 0) {
-          findings.push({
-            ruleId: "mixed-content",
-            title: "Mixed content — HTTP resources loaded on HTTPS page",
-            description: `The page loads ${mixedContentUrls.length} resource(s) over HTTP:\n${mixedContentUrls.slice(0, 10).map(u => `• ${u}`).join("\n")}`,
-            severity: "Medium",
-            cweId: "CWE-319",
-            location: { url: targetUrl },
-            raw: { mixedContentUrls },
-          });
-        }
-        rawReport.mixedContentUrls = mixedContentUrls;
-      } catch (err) {
-        console.warn(`[SecurityScanner] Mixed content check failed: ${(err as Error).message}`);
-      } finally {
-        if (page) releaseBrowserPage(page);
-      }
-    }
-
-    // ── 4. Cookie security (headless) ─────────────────────────────────────
-    {
-      let page: Awaited<ReturnType<typeof getBrowserPage>> | null = null;
-      try {
-        page = await getBrowserPage();
-        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
-        const cookies = await page.cookies();
-        const insecureCookies = cookies.filter(c =>
-          !c.httpOnly || !c.secure || !c.sameSite || c.sameSite === "None",
-        );
-        if (insecureCookies.length > 0) {
-          findings.push({
-            ruleId: "insecure-cookies",
-            title: "Cookies missing security flags",
-            description: `${insecureCookies.length} cookie(s) are missing HttpOnly, Secure, or SameSite flags:\n${insecureCookies.map(c => `• ${c.name} (httpOnly:${c.httpOnly}, secure:${c.secure}, sameSite:${c.sameSite ?? "not set"})`).join("\n")}`,
-            severity: "Medium",
-            cweId: "CWE-614",
-            location: { url: targetUrl },
-            raw: { insecureCookies: insecureCookies.map(c => ({ name: c.name, httpOnly: c.httpOnly, secure: c.secure, sameSite: c.sameSite })) },
-          });
-        }
-        rawReport.cookieCheck = { total: cookies.length, insecure: insecureCookies.length };
-      } catch (err) {
-        console.warn(`[SecurityScanner] Cookie check failed: ${(err as Error).message}`);
-      } finally {
-        if (page) releaseBrowserPage(page);
-      }
-    }
-
-    console.log(`[SecurityScanner] ${targetUrl} — ${findings.length} findings`);
+    const rawReport = {
+      scannedUrl: targetUrl,
+      finalUrl: fetchResult.finalUrl,
+      statusCode: fetchResult.statusCode,
+      redirectChain: fetchResult.redirectChain,
+      responseHeaders: fetchResult.headers,
+      findingCount: findings.length,
+      durationMs: finishedAt.getTime() - startedAt.getTime(),
+    };
 
     return {
       findings,
@@ -275,9 +697,9 @@ export const securityScanner: ScannerProvider = {
         contentType: "application/json",
         body: JSON.stringify(rawReport, null, 2),
       },
-      tool: "observatory-security-scanner@1.0",
+      tool: "builtin_security@1.0",
       startedAt,
-      finishedAt: new Date(),
+      finishedAt,
     };
   },
 };

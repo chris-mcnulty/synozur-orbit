@@ -13,7 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, ScanLine, Trash2 } from "lucide-react";
 import {
   PEN_TEST_RESULTS,
   VALIDATION_STATUSES,
@@ -24,6 +24,7 @@ import {
   FindingStatusBadge,
   severityFromCvss,
 } from "./shared";
+import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 
 interface PenTestFinding {
@@ -43,6 +44,7 @@ interface PenTestFinding {
     description: string | null;
     recommendation: string | null;
     cweId: string | null;
+    affectedComponent: string | null;
   };
 }
 
@@ -84,6 +86,7 @@ export default function ObservatoryPenTestDetail() {
   const [deleteTarget, setDeleteTarget] = useState<PenTestFinding | null>(null);
   const [summaryEditing, setSummaryEditing] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [scanConfirmOpen, setScanConfirmOpen] = useState(false);
 
   const { data: penTest, isLoading } = useQuery<PenTestDetail>({
     queryKey: [`/api/observatory/pen-tests/${id}`],
@@ -144,6 +147,43 @@ export default function ObservatoryPenTestDetail() {
     onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
   });
 
+  const triggerScanMutation = useMutation({
+    mutationFn: async () =>
+      (await apiRequest("POST", `/api/observatory/pen-tests/${id}/security-scan`)).json(),
+    onSuccess: (data) => {
+      setScanConfirmOpen(false);
+      toast({
+        title: data.status === "queued" ? "Security scan started" : "Scan already running",
+        description: data.status === "queued"
+          ? "Findings will appear here once the scan completes (usually under a minute)."
+          : "A scan is already in progress for this application.",
+      });
+    },
+    onError: (err: Error) => {
+      setScanConfirmOpen(false);
+      toast({ title: "Scan failed to start", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Poll scan status while a job is running so the UI updates automatically
+  const { data: scanStatus } = useQuery<{ status: "active" | "pending" | "not_found"; progress?: { phase?: string } }>({
+    queryKey: [`/api/observatory/pen-tests/${id}/security-scan/status`],
+    enabled: !!id,
+    refetchInterval: (query) => {
+      const s = query.state.data?.status;
+      return s === "active" || s === "pending" ? 3000 : false;
+    },
+    // When a running scan transitions to not_found it has finished — refresh findings
+    select: (data) => {
+      if (data.status === "not_found") {
+        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes(`/api/observatory/pen-tests/${id}`) });
+      }
+      return data;
+    },
+  });
+
+  const scanRunning = scanStatus?.status === "active" || scanStatus?.status === "pending";
+
   if (isLoading || !penTest) {
     return (
       <AppLayout>
@@ -176,7 +216,22 @@ export default function ObservatoryPenTestDetail() {
               {penTest.leadTester ? ` · ${penTest.leadTester}` : ""}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setScanConfirmOpen(true)}
+                disabled={scanRunning || triggerScanMutation.isPending}
+                data-testid="button-run-security-scan"
+              >
+                {scanRunning ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Scanning…</>
+                ) : (
+                  <><ScanLine className="h-4 w-4 mr-2" />Run automated scan</>
+                )}
+              </Button>
+            )}
             {canWrite ? (
               <Select
                 value={penTest.result ?? "none"}
@@ -277,6 +332,11 @@ export default function ObservatoryPenTestDetail() {
                           </span>
                         </Link>
                         <FindingStatusBadge status={f.finding.status} />
+                        {f.finding.affectedComponent === "Automated Scan" && (
+                          <Badge variant="secondary" className="text-xs gap-1">
+                            <ScanLine className="h-3 w-3" /> Automated
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {f.cvssScore != null ? `CVSS ${f.cvssScore.toFixed(1)}` : "CVSS —"}
@@ -398,6 +458,29 @@ export default function ObservatoryPenTestDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Automated scan confirmation */}
+      <AlertDialog open={scanConfirmOpen} onOpenChange={setScanConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run automated security scan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The scanner will check the application URL for security headers, TLS configuration, cookie flags, server version disclosure, and common exposed paths. Each issue found will be added as a finding on this pen test engagement, marked <strong>Automated Scan</strong> so they are distinct from your manual findings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-security-scan">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => triggerScanMutation.mutate()}
+              disabled={triggerScanMutation.isPending}
+              data-testid="button-confirm-security-scan"
+            >
+              {triggerScanMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Start scan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>

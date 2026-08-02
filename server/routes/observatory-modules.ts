@@ -47,6 +47,8 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { completeForFeature } from "../services/ai-provider";
+import { securityScanner } from "../services/security-scanner";
+import { enqueue, getJobStatusByLabel } from "../services/job-queue";
 
 // ── helpers (mirror server/routes/observatory.ts) ───────────────────────────
 
@@ -765,6 +767,157 @@ export function registerObservatoryModuleRoutes(app: Express) {
       res.json({ success: true });
     } catch (err) {
       handleError(res, err, "pen test finding");
+    }
+  });
+
+  // ══ Automated security scan ════════════════════════════════════════════════
+
+  /**
+   * POST /api/observatory/pen-tests/:id/security-scan
+   * Enqueues a built-in security scan against the pen test's application URL.
+   * Findings are created as pen-test findings (obs_pen_test_findings wrapping
+   * obs_findings) with affectedComponent = "Automated Scan" so they are
+   * visually distinct from manually entered findings.
+   */
+  app.post("/api/observatory/pen-tests/:id/security-scan", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    if (!canWrite(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
+
+    try {
+      // Load the pen test with its assessment + application
+      const [penTest] = await db
+        .select({
+          id: obsPenTests.id,
+          tenantDomain: obsPenTests.tenantDomain,
+          assessmentId: obsPenTests.assessmentId,
+          assessment: {
+            id: obsAssessments.id,
+            applicationId: obsAssessments.applicationId,
+            versionId: obsAssessments.versionId,
+          },
+          appUrl: obsApplications.appUrl,
+          applicationId: obsApplications.id,
+          applicationName: obsApplications.name,
+        })
+        .from(obsPenTests)
+        .innerJoin(obsAssessments, eq(obsAssessments.id, obsPenTests.assessmentId))
+        .innerJoin(obsApplications, eq(obsApplications.id, obsAssessments.applicationId))
+        .where(and(eq(obsPenTests.id, req.params.id), eq(obsPenTests.tenantDomain, ctx.tenantDomain)));
+
+      if (!penTest) return res.status(404).json({ message: "Pen test not found" });
+      if (!penTest.appUrl)
+        return res.status(422).json({ message: "Application has no URL configured — add one on the application record first." });
+
+      const jobLabel = `security-scan:pen-test:${penTest.id}`;
+
+      // Check if a scan is already running
+      const existing = getJobStatusByLabel(jobLabel, ctx.tenantDomain);
+      if (existing.status !== "not_found") {
+        return res.status(202).json({ status: existing.status, message: "Scan already in progress" });
+      }
+
+      // Enqueue the scan as a crawl job
+      enqueue(
+        "crawl",
+        jobLabel,
+        async () => {
+          const scanResult = await securityScanner.runScan({
+            tenantDomain: penTest.tenantDomain,
+            applicationId: penTest.applicationId,
+            assessmentId: penTest.assessmentId,
+            target: { url: penTest.appUrl! },
+          });
+
+          if (scanResult.findings.length === 0) return { inserted: 0 };
+
+          // Insert each finding into obs_findings + obs_pen_test_findings
+          let inserted = 0;
+          for (const sf of scanResult.findings) {
+            try {
+              const [finding] = await db
+                .insert(obsFindings)
+                .values({
+                  tenantDomain: penTest.tenantDomain,
+                  assessmentId: penTest.assessmentId,
+                  applicationId: penTest.applicationId,
+                  versionId: penTest.assessment.versionId ?? null,
+                  title: sf.title,
+                  description: sf.description ?? null,
+                  severity: sf.severity,
+                  domain: "security",
+                  status: "open",
+                  recommendation: null,
+                  affectedComponent: "Automated Scan",
+                  stepsToReproduce: sf.location?.url
+                    ? `Checked URL: ${sf.location.url}`
+                    : null,
+                  cweId: sf.cweId ?? null,
+                  createdBy: null,
+                })
+                .returning({ id: obsFindings.id });
+
+              await db.insert(obsPenTestFindings).values({
+                tenantDomain: penTest.tenantDomain,
+                penTestId: penTest.id,
+                findingId: finding.id,
+                exploitability: null,
+                validationStatus: "Not Started",
+              });
+
+              inserted++;
+            } catch (err: any) {
+              console.error(`[SecurityScan] Failed to insert finding "${sf.title}":`, err.message);
+            }
+          }
+
+          await db
+            .insert(obsAuditLogs)
+            .values({
+              tenantDomain: penTest.tenantDomain,
+              userId: null,
+              entityType: "pen_test",
+              entityId: penTest.id,
+              action: "security_scan",
+              summary: `Automated security scan completed: ${inserted} finding(s) created for ${penTest.appUrl}`,
+              changes: {
+                tool: scanResult.tool,
+                url: penTest.appUrl,
+                findingCount: inserted,
+                durationMs: scanResult.finishedAt.getTime() - scanResult.startedAt.getTime(),
+              },
+            })
+            .catch(() => {});
+
+          return { inserted };
+        },
+        {
+          timeoutMs: 3 * 60 * 1000,
+          ctx: { tenantDomain: ctx.tenantDomain, targetId: penTest.id, targetName: penTest.applicationName },
+          maxRetries: 0,
+        },
+      );
+
+      await audit(ctx, "pen_test", penTest.id, "security_scan_triggered", `Automated security scan triggered for ${penTest.appUrl}`);
+      res.status(202).json({ status: "queued", message: "Security scan started" });
+    } catch (err) {
+      handleError(res, err, "security scan");
+    }
+  });
+
+  /**
+   * GET /api/observatory/pen-tests/:id/security-scan/status
+   * Returns the current queue status of the security scan for this pen test.
+   */
+  app.get("/api/observatory/pen-tests/:id/security-scan/status", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    try {
+      const jobLabel = `security-scan:pen-test:${req.params.id}`;
+      const status = getJobStatusByLabel(jobLabel, ctx.tenantDomain);
+      res.json(status);
+    } catch (err) {
+      handleError(res, err, "security scan status");
     }
   });
 
