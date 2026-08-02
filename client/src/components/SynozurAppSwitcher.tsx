@@ -110,14 +110,36 @@ const SYNOZUR_APPS = [
       </svg>
     ),
   },
+  {
+    id: "observatory",
+    name: "Observatory",
+    tagline: "Application Assurance & Certification",
+    description: "Security, accessibility, performance, and compliance assessment for your application portfolio.",
+    url: "/app/observatory",
+    brandColor: BRAND_PRIMARY,
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
+        <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" fill="currentColor" fillOpacity="0.15" />
+        <path d="M12 2C12 2 12 8 12 12" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+        <path d="M12 12C12 12 17.2 8.6 20 7" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+        <path d="M12 12C12 12 6.8 8.6 4 7" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+        <circle cx="12" cy="3" r="1" fill="currentColor" opacity="0.5" />
+        <circle cx="20" cy="7" r="1" fill="currentColor" opacity="0.5" />
+        <circle cx="4" cy="7" r="1" fill="currentColor" opacity="0.5" />
+        <path d="M6 18 L12 14 L18 18" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+        <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" strokeWidth="1.5" opacity="0.7" />
+        <line x1="8" y1="22" x2="16" y2="22" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    ),
+  },
 ];
 
 interface SynozurAppSwitcherProps {
-  currentApp?: "vega" | "constellation" | "nebula" | "orion" | "zenith" | "orbit";
+  currentApp?: "vega" | "constellation" | "nebula" | "orion" | "zenith" | "orbit" | "observatory";
   forceDark?: boolean;
 }
 
-export function SynozurAppSwitcher({ currentApp = "orbit", forceDark = false }: SynozurAppSwitcherProps) {
+export function SynozurAppSwitcher({ currentApp = "observatory", forceDark = false }: SynozurAppSwitcherProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);

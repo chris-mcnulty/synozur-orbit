@@ -120,7 +120,7 @@ export function registerEntraRoutes(app: Express) {
         const target = req.session.postLoginRedirect;
         req.session.postLoginRedirect = undefined;
         if (target && target.startsWith("/") && !target.startsWith("//")) return target;
-        return "/app";
+        return "/app/observatory";
       };
 
       if (user) {

@@ -346,7 +346,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     localStorage.setItem(`orbit_last_visited_${path.replace(/\//g, "_")}`, Date.now().toString());
     // Persist last app page so login can redirect back
     if (path.startsWith("/app")) {
-      localStorage.setItem("orbit_last_page", path);
+      localStorage.setItem("observatory_last_page", path);
     }
   }, [location]);
 
@@ -477,15 +477,15 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
       )}>
         {/* Sidebar Header - Orion Style */}
         <div className="h-14 flex items-center px-4 border-b border-sidebar-border">
-          <SynozurAppSwitcher currentApp="orbit" forceDark />
-          <Link href="/app" className="flex items-center gap-2 ml-2">
+          <SynozurAppSwitcher currentApp="observatory" forceDark />
+          <Link href="/app/observatory" className="flex items-center gap-2 ml-2">
             <img 
               src="/brand/synozur-horizontal.png" 
               alt="Synozur" 
               className="h-6 object-contain"
             />
             <span className="text-sidebar-foreground/50 text-lg">|</span>
-            <span className="font-semibold text-lg tracking-tight text-sidebar-foreground">Orbit</span>
+            <span className="font-semibold text-lg tracking-tight text-sidebar-foreground">Observatory</span>
           </Link>
           <div className="ml-auto hidden lg:flex items-center gap-1">
             <RefreshStatusIndicator />
@@ -508,10 +508,10 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
            <Button 
              className="w-full bg-primary hover:bg-primary/90 text-white shadow-md shadow-primary/20 transition-all font-medium" 
              size="default"
-             onClick={() => setLocation("/app/analysis")}
-             data-testid="button-new-analysis"
+             onClick={() => setLocation("/app/observatory/assessments")}
+             data-testid="button-new-assessment"
            >
-             <Plus className="w-4 h-4 mr-2" /> New Analysis
+             <Plus className="w-4 h-4 mr-2" /> New Assessment
            </Button>
         </div>
 
@@ -670,7 +670,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
           >
             <Menu size={20} />
           </button>
-          <SynozurAppSwitcher currentApp="orbit" forceDark />
+          <SynozurAppSwitcher currentApp="observatory" forceDark />
           <div className="flex items-center gap-2 ml-2">
             <img
               src="/brand/synozur-horizontal.png"
@@ -678,7 +678,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
               className="h-5 object-contain"
             />
             <span className="text-sidebar-foreground/50">|</span>
-            <span className="font-semibold text-base text-sidebar-foreground">Orbit</span>
+            <span className="font-semibold text-base text-sidebar-foreground">Observatory</span>
           </div>
           <div className="ml-auto flex items-center gap-1">
             {isMobile && <NotificationCentre />}

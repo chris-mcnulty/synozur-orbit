@@ -159,7 +159,7 @@ function Router() {
       {/* App Routes */}
       {/* Global Home (company at a glance); the research dashboard keeps its
           /app/dashboard and /app/overview URLs under the Research area. */}
-      <Route path="/app" component={HomePage} />
+      <Route path="/app"><Redirect to="/app/observatory" /></Route>
       <Route path="/app/overview" component={Dashboard} />
       <Route path="/app/dashboard" component={Dashboard} />
       <Route path="/app/competitors" component={Competitors} />

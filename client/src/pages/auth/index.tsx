@@ -159,7 +159,7 @@ export default function AuthPage() {
     if (next && next.startsWith("/") && !next.startsWith("//")) {
       return next;
     }
-    const lastPage = localStorage.getItem("orbit_last_page");
+    const lastPage = localStorage.getItem("observatory_last_page");
     return lastPage && lastPage.startsWith("/app") ? lastPage : "/app";
   };
 
@@ -294,7 +294,7 @@ export default function AuthPage() {
       <div className="absolute inset-0 bg-gradient-to-br from-primary/40 via-background/90 to-secondary/40" />
       
       <div className="absolute top-4 left-4 z-20">
-        <SynozurAppSwitcher currentApp="orbit" forceDark />
+        <SynozurAppSwitcher currentApp="observatory" forceDark />
       </div>
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
@@ -305,10 +305,10 @@ export default function AuthPage() {
           <div className="flex items-center justify-center gap-3 mb-4">
             <img src="/brand/synozur-horizontal.png" alt="Synozur" className="h-8 object-contain" />
             <span className="text-foreground/50 text-xl">|</span>
-            <img src="/brand/orbit-logo.png" alt="Orbit" className="h-10 object-contain" />
+            <span className="font-bold text-xl tracking-tight">Observatory</span>
           </div>
-          <CardTitle className="text-xl">Welcome to Orbit</CardTitle>
-          <CardDescription>Marketing intelligence, powered by AI</CardDescription>
+          <CardTitle className="text-xl">Welcome to Observatory</CardTitle>
+          <CardDescription>Application assurance &amp; certification intelligence</CardDescription>
         </CardHeader>
         
         <CardContent>
