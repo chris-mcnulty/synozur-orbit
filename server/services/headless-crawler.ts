@@ -365,6 +365,31 @@ export function isHeadlessAvailable(): boolean {
   return true;
 }
 
+/**
+ * Acquire a headless browser page for use by scanner services.
+ * Caller MUST call releaseBrowserPage() when done — even on error — to free
+ * the crawl slot and close the page.
+ */
+export async function getBrowserPage(): Promise<Page> {
+  await acquireCrawlSlot();
+  try {
+    const browser = await getBrowser();
+    return await setupStealthPage(browser);
+  } catch (err) {
+    releaseCrawlSlot();
+    throw err;
+  }
+}
+
+/**
+ * Release a page acquired via getBrowserPage(). Closes the page and returns
+ * the crawl slot so the next waiter can proceed.
+ */
+export function releaseBrowserPage(page: Page): void {
+  page.close().catch(() => {});
+  releaseCrawlSlot();
+}
+
 process.on("exit", () => {
   if (browserInstance) {
     try {

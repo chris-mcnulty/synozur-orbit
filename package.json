@@ -80,6 +80,7 @@
     "@uppy/react": "^5.1.1",
     "@vitest/coverage-v8": "^4.1.9",
     "archiver": "^7.0.1",
+    "axe-core": "^4.12.1",
     "bcrypt": "^6.0.0",
     "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",

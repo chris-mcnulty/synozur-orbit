@@ -110,8 +110,30 @@ export interface RepoProvider {
 }
 
 /**
- * Registry placeholder. Future work registers concrete providers here;
- * route handlers look them up by key. Kept empty by design in V1.
+ * Registry of concrete scanner providers. Each provider is registered at
+ * module load time and looked up by key in the scan runner.
  */
 export const scannerProviders: Record<string, ScannerProvider> = {};
 export const repoProviders: Record<string, RepoProvider> = {};
+
+/** Register a scanner provider. Called from each scanner module at init. */
+export function registerScanner(provider: ScannerProvider): void {
+  scannerProviders[provider.key] = provider;
+  console.log(`[Observatory] Registered scanner: ${provider.name} (types: ${provider.assessmentTypes.join(", ")})`);
+}
+
+/** Find the first available scanner for a given assessment type. */
+export async function findScannerForType(
+  assessmentType: string,
+  tenantDomain: string,
+): Promise<ScannerProvider | null> {
+  for (const provider of Object.values(scannerProviders)) {
+    if (
+      provider.assessmentTypes.includes(assessmentType) &&
+      (await provider.isAvailable(tenantDomain).catch(() => false))
+    ) {
+      return provider;
+    }
+  }
+  return null;
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
-import { ArrowLeft, Plus, Loader2, Trash2, AlertTriangle, Archive } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, Trash2, AlertTriangle, Archive, ScanLine, CheckCircle2, Clock } from "lucide-react";
 import {
   AssessmentStatusBadge,
   SeverityBadge,
@@ -46,6 +46,34 @@ interface Detail {
   evidence: { id: string; title: string; evidenceType: string }[];
 }
 
+interface ScanStatus {
+  status: "active" | "pending" | "not_found";
+  scannable: boolean;
+  progress?: { percent?: number; phase?: string };
+  runningSec?: number;
+  queuePosition?: number;
+}
+
+const SCANNABLE_TYPES = new Set(["accessibility", "penetration_test", "performance"]);
+
+function ScanStatusBadge({ scanStatus }: { scanStatus: ScanStatus | undefined }) {
+  if (!scanStatus || scanStatus.status === "not_found") return null;
+  if (scanStatus.status === "pending") {
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <Clock className="h-3 w-3" /> Scan queued{scanStatus.queuePosition ? ` (#${scanStatus.queuePosition})` : ""}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="secondary" className="gap-1 text-primary">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      {scanStatus.progress?.phase ?? "Scanning…"}
+      {scanStatus.runningSec ? ` (${scanStatus.runningSec}s)` : ""}
+    </Badge>
+  );
+}
+
 export default function ObservatoryAssessmentDetail() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -55,6 +83,36 @@ export default function ObservatoryAssessmentDetail() {
   const canWrite = ["Analyst", "Domain Admin", "Global Admin"].includes(user?.role ?? "");
 
   const { data: assessment, isLoading } = useQuery<Detail>({ queryKey: [`/api/observatory/assessments/${id}`] });
+
+  // ── Scan status polling ──────────────────────────────────────────────────
+  const [scanPolling, setScanPolling] = useState(false);
+  const { data: scanStatus } = useQuery<ScanStatus>({
+    queryKey: [`/api/observatory/assessments/${id}/scan-status`],
+    enabled: !!assessment && SCANNABLE_TYPES.has(assessment.type),
+    refetchInterval: scanPolling ? 2000 : false,
+  });
+
+  // Start/stop polling based on job status
+  useEffect(() => {
+    if (!scanStatus) return;
+    const running = scanStatus.status === "active" || scanStatus.status === "pending";
+    setScanPolling(running);
+    // When scan finishes (transitions from running → not_found), reload findings
+    if (!running && scanPolling) {
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/observatory") });
+      toast({ title: "Scan complete", description: "Findings have been updated." });
+    }
+  }, [scanStatus?.status]);
+
+  const triggerScan = useMutation({
+    mutationFn: async () => (await apiRequest("POST", `/api/observatory/assessments/${id}/scan`, {})).json(),
+    onSuccess: () => {
+      setScanPolling(true);
+      queryClient.invalidateQueries({ queryKey: [`/api/observatory/assessments/${id}/scan-status`] });
+      toast({ title: "Scan queued", description: "The automated scan has been queued. Findings will appear when it completes." });
+    },
+    onError: (err: Error) => toast({ title: "Scan failed to start", description: err.message, variant: "destructive" }),
+  });
 
   const [findingDialogOpen, setFindingDialogOpen] = useState(false);
   const [findingForm, setFindingForm] = useState({
@@ -125,6 +183,9 @@ export default function ObservatoryAssessmentDetail() {
     );
   }
 
+  const scanRunning = scanStatus?.status === "active" || scanStatus?.status === "pending";
+  const isScannable = SCANNABLE_TYPES.has(assessment.type);
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -146,7 +207,28 @@ export default function ObservatoryAssessmentDetail() {
               {assessment.assessorName ? ` · ${assessment.assessorName}` : ""}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Scan status badge */}
+            <ScanStatusBadge scanStatus={scanStatus} />
+
+            {/* Run Scan button — only for scannable assessment types */}
+            {canWrite && isScannable && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => triggerScan.mutate()}
+                disabled={scanRunning || triggerScan.isPending}
+                data-testid="button-run-scan"
+              >
+                {scanRunning ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <ScanLine className="h-4 w-4 mr-1" />
+                )}
+                {scanRunning ? "Scanning…" : "Run scan"}
+              </Button>
+            )}
+
             {canWrite ? (
               <Select value={assessment.status} onValueChange={(v) => statusMutation.mutate(v)}>
                 <SelectTrigger className="w-[160px]" data-testid="select-assessment-status-change"><SelectValue /></SelectTrigger>
@@ -178,6 +260,24 @@ export default function ObservatoryAssessmentDetail() {
             )}
           </div>
         </div>
+
+        {/* Scan intro banner — shown for scannable types with no findings yet */}
+        {isScannable && assessment.findings.length === 0 && !scanRunning && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 flex items-center gap-3">
+            <ScanLine className="h-5 w-5 text-primary flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Ready to scan automatically</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Click <strong>Run scan</strong> to start a built-in {labelFor(ASSESSMENT_TYPES as any, assessment.type).toLowerCase()} scan against the application URL. Findings will be created automatically.
+              </p>
+            </div>
+            {canWrite && (
+              <Button size="sm" onClick={() => triggerScan.mutate()} disabled={triggerScan.isPending}>
+                <ScanLine className="h-4 w-4 mr-1" /> Run scan
+              </Button>
+            )}
+          </div>
+        )}
 
         <div className="grid md:grid-cols-3 gap-4">
           <Card className="md:col-span-2">
@@ -214,11 +314,18 @@ export default function ObservatoryAssessmentDetail() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Findings ({assessment.findings.length})</CardTitle>
-            {canWrite && (
-              <Button size="sm" onClick={() => setFindingDialogOpen(true)} data-testid="button-new-finding">
-                <Plus className="h-4 w-4 mr-1" /> New Finding
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {scanRunning && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Scan in progress…
+                </span>
+              )}
+              {canWrite && (
+                <Button size="sm" onClick={() => setFindingDialogOpen(true)} data-testid="button-new-finding">
+                  <Plus className="h-4 w-4 mr-1" /> New Finding
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {assessment.findings.length === 0 ? (

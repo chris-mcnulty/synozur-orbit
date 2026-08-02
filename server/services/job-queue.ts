@@ -1,4 +1,4 @@
-type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "planner" | "other";
+type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "planner" | "scan" | "other";
 type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout";
 
 /** Optional context passed alongside a job for DB persistence and display. */
@@ -131,12 +131,16 @@ const DEFAULT_CONFIG: QueueConfig = {
     monitor: 1,
     analysis: 1,
     planner: 2,
+    // Scans are user-triggered and headless-browser-bound; limit to 2 so they
+    // don't exhaust the crawl pool (shared with website monitoring).
+    scan: 2,
   },
   defaultTimeoutMs: 5 * 60 * 1000,
 };
 
 const PRIORITY = {
   pdf: 10,
+  scan: 6,   // User-triggered — higher than background crawls
   analysis: 5,
   planner: 4,
   crawl: 3,
@@ -362,6 +366,20 @@ export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => 
 
 export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
   return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
+}
+
+/** Enqueue an Observatory automated scan (accessibility / security / performance). */
+export function enqueueScan<T>(
+  label: string,
+  work: ((signal?: AbortSignal, reportProgress?: ProgressReporter) => Promise<T>) | (() => Promise<T>),
+  options?: { timeoutMs?: number; ctx?: JobContext },
+): Promise<T> {
+  return enqueue("scan", label, work, {
+    priority: PRIORITY.scan,
+    timeoutMs: options?.timeoutMs ?? 5 * 60 * 1000,
+    ctx: options?.ctx,
+    maxRetries: 1, // Scans are expensive — only one retry
+  });
 }
 
 /**

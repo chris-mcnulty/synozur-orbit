@@ -47,9 +47,13 @@ import {
 import { z } from "zod";
 import { seedStandardsCatalog } from "../services/observatory-standards";
 import { seedObservatoryDemo } from "../services/observatory-demo-seed";
-import { ObjectStorageService } from "../replit_integrations/object_storage/objectStorage";
+import { enqueueScan, getJobStatusByLabel } from "../services/job-queue";
+import { runObservatoryScan } from "../services/observatory-scan-runner";
 
 const objectStorageService = new ObjectStorageService();
+
+// Scannable assessment types — these have a built-in scanner
+const SCANNABLE_TYPES = new Set(["accessibility", "penetration_test", "performance"]);
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -1207,6 +1211,72 @@ export function registerObservatoryRoutes(app: Express) {
     } catch (err) {
       handleError(res, err, "audit-logs");
     }
+  });
+
+  // ── Automated scan ───────────────────────────────────────────────────────
+  /**
+   * POST /api/observatory/assessments/:id/scan
+   * Enqueue a built-in automated scan for the given assessment.
+   * Supported types: accessibility, penetration_test, performance.
+   */
+  app.post("/api/observatory/assessments/:id/scan", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+    if (!canWrite(ctx)) return res.status(403).json({ message: "Insufficient permissions" });
+
+    const assessmentId = req.params.id;
+
+    // Verify assessment belongs to this tenant and is of a scannable type
+    const [assessment] = await db
+      .select({ id: obsAssessments.id, type: obsAssessments.type, status: obsAssessments.status })
+      .from(obsAssessments)
+      .where(and(eq(obsAssessments.id, assessmentId), eq(obsAssessments.tenantDomain, ctx.tenantDomain)));
+
+    if (!assessment) return res.status(404).json({ message: "Assessment not found" });
+    if (!SCANNABLE_TYPES.has(assessment.type)) {
+      return res.status(400).json({ message: `Assessment type "${assessment.type}" does not support automated scanning. Supported: ${[...SCANNABLE_TYPES].join(", ")}` });
+    }
+
+    const scanLabel = `scan:${assessment.type}:${assessmentId}`;
+
+    // Reject if a scan is already running for this assessment
+    const existing = getJobStatusByLabel(scanLabel, ctx.tenantDomain);
+    if (existing.status === "active" || existing.status === "pending") {
+      return res.status(409).json({ message: "A scan is already queued or running for this assessment.", jobStatus: existing });
+    }
+
+    // Enqueue — don't await; the job runs in the background
+    enqueueScan(
+      scanLabel,
+      async () => runObservatoryScan({ assessmentId, tenantDomain: ctx.tenantDomain, triggeredByUserId: ctx.userId }),
+      { ctx: { tenantDomain: ctx.tenantDomain, targetId: assessmentId } },
+    ).catch((err) => {
+      console.error(`[observatory] scan job failed for ${assessmentId}:`, err);
+    });
+
+    await audit(ctx, "assessment", assessmentId, "scan_triggered", `Automated ${assessment.type} scan queued`);
+    res.json({ queued: true, label: scanLabel });
+  });
+
+  /**
+   * GET /api/observatory/assessments/:id/scan-status
+   * Poll the status of an in-flight scan job for the given assessment.
+   */
+  app.get("/api/observatory/assessments/:id/scan-status", async (req, res) => {
+    const ctx = await ctxOr401(req, res);
+    if (!ctx) return;
+
+    const assessmentId = req.params.id;
+    const [assessment] = await db
+      .select({ type: obsAssessments.type })
+      .from(obsAssessments)
+      .where(and(eq(obsAssessments.id, assessmentId), eq(obsAssessments.tenantDomain, ctx.tenantDomain)));
+
+    if (!assessment) return res.status(404).json({ message: "Assessment not found" });
+
+    const scanLabel = `scan:${assessment.type}:${assessmentId}`;
+    const jobStatus = getJobStatusByLabel(scanLabel, ctx.tenantDomain);
+    res.json({ ...jobStatus, label: scanLabel, scannable: SCANNABLE_TYPES.has(assessment.type) });
   });
 
   // ── Demo seed ─────────────────────────────────────────────────────────────
