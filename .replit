@@ -80,7 +80,7 @@ integrations = ["javascript_anthropic_ai_integrations:2.0.0", "javascript_object
 [userenv]
 
 [userenv.production]
-PRODUCTION_URL = "https://orbit.synozur.com"
+PRODUCTION_URL = "https://observatory-synozur-prod.replit.app"
 
 [userenv.shared]
 TEST_EMAIL = "test@synozur.com"
