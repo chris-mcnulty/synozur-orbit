@@ -1,4 +1,4 @@
-type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "planner" | "scan" | "other";
+type JobType = "pdf" | "monitor" | "analysis" | "planner" | "scan" | "other";
 type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout";
 
 /** Optional context passed alongside a job for DB persistence and display. */
@@ -358,10 +358,6 @@ export function enqueuePdf<T>(
   ctx?: JobContext,
 ): Promise<T> {
   return enqueue("pdf", label, work, { priority: PRIORITY.pdf, timeoutMs: timeoutMs ?? 60000, ctx });
-}
-
-export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
-  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
 }
 
 export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {

@@ -87,7 +87,6 @@ import { extractContentFromUrl, generateContentSummary, loadGroundingContext } f
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt, formatFoundingSignalsForPrompt } from "../services/strategic-context";
 import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
-import { crawlPricingPage } from "../services/web-crawler";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";

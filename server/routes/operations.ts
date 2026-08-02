@@ -4,9 +4,8 @@ import { db } from "../db";
 import { sql, and, count } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess, hasContentAccess, guardManualAction } from "./helpers";
-import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
+import { getJobStatus, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
 import Anthropic from "@anthropic-ai/sdk";
-import { crawlCompetitorWebsite, buildCrawlData } from "../services/web-crawler";
 import type { Competitor, User } from "@shared/schema";
 import { getCacheStats, invalidateTenantCache, clearCache as clearAICache } from "../services/ai-cache";
 import { getDeadLetterJobs, dismissDeadLetterJob } from "../services/job-queue";
@@ -137,78 +136,6 @@ export function registerOperationsRoutes(app: Express) {
       }
       
       res.json(history);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.post("/api/admin/jobs/trigger-crawl", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Access denied - Global Admin only" });
-      }
-
-      triggerWebsiteCrawlNow();
-      res.json({ success: true, message: "Website crawl job triggered" });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.post("/api/admin/jobs/trigger-social", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Access denied - Global Admin only" });
-      }
-
-      triggerSocialMonitorNow();
-      res.json({ success: true, message: "Social monitor job triggered" });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.post("/api/admin/jobs/trigger-website-monitor", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Access denied - Global Admin only" });
-      }
-
-      triggerWebsiteMonitorNow();
-      res.json({ success: true, message: "Website monitor job triggered" });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.post("/api/admin/jobs/trigger-product", async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const user = await storage.getUser(req.session.userId);
-      if (!user || user.role !== "Global Admin") {
-        return res.status(403).json({ error: "Access denied - Global Admin only" });
-      }
-
-      triggerProductMonitorNow();
-      res.json({ success: true, message: "Product monitor job triggered" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -577,58 +504,8 @@ export function registerOperationsRoutes(app: Express) {
               }
             }
 
-            // Perform multi-page crawl
-            const crawlResult = await crawlCompetitorWebsite(competitor.url);
-            
-            // Prepare content for analysis
-            const combinedContent = crawlResult.pages
-              .map((p: any) => `## ${p.pageType}\n${p.content}`)
-              .join("\n\n");
-
-            // AI Analysis
-            const analysisPrompt = `Analyze this company's website content and provide competitive intelligence:
-
-Company: ${competitor.name}
-Website: ${competitor.url}
-
-Content:
-${combinedContent.substring(0, 15000)}
-
-Provide analysis in this JSON format:
-{
-  "competitiveScore": <number 1-100>,
-  "strengths": ["strength1", "strength2", ...],
-  "weaknesses": ["weakness1", "weakness2", ...],
-  "valueProposition": "main value proposition",
-  "targetAudience": "target audience description",
-  "keyMessages": ["message1", "message2", ...],
-  "marketPosition": "market position description"
-}`;
-
-            const analysisResponse = await anthropic.messages.create({
-              model: "claude-sonnet-4-5",
-              max_tokens: 2000,
-              messages: [{ role: "user", content: analysisPrompt }],
-            });
-
-            const analysisText = analysisResponse.content[0].type === "text" 
-              ? analysisResponse.content[0].text : "";
-            
-            let analysisData = {};
-            try {
-              const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                analysisData = JSON.parse(jsonMatch[0]);
-              }
-            } catch (e) {
-              console.error("Failed to parse analysis:", e);
-            }
-
-            await storage.updateCompetitor(competitor.id, {
-              crawlData: buildCrawlData(crawlResult),
-              analysisData,
-              lastFullCrawl: new Date(),
-            });
+            // Website crawl removed — skip crawl-dependent analysis
+            console.log(`[Batch Analysis] Skipping crawl for ${competitor.name} (crawl feature removed)`);
 
           } catch (error) {
             console.error(`Error processing competitor ${competitor.name}:`, error);
@@ -649,58 +526,8 @@ Provide analysis in this JSON format:
               continue; // No URL to crawl
             }
 
-            // Crawl product page
-            const crawlResult = await crawlCompetitorWebsite(product.url);
-            
-            const combinedContent = crawlResult.pages
-              .map((p: any) => `## ${p.pageType}\n${p.content}`)
-              .join("\n\n");
-
-            // AI Analysis for product
-            const analysisPrompt = `Analyze this product page and provide competitive intelligence:
-
-Product: ${product.name}
-Company: ${product.companyName || "Unknown"}
-URL: ${product.url}
-
-Content:
-${combinedContent.substring(0, 15000)}
-
-Provide analysis in this JSON format:
-{
-  "competitiveScore": <number 1-100>,
-  "strengths": ["strength1", "strength2", ...],
-  "weaknesses": ["weakness1", "weakness2", ...],
-  "valueProposition": "main value proposition",
-  "targetAudience": "target audience description",
-  "keyMessages": ["message1", "message2", ...],
-  "features": ["feature1", "feature2", ...],
-  "pricing": "pricing info if found"
-}`;
-
-            const analysisResponse = await anthropic.messages.create({
-              model: "claude-sonnet-4-5",
-              max_tokens: 2000,
-              messages: [{ role: "user", content: analysisPrompt }],
-            });
-
-            const analysisText = analysisResponse.content[0].type === "text" 
-              ? analysisResponse.content[0].text : "";
-            
-            let analysisData = {};
-            try {
-              const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-              if (jsonMatch) {
-                analysisData = JSON.parse(jsonMatch[0]);
-              }
-            } catch (e) {
-              console.error("Failed to parse product analysis:", e);
-            }
-
-            await storage.updateProduct(product.id, {
-              crawlData: buildCrawlData(crawlResult),
-              analysisData,
-            });
+            // Website crawl removed — skip crawl-dependent analysis
+            console.log(`[Batch Analysis] Skipping crawl for product ${product.name} (crawl feature removed)`);
 
           } catch (error) {
             console.error(`Error processing product ${product.name}:`, error);

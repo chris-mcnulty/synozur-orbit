@@ -3,8 +3,6 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations,
 import { buildCompetitorDocumentContext, buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "./competitor-document-context";
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
-import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
-import { monitorCompetitorSocialMedia as monitorSocialMedia, monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
 import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } from "./promise-pool";
 import Anthropic from "@anthropic-ai/sdk";
@@ -126,49 +124,8 @@ async function runRegenerationInBackground(
     progress.currentStep = "Refreshing baseline data";
     progress.stepsCompleted = 1;
 
-    if (companyProfile && companyProfile.websiteUrl) {
-      try {
-        console.log(`Full regen: Crawling baseline website for ${companyProfile.companyName}...`);
-        const crawlResult = await crawlCompetitorWebsite(companyProfile.websiteUrl);
-        
-        if (crawlResult.pages.length > 0) {
-          const combinedContent = getCombinedContent(crawlResult);
-          
-          // Update company profile with crawl data
-          await storage.updateCompanyProfile(companyProfile.id, {
-            crawlData: buildCrawlData(crawlResult),
-            previousWebsiteContent: combinedContent.substring(0, 100000),
-            lastCrawl: new Date().toISOString(),
-            lastFullCrawl: new Date(),
-          });
-          console.log(`Full regen: Baseline website crawled - ${crawlResult.pages.length} pages`);
-
-          try {
-            await identifySuggestedAssets(crawlResult, companyProfile.id, tenantDomain, marketId);
-          } catch (assetErr: any) {
-            console.error(`Full regen: Asset suggestion failed:`, assetErr.message);
-          }
-        }
-      } catch (error) {
-        console.error(`Full regen: Failed to crawl baseline website:`, error);
-      }
-      
-      // Also refresh LinkedIn data if URL is configured
-      if (companyProfile.linkedInUrl) {
-        try {
-          console.log(`Full regen: Refreshing baseline LinkedIn data...`);
-          await monitorCompanyProfileSocialMedia(
-            companyProfile.id,
-            userId,
-            tenantDomain,
-            marketId || companyProfile.marketId || undefined
-          );
-          console.log(`Full regen: Baseline LinkedIn data refreshed`);
-        } catch (error) {
-          console.error(`Full regen: Failed to refresh baseline social:`, error);
-        }
-      }
-    }
+    // Website crawl and social monitoring removed from Observatory
+    console.log(`Full regen: Skipping website crawl and social monitoring (features removed).`);
 
     progress.currentStep = "Analyzing competitors";
     progress.stepsCompleted = 2;

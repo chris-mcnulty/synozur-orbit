@@ -1,8 +1,5 @@
 import { storage } from "../storage";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch } from "../ai-service";
-import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
-import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
-import { monitorCompetitorSocialMedia } from "./social-monitoring";
 import { calculateScores, getCurrentWeeklyPeriod } from "./scoring-service";
 import { runWithConcurrency, AI_CONCURRENCY } from "./promise-pool";
 import { generateBriefing } from "./intelligence-briefing-service";
@@ -160,50 +157,11 @@ async function runAutoBuildWithProfile(
   };
 
   updateStep("Step 1/14: Crawling baseline company website...");
-  try {
-    if (profile.websiteUrl) {
-      const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
-      if (crawlResult) {
-        const combinedContent = getCombinedContent(crawlResult);
-        const socialLinks = crawlResult.socialLinks || {};
-        const detectedBlogUrl = crawlResult.pages?.find(p => p.pageType === "blog")?.url ?? null;
-        const profileUpdates: any = {
-          crawlData: buildCrawlData(crawlResult),
-          lastCrawl: new Date().toISOString(),
-          linkedInUrl: profile.linkedInUrl || socialLinks.linkedIn || null,
-          instagramUrl: profile.instagramUrl || socialLinks.instagram || null,
-          twitterUrl: profile.twitterUrl || socialLinks.twitter || null,
-          facebookUrl: profile.facebookUrl || socialLinks.facebook || null,
-          blogUrl: profile.blogUrl || detectedBlogUrl,
-        };
-
-        if (!profile.organizationId) {
-          try {
-            const org = await storage.findOrCreateOrganization(profile.websiteUrl, profile.companyName);
-            profileUpdates.organizationId = org.id;
-            await storage.incrementOrgRefCount(org.id);
-            progress.details.push(`Linked baseline to organization directory: ${org.id}`);
-          } catch (orgErr: any) {
-            progress.details.push(`Organization linking warning: ${orgErr.message}`);
-          }
-        }
-
-        await storage.updateCompanyProfile(profile.id, profileUpdates);
-        progress.details.push(`Crawled ${crawlResult.pages?.length || 0} pages from ${profile.websiteUrl}`);
-      }
-    }
-  } catch (err: any) {
-    progress.details.push(`Baseline crawl warning: ${err.message}`);
-  }
+  progress.details.push("Website crawl skipped (feature removed from Observatory).");
   progress.stepsCompleted = 1;
 
   updateStep("Step 2/14: Refreshing baseline social media...");
-  try {
-    await monitorCompanyProfileSocialMedia(profile.id, userId, tenantDomain, marketId);
-    progress.details.push("Baseline social media refreshed");
-  } catch (err: any) {
-    progress.details.push(`Social refresh warning: ${err.message}`);
-  }
+  progress.details.push("Social media monitoring skipped (feature removed from Observatory).");
   progress.stepsCompleted = 2;
 
   updateStep("Step 3/14: Discovering competitors with AI...");
@@ -332,38 +290,7 @@ Only return the JSON array, no other text.`;
   }
 
   updateStep("Step 5/14: Crawling competitor websites...");
-  for (const competitor of createdCompetitors) {
-    try {
-      const crawlResult = await crawlCompetitorWebsite(competitor.url);
-      if (crawlResult) {
-        const socialLinks = crawlResult.socialLinks || {};
-        const detectedBlogUrl = crawlResult.pages?.find(p => p.pageType === "blog")?.url ?? null;
-        await storage.updateCompetitor(competitor.id, {
-          crawlData: buildCrawlData(crawlResult),
-          lastCrawl: new Date().toISOString(),
-          linkedInUrl: socialLinks.linkedIn || null,
-          instagramUrl: socialLinks.instagram || null,
-          twitterUrl: socialLinks.twitter || null,
-          facebookUrl: socialLinks.facebook || null,
-          blogUrl: detectedBlogUrl,
-          blogSnapshot: crawlResult.blogSnapshot || null,
-        });
-
-        const pageCount = crawlResult.pages?.length || 0;
-        const totalWords = crawlResult.totalWordCount || 0;
-
-        if (pageCount === 0 || totalWords < 50) {
-          progress.details.push(`⚠ ${competitor.name}: crawl returned minimal data (${pageCount} page(s), ${totalWords} words) — site may block automated access`);
-        } else {
-          progress.details.push(`Crawled ${competitor.name}: ${pageCount} pages, ${totalWords} words`);
-        }
-      } else {
-        progress.details.push(`⚠ ${competitor.name}: crawl returned no data — site may be unreachable or block automated access`);
-      }
-    } catch (err: any) {
-      progress.details.push(`Crawl warning for ${competitor.name}: ${err.message}`);
-    }
-  }
+  progress.details.push("Competitor website crawl skipped (feature removed from Observatory).");
   progress.stepsCompleted = 5;
 
   // Step 6 (NEW): Detect pricing pages from the crawl results, persist
@@ -418,26 +345,7 @@ Only return the JSON array, no other text.`;
   progress.stepsCompleted = 6;
 
   updateStep("Step 7/14: Refreshing competitor social profiles...");
-  for (const competitor of createdCompetitors) {
-    try {
-      const socialResults = await monitorCompetitorSocialMedia(competitor.id, userId, tenantDomain);
-      const failures = socialResults.filter((r: any) => r.status === "error" || r.status === "blocked");
-      const successes = socialResults.filter((r: any) => r.status === "success");
-
-      if (successes.length > 0) {
-        progress.details.push(`Social refresh complete: ${competitor.name} (${successes.map((r: any) => r.platform).join(", ")})`);
-      }
-      for (const failure of failures) {
-        const platformName = failure.platform === "twitter" ? "Twitter/X" : failure.platform.charAt(0).toUpperCase() + failure.platform.slice(1);
-        progress.details.push(`⚠ ${competitor.name} ${platformName}: ${failure.message || `${failure.status} — monitoring unavailable`}`);
-      }
-      if (socialResults.length === 0) {
-        progress.details.push(`Social refresh: ${competitor.name} — no social profiles configured`);
-      }
-    } catch (err: any) {
-      progress.details.push(`⚠ Social monitoring failed for ${competitor.name}: ${err.message}`);
-    }
-  }
+  progress.details.push("Social media monitoring skipped (feature removed from Observatory).");
   progress.stepsCompleted = 7;
 
   updateStep("Step 8/14: Running AI analysis on competitors...");
@@ -445,7 +353,10 @@ Only return the JSON array, no other text.`;
     try {
       const freshComp = await storage.getCompetitor(competitor.id);
       if (!freshComp?.crawlData) continue;
-      const combinedContent = getCombinedContent(freshComp.crawlData as any);
+      const crawlDataObj = freshComp.crawlData as any;
+      const combinedContent = Array.isArray(crawlDataObj?.pages)
+        ? crawlDataObj.pages.map((p: any) => `${p.title || ""}\n${p.content || p.text || ""}`).join("\n\n")
+        : "";
       const analysis = await analyzeCompetitorWebsite(
         freshComp.name,
         freshComp.url,

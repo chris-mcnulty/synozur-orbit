@@ -1,6 +1,26 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "../storage";
-import { crawlPricingPage } from "./web-crawler";
+/** Minimal pricing-page fetcher (plain HTTP + HTML strip) replacing the old web-crawler import. */
+async function crawlPricingPage(url: string, options?: { signal?: AbortSignal }): Promise<{ content: string } | null> {
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Observatory/1.0)" },
+      signal: options?.signal,
+    });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.length > 50 ? { content: text.substring(0, 50000) } : null;
+  } catch {
+    return null;
+  }
+}
 import { notifications } from "./notifications";
 import {
   pricingTierSchema,
