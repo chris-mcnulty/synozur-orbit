@@ -5141,6 +5141,10 @@ export const obsFindings = pgTable("obs_findings", {
   assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
   assignedToName: text("assigned_to_name"),
   resolvedAt: timestamp("resolved_at"),
+  // Automated-scan rule identifier. Set only for findings created by the
+  // built-in security scanner so the scan job can upsert by rule rather than
+  // create duplicates on every run.
+  scanRuleId: text("scan_rule_id"),
   createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
