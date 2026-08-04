@@ -58,6 +58,9 @@ const PERMANENT_ERROR_CODES = new Set([
   // Refresh token rejected by the platform — no point retrying with the same
   // invalid token. The account must be reconnected before future attempts.
   "token_refresh_failed",
+  // Bluesky: createSession rejected the stored app password (invalid or revoked).
+  // Retrying with the same credentials will always fail — reconnect required.
+  "session_failed",
 ]);
 
 /** Error codes that indicate the stored credentials are no longer valid. */
@@ -66,6 +69,8 @@ const AUTH_ERROR_CODES = new Set([
   "token_decrypt_failed",
   "token_expired",
   "token_refresh_failed",
+  // Bluesky: createSession rejected the stored app password (invalid or revoked).
+  "session_failed",
 ]);
 
 const dailyCounters = new Map<string, { day: string; count: number }>();
@@ -451,8 +456,11 @@ async function markFailed(
   }
 
   const isAuthError = errorCode ? AUTH_ERROR_CODES.has(errorCode) : false;
+  // Use the sentinel "needs_reauth" for auth errors so the Social Accounts UI
+  // banner (data-testid banner-reauth-*) can trigger for any platform.
+  // All other errors store the raw message so operators can see what went wrong.
   await db.update(socialAccounts).set({
-    lastPublishError: result.errorMessage ?? "Publish failed",
+    lastPublishError: isAuthError ? "needs_reauth" : (result.errorMessage ?? "Publish failed"),
     ...(isAuthError ? { status: "needs_reconnect" } : {}),
     updatedAt: new Date(),
   }).where(eq(socialAccounts.id, accountId));

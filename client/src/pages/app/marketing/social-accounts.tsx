@@ -1087,10 +1087,10 @@ export default function SocialAccountsPage() {
                             >
                               <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
                                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                LinkedIn connection expired
+                                {PLATFORMS.find(p => p.value === account.platform)?.label ?? account.platform} connection expired
                               </div>
                               <p className="text-xs text-amber-700 dark:text-amber-400 leading-snug">
-                                The access token has expired and could not be refreshed automatically.
+                                The access token has expired or been revoked.
                                 Reconnect to restore direct publishing.
                               </p>
                               <Button
