@@ -89,6 +89,7 @@ import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { crawlPricingPage } from "../services/web-crawler";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
+import { resolveBrandAssetUrl } from "../services/brand-asset-url";
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
@@ -5108,7 +5109,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
       if (haveBrand) {
         for (let ii = 0; ii < brandImageAssets.length; ii++) {
           const img = brandImageAssets[ii];
-          const brandUrl = img.fileUrl || img.url || null;
+          const brandUrl = resolveBrandAssetUrl(img);
           for (let vi = 0; vi < cleanedVariantsForAccount.length; vi++) {
             const v = cleanedVariantsForAccount[vi];
             // Skip a brand image that duplicates this variant's own lead
@@ -5116,14 +5117,15 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             if (includeAssetLeadImages && v.leadImageUrl && brandUrl && brandUrl === v.leadImageUrl) {
               continue;
             }
+            // Only attach the brand asset FK when we have a resolved URL.
+            // Setting overrideBrandAssetId without overrideImageUrl would
+            // recreate the broken state that migration 0070 was written to
+            // repair. When brandUrl is null the post is emitted as text-only.
             generatedRows.push({
               ...buildBaseRow(v),
-              overrideBrandAssetId: img.id,
-              // Populate overrideImageUrl so the posting queue, publishers, and
-              // CSV export all see a non-null image URL without a separate lookup.
-              // overrideBrandAssetId is kept for the asset FK; overrideImageUrl
-              // is the resolved URL every consumer already reads.
-              ...(brandUrl ? { overrideImageUrl: brandUrl } : {}),
+              ...(brandUrl
+                ? { overrideBrandAssetId: img.id, overrideImageUrl: brandUrl }
+                : {}),
             });
             comboIndex++;
           }
