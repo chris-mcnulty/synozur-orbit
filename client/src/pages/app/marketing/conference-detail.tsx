@@ -585,6 +585,19 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">Link this event to a campaign so its posts roll up in the campaign view.</p>
+            {/* Warn when the user is about to remove or change an existing campaign link.
+                The campaign detail page shows an "origin" banner for events whose
+                campaignId points at it — changing this field will silently remove
+                that banner on the old campaign. */}
+            {conf.campaignId && form.campaignId !== conf.campaignId && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5" data-testid="warning-campaign-change">
+                ⚠ This event will no longer appear as an origin on the{" "}
+                {form.campaignId
+                  ? "previous campaign's"
+                  : "current campaign's"}{" "}
+                detail page. The conference origin banner there will be removed.
+              </p>
+            )}
           </div>
         </div>
         <DialogFooter>
