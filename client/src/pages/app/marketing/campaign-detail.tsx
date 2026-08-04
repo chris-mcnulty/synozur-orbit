@@ -2312,6 +2312,29 @@ export default function CampaignDetailPage() {
           </div>
         </div>
 
+        {/* Conference origin banner — shown when this campaign was auto-created from one or more events */}
+        {linkedEvents.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/40 rounded-lg border text-sm" data-testid="campaign-conference-origin-banner">
+            <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground">
+              {linkedEvents.length === 1
+                ? "This campaign was auto-created for the event:"
+                : "This campaign is linked to the following events:"}
+            </span>
+            {linkedEvents.map((ev) => (
+              <a
+                key={ev.id}
+                href={`/app/marketing/conferences/${ev.id}`}
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                data-testid={`link-conference-origin-${ev.id}`}
+              >
+                {ev.name}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ))}
+          </div>
+        )}
+
         {/* Rollup summary bar */}
         {campaign.rollup && (campaign.rollup.emailCount > 0 || campaign.rollup.postCount > 0 || Object.keys(campaign.rollup.assetsByType).length > 0) && (
           <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/40 rounded-lg border" data-testid="campaign-rollup-bar">

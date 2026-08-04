@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X, ExternalLink } from "lucide-react";
 
 interface Speaker {
   name: string;
@@ -343,7 +343,15 @@ export default function ConferenceDetailPage() {
             </p>
           </div>
           {conf.status === "archived" && <Badge variant="secondary">Archived</Badge>}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {conf.campaignId && (
+              <Link href={`/app/marketing/campaigns/${conf.campaignId}`}>
+                <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-view-campaign">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View Campaign
+                </Button>
+              </Link>
+            )}
             <EditEventDialog conf={conf} onSaved={refresh} />
           </div>
         </div>
