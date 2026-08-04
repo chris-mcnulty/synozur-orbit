@@ -340,6 +340,11 @@ export interface ApolloSearchResult {
    * produced the candidates instead. Human-readable, shown in the UI.
    */
   relaxationApplied?: string;
+  /**
+   * Number of raw Apollo records dropped during normalization (bad names,
+   * single-token names, role labels). Mirrors `droppedCount` in DiscoverResult.
+   */
+  droppedCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -810,11 +815,17 @@ export async function searchApollo(
     return true;
   });
 
+  const droppedCount = candidates.length - filtered.length;
+  if (droppedCount > 0) {
+    console.log(`[Apollo] dropped ${droppedCount} of ${candidates.length} candidates during normalization`);
+  }
+
   return {
     candidates: filtered,
     appliedFilters,
     expansionSummary,
     relaxationApplied,
+    droppedCount,
   };
 }
 
@@ -874,9 +885,9 @@ export const MAX_ORG_LIST_SIZE = MAX_PEOPLE_SEARCH_BATCHES * 10;
  */
 export async function searchApolloCompaniesFirst(
   input: DiscoverySearchInput,
-): Promise<{ candidates: DiscoveryCandidate[]; accountCluster: string[] }> {
+): Promise<{ candidates: DiscoveryCandidate[]; accountCluster: string[]; droppedCount: number }> {
   const apiKey = process.env.APOLLO_API_KEY?.trim();
-  if (!apiKey) return { candidates: [], accountCluster: [] };
+  if (!apiKey) return { candidates: [], accountCluster: [], droppedCount: 0 };
 
   const { criteria, limit } = input;
 
@@ -901,13 +912,13 @@ export async function searchApolloCompaniesFirst(
     });
     if (!orgRes.ok) {
       console.warn(`[Apollo] companies-first org search ${orgRes.status} — skipping`);
-      return { candidates: [], accountCluster: [] };
+      return { candidates: [], accountCluster: [], droppedCount: 0 };
     }
     const orgData = (await orgRes.json()) as ApolloOrgSearchResponse;
     const orgNames = (orgData.organizations ?? orgData.accounts ?? [])
       .map((o) => (o.name ?? "").trim())
       .filter(Boolean);
-    if (orgNames.length === 0) return { candidates: [], accountCluster: [] };
+    if (orgNames.length === 0) return { candidates: [], accountCluster: [], droppedCount: 0 };
 
     // ── Step 2: senior people at those companies ───────────────────────────
     const titles = criteria.roles?.length ? normalizePersonTitles(criteria.roles) : [];
@@ -965,21 +976,23 @@ export async function searchApolloCompaniesFirst(
       return true;
     });
 
-    const candidates = deduped
-      .slice(0, limit)
-      .map(apolloPersonToCandidate)
-      .filter((c) => {
-        if (!c.name || c.name === "Unknown") return false;
-        if (!c.name.includes(" ")) return false;
-        if (isBadName(c.name)) return false;
-        return true;
-      });
+    const mapped = deduped.slice(0, limit).map(apolloPersonToCandidate);
+    const candidates = mapped.filter((c) => {
+      if (!c.name || c.name === "Unknown") return false;
+      if (!c.name.includes(" ")) return false;
+      if (isBadName(c.name)) return false;
+      return true;
+    });
+    const droppedCount = mapped.length - candidates.length;
+    if (droppedCount > 0) {
+      console.log(`[Apollo] companies-first: dropped ${droppedCount} of ${mapped.length} candidates during normalization`);
+    }
 
     console.log(`[Apollo] companies-first: ${orgNames.length} orgs → ${candidates.length} people`);
-    return { candidates, accountCluster: orgNames };
+    return { candidates, accountCluster: orgNames, droppedCount };
   } catch (err) {
     console.warn("[Apollo] companies-first search failed:", (err as Error).message);
-    return { candidates: [], accountCluster: [] };
+    return { candidates: [], accountCluster: [], droppedCount: 0 };
   }
 }
 

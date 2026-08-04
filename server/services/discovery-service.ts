@@ -183,7 +183,9 @@ export async function discoverProspects(
 
   if (backend === "salesnav") {
     try {
-      found = await searchSalesNavigator(tenantDomain, input);
+      const salesNavResult = await searchSalesNavigator(tenantDomain, input);
+      found = salesNavResult.candidates;
+      droppedCount = salesNavResult.droppedCount;
     } catch (err) {
       if (err instanceof SalesNavDiscoveryError) {
         // Fall back to Apollo or web rather than failing the request.
@@ -198,6 +200,7 @@ export async function discoverProspects(
     try {
       const apolloResult = await searchApollo(tenantDomain, input);
       found = apolloResult.candidates;
+      droppedCount = apolloResult.droppedCount;
       expansionSummary = apolloResult.expansionSummary;
       relaxationApplied = apolloResult.relaxationApplied;
 
@@ -219,6 +222,7 @@ export async function discoverProspects(
           }
           accountCluster = cf.accountCluster;
         }
+        droppedCount += cf.droppedCount;
       }
 
       // When Apollo returns 0 results, automatically retry with web discovery

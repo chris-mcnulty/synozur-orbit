@@ -28,6 +28,16 @@ export function salesNavigatorReason(): string {
   return "Sales Navigator isn't enabled yet — using free web discovery instead.";
 }
 
+export interface SalesNavSearchResult {
+  candidates: DiscoveryCandidate[];
+  /**
+   * Number of raw Sales Navigator records dropped during normalization
+   * (bad names, single-token names, role labels). Mirrors `droppedCount`
+   * in DiscoverResult.
+   */
+  droppedCount: number;
+}
+
 /**
  * Search Sales Navigator for ICP-matching people.
  * Throws `not_available` until Sales Navigator is provisioned.
@@ -35,6 +45,6 @@ export function salesNavigatorReason(): string {
 export async function searchSalesNavigator(
   _tenantDomain: string,
   _input: DiscoverySearchInput,
-): Promise<DiscoveryCandidate[]> {
+): Promise<SalesNavSearchResult> {
   throw new SalesNavDiscoveryError(salesNavigatorReason(), "not_available");
 }
