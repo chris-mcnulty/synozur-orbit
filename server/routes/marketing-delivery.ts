@@ -150,6 +150,8 @@ function getBaseUrl(req: Request): string {
 // short-lived; if the user takes longer than 10 minutes the flow expires.
 // codeVerifier is set for PKCE flows (Twitter/X).
 const oauthStates = new Map<string, { tenantDomain: string; userId: string; socialAccountId: string; expiresAt: number; redirectUri: string; codeVerifier?: string }>();
+/** Exported for test seeding only — do not use in application code. */
+export const _oauthStates = oauthStates;
 function purgeExpiredStates() {
   const now = Date.now();
   oauthStates.forEach((v, k) => {

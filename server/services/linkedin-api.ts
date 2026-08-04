@@ -36,7 +36,7 @@ function isMemberSocialEnabled(): boolean {
  * Returns the new access token on success, or null on failure.
  * Also persists the refreshed credentials back to the socialAccounts row.
  */
-async function refreshLinkedInToken(
+export async function refreshLinkedInToken(
   accountId: string,
   encryptedRefreshToken: string,
   tenantDomain: string,
@@ -126,7 +126,7 @@ async function refreshLinkedInToken(
  * When the stored access token is expired, attempts a refresh using the stored
  * refresh token and the global LinkedIn OAuth credentials before falling back.
  */
-async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<string | null> {
+export async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<string | null> {
   const [account] = await db
     .select({
       id: socialAccounts.id,
