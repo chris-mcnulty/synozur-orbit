@@ -52,6 +52,7 @@ import {
   Lightbulb,
   Upload,
   CheckCircle2,
+  Info,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -902,16 +903,31 @@ export default function CampaignDetailPage() {
     },
   });
 
-  // All conferences in this market — powers the "Link event" picker
+  // All conferences in this market — powers the "Link event" picker and orphan detection
   const { data: allConferences = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string | null; campaignId?: string | null }[]>({
     queryKey: ["/api/conferences", "for-link-picker"],
     queryFn: async () => {
       const r = await fetch("/api/conferences", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
-    enabled: linkEventOpen,
+    enabled: !!id,
     staleTime: 30_000,
   });
+
+  // Detect events that previously generated posts for this campaign but have since been
+  // reassigned to a different campaign (or cleared). These are conferenceIds present on
+  // posts for this campaign that no longer appear in linkedEvents.
+  const orphanedConferences = useMemo(() => {
+    if (!posts.length || !allConferences.length) return [];
+    const linkedIds = new Set(linkedEvents.map((e) => e.id));
+    const orphanedIds = new Set(
+      posts
+        .filter((p) => p.conferenceId && !linkedIds.has(p.conferenceId))
+        .map((p) => p.conferenceId as string),
+    );
+    if (!orphanedIds.size) return [];
+    return allConferences.filter((c) => orphanedIds.has(c.id));
+  }, [posts, linkedEvents, allConferences]);
 
   const linkEventMutation = useMutation({
     mutationFn: async (conferenceId: string) => {
@@ -2400,6 +2416,30 @@ export default function CampaignDetailPage() {
                 </Button>
               </span>
             ))}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="How event linking works"
+                  data-testid="button-event-link-info"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="end" className="max-w-xs text-sm space-y-1.5">
+                <p className="font-medium">Link controlled by the event</p>
+                <p className="text-muted-foreground">
+                  This campaign association is set on the event side via the{" "}
+                  <span className="font-medium text-foreground">Parent Campaign</span> field. If the
+                  event is reassigned to a different campaign (or cleared), it will no longer appear
+                  here.
+                </p>
+                <p className="text-muted-foreground">
+                  To change the assignment, open the event's detail page and click{" "}
+                  <span className="font-medium text-foreground">Edit event → Parent Campaign</span>.
+                </p>
+              </PopoverContent>
+            </Popover>
           </div>
         ) : (
           <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-lg border text-sm" data-testid="campaign-no-event-banner">
@@ -2415,6 +2455,46 @@ export default function CampaignDetailPage() {
               <Link2 className="w-3.5 h-3.5" />
               Link event
             </Button>
+          </div>
+        )}
+
+        {/* Orphaned-event warning — shown when one or more events that generated posts for this
+            campaign have since been reassigned to a different campaign (or cleared entirely).
+            The posts remain here, but the event no longer appears in linkedEvents. */}
+        {orphanedConferences.length > 0 && (
+          <div
+            className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm"
+            data-testid="campaign-orphaned-event-warning"
+          >
+            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-amber-800 dark:text-amber-200">
+                {orphanedConferences.length === 1
+                  ? "An event was reassigned away from this campaign"
+                  : `${orphanedConferences.length} events were reassigned away from this campaign`}
+              </p>
+              <p className="text-amber-700 dark:text-amber-300 mt-0.5">
+                {orphanedConferences.map((c, i) => (
+                  <span key={c.id}>
+                    {i > 0 && ", "}
+                    <a
+                      href={`/app/marketing/conferences/${c.id}`}
+                      className="font-medium underline underline-offset-2 hover:no-underline"
+                      data-testid={`link-orphaned-conference-${c.id}`}
+                    >
+                      {c.name}
+                    </a>
+                  </span>
+                ))}{" "}
+                {orphanedConferences.length === 1 ? "is" : "are"} no longer linked here. Posts
+                generated for this campaign from{" "}
+                {orphanedConferences.length === 1 ? "that event" : "those events"} still exist but
+                the event's <span className="font-medium">Parent Campaign</span> field now points
+                elsewhere. To restore the link, open the event and change{" "}
+                <span className="font-medium">Edit event → Parent Campaign</span> back to this
+                campaign.
+              </p>
+            </div>
           </div>
         )}
 
