@@ -46,6 +46,8 @@ import {
   emailSends,
   emailSendRecipients,
   emailSenderIdentities,
+  emailSubscriptionTypes,
+  emailSubscriptionPreferences,
   marketingAuditLog,
   prospects,
 } from "@shared/schema";
@@ -67,25 +69,86 @@ import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
 import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
 import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
 
-/** Hosted single-subscription preference center page. */
-function preferenceCenterHtml(token: string, email: string, subscribed: boolean, justSaved = false): string {
-  const action = subscribed ? "unsubscribe" : "resubscribe";
-  const buttonLabel = subscribed ? "Unsubscribe from marketing emails" : "Resubscribe to marketing emails";
-  const statusLine = subscribed
-    ? "You are currently <strong>subscribed</strong> to marketing emails."
-    : "You are currently <strong>unsubscribed</strong> from marketing emails.";
+/** Build the per-subscription-type preference center page. */
+function preferenceCenterHtml(
+  token: string,
+  email: string,
+  types: Array<{ id: string; name: string; description: string | null; isTransactional: boolean; optedOut: boolean }>,
+  justSaved = false,
+  globallyUnsubscribed = false,
+): string {
   const saved = justSaved
-    ? `<p style="color:#16a34a;font-size:14px;">Your preferences have been updated.</p>`
+    ? `<p style="color:#16a34a;font-size:14px;margin-bottom:16px;">✓ Your preferences have been saved.</p>`
     : "";
-  return `<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto;padding:24px;">
-    <h2 style="margin-bottom:4px;">Email preferences</h2>
-    <p style="color:#666;font-size:14px;">${email}</p>
+
+  const enc = encodeURIComponent(token);
+
+  // When the contact has a global opt-out, show a prominent notice and a
+  // single "Resubscribe" action.  We do NOT show per-type checkboxes because
+  // the global suppression overrides them all — showing them would be
+  // misleading.
+  if (globallyUnsubscribed) {
+    return `<!doctype html><html><head>
+      <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Email Preferences</title>
+    </head><body style="font-family:sans-serif;max-width:520px;margin:48px auto;padding:24px;color:#111;">
+      <h2 style="margin-bottom:4px;">Email Preferences</h2>
+      <p style="color:#666;font-size:14px;margin-top:0;margin-bottom:20px;">${escapeHtml(email)}</p>
+      ${saved}
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin-bottom:20px;">
+        <strong style="color:#dc2626;">You are unsubscribed from all emails.</strong>
+        <p style="margin:6px 0 0;font-size:13px;color:#555;">You will not receive any marketing emails from us. Transactional emails (receipts, security notices) may still be sent.</p>
+      </div>
+      <form method="POST" action="/p/${enc}">
+        <input type="hidden" name="action" value="resubscribe_all" />
+        <button type="submit" style="background:#7c3aed;color:#fff;border:0;padding:12px 24px;border-radius:8px;font-size:15px;cursor:pointer;">
+          Resubscribe and manage preferences
+        </button>
+      </form>
+    </body></html>`;
+  }
+
+  const typeRows = types.length === 0
+    ? `<p style="color:#666;font-size:14px;">No subscription categories are configured yet.</p>`
+    : types.map(t => {
+        const checked = !t.optedOut ? "checked" : "";
+        const disabled = t.isTransactional ? "disabled" : "";
+        const badge = t.isTransactional
+          ? `<span style="font-size:11px;background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 6px;margin-left:6px;">Always delivered</span>`
+          : "";
+        const desc = t.description
+          ? `<div style="font-size:12px;color:#888;margin-top:2px;">${escapeHtml(t.description)}</div>`
+          : "";
+        return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #eee;">
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;">${escapeHtml(t.name)}${badge}</div>${desc}
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#555;cursor:${t.isTransactional ? "default" : "pointer"};">
+            <input type="checkbox" name="optedin_${escapeHtml(t.id)}" ${checked} ${disabled}
+              style="width:16px;height:16px;accent-color:#7c3aed;" />
+            <span>${t.isTransactional ? "Always on" : "Subscribed"}</span>
+          </label>
+        </div>`;
+      }).join("");
+
+  return `<!doctype html><html><head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Email Preferences</title>
+  </head><body style="font-family:sans-serif;max-width:520px;margin:48px auto;padding:24px;color:#111;">
+    <h2 style="margin-bottom:4px;">Email Preferences</h2>
+    <p style="color:#666;font-size:14px;margin-top:0;margin-bottom:20px;">${escapeHtml(email)}</p>
     ${saved}
-    <p style="font-size:15px;">${statusLine}</p>
-    <form method="POST" action="/p/${encodeURIComponent(token)}">
-      <input type="hidden" name="action" value="${action}" />
-      <button style="background:${subscribed ? "#7c3aed" : "#16a34a"};color:#fff;border:0;padding:12px 24px;border-radius:8px;font-size:15px;cursor:pointer;" type="submit">${buttonLabel}</button>
+    <p style="font-size:14px;color:#555;margin-bottom:12px;">Choose which types of email you receive from us.</p>
+    <form method="POST" action="/p/${enc}">
+      ${typeRows}
+      ${types.some(t => !t.isTransactional)
+        ? `<button type="submit" style="margin-top:20px;background:#7c3aed;color:#fff;border:0;padding:12px 24px;border-radius:8px;font-size:15px;cursor:pointer;">Save preferences</button>`
+        : ""}
     </form>
+    <div style="margin-top:28px;padding-top:16px;border-top:1px solid #eee;font-size:12px;color:#888;">
+      Want to stop all email?
+      <a href="/u/${enc}" style="color:#7c3aed;">Unsubscribe from everything</a>
+    </div>
   </body></html>`;
 }
 
@@ -206,12 +269,10 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
           ne(emailSendRecipients.status, "unsubscribed"),
         ));
 
-        await db.insert(emailSuppressions).values({
-          tenantDomain: recipientRow.tenantDomain,
-          email: recipientRow.email,
-          reason: "unsubscribe",
-          source: "public_unsub",
-        }).onConflictDoNothing();
+        // writeGlobalOptOut creates the email_suppressions row AND upserts
+        // opt-outs for every enabled non-transactional type so per-type
+        // suppression stays in sync with the global choice.
+        await writeGlobalOptOut(recipientRow.tenantDomain, recipientRow.email);
 
         await db.update(emailRecipients).set({ status: "unsubscribed" })
           .where(and(
@@ -233,7 +294,7 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
           details: { email: recipientRow.email, sendId: recipientRow.sendId },
         });
         await pushRecipientTimeline(recipientRow, "email_unsubscribed", {}, new Date());
-        // Phase 3: mirror the opt-out to HubSpot subscription preferences.
+        // Mirror the opt-out to HubSpot subscription preferences.
         pushUnsubscribe(recipientRow.tenantDomain, recipientRow.email).catch(() => {});
       }
     } catch (err: any) {
@@ -245,6 +306,38 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
   // Preference center (Phase 3) — a richer hosted page than the one-click
   // /u/:token. Single "Marketing" subscription in v1: lets a recipient see
   // their status and unsubscribe or resubscribe. Reuses the per-send token.
+  // ── Preference center helpers ────────────────────────────────────────────
+
+  /** Load tenant subscription types with opted-out state for a given email. */
+  async function loadPreferenceState(tenantDomain: string, email: string) {
+    const allTypes = await db.select().from(emailSubscriptionTypes)
+      .where(and(
+        eq(emailSubscriptionTypes.tenantDomain, tenantDomain),
+        eq(emailSubscriptionTypes.isEnabled, true),
+      ))
+      .orderBy(emailSubscriptionTypes.sortOrder, emailSubscriptionTypes.name);
+
+    if (allTypes.length === 0) return [];
+
+    const prefs = await db.select().from(emailSubscriptionPreferences)
+      .where(and(
+        eq(emailSubscriptionPreferences.tenantDomain, tenantDomain),
+        eq(emailSubscriptionPreferences.email, email.toLowerCase()),
+        inArray(emailSubscriptionPreferences.subscriptionTypeId, allTypes.map(t => t.id)),
+      ));
+    const prefMap = new Map(prefs.map(p => [p.subscriptionTypeId, p]));
+
+    return allTypes.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      isTransactional: t.isTransactional,
+      hubspotTypeId: t.hubspotTypeId,
+      // opted out = preference row exists AND optedOutAt is set
+      optedOut: !t.isTransactional && (prefMap.get(t.id)?.optedOutAt != null),
+    }));
+  }
+
   app.get("/p/:token", async (req, res) => {
     const decoded = verifyUnsubscribeToken(req.params.token);
     if (!decoded) return res.status(400).send("Invalid preferences link");
@@ -252,13 +345,15 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
       const [row] = await db.select().from(emailSendRecipients)
         .where(eq(emailSendRecipients.unsubscribeToken, req.params.token));
       if (!row) return res.status(404).send("Preferences record not found");
+
       const [sup] = await db.select({ id: emailSuppressions.id }).from(emailSuppressions)
         .where(and(
           eq(emailSuppressions.tenantDomain, row.tenantDomain),
-          eq(emailSuppressions.email, row.email),
+          eq(emailSuppressions.email, row.email.toLowerCase()),
         ));
-      const subscribed = !sup;
-      res.status(200).send(preferenceCenterHtml(req.params.token, escapeHtml(row.email), subscribed));
+      const globallyUnsubscribed = !!sup;
+      const types = await loadPreferenceState(row.tenantDomain, row.email);
+      res.status(200).send(preferenceCenterHtml(req.params.token, row.email, types, false, globallyUnsubscribed));
     } catch (err: any) {
       console.error("[Preferences] Load failed:", err?.message);
       res.status(500).send("Could not load your preferences");
@@ -268,63 +363,126 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
   app.post("/p/:token", async (req, res) => {
     const decoded = verifyUnsubscribeToken(req.params.token);
     if (!decoded) return res.status(400).send("Invalid preferences link");
-    const action = String((req.body?.action ?? "")).toLowerCase();
     try {
       const [row] = await db.select().from(emailSendRecipients)
         .where(eq(emailSendRecipients.unsubscribeToken, req.params.token));
       if (!row) return res.status(404).send("Preferences record not found");
 
+      const email = row.email.toLowerCase();
+      const body = req.body ?? {};
+      const action = String(body.action ?? "").toLowerCase();
+      const now = new Date();
+
+      // ── Resubscribe from global opt-out ──────────────────────────────────
+      // The globally-unsubscribed page has a single "Resubscribe" button that
+      // posts action=resubscribe_all.  Clear the global suppression and all
+      // per-type opt-outs so the per-type form is shown next.
+      if (action === "resubscribe_all") {
+        await db.delete(emailSuppressions).where(and(
+          eq(emailSuppressions.tenantDomain, row.tenantDomain),
+          eq(emailSuppressions.email, email),
+          eq(emailSuppressions.reason, "unsubscribe"),
+        ));
+        await db.update(emailSubscriptionPreferences).set({ optedOutAt: null, updatedAt: now })
+          .where(and(
+            eq(emailSubscriptionPreferences.tenantDomain, row.tenantDomain),
+            eq(emailSubscriptionPreferences.email, email),
+          ));
+        await db.update(emailRecipients).set({ status: "active" })
+          .where(and(
+            eq(emailRecipients.tenantDomain, row.tenantDomain),
+            eq(emailRecipients.email, email),
+          ));
+        pushSubscribe(row.tenantDomain, email).catch(() => {});
+        const types = await loadPreferenceState(row.tenantDomain, email);
+        return res.status(200).send(preferenceCenterHtml(req.params.token, email, types, true, false));
+      }
+
+      // ── Global unsubscribe (from preference-center "Unsubscribe all" path) ─
       if (action === "unsubscribe") {
-        await db.insert(emailSuppressions).values({
-          tenantDomain: row.tenantDomain,
-          email: row.email,
-          reason: "unsubscribe",
-          source: "preference_center",
-        }).onConflictDoNothing();
+        await writeGlobalOptOut(row.tenantDomain, email);
         await db.update(emailRecipients).set({ status: "unsubscribed" })
-          .where(and(eq(emailRecipients.tenantDomain, row.tenantDomain), eq(emailRecipients.email, row.email)));
+          .where(and(eq(emailRecipients.tenantDomain, row.tenantDomain), eq(emailRecipients.email, email)));
         if (row.status !== "unsubscribed" && !row.unsubscribedAt) {
-          await db.update(emailSendRecipients).set({ status: "unsubscribed", unsubscribedAt: new Date() })
+          await db.update(emailSendRecipients).set({ status: "unsubscribed", unsubscribedAt: now })
             .where(and(eq(emailSendRecipients.id, row.id), ne(emailSendRecipients.status, "unsubscribed")));
           await db.update(emailSends).set({ unsubscribeCount: sql`${emailSends.unsubscribeCount} + 1` })
             .where(eq(emailSends.id, row.sendId));
         }
-        await db.insert(marketingAuditLog).values({
-          tenantDomain: row.tenantDomain, action: "email_unsubscribe",
-          entityType: "email_send_recipient", entityId: row.id, status: "ok",
-          message: "Preference-center unsubscribe", details: { email: row.email, sendId: row.sendId },
-        });
-        await pushRecipientTimeline(row, "email_unsubscribed", {}, new Date());
-        pushUnsubscribe(row.tenantDomain, row.email).catch(() => {});
-      } else if (action === "resubscribe") {
-        // User-initiated opt-in. Clear local suppression; HubSpot stays
-        // authoritative — if it blocks the resubscribe, the next pre-send
-        // consent pull re-suppresses them.
-        await db.delete(emailSuppressions).where(and(
-          eq(emailSuppressions.tenantDomain, row.tenantDomain),
-          eq(emailSuppressions.email, row.email),
-          eq(emailSuppressions.reason, "unsubscribe"),
-        ));
-        await db.update(emailRecipients).set({ status: "active" })
-          .where(and(eq(emailRecipients.tenantDomain, row.tenantDomain), eq(emailRecipients.email, row.email)));
-        await db.insert(marketingAuditLog).values({
-          tenantDomain: row.tenantDomain, action: "email_resubscribe",
-          entityType: "email_send_recipient", entityId: row.id, status: "ok",
-          message: "Preference-center resubscribe", details: { email: row.email, sendId: row.sendId },
-        });
-        pushSubscribe(row.tenantDomain, row.email).catch(() => {});
+        await pushRecipientTimeline(row, "email_unsubscribed", {}, now);
+        pushUnsubscribe(row.tenantDomain, email).catch(() => {});
+        const types = await loadPreferenceState(row.tenantDomain, email);
+        return res.status(200).send(preferenceCenterHtml(req.params.token, email, types, true, true));
       }
-      // Recompute the real subscribed state from the suppression table rather
-      // than assuming the action succeeded — the mutation can be a no-op (e.g.
-      // still suppressed for a different reason), so the page must reflect
-      // whether the recipient is actually deliverable now.
-      const [stillSuppressed] = await db.select({ id: emailSuppressions.id }).from(emailSuppressions)
+
+      // ── Per-type preferences (normal form submit) ─────────────────────────
+      // Block per-type saves for globally suppressed contacts — they must
+      // resubscribe first so their intent is unambiguous.
+      const [sup] = await db.select({ id: emailSuppressions.id }).from(emailSuppressions)
         .where(and(
           eq(emailSuppressions.tenantDomain, row.tenantDomain),
-          eq(emailSuppressions.email, row.email),
+          eq(emailSuppressions.email, email),
         ));
-      const subscribed = !stillSuppressed;
-      res.status(200).send(preferenceCenterHtml(req.params.token, escapeHtml(row.email), subscribed, true));
+      if (sup) {
+        const types = await loadPreferenceState(row.tenantDomain, email);
+        return res.status(200).send(preferenceCenterHtml(req.params.token, email, types, false, true));
+      }
+
+      // Load all enabled non-transactional types for the tenant.
+      const allTypes = await db.select({
+        id: emailSubscriptionTypes.id,
+        isTransactional: emailSubscriptionTypes.isTransactional,
+        hubspotTypeId: emailSubscriptionTypes.hubspotTypeId,
+      }).from(emailSubscriptionTypes)
+        .where(and(
+          eq(emailSubscriptionTypes.tenantDomain, row.tenantDomain),
+          eq(emailSubscriptionTypes.isEnabled, true),
+        ));
+
+      const nonTransactional = allTypes.filter(t => !t.isTransactional);
+
+      // For each non-transactional type: checkbox checked → opted in; unchecked → opted out.
+      for (const type of nonTransactional) {
+        const isOptedIn = !!body[`optedin_${type.id}`];
+        const optedOutAt = isOptedIn ? null : now;
+
+        await db.insert(emailSubscriptionPreferences).values({
+          tenantDomain: row.tenantDomain,
+          email,
+          subscriptionTypeId: type.id,
+          optedOutAt,
+        }).onConflictDoUpdate({
+          target: [
+            emailSubscriptionPreferences.tenantDomain,
+            emailSubscriptionPreferences.email,
+            emailSubscriptionPreferences.subscriptionTypeId,
+          ],
+          set: { optedOutAt, updatedAt: now },
+        });
+
+        // Mirror to HubSpot using the type-specific subscription ID when mapped.
+        if (type.hubspotTypeId) {
+          if (!isOptedIn) {
+            pushUnsubscribe(row.tenantDomain, email, type.hubspotTypeId).catch(() => {});
+          } else {
+            pushSubscribe(row.tenantDomain, email, type.hubspotTypeId).catch(() => {});
+          }
+        }
+      }
+
+      // Audit log
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: row.tenantDomain,
+        action: "email_preferences_updated",
+        entityType: "email_send_recipient",
+        entityId: row.id,
+        status: "ok",
+        message: "Preference-center per-type update",
+        details: { email, sendId: row.sendId },
+      });
+
+      const types = await loadPreferenceState(row.tenantDomain, email);
+      res.status(200).send(preferenceCenterHtml(req.params.token, email, types, true, false));
     } catch (err: any) {
       console.error("[Preferences] Update failed:", err?.message);
       res.status(500).send("Could not update your preferences");
@@ -360,6 +518,55 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
   });
 }
 
+/**
+ * Write a global opt-out: adds an email_suppressions row AND upserts
+ * opt-out preferences for every enabled non-transactional type so
+ * per-type and global suppression stay in sync. Used by every code path
+ * that records a "unsubscribe from everything" choice.
+ */
+async function writeGlobalOptOut(tenantDomain: string, email: string): Promise<void> {
+  const normalEmail = email.toLowerCase();
+  const now = new Date();
+
+  // Fetch the non-transactional types outside the transaction so we keep the
+  // transaction as short as possible (reads-only before the write boundary).
+  const types = await db.select({ id: emailSubscriptionTypes.id })
+    .from(emailSubscriptionTypes)
+    .where(and(
+      eq(emailSubscriptionTypes.tenantDomain, tenantDomain),
+      eq(emailSubscriptionTypes.isEnabled, true),
+      eq(emailSubscriptionTypes.isTransactional, false),
+    ));
+
+  // Wrap suppression insert + all preference upserts in a single transaction
+  // so a failure cannot leave global and per-type suppression out of sync.
+  await db.transaction(async (tx) => {
+    await tx.insert(emailSuppressions).values({
+      tenantDomain,
+      email: normalEmail,
+      reason: "unsubscribe",
+      source: "public_unsub",
+    }).onConflictDoNothing();
+
+    if (types.length > 0) {
+      await tx.insert(emailSubscriptionPreferences)
+        .values(types.map(type => ({
+          tenantDomain,
+          email: normalEmail,
+          subscriptionTypeId: type.id,
+          optedOutAt: now,
+        })))
+        .onConflictDoUpdate({
+          target: [
+            emailSubscriptionPreferences.tenantDomain,
+            emailSubscriptionPreferences.email,
+            emailSubscriptionPreferences.subscriptionTypeId,
+          ],
+          set: { optedOutAt: now, updatedAt: now },
+        });
+    }
+  });
+}
 async function handleSendGridEvent(ev: any) {
   const token = ev.orbit_unsub_token as string | undefined;
   const email = (ev.email as string | undefined)?.toLowerCase();
@@ -531,14 +738,12 @@ async function handleSendGridEvent(ev: any) {
       await db.update(emailSends).set({
         unsubscribeCount: sql`${emailSends.unsubscribeCount} + 1`,
       }).where(eq(emailSends.id, recipient.sendId));
-      await db.insert(emailSuppressions).values({
-        tenantDomain: recipient.tenantDomain,
-        email: recipient.email,
-        reason: "unsubscribe",
-        source: "sendgrid_event",
-      }).onConflictDoNothing();
+      // writeGlobalOptOut creates the email_suppressions row AND upserts
+      // opt-outs for every non-transactional type so per-type suppression
+      // stays in sync with this global choice.
+      await writeGlobalOptOut(recipient.tenantDomain, recipient.email);
       await pushRecipientTimeline(recipient, "email_unsubscribed", {}, now);
-      // Phase 3: mirror the opt-out to HubSpot subscription preferences.
+      // Mirror the opt-out to HubSpot subscription preferences.
       pushUnsubscribe(recipient.tenantDomain, recipient.email).catch(() => {});
       break;
     }
@@ -1396,7 +1601,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
     if (!email) return res.status(404).json({ error: "Email not found" });
 
-    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId } = req.body ?? {};
+    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds } = req.body ?? {};
     if (!listId && !testRecipient) {
       return res.status(400).json({ error: "Either listId or testRecipient is required" });
     }
@@ -1433,12 +1638,91 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         trackClicks: typeof trackClicks === "boolean" ? trackClicks : undefined,
         excludeActiveProspects: excludeActiveProspects === true,
         senderIdentityId: typeof senderIdentityId === "string" ? senderIdentityId : null,
+        subscriptionTypeIds: Array.isArray(subscriptionTypeIds) ? subscriptionTypeIds.filter((x: any) => typeof x === "string") : [],
       });
       res.status(201).json(result);
     } catch (err: any) {
       const status = err?.status ?? 500;
       res.status(status).json({ error: err?.message || "Failed to dispatch send" });
     }
+  });
+
+  // ───── Subscription Types ─────
+
+  app.get("/api/email-subscription-types", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const rows = await db.select().from(emailSubscriptionTypes)
+      .where(eq(emailSubscriptionTypes.tenantDomain, ctx.tenantDomain))
+      .orderBy(emailSubscriptionTypes.sortOrder, emailSubscriptionTypes.name);
+    res.json(rows);
+  });
+
+  app.post("/api/email-subscription-types", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const caller = await storage.getUser(req.session.userId!);
+    if (!caller || !["Global Admin", "Domain Admin"].includes(caller.role)) {
+      return res.status(403).json({ error: "Domain Admin access required" });
+    }
+    const { name, description, isTransactional, hubspotTypeId, isEnabled, sortOrder } = req.body ?? {};
+    if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+    try {
+      const [row] = await db.insert(emailSubscriptionTypes).values({
+        tenantDomain: ctx.tenantDomain,
+        name: String(name).trim(),
+        description: description ? String(description).trim() : null,
+        isTransactional: isTransactional === true,
+        hubspotTypeId: hubspotTypeId ? String(hubspotTypeId).trim() : null,
+        isEnabled: isEnabled !== false,
+        sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+        createdBy: req.session.userId!,
+      }).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      if (err?.code === "23505") return res.status(409).json({ error: "A subscription type with that name already exists" });
+      throw err;
+    }
+  });
+
+  app.patch("/api/email-subscription-types/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const caller = await storage.getUser(req.session.userId!);
+    if (!caller || !["Global Admin", "Domain Admin"].includes(caller.role)) {
+      return res.status(403).json({ error: "Domain Admin access required" });
+    }
+    const { name, description, isTransactional, hubspotTypeId, isEnabled, sortOrder } = req.body ?? {};
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+    if (name !== undefined) update.name = String(name).trim();
+    if (description !== undefined) update.description = description ? String(description).trim() : null;
+    if (isTransactional !== undefined) update.isTransactional = isTransactional === true;
+    if (hubspotTypeId !== undefined) update.hubspotTypeId = hubspotTypeId ? String(hubspotTypeId).trim() : null;
+    if (isEnabled !== undefined) update.isEnabled = isEnabled !== false;
+    if (sortOrder !== undefined) update.sortOrder = Number(sortOrder);
+    const [updated] = await db.update(emailSubscriptionTypes).set(update as any)
+      .where(and(
+        eq(emailSubscriptionTypes.id, req.params.id),
+        eq(emailSubscriptionTypes.tenantDomain, ctx.tenantDomain),
+      )).returning();
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+
+  app.delete("/api/email-subscription-types/:id", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    const caller = await storage.getUser(req.session.userId!);
+    if (!caller || !["Global Admin", "Domain Admin"].includes(caller.role)) {
+      return res.status(403).json({ error: "Domain Admin access required" });
+    }
+    const deleted = await db.delete(emailSubscriptionTypes)
+      .where(and(
+        eq(emailSubscriptionTypes.id, req.params.id),
+        eq(emailSubscriptionTypes.tenantDomain, ctx.tenantDomain),
+      )).returning({ id: emailSubscriptionTypes.id });
+    if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true });
   });
 
   // ───── Audit log ─────

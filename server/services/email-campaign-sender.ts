@@ -21,7 +21,7 @@
 import { createHmac, createVerify, randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { db } from "../db";
-import { and, eq, inArray, lte, isNotNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray, lte, isNotNull, notInArray, sql } from "drizzle-orm";
 import {
   generatedEmails,
   emailRecipientLists,
@@ -30,6 +30,8 @@ import {
   emailSendRecipients,
   emailSuppressions,
   emailSenderIdentities,
+  emailSubscriptionTypes,
+  emailSubscriptionPreferences,
   marketingAuditLog,
   prospects,
   type GeneratedEmail,
@@ -372,6 +374,11 @@ export interface DispatchSendOptions {
    * When null/undefined the SendGrid connector's configured from_email is used.
    */
   senderIdentityId?: string | null;
+  /**
+   * Subscription type IDs this send belongs to. At delivery time, recipients
+   * who have opted out of any non-transactional type in this list are filtered.
+   */
+  subscriptionTypeIds?: string[];
 }
 
 export interface SuppressedRecipient {
@@ -424,6 +431,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     trackClicks: opts.trackClicks !== false,
     excludeActiveProspects: opts.excludeActiveProspects === true,
     senderIdentityId: opts.senderIdentityId ?? null,
+    subscriptionTypeIds: opts.subscriptionTypeIds ?? [],
     recipientCount: 0,
     sentCount: 0,
     failedCount: 0,
@@ -493,59 +501,104 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     for (const r of rows) {
       recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
     }
-    // Filter against suppression list + HubSpot consent (HubSpot opt-out wins).
-    if (recipients.length > 0) {
-      const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
-        .from(emailSuppressions)
-        .where(and(
-          eq(emailSuppressions.tenantDomain, tenantDomain),
-          inArray(emailSuppressions.email, recipients.map(r => r.email)),
-        ));
-      const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
-      // Pull HubSpot opt-out state and reconcile so contacts who unsubscribed
-      // in HubSpot are excluded even if Orbit never recorded it. Best-effort:
-      // no connection / missing scopes / failure ⇒ local suppression only.
-      let hubspotOptedOut = new Set<string>();
+  }
+
+  // ── Global + per-type suppression (applies to ALL sends, including test) ──
+  // Test sends preview the exact template a real recipient would receive, so
+  // they must honor global opt-outs and subscription-type preferences.
+  // Prospect suppression is list-only (test sends are always to the sender).
+  if (recipients.length > 0) {
+    // Global suppression + HubSpot consent reconciliation.
+    const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
+      .from(emailSuppressions)
+      .where(and(
+        eq(emailSuppressions.tenantDomain, tenantDomain),
+        inArray(emailSuppressions.email, recipients.map(r => r.email)),
+      ));
+    const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
+
+    // Pull HubSpot opt-out state and reconcile. Best-effort: failure falls
+    // back to local suppression only.
+    let hubspotOptedOut = new Set<string>();
+    if (!testRecipient) {
+      // Skip the HubSpot round-trip for single-address test sends to keep
+      // preview latency low; local suppression is sufficient for tests.
       try {
         const consent = await pullSubscriptionStatus(tenantDomain, recipients.map(r => r.email));
         hubspotOptedOut = consent.optedOut;
-      } catch { /* best-effort: fall back to local suppression */ }
-      const supMap = reconcileSuppression({
-        candidateEmails: recipients.map(r => r.email),
-        locallySuppressed: localSuppressed,
-        hubspotOptedOut,
-      });
-      for (let i = recipients.length - 1; i >= 0; i--) {
-        const reason = supMap.get(recipients[i].email);
-        if (reason) {
-          suppressedFromSend.push({ email: recipients[i].email, reason });
-          recipients.splice(i, 1);
-        }
-      }
+      } catch { /* best-effort */ }
+    }
 
-      // Prospect suppression — applied AFTER standard suppression so we only
-      // check emails that would otherwise be delivered. Active prospects have
-      // a status that is NOT 'replied' (cadence concluded) or 'dormant'
-      // (sequence exhausted / disqualified).
-      if (opts.excludeActiveProspects && recipients.length > 0) {
-        const candidateEmails = recipients.map(r => r.email);
-        const activeProspectRows = await db
-          .select({ email: prospects.email })
-          .from(prospects)
+    const supMap = reconcileSuppression({
+      candidateEmails: recipients.map(r => r.email),
+      locallySuppressed: localSuppressed,
+      hubspotOptedOut,
+    });
+    for (let i = recipients.length - 1; i >= 0; i--) {
+      const reason = supMap.get(recipients[i].email);
+      if (reason) {
+        suppressedFromSend.push({ email: recipients[i].email, reason });
+        recipients.splice(i, 1);
+      }
+    }
+
+    // Per-subscription-type suppression: filter recipients who have opted out
+    // of any of the non-transactional types tagged on this send.
+    const typeIds = opts.subscriptionTypeIds ?? [];
+    if (typeIds.length > 0 && recipients.length > 0) {
+      const typeRows = await db.select({
+        id: emailSubscriptionTypes.id,
+        isTransactional: emailSubscriptionTypes.isTransactional,
+      }).from(emailSubscriptionTypes)
+        .where(and(
+          eq(emailSubscriptionTypes.tenantDomain, tenantDomain),
+          inArray(emailSubscriptionTypes.id, typeIds),
+        ));
+      const nonTransactionalIds = typeRows
+        .filter(t => !t.isTransactional)
+        .map(t => t.id);
+
+      if (nonTransactionalIds.length > 0) {
+        const optedOutRows = await db
+          .selectDistinct({ email: emailSubscriptionPreferences.email })
+          .from(emailSubscriptionPreferences)
           .where(and(
-            eq(prospects.tenantDomain, tenantDomain),
-            inArray(prospects.email, candidateEmails),
-            notInArray(prospects.status, ["replied", "dormant"]),
+            eq(emailSubscriptionPreferences.tenantDomain, tenantDomain),
+            inArray(emailSubscriptionPreferences.email, recipients.map(r => r.email)),
+            inArray(emailSubscriptionPreferences.subscriptionTypeId, nonTransactionalIds),
+            sql`${emailSubscriptionPreferences.optedOutAt} IS NOT NULL`,
           ));
-        const activeProspectEmails = new Set(
-          activeProspectRows.map(p => (p.email ?? "").trim().toLowerCase()).filter(Boolean),
-        );
-        if (activeProspectEmails.size > 0) {
+        const optedOutEmails = new Set(optedOutRows.map(r => r.email.toLowerCase()));
+        if (optedOutEmails.size > 0) {
           for (let i = recipients.length - 1; i >= 0; i--) {
-            if (activeProspectEmails.has(recipients[i].email)) {
-              suppressedFromSend.push({ email: recipients[i].email, reason: "active_prospect" });
+            if (optedOutEmails.has(recipients[i].email)) {
+              suppressedFromSend.push({ email: recipients[i].email, reason: "subscription_opt_out" });
               recipients.splice(i, 1);
             }
+          }
+        }
+      }
+    }
+
+    // Prospect suppression — list sends only, applied AFTER global suppression.
+    if (!testRecipient && opts.excludeActiveProspects && recipients.length > 0) {
+      const candidateEmails = recipients.map(r => r.email);
+      const activeProspectRows = await db
+        .select({ email: prospects.email })
+        .from(prospects)
+        .where(and(
+          eq(prospects.tenantDomain, tenantDomain),
+          inArray(prospects.email, candidateEmails),
+          notInArray(prospects.status, ["replied", "dormant"]),
+        ));
+      const activeProspectEmails = new Set(
+        activeProspectRows.map(p => (p.email ?? "").trim().toLowerCase()).filter(Boolean),
+      );
+      if (activeProspectEmails.size > 0) {
+        for (let i = recipients.length - 1; i >= 0; i--) {
+          if (activeProspectEmails.has(recipients[i].email)) {
+            suppressedFromSend.push({ email: recipients[i].email, reason: "active_prospect" });
+            recipients.splice(i, 1);
           }
         }
       }
@@ -591,6 +644,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       status: "sending",
       trackOpens,
       trackClicks,
+      subscriptionTypeIds: opts.subscriptionTypeIds ?? [],
       recipientCount: recipients.length,
       sentCount: 0,
       failedCount: 0,
@@ -636,7 +690,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       sentCount: 0,
       completedAt: new Date(),
     }).where(eq(emailSends.id, send.id));
-    return { sentCount: 0, failedCount: 0 };
+    return { send, totalRecipients: 0, sentCount: 0, failedCount: 0 };
   }
 
   // Pre-create per-recipient rows with unsubscribe tokens.
@@ -926,6 +980,8 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           excludeActiveProspects: row.send.excludeActiveProspects,
           // Preserve the sender identity captured at schedule time.
           senderIdentityId: row.send.senderIdentityId ?? null,
+          // Preserve subscription type tagging so per-type suppression fires.
+          subscriptionTypeIds: row.send.subscriptionTypeIds ?? [],
         }, row.send.id);
         sent += result.sentCount;
         failed += result.failedCount;

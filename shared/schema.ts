@@ -4068,6 +4068,56 @@ export const insertEmailSuppressionSchema = createInsertSchema(emailSuppressions
 export type EmailSuppression = typeof emailSuppressions.$inferSelect;
 export type InsertEmailSuppression = z.infer<typeof insertEmailSuppressionSchema>;
 
+// Email subscription types — tenant-defined categories (e.g. "Newsletter",
+// "Product Updates", "Event Invitations"). Contacts opt out per category.
+// is_transactional marks types that are never suppressed by preferences
+// (e.g. account receipts, security alerts).
+export const emailSubscriptionTypes = pgTable("email_subscription_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isTransactional: boolean("is_transactional").notNull().default(false),
+  // When set, opt-out changes are propagated to HubSpot's communication
+  // preferences API for this subscription type id.
+  hubspotTypeId: text("hubspot_type_id"),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantNameUniq: uniqueIndex("email_subscription_types_tenant_name_uniq").on(table.tenantDomain, table.name),
+}));
+
+export const insertEmailSubscriptionTypeSchema = createInsertSchema(emailSubscriptionTypes).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type EmailSubscriptionType = typeof emailSubscriptionTypes.$inferSelect;
+export type InsertEmailSubscriptionType = z.infer<typeof insertEmailSubscriptionTypeSchema>;
+
+// Per-contact subscription preferences — tracks explicit opt-outs per type.
+// Absent row = opted in by default (opt-out model).
+// optedOutAt IS NULL on an existing row = contact explicitly opted back in.
+export const emailSubscriptionPreferences = pgTable("email_subscription_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  email: text("email").notNull(),
+  subscriptionTypeId: varchar("subscription_type_id").notNull()
+    .references(() => emailSubscriptionTypes.id, { onDelete: "cascade" }),
+  optedOutAt: timestamp("opted_out_at"), // null = opted in; set = opted out
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantEmailTypeUniq: uniqueIndex("email_sub_prefs_tenant_email_type_uniq")
+    .on(table.tenantDomain, table.email, table.subscriptionTypeId),
+}));
+
+export const insertEmailSubscriptionPreferenceSchema = createInsertSchema(emailSubscriptionPreferences).omit({
+  id: true, updatedAt: true,
+});
+export type EmailSubscriptionPreference = typeof emailSubscriptionPreferences.$inferSelect;
+export type InsertEmailSubscriptionPreference = z.infer<typeof insertEmailSubscriptionPreferenceSchema>;
+
 // Shared cross-system HubSpot contact ID cache. Keyed on (tenantDomain, email)
 // with no FK to email_recipients (list-scoped) so both the sales-outreach
 // path and the marketing-email path can upsert freely. Resolution priority:
@@ -4131,6 +4181,10 @@ export const emailSends = pgTable("email_sends", {
   clickCount: integer("click_count").notNull().default(0),
   deliveredCount: integer("delivered_count").notNull().default(0),
   senderIdentityId: varchar("sender_identity_id").references(() => emailSenderIdentities.id, { onDelete: "set null" }),
+  // Subscription types this send is tagged with. At delivery time, recipients
+  // who have opted out of any non-transactional type in this list are filtered.
+  // Empty array = no per-type filtering (falls back to global suppression only).
+  subscriptionTypeIds: text("subscription_type_ids").array().notNull().default(sql`ARRAY[]::text[]`),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),

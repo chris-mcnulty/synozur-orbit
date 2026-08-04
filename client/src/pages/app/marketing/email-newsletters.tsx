@@ -314,6 +314,7 @@ export default function EmailNewslettersPage() {
   const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
   const [sendExcludeActiveProspects, setSendExcludeActiveProspects] = useState<boolean>(false);
   const [sendSenderIdentityId, setSendSenderIdentityId] = useState<string>("");
+  const [sendSubscriptionTypeIds, setSendSubscriptionTypeIds] = useState<string[]>([]);
   const [rescheduleEmail, setRescheduleEmail] = useState<SavedEmail | null>(null);
   const [rescheduleDateTime, setRescheduleDateTime] = useState<string>("");
 
@@ -364,8 +365,17 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed && directDeliveryEnabled,
   });
 
+  const { data: subscriptionTypes = [] } = useQuery<Array<{ id: string; name: string; isTransactional: boolean }>>({
+    queryKey: ["/api/email-subscription-types"],
+    queryFn: async () => {
+      const r = await fetch("/api/email-subscription-types", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && directDeliveryEnabled,
+  });
+
   const sendEmailMutation = useMutation({
-    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean; senderIdentityId?: string }) => {
+    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean; senderIdentityId?: string; subscriptionTypeIds?: string[] }) => {
       const r = await fetch(`/api/generated-emails/${emailId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -378,6 +388,7 @@ export default function EmailNewslettersPage() {
           trackClicks,
           excludeActiveProspects,
           senderIdentityId: senderIdentityId || undefined,
+          subscriptionTypeIds: subscriptionTypeIds?.length ? subscriptionTypeIds : undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Send failed");
@@ -391,6 +402,7 @@ export default function EmailNewslettersPage() {
       setSendTestRecipient("");
       setSendScheduleAt("");
       setSendSenderIdentityId("");
+      setSendSubscriptionTypeIds([]);
       toast({
         title: "Send started",
         description: `${data.sentCount ?? data.totalRecipients ?? 0} of ${data.totalRecipients ?? 0} delivered. View progress in the Sends tab.`,
@@ -1868,6 +1880,31 @@ export default function EmailNewslettersPage() {
                       </select>
                     </div>
                   )}
+                  {subscriptionTypes.filter(t => !t.isTransactional).length > 0 && (
+                    <div className="space-y-2 pt-1 border-t">
+                      <Label className="text-xs uppercase tracking-wide text-muted-foreground">Subscription type</Label>
+                      <p className="text-xs text-muted-foreground">Tag this send so recipients can opt out per category in the preference center.</p>
+                      <div className="space-y-1.5">
+                        {subscriptionTypes.filter(t => !t.isTransactional).map(t => (
+                          <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={sendSubscriptionTypeIds.includes(t.id)}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setSendSubscriptionTypeIds(prev => [...prev, t.id]);
+                                } else {
+                                  setSendSubscriptionTypeIds(prev => prev.filter(id => id !== t.id));
+                                }
+                              }}
+                              className="mt-0.5"
+                            />
+                            <span>{t.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2 pt-1 border-t">
                     <Label className="text-xs uppercase tracking-wide text-muted-foreground">Suppression</Label>
                     <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -1941,6 +1978,7 @@ export default function EmailNewslettersPage() {
                       trackClicks: sendMode === "list" ? sendTrackClicks : undefined,
                       excludeActiveProspects: sendMode === "list" ? sendExcludeActiveProspects : undefined,
                       senderIdentityId: sendSenderIdentityId || undefined,
+                      subscriptionTypeIds: sendMode === "list" ? sendSubscriptionTypeIds : undefined,
                     });
                   }}
                   data-testid="button-confirm-send"
