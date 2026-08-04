@@ -11,7 +11,7 @@
 
 import type { Express } from "express";
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, ne, notInArray, count } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   conferences,
@@ -34,6 +34,7 @@ import { enqueue } from "../services/job-queue";
 import {
   generateConferencePostsAsync,
   renderConferenceImage,
+  ensureConferenceCampaign,
 } from "../services/conference-promotion-service";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
@@ -209,7 +210,16 @@ export function registerConferencePromotionRoutes(app: Express) {
         createdBy: ctx.userId,
       })
       .returning();
-    res.status(201).json(row);
+
+    // Auto-create a linked event campaign so the conference is immediately
+    // visible in the campaign list even before posts are generated.
+    // Skip when the caller explicitly linked an existing campaign above.
+    if (!row.campaignId) {
+      const campaignId = await ensureConferenceCampaign(row, ctx.userId);
+      res.status(201).json({ ...row, campaignId });
+    } else {
+      res.status(201).json(row);
+    }
   });
 
   app.patch("/api/conferences/:id", async (req, res) => {

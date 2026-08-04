@@ -1,13 +1,15 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { sql, and, count } from "drizzle-orm";
+import { sql, and, count, eq, isNull } from "drizzle-orm";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, hasAdminAccess, hasContentAccess, guardManualAction } from "./helpers";
 import { getJobStatus, triggerWebsiteCrawlNow, triggerSocialMonitorNow, triggerWebsiteMonitorNow, triggerProductMonitorNow, triggerPlannerSyncNow, invalidateMarketStatusCache, resetStuckJob, resetAllStuckJobs, cancelJob } from "../services/scheduled-jobs";
 import Anthropic from "@anthropic-ai/sdk";
 import { crawlCompetitorWebsite, buildCrawlData } from "../services/web-crawler";
 import type { Competitor, User } from "@shared/schema";
+import { conferences } from "@shared/schema";
+import { ensureConferenceCampaign } from "../services/conference-promotion-service";
 import { getCacheStats, invalidateTenantCache, clearCache as clearAICache } from "../services/ai-cache";
 import { getDeadLetterJobs, dismissDeadLetterJob } from "../services/job-queue";
 
@@ -404,6 +406,58 @@ export function registerOperationsRoutes(app: Express) {
       });
     } catch (error: any) {
       console.error("Backfill activity markets error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Backfill: wire every unlinked conference to an auto-created event campaign
+  // and stamp all its existing posts with the new campaignId.
+  // Global Admin only. Idempotent — skips conferences that already have campaignId set.
+  // Optional query param ?tenantDomain=xxx to scope to a single tenant.
+  app.post("/api/admin/backfill/conference-campaigns", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user || user.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied — Global Admin only" });
+      }
+
+      const scopedTenant = typeof req.query.tenantDomain === "string" ? req.query.tenantDomain.trim() : null;
+
+      // Find all conferences that are not yet linked to a campaign.
+      const rows = await db
+        .select()
+        .from(conferences)
+        .where(
+          scopedTenant
+            ? and(isNull(conferences.campaignId), eq(conferences.tenantDomain, scopedTenant))
+            : isNull(conferences.campaignId),
+        );
+
+      let processed = 0;
+      let errors = 0;
+      for (const conf of rows) {
+        try {
+          await ensureConferenceCampaign(conf, user.id);
+          processed++;
+        } catch (err: any) {
+          console.error(`[Backfill] Failed conference ${conf.id} (${conf.name}):`, err?.message);
+          errors++;
+        }
+      }
+
+      res.json({
+        success: true,
+        message: "Conference campaign backfill complete",
+        total: rows.length,
+        processed,
+        errors,
+        scopedTenant: scopedTenant ?? "all",
+      });
+    } catch (error: any) {
+      console.error("Backfill conference campaigns error:", error);
       res.status(500).json({ error: error.message });
     }
   });
