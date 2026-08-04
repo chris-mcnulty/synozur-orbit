@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange, Megaphone } from "lucide-react";
+import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange, Megaphone, Filter } from "lucide-react";
 
 // Event dates are floating wall-clock dates stored at UTC midnight. Render in
 // UTC so they show exactly as entered, independent of the viewer's timezone.
@@ -67,6 +67,7 @@ export default function ConferencePromotionPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [filterCampaignLinked, setFilterCampaignLinked] = useState(false);
 
   const { data: conferences = [], isLoading } = useQuery<Conference[]>({
     queryKey: ["/api/conferences"],
@@ -123,7 +124,8 @@ export default function ConferencePromotionPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const active = conferences.filter((c) => c.status === "active");
+  const allActive = conferences.filter((c) => c.status === "active");
+  const active = filterCampaignLinked ? allActive.filter((c) => c.campaignId != null) : allActive;
   const archived = conferences.filter((c) => c.status === "archived");
 
   return (
@@ -290,7 +292,29 @@ export default function ConferencePromotionPage() {
           </Card>
         ) : (
           <div className="space-y-6">
+            <div className="flex items-center gap-2">
+              <Button
+                variant={filterCampaignLinked ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setFilterCampaignLinked((v) => !v)}
+                data-testid="filter-campaign-linked"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <Megaphone className="w-3.5 h-3.5" />
+                Campaign linked
+              </Button>
+              {filterCampaignLinked && (
+                <span className="text-xs text-muted-foreground">
+                  {active.length} of {allActive.length} event{allActive.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
+              {active.length === 0 && filterCampaignLinked ? (
+                <p className="text-sm text-muted-foreground col-span-2">No events with a linked campaign.</p>
+              ) : null}
               {active.map((c) => (
                 <ConferenceCard key={c.id} conf={c} onArchive={(id) => archiveMutation.mutate({ id, archive: true })} />
               ))}
