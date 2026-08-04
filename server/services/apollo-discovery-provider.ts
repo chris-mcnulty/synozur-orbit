@@ -425,10 +425,13 @@ async function expandSimilarCompanies(
 ): Promise<string[]> {
   try {
     // Build a search that targets the same industry + size profile.
-    // We ask Apollo for up to 50 organizations and take their names.
+    // We ask Apollo for up to MAX_ORG_LIST_SIZE organizations and take their
+    // names. Fetching more than this would be silently discarded downstream
+    // (the batch cap trims any excess), so there is no reason to request extra
+    // paid results from Apollo.
     const body: Record<string, unknown> = {
       page: 1,
-      per_page: 50,
+      per_page: MAX_ORG_LIST_SIZE,
     };
 
     if (employeeRanges.length) {
@@ -627,6 +630,21 @@ export async function searchApollo(
           seedCompanies: namedAccounts,
           expandedCount: finalAccountList.length,
         };
+      }
+
+      // Guard against expansion returning more orgs than the downstream batch
+      // cap can handle. Trimming here prevents MAX_ORG_LIST_SIZE from silently
+      // being exceeded if per_page is ever raised on the org search or the
+      // dedup merge grows the list further.
+      if (finalAccountList.length > MAX_ORG_LIST_SIZE) {
+        console.warn(
+          `[Apollo] org-list trimmed from ${finalAccountList.length} → ${MAX_ORG_LIST_SIZE} ` +
+            `(MAX_ORG_LIST_SIZE=${MAX_ORG_LIST_SIZE}). Increase MAX_PEOPLE_SEARCH_BATCHES to search more orgs.`,
+        );
+        finalAccountList = finalAccountList.slice(0, MAX_ORG_LIST_SIZE);
+        if (expansionSummary) {
+          expansionSummary.expandedCount = finalAccountList.length;
+        }
       }
     } else {
       finalAccountList = namedAccounts;
@@ -833,6 +851,15 @@ function apolloPersonToCandidate(p: ApolloPerson): DiscoveryCandidate {
  * The cap prevents future edits from quietly multiplying paid API calls.
  */
 export const MAX_PEOPLE_SEARCH_BATCHES = 3;
+
+/**
+ * Hard ceiling on the number of org names that can enter the people-search
+ * pipeline. Each 10-org chunk costs one Apollo API call, so this directly
+ * bounds the maximum spend per discovery run.
+ *
+ * = MAX_PEOPLE_SEARCH_BATCHES × 10  (one full batch worth per allowed call).
+ */
+export const MAX_ORG_LIST_SIZE = MAX_PEOPLE_SEARCH_BATCHES * 10;
 
 /**
  * Companies-first discovery: the way a human fills an event room.
