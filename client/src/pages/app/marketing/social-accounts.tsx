@@ -42,7 +42,7 @@ interface SocialAccount {
   accountId?: string;
   profileUrl?: string;
   notes?: string;
-  status: string;
+  status?: string | null;
   encryptedAccessToken?: string | null;
   authorMode?: string | null;
   authorUrn?: string | null;
@@ -50,7 +50,6 @@ interface SocialAccount {
   connectedAt?: string | null;
   tokenExpiresAt?: string | null;
   lastPublishError?: string | null;
-  status?: string | null;
 }
 
 function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {

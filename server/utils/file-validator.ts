@@ -1,4 +1,5 @@
 import { UploadedFile } from "express-fileupload";
+import { MAX_IMAGE_FILE_SIZE, MAX_DOCUMENT_FILE_SIZE } from "@shared/upload-limits";
 
 export interface FileValidationResult {
   isValid: boolean;
@@ -172,7 +173,7 @@ export function validateUploadedFile(
 
 export function validateDocumentUpload(file: UploadedFile): FileValidationResult {
   return validateUploadedFile(file, {
-    maxSizeBytes: 10 * 1024 * 1024, // 10MB
+    maxSizeBytes: MAX_DOCUMENT_FILE_SIZE,
     allowedMimeTypes: DOCUMENT_MIME_TYPES,
     allowedExtensions: DOCUMENT_EXTENSIONS,
   });
@@ -180,7 +181,7 @@ export function validateDocumentUpload(file: UploadedFile): FileValidationResult
 
 export function validateImageUpload(file: UploadedFile): FileValidationResult {
   return validateUploadedFile(file, {
-    maxSizeBytes: 15 * 1024 * 1024, // 15MB
+    maxSizeBytes: MAX_IMAGE_FILE_SIZE,
     allowedMimeTypes: IMAGE_MIME_TYPES,
     allowedExtensions: IMAGE_EXTENSIONS,
   });
