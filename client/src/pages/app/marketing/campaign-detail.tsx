@@ -521,6 +521,11 @@ export default function CampaignDetailPage() {
   // Brief source navigation — highlights the source brief in the Content Plan tab
   const [highlightedBriefId, setHighlightedBriefId] = useState<string | null>(null);
 
+  // Link / unlink event state
+  const [linkEventOpen, setLinkEventOpen] = useState(false);
+  const [linkEventSearch, setLinkEventSearch] = useState("");
+  const [unlinkEventConfirmId, setUnlinkEventConfirmId] = useState<string | null>(null);
+
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
     queryFn: async () => {
@@ -895,6 +900,58 @@ export default function CampaignDetailPage() {
       const r = await fetch(`/api/campaigns/${id}/events`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+  });
+
+  // All conferences in this market — powers the "Link event" picker
+  const { data: allConferences = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string | null; campaignId?: string | null }[]>({
+    queryKey: ["/api/conferences", "for-link-picker"],
+    queryFn: async () => {
+      const r = await fetch("/api/conferences", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: linkEventOpen,
+    staleTime: 30_000,
+  });
+
+  const linkEventMutation = useMutation({
+    mutationFn: async (conferenceId: string) => {
+      const r = await fetch(`/api/conferences/${conferenceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ campaignId: id }),
+      });
+      if (!r.ok) throw new Error("Failed to link event");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/events`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conferences", "for-link-picker"] });
+      setLinkEventOpen(false);
+      setLinkEventSearch("");
+      toast({ title: "Event linked", description: "The event is now associated with this campaign." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not link the event. Please try again.", variant: "destructive" }),
+  });
+
+  const unlinkEventMutation = useMutation({
+    mutationFn: async (conferenceId: string) => {
+      const r = await fetch(`/api/conferences/${conferenceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ campaignId: null }),
+      });
+      if (!r.ok) throw new Error("Failed to unlink event");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/events`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conferences", "for-link-picker"] });
+      setUnlinkEventConfirmId(null);
+      toast({ title: "Event unlinked", description: "The event has been detached from this campaign." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not unlink the event. Please try again.", variant: "destructive" }),
   });
 
   const { data: allCampaigns = [] } = useQuery<Array<{ id: string; name: string; status: string; parentCampaignId?: string | null }>>({
@@ -2313,25 +2370,51 @@ export default function CampaignDetailPage() {
         </div>
 
         {/* Conference origin banner — shown when this campaign was auto-created from one or more events */}
-        {linkedEvents.length > 0 && (
+        {linkedEvents.length > 0 ? (
           <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/40 rounded-lg border text-sm" data-testid="campaign-conference-origin-banner">
             <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground">
               {linkedEvents.length === 1
-                ? "This campaign was auto-created for the event:"
-                : "This campaign is linked to the following events:"}
+                ? "Linked event:"
+                : "Linked events:"}
             </span>
             {linkedEvents.map((ev) => (
-              <a
-                key={ev.id}
-                href={`/app/marketing/conferences/${ev.id}`}
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                data-testid={`link-conference-origin-${ev.id}`}
-              >
-                {ev.name}
-                <ExternalLink className="w-3 h-3" />
-              </a>
+              <span key={ev.id} className="inline-flex items-center gap-1.5">
+                <a
+                  href={`/app/marketing/conferences/${ev.id}`}
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                  data-testid={`link-conference-origin-${ev.id}`}
+                >
+                  {ev.name}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-muted-foreground hover:text-destructive gap-1"
+                  onClick={() => setUnlinkEventConfirmId(ev.id)}
+                  data-testid={`button-unlink-event-banner-${ev.id}`}
+                >
+                  <Unlink className="w-3 h-3" />
+                  Unlink
+                </Button>
+              </span>
             ))}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-lg border text-sm" data-testid="campaign-no-event-banner">
+            <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground">No event linked to this campaign.</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 ml-auto"
+              onClick={() => setLinkEventOpen(true)}
+              data-testid="button-link-event-banner"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              Link event
+            </Button>
           </div>
         )}
 
@@ -2807,30 +2890,55 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
-            {linkedEvents.length > 0 && (
-              <div className="space-y-2 pt-2" data-testid="campaign-events">
+            <div className="space-y-2 pt-2" data-testid="campaign-events">
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold flex items-center gap-1.5"><Calendar className="w-4 h-4" />Events</h3>
-                {linkedEvents.map((ev) => (
-                  <Card key={ev.id} data-testid={`event-${ev.id}`}>
-                    <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">{ev.name}</span>
-                          <Badge variant="secondary" className="text-[10px] capitalize">{ev.status}</Badge>
-                          <Badge variant="outline" className="text-[10px]">{ev.postCount} posts</Badge>
-                        </div>
-                        {ev.startDate && (
-                          <p className="text-xs text-muted-foreground mt-1">{format(new Date(ev.startDate), "MMM d, yyyy")}</p>
-                        )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setLinkEventOpen(true)}
+                  data-testid="button-link-event-overview"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  Link event
+                </Button>
+              </div>
+              {linkedEvents.length === 0 && (
+                <p className="text-sm text-muted-foreground py-2">No events linked to this campaign yet.</p>
+              )}
+              {linkedEvents.map((ev) => (
+                <Card key={ev.id} data-testid={`event-${ev.id}`}>
+                  <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{ev.name}</span>
+                        <Badge variant="secondary" className="text-[10px] capitalize">{ev.status}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{ev.postCount} posts</Badge>
                       </div>
+                      {ev.startDate && (
+                        <p className="text-xs text-muted-foreground mt-1">{format(new Date(ev.startDate), "MMM d, yyyy")}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-muted-foreground hover:text-destructive"
+                        onClick={() => setUnlinkEventConfirmId(ev.id)}
+                        data-testid={`button-unlink-event-${ev.id}`}
+                      >
+                        <Unlink className="w-3.5 h-3.5" />
+                        Unlink
+                      </Button>
                       <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate(`/app/marketing/conferences/${ev.id}`)} data-testid={`button-open-event-${ev.id}`}>
                         Open event <ExternalLink className="w-3 h-3" />
                       </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
@@ -7274,6 +7382,101 @@ export default function CampaignDetailPage() {
           <CreateActionDialog open={hubCreateOpen} onOpenChange={setHubCreateOpen} scope="campaign" id={id} onDone={refreshHub} />
         </>
       )}
+
+      {/* Link event picker dialog */}
+      <Dialog open={linkEventOpen} onOpenChange={(o) => { setLinkEventOpen(o); if (!o) setLinkEventSearch(""); }}>
+        <DialogContent className="max-w-lg" data-testid="dialog-link-event">
+          <DialogHeader>
+            <DialogTitle>Link an event</DialogTitle>
+            <DialogDescription>
+              Associate an existing conference or event with this campaign. Only unlinked events are shown.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Search events…"
+              value={linkEventSearch}
+              onChange={(e) => setLinkEventSearch(e.target.value)}
+              data-testid="input-link-event-search"
+            />
+            <div className="max-h-72 overflow-y-auto border rounded-md divide-y" data-testid="list-link-event-options">
+              {(() => {
+                const linkedIds = new Set(linkedEvents.map((e) => e.id));
+                const filtered = allConferences.filter((c) => {
+                  if (linkedIds.has(c.id)) return false; // already linked to this campaign
+                  if (c.campaignId && c.campaignId !== id) return false; // linked to another campaign
+                  if (linkEventSearch.trim()) {
+                    return c.name.toLowerCase().includes(linkEventSearch.toLowerCase());
+                  }
+                  return true;
+                });
+                if (filtered.length === 0) {
+                  return (
+                    <p className="text-sm text-muted-foreground px-3 py-4">
+                      {linkEventSearch.trim() ? "No matching events found." : "No unlinked events available."}
+                    </p>
+                  );
+                }
+                return filtered.map((c) => (
+                  <button
+                    key={c.id}
+                    className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors text-sm flex items-center justify-between gap-3"
+                    onClick={() => linkEventMutation.mutate(c.id)}
+                    disabled={linkEventMutation.isPending}
+                    data-testid={`button-link-event-option-${c.id}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{c.name}</div>
+                      {c.startDate && (
+                        <div className="text-xs text-muted-foreground">{format(new Date(c.startDate), "MMM d, yyyy")}</div>
+                      )}
+                    </div>
+                    {linkEventMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-muted-foreground" />
+                    ) : (
+                      <Link2 className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                ));
+              })()}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkEventOpen(false)} data-testid="button-cancel-link-event">
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unlink event confirmation dialog */}
+      <AlertDialog open={!!unlinkEventConfirmId} onOpenChange={(o) => { if (!o) setUnlinkEventConfirmId(null); }}>
+        <AlertDialogContent data-testid="dialog-unlink-event-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlink event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const ev = linkedEvents.find((e) => e.id === unlinkEventConfirmId);
+                return ev
+                  ? `"${ev.name}" will no longer be associated with this campaign. The event itself and its posts are not deleted.`
+                  : "The event will no longer be associated with this campaign.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-unlink-event">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => unlinkEventConfirmId && unlinkEventMutation.mutate(unlinkEventConfirmId)}
+              disabled={unlinkEventMutation.isPending}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-unlink-event"
+            >
+              {unlinkEventMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Unlink
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
