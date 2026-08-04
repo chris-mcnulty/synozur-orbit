@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "./ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -102,7 +103,9 @@ async function searchNews(query: string): Promise<SearchResult[]> {
 }
 
 async function analyzeSentiment(
-  mentions: Array<{ title: string; snippet: string }>
+  mentions: Array<{ title: string; snippet: string }>,
+  tenantDomain?: string | null,
+  marketId?: string | null,
 ): Promise<Array<{ sentiment: "positive" | "neutral" | "negative"; relevance: number }>> {
   if (mentions.length === 0) return [];
   
@@ -125,6 +128,7 @@ Respond with ONLY a JSON array like: [{"sentiment": "positive", "relevance": 85}
       }]
     });
     
+    void logAiUsage({ tenantDomain, marketId }, "analyze_news_sentiment", "anthropic", "claude-sonnet-4-5", response.usage);
     const text = response.content[0].type === "text" ? response.content[0].text : "";
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
@@ -140,7 +144,9 @@ Respond with ONLY a JSON array like: [{"sentiment": "positive", "relevance": 85}
 export async function monitorCompetitorNews(
   competitorId: string,
   competitorName: string,
-  companyWebsite?: string
+  companyWebsite?: string,
+  tenantDomain?: string | null,
+  marketId?: string | null,
 ): Promise<NewsMonitoringResult> {
   const fetchedAt = new Date().toISOString();
   
@@ -165,7 +171,9 @@ export async function monitorCompetitorNews(
     }
     
     const sentimentResults = await analyzeSentiment(
-      searchResults.map(r => ({ title: r.title, snippet: r.snippet }))
+      searchResults.map(r => ({ title: r.title, snippet: r.snippet })),
+      tenantDomain,
+      marketId,
     );
     
     const mentions: NewsMention[] = searchResults.map((result, index) => {
@@ -213,7 +221,7 @@ export async function monitorCompetitorNews(
 }
 
 export async function monitorMultipleCompetitorsNews(
-  competitors: Array<{ id: string; name: string; websiteUrl?: string }>,
+  competitors: Array<{ id: string; name: string; websiteUrl?: string; tenantDomain?: string | null; marketId?: string | null }>,
   opts?: { concurrency?: number; deadlineMs?: number }
 ): Promise<NewsMonitoringResult[]> {
   // Scan competitors with a small worker pool so a long list (e.g. 20+)
@@ -232,7 +240,9 @@ export async function monitorMultipleCompetitorsNews(
       const result = await monitorCompetitorNews(
         competitor.id,
         competitor.name,
-        competitor.websiteUrl
+        competitor.websiteUrl,
+        competitor.tenantDomain,
+        competitor.marketId,
       );
       results.push(result);
     }

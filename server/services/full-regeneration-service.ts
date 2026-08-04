@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
+import { logAiUsage } from "./ai-usage-logger";
 import { buildCompetitorDocumentContext, buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "./competitor-document-context";
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
@@ -471,6 +472,7 @@ Return ONLY valid JSON.`;
             messages: [{ role: "user", content: prompt }],
           })
         );
+        void logAiUsage({ tenantDomain, marketId, userId }, "regen_battlecard", "anthropic", "claude-sonnet-4-5", message.usage);
 
         const content = message.content[0];
         if (content.type === "text") {
@@ -688,6 +690,7 @@ Make this practical and actionable for the team.`;
             messages: [{ role: "user", content: gtmPrompt }],
           })
         );
+        void logAiUsage({ tenantDomain, marketId, userId }, "regen_gtm_plan", "openai", "gpt-5.2", completion.usage);
 
         const gtmContent = completion.choices[0]?.message?.content || "";
         
@@ -823,6 +826,7 @@ Make this practical and ready to use in marketing materials.`;
             messages: [{ role: "user", content: messagingPrompt }],
           })
         );
+        void logAiUsage({ tenantDomain, marketId, userId }, "regen_messaging_framework", "anthropic", "claude-sonnet-4-5", message.usage);
 
         const messagingContent = message.content[0].type === "text" ? message.content[0].text : "";
         
@@ -1005,6 +1009,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
                 system: "You are a marketing strategy expert. Generate practical, actionable marketing tasks based on the company's competitive landscape. Always respond with valid JSON only, no additional text.",
               })
             );
+            void logAiUsage({ tenantDomain, marketId, userId }, "regen_marketing_tasks", "anthropic", "claude-sonnet-4-5", message.usage);
 
             const aiResponse = message.content[0].type === "text" ? message.content[0].text : "";
 
@@ -1217,6 +1222,7 @@ Write 2-3 sentences that capture what this product does, its key differentiators
                 messages: [{ role: "user", content: prompt }],
               })
             );
+            void logAiUsage({ tenantDomain, marketId, userId }, "regen_product_summary", "anthropic", "claude-sonnet-4-5", message.usage);
 
             const content = message.content[0];
             if (content.type === "text") {

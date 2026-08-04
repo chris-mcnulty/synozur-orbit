@@ -47,6 +47,8 @@ export function registerAnalyticsDataRoutes(app: Express) {
         id: c.id,
         name: c.name,
         websiteUrl: c.url || undefined,
+        tenantDomain: c.tenantDomain,
+        marketId: c.marketId,
       }));
       
       console.log(`[News] Searching news for: ${competitorData.map(c => c.name).join(', ')}`);
@@ -82,7 +84,9 @@ export function registerAnalyticsDataRoutes(app: Express) {
       const result = await monitorCompetitorNews(
         competitor.id,
         competitor.name,
-        competitor.url || undefined
+        competitor.url || undefined,
+        competitor.tenantDomain,
+        competitor.marketId,
       );
       
       res.json(result);

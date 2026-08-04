@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import { fetchLinkedInData } from "./linkedin-api";
+import { logAiUsage } from "./ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -192,7 +193,9 @@ async function summarizeChanges(
   platform: string,
   previousContent: string,
   newContent: string,
-  changeScore: number
+  changeScore: number,
+  tenantDomain?: string,
+  marketId?: string | null,
 ): Promise<string> {
   try {
     const response = await anthropic.messages.create({
@@ -223,6 +226,7 @@ Summary:`
         }
       ]
     });
+    void logAiUsage({ tenantDomain, marketId }, "summarize_social_changes", "anthropic", "claude-sonnet-4-5", response.usage);
     
     const textBlock = response.content.find(block => block.type === "text");
     return textBlock ? textBlock.text.trim() : "Changes detected";
@@ -270,7 +274,9 @@ async function fallbackToLinkedInScraping(
         "LinkedIn",
         previousContent,
         newContent,
-        changeScore
+        changeScore,
+        tenantDomain,
+        competitor.marketId,
       );
       
       if (!summary.toLowerCase().includes("no significant") && tenantDomain) {
@@ -483,7 +489,9 @@ export async function monitorCompetitorSocialMedia(
           "Instagram",
           previousContent,
           newContent,
-          changeScore
+          changeScore,
+          tenantDomain,
+          competitor.marketId,
         );
         
         if (!summary.toLowerCase().includes("no significant")) {
@@ -559,7 +567,9 @@ export async function monitorCompetitorSocialMedia(
           "Twitter/X",
           previousContent,
           newContent,
-          changeScore
+          changeScore,
+          tenantDomain,
+          competitor.marketId,
         );
         
         if (!summary.toLowerCase().includes("no significant")) {
@@ -635,7 +645,9 @@ export async function monitorCompetitorSocialMedia(
           "Facebook",
           previousContent,
           newContent,
-          changeScore
+          changeScore,
+          tenantDomain,
+          competitor.marketId,
         );
 
         if (!summary.toLowerCase().includes("no significant")) {

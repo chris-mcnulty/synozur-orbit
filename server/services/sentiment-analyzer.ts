@@ -17,6 +17,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { TONE_LABELS, type ToneLabel } from "@shared/schema";
+import { logAiUsage } from "./ai-usage-logger";
 
 export interface SentimentResult {
   /** Numeric score in [-1,+1], or null when the artifact was deliberately
@@ -35,6 +36,9 @@ export interface AnalyzerContext {
   competitorName?: string;
   artifactType?: string; // e.g. "blog_post", "change", "social_update"
   surface?: string; // e.g. "linkedin", "blog", "website"
+  // Tenant context for AI usage attribution (optional — callers that don't have it simply omit)
+  tenantDomain?: string | null;
+  marketId?: string | null;
 }
 
 const MAX_INPUT_CHARS = 6000;
@@ -281,6 +285,7 @@ export async function analyzeArtifact(
       messages: [{ role: "user", content: buildUserPrompt(text, ctx) }],
     });
 
+    void logAiUsage({ tenantDomain: ctx?.tenantDomain, marketId: ctx?.marketId }, "analyze_sentiment", "anthropic", CLAUDE_MODEL, response.usage);
     const block = response.content.find((b) => b.type === "text");
     if (!block || block.type !== "text") return heuristicAnalyze(text);
 

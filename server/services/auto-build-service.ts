@@ -12,6 +12,7 @@ import { generateBattlecardForCompetitor } from "./battlecard-generator";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { validateCompetitorUrl } from "../utils/url-validator";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "./ai-usage-logger";
 
 export interface EnrichmentGap {
   companyName: string;
@@ -263,6 +264,7 @@ Only return the JSON array, no other text.`;
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       });
+      void logAiUsage({ tenantDomain, marketId }, "auto_build_discover_competitors", "anthropic", "claude-sonnet-4-5", message.usage);
       const responseText = message.content[0].type === "text" ? message.content[0].text : "";
       const jsonMatch = responseText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {

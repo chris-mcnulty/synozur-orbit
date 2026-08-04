@@ -4,6 +4,7 @@ import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./we
 import { notifications } from "./notifications";
 import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
+import { logAiUsage } from "./ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -162,7 +163,9 @@ async function analyzeWebsiteChanges(
   competitorName: string,
   previousContent: string,
   newContent: string,
-  changeScore: number
+  changeScore: number,
+  tenantDomain?: string | null,
+  marketId?: string | null,
 ): Promise<{ summary: string; analysis: StructuredChangeAnalysis | null }> {
   const isMassiveChange = changeScore >= 70;
   const migrationGuidance = isMassiveChange
@@ -229,6 +232,7 @@ JSON:`
         }
       ]
     });
+    void logAiUsage({ tenantDomain, marketId }, "analyze_website_changes", "anthropic", "claude-sonnet-4-5", response.usage);
     
     const textBlock = response.content.find(block => block.type === "text");
     let rawText = textBlock?.text || "";
@@ -449,7 +453,7 @@ export async function monitorCompetitorWebsite(
     let changeAnalysis: StructuredChangeAnalysis | undefined;
     
     if (hasSignificantChanges) {
-      const result = await analyzeWebsiteChanges(competitor.name, previousContent, newContent, changeScore);
+      const result = await analyzeWebsiteChanges(competitor.name, previousContent, newContent, changeScore, tenantDomain || competitor.tenantDomain, competitor.marketId);
       summary = result.summary;
       changeAnalysis = result.analysis || undefined;
       
