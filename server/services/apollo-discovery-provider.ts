@@ -10,6 +10,7 @@
  */
 
 import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provider-core";
+import { isBadName } from "./discovery-provider-core";
 
 const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/api_search";
 const APOLLO_ORG_SEARCH_URL = "https://api.apollo.io/v1/mixed_companies/search";
@@ -698,11 +699,20 @@ export async function searchApollo(
     }
   } else {
     // Batch: split into groups of 10 and run in parallel.
-    const batches: string[][] = [];
+    const allBatches: string[][] = [];
     for (let i = 0; i < finalAccountList.length; i += 10) {
-      batches.push(finalAccountList.slice(i, i + 10));
+      allBatches.push(finalAccountList.slice(i, i + 10));
     }
-    console.log(`[Apollo] batching ${finalAccountList.length} accounts into ${batches.length} calls`);
+    // Enforce a hard cap so a large similar-company expansion can't silently
+    // multiply paid Apollo calls.
+    const batches = allBatches.slice(0, MAX_PEOPLE_SEARCH_BATCHES);
+    if (allBatches.length > MAX_PEOPLE_SEARCH_BATCHES) {
+      console.warn(
+        `[Apollo] searchApollo: capped people-search batches at ${MAX_PEOPLE_SEARCH_BATCHES} ` +
+          `(${allBatches.length} batches would have been needed for ${finalAccountList.length} accounts)`,
+      );
+    }
+    console.log(`[Apollo] batching ${finalAccountList.length} accounts into ${batches.length} calls (cap: ${MAX_PEOPLE_SEARCH_BATCHES})`);
 
     const perBatch = Math.max(10, Math.ceil(limit / batches.length));
 
