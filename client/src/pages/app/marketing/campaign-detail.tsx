@@ -136,6 +136,7 @@ interface Campaign {
   productIds?: string[];
   alwaysHashtags?: string[];
   parentCampaignId?: string | null;
+  briefOnlyMode?: boolean;
   thematicUrl?: string | null;
   thematicBrief?: string | null;
   foundingSignals?: FoundingSignals | null;
@@ -299,6 +300,7 @@ interface GeneratedPost {
   linkUrl?: string | null;
   linkLabel?: string | null;
   sourceBriefId?: string | null;
+  campaignId?: string | null;
 }
 
 // ── Post lifecycle stage (brief → draft → ready → scheduled → posted) ──────────
@@ -1364,7 +1366,7 @@ export default function CampaignDetailPage() {
   });
 
   const editCampaignMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; briefOnlyMode?: boolean; alwaysHashtags?: string[] }) => {
+    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; briefOnlyMode?: boolean; alwaysHashtags?: string[]; thematicUrl?: string | null; thematicBrief?: string | null }) => {
       const r = await fetch(`/api/campaigns/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

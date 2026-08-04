@@ -4921,3 +4921,116 @@ export type InsertOutreachSettings = z.infer<typeof insertOutreachSettingsSchema
 export const insertOutreachSendLedgerSchema = createInsertSchema(outreachSendLedger).omit({ id: true, occurredAt: true });
 export type OutreachSendLedgerEntry = typeof outreachSendLedger.$inferSelect;
 export type InsertOutreachSendLedgerEntry = z.infer<typeof insertOutreachSendLedgerSchema>;
+
+// ── Marketing Contact Spine ──────────────────────────────────────────────────
+// First-party contact record that spans email recipients, link clicks, social
+// signals, and website events. Serves as the shared spine for segmentation,
+// nurture, scoring, and attribution features.
+
+export const MARKETING_CONTACT_LIFECYCLE_STAGES = [
+  "subscriber",
+  "lead",
+  "mql",
+  "sql",
+  "opportunity",
+  "customer",
+  "evangelist",
+] as const;
+export type MarketingContactLifecycleStage = (typeof MARKETING_CONTACT_LIFECYCLE_STAGES)[number];
+
+export const MARKETING_CONTACT_EVENT_TYPES = [
+  "form_submit",
+  "page_view",
+  "email_sent",
+  "email_open",
+  "email_click",
+  "link_click",
+  "social_engage",
+] as const;
+export type MarketingContactEventType = (typeof MARKETING_CONTACT_EVENT_TYPES)[number];
+
+export const marketingContacts = pgTable(
+  "marketing_contacts",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    email: text("email").notNull(),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    company: text("company"),
+    jobTitle: text("job_title"),
+    // Lifecycle stage: subscriber | lead | mql | sql | opportunity | customer | evangelist
+    lifecycleStage: text("lifecycle_stage").notNull().default("subscriber"),
+    // HubSpot contact ID for read-enrichment sync
+    hubspotContactId: text("hubspot_contact_id"),
+    // Source that first created this contact
+    source: text("source").notNull().default("manual"),
+    metadata: jsonb("metadata"),
+    lastEventAt: timestamp("last_event_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantEmailUniq: uniqueIndex("marketing_contacts_tenant_email_uniq").on(
+      table.tenantDomain,
+      table.email,
+    ),
+    tenantDomainIdx: index("marketing_contacts_tenant_domain_idx").on(table.tenantDomain),
+    lifecycleIdx: index("marketing_contacts_lifecycle_idx").on(
+      table.tenantDomain,
+      table.lifecycleStage,
+    ),
+  }),
+);
+
+export const insertMarketingContactSchema = createInsertSchema(marketingContacts).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+export type MarketingContact = typeof marketingContacts.$inferSelect;
+export type InsertMarketingContact = z.infer<typeof insertMarketingContactSchema>;
+
+export const marketingContactEvents = pgTable(
+  "marketing_contact_events",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    contactId: varchar("contact_id")
+      .notNull()
+      .references(() => marketingContacts.id, { onDelete: "cascade" }),
+    tenantDomain: text("tenant_domain").notNull(),
+    // event_type: form_submit | page_view | email_sent | email_open | email_click | link_click | social_engage
+    eventType: text("event_type").notNull(),
+    source: text("source"),
+    occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    contactIdx: index("marketing_contact_events_contact_idx").on(table.contactId),
+    tenantOccurredIdx: index("marketing_contact_events_tenant_occurred_idx").on(
+      table.tenantDomain,
+      table.occurredAt,
+    ),
+    eventTypeIdx: index("marketing_contact_events_type_idx").on(
+      table.tenantDomain,
+      table.eventType,
+    ),
+  }),
+);
+
+export const insertMarketingContactEventSchema = createInsertSchema(marketingContactEvents).omit({
+  createdAt: true,
+});
+export type MarketingContactEvent = typeof marketingContactEvents.$inferSelect;
+export type InsertMarketingContactEvent = z.infer<typeof insertMarketingContactEventSchema>;
+
+export const marketingContactsRelations = relations(marketingContacts, ({ many }) => ({
+  events: many(marketingContactEvents),
+}));
+
+export const marketingContactEventsRelations = relations(marketingContactEvents, ({ one }) => ({
+  contact: one(marketingContacts, {
+    fields: [marketingContactEvents.contactId],
+    references: [marketingContacts.id],
+  }),
+}));

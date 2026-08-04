@@ -2235,6 +2235,17 @@ async function runHubspotSyncJob(): Promise<void> {
         async () => {
           const stats = await syncTenant(conn.tenantDomain);
           okCount += 1;
+          // Best-effort: enrich marketing_contacts for this tenant using the
+          // same per-tenant OAuth portal. Errors are caught inside the function.
+          try {
+            const { syncHubSpotContactEnrichment } = await import("./hubspot-service");
+            const planAllowsContacts = await checkFeatureAccessAsync(tenant.plan, "marketingContacts");
+            if (planAllowsContacts.allowed) {
+              await syncHubSpotContactEnrichment({ tenantDomain: conn.tenantDomain });
+            }
+          } catch (enrichErr: any) {
+            console.warn(`[HubSpot Sync] Contact enrichment error for ${conn.tenantDomain}: ${enrichErr.message}`);
+          }
           return stats;
         },
         {

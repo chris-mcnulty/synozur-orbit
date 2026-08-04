@@ -78,6 +78,7 @@ import SendsPage from "@/pages/app/marketing/sends";
 import QueuePage from "@/pages/app/marketing/queue";
 import BrowserExtensionPage from "@/pages/app/marketing/browser-extension";
 import PersonasPage from "@/pages/app/marketing/personas";
+import ContactsPage from "@/pages/app/marketing/contacts";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
@@ -214,6 +215,7 @@ function Router() {
       <Route path="/app/marketing/sends" component={SendsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
       <Route path="/app/marketing/personas">{() => <PageFeatureGate featureKey="personaBuilder" label="Persona & ICP Builder" description="Define buyer personas and inject audience context. Upgrade to unlock this feature."><PersonasPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/contacts">{() => <PageFeatureGate featureKey="marketingContacts" label="Marketing Contacts" description="First-party contact database with lifecycle stages and activity timeline. Upgrade to unlock this feature."><ContactsPage /></PageFeatureGate>}</Route>
       {/* Marketing Projects (formerly "Marketing Planner" at /app/marketing-planner). */}
       <Route path="/app/marketing/projects" component={MarketingPlannerPage} />
       <Route path="/app/marketing/projects/:id" component={MarketingPlanDetail} />

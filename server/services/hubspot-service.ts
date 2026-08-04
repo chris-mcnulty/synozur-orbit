@@ -250,3 +250,128 @@ export async function isHubSpotConfigured(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Enrich marketing_contacts rows with data from a tenant's connected HubSpot portal.
+ *
+ * Uses the per-tenant OAuth client from hubspot-integration (getTenantClient) so it
+ * operates within the correct CRM portal — it never mixes contacts across tenants.
+ *
+ * Reads up to `limit` unenriched contacts (or all when forceAll=true), searches
+ * HubSpot by email, and fills in blank name/company/lifecycle fields without
+ * overwriting Orbit-owned values.
+ *
+ * Designed to be called from:
+ *   a) the daily HubSpot sweep in scheduled-jobs.ts (per-tenant, after syncTenant)
+ *   b) the admin endpoint POST /api/admin/marketing-contacts/enrich-hubspot
+ */
+export async function syncHubSpotContactEnrichment(opts: {
+  tenantDomain: string;
+  limit?: number;
+  forceAll?: boolean;
+}): Promise<{ enriched: number; notFound: number; errors: number }> {
+  const { tenantDomain, limit = 200, forceAll = false } = opts;
+
+  // Use the per-tenant OAuth client — this is the same client the daily
+  // HubSpot sweep uses, so it always operates on the correct CRM portal.
+  const { getTenantClient } = await import("./hubspot-integration");
+  let client: any;
+  try {
+    const result = await getTenantClient(tenantDomain);
+    client = result.client;
+  } catch (err: any) {
+    console.warn(
+      `[HubSpot] contact enrichment skipped for ${tenantDomain} — not connected: ${err.message}`,
+    );
+    return { enriched: 0, notFound: 0, errors: 0 };
+  }
+
+  const { db } = await import("../db");
+  const { marketingContacts } = await import("@shared/schema");
+  const { enrichContactFromHubSpot } = await import("./marketing-contact-service");
+  const { eq, and, isNull } = await import("drizzle-orm");
+
+  const conditions: any[] = [eq(marketingContacts.tenantDomain, tenantDomain)];
+  if (!forceAll) conditions.push(isNull(marketingContacts.hubspotContactId));
+
+  const contacts = await db
+    .select({ id: marketingContacts.id, email: marketingContacts.email })
+    .from(marketingContacts)
+    .where(and(...conditions))
+    .limit(limit);
+
+  if (contacts.length === 0) return { enriched: 0, notFound: 0, errors: 0 };
+
+  let enriched = 0;
+  let notFound = 0;
+  let errors = 0;
+
+  // HubSpot search API: max 100 req/10s. Process in small batches with a
+  // brief pause between to stay comfortably within rate limits.
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+    const batch = contacts.slice(i, i + BATCH_SIZE);
+    for (const contact of batch) {
+      try {
+        const result = await client.crm.contacts.searchApi.doSearch({
+          filterGroups: [
+            {
+              filters: [
+                { propertyName: "email", operator: "EQ" as any, value: contact.email },
+              ],
+            },
+          ],
+          properties: ["email", "firstname", "lastname", "company", "jobtitle", "lifecyclestage"],
+          limit: 1,
+          after: "0",
+          sorts: [],
+        });
+
+        if (result.results.length === 0) {
+          notFound++;
+          continue;
+        }
+
+        const hs = result.results[0];
+        const props = hs.properties as Record<string, string | null>;
+
+        // Map HubSpot lifecycle stage names to Orbit's spine values.
+        const LIFECYCLE_MAP: Record<string, string> = {
+          subscriber: "subscriber",
+          lead: "lead",
+          marketingqualifiedlead: "mql",
+          salesqualifiedlead: "sql",
+          opportunity: "opportunity",
+          customer: "customer",
+          evangelist: "evangelist",
+          other: "lead",
+        };
+        const hsStage = (props.lifecyclestage || "").toLowerCase();
+        const mappedStage = LIFECYCLE_MAP[hsStage] || null;
+
+        await enrichContactFromHubSpot({
+          tenantDomain,
+          email: contact.email,
+          hubspotContactId: hs.id,
+          firstName: props.firstname || null,
+          lastName: props.lastname || null,
+          company: props.company || null,
+          jobTitle: props.jobtitle || null,
+          lifecycleStage: mappedStage,
+        });
+        enriched++;
+      } catch (err: any) {
+        console.error(`[HubSpot] enrichment failed for ${contact.email}: ${err.message}`);
+        errors++;
+      }
+    }
+    if (i + BATCH_SIZE < contacts.length) {
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  }
+
+  console.log(
+    `[HubSpot] contact enrichment complete for ${tenantDomain} — enriched=${enriched} notFound=${notFound} errors=${errors}`,
+  );
+  return { enriched, notFound, errors };
+}
