@@ -150,7 +150,30 @@ export function registerConferencePromotionRoutes(app: Express) {
           eq(conferences.marketId, ctx.marketId),
           inArray(conferences.status, ["active", "archived"]),
         );
-    const rows = await db.select().from(conferences).where(where).orderBy(desc(conferences.createdAt));
+    const rows = await db
+      .select({
+        id: conferences.id,
+        name: conferences.name,
+        description: conferences.description,
+        location: conferences.location,
+        website: conferences.website,
+        eventHashtag: conferences.eventHashtag,
+        discountStatement: conferences.discountStatement,
+        startDate: conferences.startDate,
+        endDate: conferences.endDate,
+        promoStartDate: conferences.promoStartDate,
+        promoEndDate: conferences.promoEndDate,
+        postsPerDay: conferences.postsPerDay,
+        status: conferences.status,
+        archivedAt: conferences.archivedAt,
+        createdAt: conferences.createdAt,
+        campaignId: conferences.campaignId,
+        campaignName: campaigns.name,
+      })
+      .from(conferences)
+      .leftJoin(campaigns, eq(campaigns.id, conferences.campaignId))
+      .where(where)
+      .orderBy(desc(conferences.createdAt));
     res.json(rows);
   });
 

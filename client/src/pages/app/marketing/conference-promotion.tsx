@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange } from "lucide-react";
+import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange, Megaphone } from "lucide-react";
 
 // Event dates are floating wall-clock dates stored at UTC midnight. Render in
 // UTC so they show exactly as entered, independent of the viewer's timezone.
@@ -38,6 +38,8 @@ interface Conference {
   status: string;
   archivedAt?: string | null;
   createdAt: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
 }
 
 const EMPTY_FORM = {
@@ -344,7 +346,17 @@ function ConferenceCard({
               {dates}
             </CardDescription>
           </div>
-          {archived && <Badge variant="secondary">Archived</Badge>}
+          <div className="flex items-center gap-2 shrink-0">
+            {conf.campaignId && (
+              <Link href={`/app/marketing/campaigns/${conf.campaignId}`}>
+                <Badge variant="outline" className="text-xs gap-1 cursor-pointer hover:bg-muted">
+                  <Megaphone className="w-3 h-3" />
+                  {conf.campaignName ?? "Campaign linked"}
+                </Badge>
+              </Link>
+            )}
+            {archived && <Badge variant="secondary">Archived</Badge>}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex items-center justify-between gap-2">
