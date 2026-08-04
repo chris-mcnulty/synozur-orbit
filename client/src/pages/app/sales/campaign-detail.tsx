@@ -1,5 +1,5 @@
 import { useState, useRef, KeyboardEvent, useCallback, useMemo } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -28,6 +28,9 @@ import {
   ChevronsUpDown,
   UserSearch,
   Scissors,
+  MoreHorizontal,
+  Archive,
+  Trash2,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
@@ -47,6 +50,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -463,10 +476,12 @@ function ApolloFallbackNotice({
 
 export default function OutreachCampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useUser();
   const [adding, setAdding] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
   const [marketingTouchesExpanded, setMarketingTouchesExpanded] = useState(true);
   const [form, setForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
@@ -660,6 +675,40 @@ export default function OutreachCampaignDetailPage() {
       toast({ title: "Campaign updated" });
     },
     onError: (err: any) => toast({ title: "Couldn't save changes", description: err?.message, variant: "destructive" }),
+  });
+
+  const archiveCampaign = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/sales-outreach/campaigns/${id}`, { status: "archived" });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Campaign archived" });
+      navigate("/app/sales/outreach");
+    },
+    onError: (err: any) => toast({ title: "Couldn't archive campaign", description: err?.message, variant: "destructive" }),
+  });
+
+  const deleteCampaign = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/sales-outreach/campaigns/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete campaign");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Campaign deleted" });
+      navigate("/app/sales/outreach");
+    },
+    onError: (err: any) => {
+      setConfirmDeleteOpen(false);
+      toast({ title: "Couldn't delete campaign", description: err?.message, variant: "destructive" });
+    },
   });
 
   function openEdit() {
@@ -1168,6 +1217,37 @@ export default function OutreachCampaignDetailPage() {
               <Button variant="outline" size="sm" onClick={openEdit} data-testid="button-edit-campaign">
                 <Pencil className="w-4 h-4 mr-1.5" /> Edit campaign
               </Button>
+            )}
+            {canEdit && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" data-testid="button-campaign-detail-menu">
+                    <MoreHorizontal className="w-4 h-4" />
+                    <span className="sr-only">Campaign actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Campaign actions</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => archiveCampaign.mutate()}
+                    disabled={archiveCampaign.isPending}
+                    data-testid="button-archive-campaign"
+                  >
+                    <Archive className="w-4 h-4 mr-2" />
+                    Archive campaign
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    data-testid="button-delete-campaign"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete campaign
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             <Button variant="ghost" size="sm" onClick={() => tick.mutate()} disabled={tick.isPending} data-testid="button-refresh-cadence">
               {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
@@ -2467,6 +2547,28 @@ export default function OutreachCampaignDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete campaign confirmation */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{campaign?.name}</strong> will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteCampaign.mutate()}
+              data-testid="confirm-delete-campaign"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

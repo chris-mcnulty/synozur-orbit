@@ -15,7 +15,7 @@ import {
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
-import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -194,10 +194,19 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
+      // Allow an explicit status filter (e.g. ?status=archived) — otherwise hide
+      // archived and soft-deleted campaigns from the default list.
+      const statusFilter = typeof req.query.status === "string" ? req.query.status : null;
+      const whereClause = statusFilter
+        ? and(eq(outreachCampaigns.tenantDomain, ctx.tenantDomain), eq(outreachCampaigns.status, statusFilter))
+        : and(
+            eq(outreachCampaigns.tenantDomain, ctx.tenantDomain),
+            notInArray(outreachCampaigns.status, ["archived", "deleted"]),
+          );
       const rows = await db
         .select()
         .from(outreachCampaigns)
-        .where(eq(outreachCampaigns.tenantDomain, ctx.tenantDomain))
+        .where(whereClause)
         .orderBy(desc(outreachCampaigns.updatedAt));
       res.json(rows);
     } catch (err: any) {
@@ -227,6 +236,7 @@ export function registerSalesOutreachRoutes(app: Express) {
     conferenceId: z.string().nullable().optional(),
     targetPersonaIds: z.array(z.string()).nullable().optional(),
     channels: z.array(z.enum(["email", "linkedin"])).nullable().optional(),
+    status: z.enum(["draft", "active", "paused", "completed", "archived", "deleted"]).optional(),
     targetingFilter: z.object({
       geographies: z.array(z.string()).optional(),
       industries: z.array(z.string()).optional(),
@@ -267,6 +277,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (body.channels !== undefined) {
         update.channels = body.channels && body.channels.length > 0 ? body.channels : null;
       }
+      if (body.status !== undefined) update.status = body.status;
       if (body.targetingFilter !== undefined) {
         update.targetingFilter = body.targetingFilter;
       }
@@ -280,6 +291,30 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach-campaigns:patch]", err);
       res.status(500).json({ error: err.message || "Failed to update campaign" });
+    }
+  });
+
+  // Soft-delete a campaign (sets status = 'deleted'). Only the creator or an admin.
+  app.delete("/api/sales-outreach/campaigns/:id", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
+      if (!isAdmin && campaign.createdBy !== ctx.userId) {
+        return res.status(403).json({ error: "Only the campaign owner or an admin can delete this campaign." });
+      }
+
+      await db
+        .update(outreachCampaigns)
+        .set({ status: "deleted", updatedAt: new Date() })
+        .where(eq(outreachCampaigns.id, campaign.id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[sales-outreach-campaigns:delete]", err);
+      res.status(500).json({ error: err.message || "Failed to delete campaign" });
     }
   });
 

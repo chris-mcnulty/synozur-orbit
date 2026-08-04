@@ -4620,7 +4620,7 @@ export interface OutreachTargetingFilter {
 
 export type OutreachGoalType = "meeting" | "event_invite" | "intro" | "nurture";
 export type OutreachChannel = "email" | "linkedin";
-export type OutreachCampaignStatus = "draft" | "active" | "paused" | "completed" | "archived";
+export type OutreachCampaignStatus = "draft" | "active" | "paused" | "completed" | "archived" | "deleted";
 
 // The campaign container — created via the §5.0 interview wizard.
 export const outreachCampaigns = pgTable("outreach_campaigns", {
