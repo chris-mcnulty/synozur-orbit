@@ -126,7 +126,8 @@ export default function ConferencePromotionPage() {
 
   const allActive = conferences.filter((c) => c.status === "active");
   const active = filterCampaignLinked ? allActive.filter((c) => c.campaignId != null) : allActive;
-  const archived = conferences.filter((c) => c.status === "archived");
+  const allArchived = conferences.filter((c) => c.status === "archived");
+  const archived = filterCampaignLinked ? allArchived.filter((c) => c.campaignId != null) : allArchived;
 
   return (
     <AppLayout>
@@ -320,7 +321,7 @@ export default function ConferencePromotionPage() {
               ))}
             </div>
 
-            {archived.length > 0 && (
+            {(allArchived.length > 0 && (!filterCampaignLinked || archived.length > 0)) && (
               <div>
                 <h2 className="text-sm font-semibold text-muted-foreground mb-2">Archived</h2>
                 <div className="grid gap-4 md:grid-cols-2">
