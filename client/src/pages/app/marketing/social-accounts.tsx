@@ -1081,12 +1081,37 @@ export default function SocialAccountsPage() {
                           {account.platform === "linkedin" && account.status !== "needs_reconnect" && (
                             <LinkedInAuthorPicker account={account} />
                           )}
-                          {account.lastPublishError && (
+                          {account.lastPublishError === "needs_reauth" ? (
+                            <div
+                              className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-2.5 space-y-1.5"
+                              data-testid={`banner-reauth-${account.id}`}
+                            >
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                LinkedIn connection expired
+                              </div>
+                              <p className="text-xs text-amber-700 dark:text-amber-400 leading-snug">
+                                The access token has expired and could not be refreshed automatically.
+                                Reconnect to restore direct publishing.
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 border-amber-400 text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                                onClick={() => connectMutation.mutate(account.id)}
+                                disabled={connectMutation.isPending}
+                                data-testid={`button-reauth-reconnect-${account.id}`}
+                              >
+                                <LinkIcon className="w-3 h-3 mr-1" />
+                                {connectMutation.isPending ? "Redirecting…" : "Reconnect now"}
+                              </Button>
+                            </div>
+                          ) : account.lastPublishError ? (
                             <div className="flex items-start gap-1.5 text-xs text-amber-600">
                               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                               <span>Last error: {account.lastPublishError}</span>
                             </div>
-                          )}
+                          ) : null}
                           <div className="flex gap-2">
                             <Button
                               variant="outline"

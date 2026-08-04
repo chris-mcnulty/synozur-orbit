@@ -106,6 +106,8 @@ async function refreshLinkedInToken(
         ? encryptSecret(tok.refresh_token)
         : encryptedRefreshToken,
       tokenExpiresAt: newExpiresAt,
+      // Clear any pending reauth flag — token is healthy again.
+      lastPublishError: null,
       updatedAt: new Date(),
     })
     .where(eq(socialAccounts.id, accountId));
@@ -131,6 +133,7 @@ async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<strin
       encryptedAccessToken: socialAccounts.encryptedAccessToken,
       encryptedRefreshToken: socialAccounts.encryptedRefreshToken,
       tokenExpiresAt: socialAccounts.tokenExpiresAt,
+      lastPublishError: socialAccounts.lastPublishError,
     })
     .from(socialAccounts)
     .where(
@@ -161,6 +164,19 @@ async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<strin
       console.warn(
         `[LinkedIn API] No refresh token stored for tenant ${tenantDomain} — ` +
         `falling back gracefully.`,
+      );
+    }
+
+    // Both access token and refresh token are exhausted (or absent).
+    // Mark the account so the UI can surface a reconnect prompt.
+    if (account.lastPublishError !== "needs_reauth") {
+      await db
+        .update(socialAccounts)
+        .set({ lastPublishError: "needs_reauth", updatedAt: new Date() })
+        .where(eq(socialAccounts.id, account.id));
+      console.warn(
+        `[LinkedIn API] Marked socialAccount ${account.id} as needs_reauth ` +
+        `for tenant ${tenantDomain}.`,
       );
     }
 
