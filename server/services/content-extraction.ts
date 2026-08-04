@@ -319,31 +319,52 @@ export async function extractContentFromUrl(url: string, groundingContext?: stri
         return !extractTitle(h$);
       };
 
+      // Outer deadline: cap the entire headless block (first attempt + optional
+      // retry) at 60 s total.  With MAX_CONCURRENT_CRAWLS=2 each retry already
+      // has a 45 s per-attempt timeout, so two simultaneous slow retries could
+      // hold both crawl slots for ~90 s combined.  The outer deadline resolves
+      // early and falls back to whatever plain-fetch data we already collected.
+      const HEADLESS_OUTER_TIMEOUT_MS = 60000;
+      let headlessOuterTimer: NodeJS.Timeout | undefined;
+      const headlessDeadline = new Promise<void>((resolve) => {
+        headlessOuterTimer = setTimeout(() => {
+          console.warn(`[ContentExtraction] headless outer timeout (${HEADLESS_OUTER_TIMEOUT_MS / 1000}s) reached for ${safeUrl} — using plain-fetch data`);
+          resolve();
+        }, HEADLESS_OUTER_TIMEOUT_MS);
+      });
+
       try {
-        // Attempt 1: wait for the OG title tag to appear (handled inside the
-        // crawler with a 10 s selector timeout), then a short trailing delay.
-        const headlessResult = await fetchPageHeadless(safeUrl, {
-          waitForSelector: "meta[property='og:title']",
-          waitTime: 2000,
-          timeout: 30000,
-        });
+        await Promise.race([
+          (async () => {
+            // Attempt 1: wait for the OG title tag to appear (handled inside the
+            // crawler with a 10 s selector timeout), then a short trailing delay.
+            const headlessResult = await fetchPageHeadless(safeUrl, {
+              waitForSelector: "meta[property='og:title']",
+              waitTime: 2000,
+              timeout: 30000,
+            });
 
-        const applied = applyHeadlessResult(headlessResult);
+            const applied = applyHeadlessResult(headlessResult);
 
-        // Attempt 2: fire a slower retry when the first pass is still thin
-        // (OG title never appeared).  The extra trailing delay gives heavy JS
-        // bundles more time to render before we snapshot.
-        if (!applied && isHeadlessThin(headlessResult)) {
-          console.log(`[ContentExtraction] headless result thin for ${safeUrl}, retrying with longer wait`);
-          const retryResult = await fetchPageHeadless(safeUrl, {
-            waitForSelector: "meta[property='og:title']",
-            waitTime: 5000,
-            timeout: 45000,
-          });
-          applyHeadlessResult(retryResult);
-        }
+            // Attempt 2: fire a slower retry when the first pass is still thin
+            // (OG title never appeared).  The extra trailing delay gives heavy JS
+            // bundles more time to render before we snapshot.
+            if (!applied && isHeadlessThin(headlessResult)) {
+              console.log(`[ContentExtraction] headless result thin for ${safeUrl}, retrying with longer wait`);
+              const retryResult = await fetchPageHeadless(safeUrl, {
+                waitForSelector: "meta[property='og:title']",
+                waitTime: 5000,
+                timeout: 45000,
+              });
+              applyHeadlessResult(retryResult);
+            }
+          })(),
+          headlessDeadline,
+        ]);
       } catch (err: any) {
         console.warn(`[ContentExtraction] headless fallback failed for ${safeUrl}: ${err.message}`);
+      } finally {
+        clearTimeout(headlessOuterTimer);
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
