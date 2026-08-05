@@ -189,6 +189,14 @@ export async function recomputeScore(contactId: string): Promise<{
     );
   }
 
+  // Fire lead-score threshold workflow triggers asynchronously so scoring
+  // never blocks on workflow enrollment.
+  import("./marketing-workflow-service").then(({ evaluateLeadScoreTriggers }) => {
+    evaluateLeadScoreTriggers(contact.tenantDomain, contactId, score).catch((err) =>
+      console.error("[lead-scoring] evaluateLeadScoreTriggers failed:", err?.message),
+    );
+  }).catch(() => {});
+
   return { score, previousScore, lifecycleStage: newStage, previousStage, stageChanged };
 }
 

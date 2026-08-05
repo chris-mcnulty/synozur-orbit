@@ -37,6 +37,7 @@ import {
   type ContactEventType,
   type SegmentRule,
 } from "../services/marketing-contact-service";
+import { fireContactEvent } from "../services/marketing-workflow-service";
 
 // ---------------------------------------------------------------------------
 // Rule validation
@@ -227,6 +228,13 @@ export function registerMarketingContactsRoutes(app: Express) {
         occurredAt: occurredAt ? new Date(occurredAt) : null,
         metadata: metadata || null,
       });
+
+      // Fire contact-event workflow triggers asynchronously — must not block
+      // the webhook response or cause it to error if enrollment fails.
+      fireContactEvent(tenantDomain, contact.id, eventType as string).catch((err) =>
+        console.error("[marketing-contacts] fireContactEvent failed:", err?.message),
+      );
+
       res.status(200).json({ ok: true, contactId: contact.id, eventId });
     } catch (err: any) {
       console.error("[marketing-contacts] ingest-event failed:", err.message);

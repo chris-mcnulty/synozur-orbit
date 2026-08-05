@@ -21,7 +21,7 @@ import { tickMarketingPublishWorker, sweepMissedPosts } from "./marketing-publis
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { tickAbTestEvaluationWorker } from "./email-ab-test";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
-import { tickWorkflowEngine, sweepAllTenantWorkflowTriggers } from "./marketing-workflow-service";
+import { tickWorkflowEngine, sweepAllTenantWorkflowTriggers, evaluateSegmentTriggers } from "./marketing-workflow-service";
 import { refreshSeoForContext } from "../routes/seo";
 import { db, crawlDb } from "../db";
 import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, generatedPosts, scheduledJobRuns, type SeoMetric } from "@shared/schema";
@@ -2434,6 +2434,18 @@ export function startScheduledJobs(): void {
       if (refreshed > 0 || errors > 0) {
         console.log(`[Segments] Refresh sweep: checked=${checked} refreshed=${refreshed} errors=${errors}`);
       }
+
+      // Fire segment-membership workflow triggers for tenants whose segments
+      // were just refreshed. Runs async so HubSpot mirror isn't delayed.
+      if (refreshedSegments.length > 0) {
+        const distinctTenants = [...new Set(refreshedSegments.map((s: any) => s.tenantDomain as string))];
+        for (const tenantDomain of distinctTenants) {
+          evaluateSegmentTriggers(tenantDomain).catch((err: any) =>
+            console.warn(`[Segments] evaluateSegmentTriggers failed for ${tenantDomain}:`, err?.message),
+          );
+        }
+      }
+
       // Mirror only the segments that were actually refreshed this sweep —
       // never all HubSpot-mirrored segments, to avoid spurious rate-limit pressure.
       const hubspotTargets = refreshedSegments.filter((s) => s.hubspotListId);
