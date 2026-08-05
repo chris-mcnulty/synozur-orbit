@@ -1,13 +1,158 @@
 import { strict as assert } from "node:assert";
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
 import {
   shouldAdvanceLifecycleStage,
   LIFECYCLE_STAGES,
+  normaliseEmail,
+  upsertContact,
 } from "../marketing-contact-service";
 import {
   computeWebhookSignature,
   verifyWebhookSignature,
 } from "../marketing-contact-webhook-auth";
+
+// ---------------------------------------------------------------------------
+// normaliseEmail
+// ---------------------------------------------------------------------------
+
+describe("normaliseEmail", () => {
+  it("lowercases an already-lowercase address", () => {
+    assert.equal(normaliseEmail("user@example.com"), "user@example.com");
+  });
+
+  it("lowercases a mixed-case address (HubSpot style)", () => {
+    assert.equal(normaliseEmail("User@Example.COM"), "user@example.com");
+  });
+
+  it("trims leading and trailing whitespace", () => {
+    assert.equal(normaliseEmail("  user@example.com  "), "user@example.com");
+  });
+
+  it("handles all-uppercase address", () => {
+    assert.equal(normaliseEmail("USER@EXAMPLE.COM"), "user@example.com");
+  });
+
+  it("trims AND lowercases simultaneously", () => {
+    assert.equal(normaliseEmail("  User@Example.COM  "), "user@example.com");
+  });
+
+  it("leaves an already-normalised address unchanged", () => {
+    const addr = "contact@synozur.com";
+    assert.equal(normaliseEmail(addr), addr);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// upsertContact — retry on concurrent unique-violation (23505)
+// ---------------------------------------------------------------------------
+
+describe("upsertContact — retry on 23505 unique violation", () => {
+  it("retries on first 23505 and succeeds on second attempt", async () => {
+    // Simulate a PostgreSQL unique_violation (code 23505) on the first INSERT
+    // attempt, as happens when two concurrent requests race before either commits.
+    // The function should transparently retry and return the row from the second
+    // attempt (where ON CONFLICT DO UPDATE takes effect).
+    const uniqueViolation = Object.assign(new Error("duplicate key value"), { code: "23505" });
+
+    const expectedRow = {
+      id: "existing-id",
+      tenantDomain: "example.com",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      company: null,
+      jobTitle: null,
+      lifecycleStage: "subscriber",
+      hubspotContactId: null,
+      source: "manual",
+      metadata: null,
+      lastEventAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    let callCount = 0;
+
+    // Build a mock drizzle chain: insert().values().onConflictDoUpdate().returning()
+    const mockReturning = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) throw uniqueViolation;
+      return [expectedRow];
+    });
+    const mockOnConflict = vi.fn(() => ({ returning: mockReturning }));
+    const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflict }));
+    const mockInsert = vi.fn(() => ({ values: mockValues }));
+
+    // Temporarily swap out the db module's insert method.
+    const { db } = await import("../../db");
+    const originalInsert = db.insert.bind(db);
+    (db as any).insert = mockInsert;
+
+    try {
+      const result = await upsertContact({
+        tenantDomain: "example.com",
+        email: "user@example.com",
+        source: "test",
+      });
+      assert.equal(callCount, 2, "should have retried exactly once");
+      assert.equal(result.contact.email, "user@example.com");
+      // The returned id differs from the generated uuid → created=false
+      assert.equal(result.created, false);
+    } finally {
+      (db as any).insert = originalInsert;
+    }
+  });
+
+  it("rethrows on the third consecutive 23505 (exhausted retries)", async () => {
+    const uniqueViolation = Object.assign(new Error("duplicate key value"), { code: "23505" });
+
+    const mockReturning = vi.fn(async () => { throw uniqueViolation; });
+    const mockOnConflict = vi.fn(() => ({ returning: mockReturning }));
+    const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflict }));
+    const mockInsert = vi.fn(() => ({ values: mockValues }));
+
+    const { db } = await import("../../db");
+    const originalInsert = db.insert.bind(db);
+    (db as any).insert = mockInsert;
+
+    try {
+      await assert.rejects(
+        () => upsertContact({ tenantDomain: "example.com", email: "user@example.com" }),
+        (err: any) => err.code === "23505",
+      );
+      assert.equal(mockReturning.mock.calls.length, 3, "should have tried 3 times before giving up");
+    } finally {
+      (db as any).insert = originalInsert;
+    }
+  });
+
+  it("does NOT retry on a non-unique-violation DB error", async () => {
+    const otherError = Object.assign(new Error("connection reset"), { code: "08006" });
+
+    const mockReturning = vi.fn(async () => { throw otherError; });
+    const mockOnConflict = vi.fn(() => ({ returning: mockReturning }));
+    const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflict }));
+    const mockInsert = vi.fn(() => ({ values: mockValues }));
+
+    const { db } = await import("../../db");
+    const originalInsert = db.insert.bind(db);
+    (db as any).insert = mockInsert;
+
+    try {
+      await assert.rejects(
+        () => upsertContact({ tenantDomain: "example.com", email: "user@example.com" }),
+        (err: any) => err.code === "08006",
+      );
+      assert.equal(mockReturning.mock.calls.length, 1, "should have thrown immediately without retry");
+    } finally {
+      (db as any).insert = originalInsert;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldAdvanceLifecycleStage
+// ---------------------------------------------------------------------------
 
 describe("marketing-contact-service pure helpers", () => {
   describe("shouldAdvanceLifecycleStage", () => {

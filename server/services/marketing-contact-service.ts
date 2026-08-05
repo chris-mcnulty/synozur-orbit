@@ -28,6 +28,15 @@ import {
 // Pure helpers (exported for unit tests)
 // ---------------------------------------------------------------------------
 
+/**
+ * Canonical email normalisation.  Every write path must run the incoming
+ * address through this function so mixed-case variants (e.g. "User@Example.com"
+ * from HubSpot) always resolve to the same lowercase DB key.
+ */
+export function normaliseEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
 export const LIFECYCLE_STAGES = [
   "subscriber",
   "lead",
@@ -111,7 +120,7 @@ export async function upsertContact(opts: {
   const insertValues: InsertMarketingContact = {
     id,
     tenantDomain: opts.tenantDomain,
-    email: opts.email.trim().toLowerCase(),
+    email: normaliseEmail(opts.email),
     firstName: opts.firstName?.trim() || null,
     lastName: opts.lastName?.trim() || null,
     company: opts.company?.trim() || null,
@@ -152,17 +161,36 @@ export async function upsertContact(opts: {
   if (opts.metadata) updateSet.metadata = opts.metadata;
   if (opts.lastEventAt) updateSet.lastEventAt = opts.lastEventAt;
 
-  const [row] = await db
-    .insert(marketingContacts)
-    .values(insertValues)
-    .onConflictDoUpdate({
-      target: [marketingContacts.tenantDomain, marketingContacts.email],
-      set: updateSet,
-    })
-    .returning();
+  // Retry loop: two concurrent ingest requests for the same (tenantDomain, email)
+  // can both attempt an INSERT before either commits.  PostgreSQL's unique index
+  // prevents a duplicate row, but whichever transaction loses the race sees a
+  // 23505 unique-violation error instead of the normal ON CONFLICT path.
+  // Retrying lets the loser fall through to the UPDATE branch on the next attempt.
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const [row] = await db
+        .insert(marketingContacts)
+        .values(insertValues)
+        .onConflictDoUpdate({
+          target: [marketingContacts.tenantDomain, marketingContacts.email],
+          set: updateSet,
+        })
+        .returning();
 
-  const created = row.id === id;
-  return { contact: row, created };
+      const created = row.id === id;
+      return { contact: row, created };
+    } catch (err: any) {
+      // 23505 = unique_violation — retry so the next attempt hits ON CONFLICT DO UPDATE.
+      if (attempt < MAX_ATTEMPTS && err?.code === "23505") {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  // Unreachable — the loop always returns or throws, but TypeScript needs this.
+  throw new Error("upsertContact: exceeded retry limit");
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +298,18 @@ export async function backfillContactTimeline(tenantDomain: string): Promise<{
     .from(emailRecipients)
     .where(eq(emailRecipients.tenantDomain, tenantDomain));
 
+  // Deduplicate by normalised email so mixed-case duplicates in legacy data
+  // (e.g. "User@Example.com" and "user@example.com") resolve to one contact
+  // before we attempt any DB writes.
+  const recipientsByEmail = new Map<string, typeof recipientRows[number]>();
   for (const r of recipientRows) {
+    const key = normaliseEmail(r.email);
+    if (!recipientsByEmail.has(key)) {
+      recipientsByEmail.set(key, r);
+    }
+  }
+
+  for (const r of recipientsByEmail.values()) {
     const parts = (r.name || "").split(" ");
     const firstName = parts[0] || null;
     const lastName = parts.slice(1).join(" ") || null;
@@ -308,21 +347,38 @@ export async function backfillContactTimeline(tenantDomain: string): Promise<{
       ),
     );
 
+  // Deduplicate by normalised email within this batch for the same reason as above.
+  // When multiple sends went to mixed-case variants of the same address we want
+  // a single contact row; events from all variants are still inserted below.
+  const sendContactsByEmail = new Map<string, string>(); // normalised email → contact.id
+
   for (const r of sendRecipientRows) {
+    const normalised = normaliseEmail(r.email);
     const parts = (r.name || "").split(" ");
     const firstName = parts[0] || null;
     const lastName = parts.slice(1).join(" ") || null;
 
-    const { contact, created } = await upsertContact({
-      tenantDomain,
-      email: r.email,
-      firstName,
-      lastName,
-      source: "backfill",
-      lastEventAt: r.sentAt,
-    });
-    if (created) contactsCreated++;
-    else contactsFound++;
+    let contactId: string;
+    if (sendContactsByEmail.has(normalised)) {
+      // Already upserted within this batch — reuse the id and skip the count.
+      contactId = sendContactsByEmail.get(normalised)!;
+    } else {
+      const { contact, created } = await upsertContact({
+        tenantDomain,
+        email: r.email,
+        firstName,
+        lastName,
+        source: "backfill",
+        lastEventAt: r.sentAt,
+      });
+      contactId = contact.id;
+      sendContactsByEmail.set(normalised, contactId);
+      if (created) contactsCreated++;
+      else contactsFound++;
+    }
+
+    // Re-bind `contact` shape so the event-insert block below compiles cleanly.
+    const contact = { id: contactId };
 
     if (r.sentAt) {
       await db.insert(marketingContactEvents).values({
@@ -395,7 +451,7 @@ export async function enrichContactFromHubSpot(opts: {
     .where(
       and(
         eq(marketingContacts.tenantDomain, opts.tenantDomain),
-        eq(marketingContacts.email, opts.email.trim().toLowerCase()),
+        eq(marketingContacts.email, normaliseEmail(opts.email)),
       ),
     )
     .limit(1);
@@ -420,13 +476,15 @@ export async function enrichContactFromHubSpot(opts: {
       .where(
         and(
           eq(marketingContacts.tenantDomain, opts.tenantDomain),
-          eq(marketingContacts.email, opts.email.trim().toLowerCase()),
+          eq(marketingContacts.email, normaliseEmail(opts.email)),
         ),
       );
   } else {
+    // Normalise to lowercase before the upsert so HubSpot mixed-case addresses
+    // (e.g. "User@Example.com") always resolve to the canonical lowercase record.
     await upsertContact({
       tenantDomain: opts.tenantDomain,
-      email: opts.email,
+      email: normaliseEmail(opts.email),
       firstName: opts.firstName,
       lastName: opts.lastName,
       company: opts.company,
