@@ -39,6 +39,7 @@ import { storage } from "../storage";
 import {
   enrollContact,
   advanceEnrollment,
+  NURTURE_TEMPLATES,
 } from "../services/marketing-workflow-service";
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
@@ -157,6 +158,130 @@ export function registerMarketingWorkflowRoutes(app: Express) {
     } catch (err: any) {
       console.error("[marketing-workflows] create error:", err?.message);
       res.status(500).json({ error: "Failed to create workflow" });
+    }
+  });
+
+  // ── Nurture templates ────────────────────────────────────────────────────
+  // IMPORTANT: these non-parameterised routes must be registered BEFORE /:id
+  // or Express will match "nurture-templates" as an id parameter.
+
+  app.get("/api/marketing-workflows/nurture-templates", async (req, res) => {
+    const tenantDomain = await guardWorkflows(req, res);
+    if (!tenantDomain) return;
+    res.json(NURTURE_TEMPLATES);
+  });
+
+  /**
+   * Generate a draft subject line and body copy for one email step in a
+   * nurture sequence.  Uses the OUTREACH_COMPOSER AI feature which is
+   * calibrated for email copy.
+   *
+   * Body: { templateId, stepIndex, persona?, solutionArea?, companyName? }
+   * Response: { subject, body }
+   */
+  app.post("/api/marketing-workflows/nurture-draft", async (req, res) => {
+    const tenantDomain = await guardWorkflowsAdmin(req, res);
+    if (!tenantDomain) return;
+    try {
+      const { templateId, stepIndex, persona, solutionArea, companyName } = req.body;
+      const template = NURTURE_TEMPLATES.find((t) => t.id === templateId);
+      if (!template) return res.status(400).json({ error: "Unknown template" });
+
+      const emailSpecs = template.stepSpecs.filter((s) => s.type === "email");
+      const spec = emailSpecs[stepIndex];
+      if (!spec || !spec.emailPrompt) {
+        return res.status(400).json({ error: "Step index out of range" });
+      }
+
+      const { completeForFeature } = await import("../services/ai-provider");
+      const contextParts: string[] = [];
+      if (companyName) contextParts.push(`Company: ${companyName}`);
+      if (persona) contextParts.push(`Audience: ${persona}`);
+      if (solutionArea) contextParts.push(`Product/solution: ${solutionArea}`);
+      const context = contextParts.length ? contextParts.join("\n") : "No additional context.";
+
+      const prompt = `You are drafting a short marketing email for a nurture sequence.
+
+${context}
+
+Email step: "${spec.emailPrompt.stepName}"
+Goal: ${spec.emailPrompt.goal}
+
+Write a compelling subject line and a brief 2–3 paragraph email body. Use a professional but warm tone. No hashtags. No "Best regards" or sign-off — the sender name will be added automatically.
+
+Respond in EXACTLY this format:
+SUBJECT: <subject line>
+BODY:
+<body paragraphs>`;
+
+      const result = await completeForFeature("outreach_composer", prompt, {
+        tenantDomain,
+        maxTokens: 512,
+        temperature: 0.7,
+      });
+
+      const text = result.text ?? "";
+      const subjectMatch = text.match(/^SUBJECT:\s*(.+)/m);
+      const bodyMatch = text.match(/^BODY:\n([\s\S]+)/m);
+
+      res.json({
+        subject: subjectMatch?.[1]?.trim() ?? `${spec.emailPrompt.stepName} — ${template.name}`,
+        body: bodyMatch?.[1]?.trim() ?? text,
+      });
+    } catch (err: any) {
+      console.error("[nurture-draft] error:", err?.message);
+      res.status(500).json({ error: "Failed to generate draft" });
+    }
+  });
+
+  /**
+   * Return per-workflow email engagement stats for all workflows in the tenant.
+   * Aggregates email_sends rows linked to workflow step_runs via outcomeJson.sendId.
+   *
+   * Response: Array<{ workflowId, totalSent, totalOpens, totalClicks, openRate, clickRate }>
+   */
+  app.get("/api/marketing-workflows/sequence-stats", async (req, res) => {
+    const tenantDomain = await guardWorkflows(req, res);
+    if (!tenantDomain) return;
+    try {
+      const rows = await db.execute<{
+        workflow_id: string;
+        total_sent: number;
+        total_opens: number;
+        total_clicks: number;
+      }>(sql`
+        SELECT
+          e.workflow_id,
+          COALESCE(SUM(s.sent_count), 0)::int  AS total_sent,
+          COALESCE(SUM(s.open_count), 0)::int   AS total_opens,
+          COALESCE(SUM(s.click_count), 0)::int  AS total_clicks
+        FROM marketing_workflow_enrollments e
+        JOIN marketing_workflow_step_runs r ON r.enrollment_id = e.id
+        JOIN email_sends s
+          ON s.id = (r.outcome_json->>'sendId')::text
+        WHERE e.tenant_domain = ${tenantDomain}
+          AND r.outcome_json->>'sendId' IS NOT NULL
+        GROUP BY e.workflow_id
+      `);
+
+      const stats = (rows.rows as any[]).map((r) => {
+        const sent = Number(r.total_sent) || 0;
+        const opens = Number(r.total_opens) || 0;
+        const clicks = Number(r.total_clicks) || 0;
+        return {
+          workflowId: r.workflow_id,
+          totalSent: sent,
+          totalOpens: opens,
+          totalClicks: clicks,
+          openRate: sent > 0 ? Math.round((opens / sent) * 100) : 0,
+          clickRate: sent > 0 ? Math.round((clicks / sent) * 100) : 0,
+        };
+      });
+
+      res.json(stats);
+    } catch (err: any) {
+      console.error("[sequence-stats] error:", err?.message);
+      res.status(500).json({ error: "Failed to load sequence stats" });
     }
   });
 

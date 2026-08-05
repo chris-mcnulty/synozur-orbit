@@ -39,6 +39,80 @@ import {
 import { and, eq, lte, sql } from "drizzle-orm";
 import { createNotification } from "./notification-service";
 
+// ─── Nurture Templates ────────────────────────────────────────────────────────
+
+export interface NurtureStepSpec {
+  type: "email" | "wait";
+  delayAmount?: number;
+  delayUnit?: "hours" | "days";
+  emailPrompt?: { stepName: string; goal: string };
+}
+
+export interface NurtureTemplate {
+  id: string;
+  name: string;
+  description: string;
+  emailCount: number;
+  stepSpecs: NurtureStepSpec[];
+}
+
+export const NURTURE_TEMPLATES: NurtureTemplate[] = [
+  {
+    id: "welcome",
+    name: "Welcome",
+    description: "A 3-email sequence that greets new contacts and introduces your product.",
+    emailCount: 3,
+    stepSpecs: [
+      { type: "email", emailPrompt: { stepName: "Welcome", goal: "Welcome the contact warmly and introduce the company and product in a concise, friendly way." } },
+      { type: "wait", delayAmount: 3, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Value highlight", goal: "Share one key benefit or use case. Include a soft call to action (book a demo, read a guide)." } },
+      { type: "wait", delayAmount: 4, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Next steps", goal: "Invite the contact to take the next step: a call, free trial, or resource. Make the CTA clear." } },
+    ],
+  },
+  {
+    id: "onboarding",
+    name: "Onboarding",
+    description: "A 4-email sequence to guide new customers through initial setup and adoption.",
+    emailCount: 4,
+    stepSpecs: [
+      { type: "email", emailPrompt: { stepName: "Getting started", goal: "Help the new customer get set up quickly. List 2–3 immediate actions they should take right away." } },
+      { type: "wait", delayAmount: 2, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Feature spotlight", goal: "Highlight one advanced feature that drives clear value. Include a link to documentation or a tutorial." } },
+      { type: "wait", delayAmount: 3, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Tips and best practices", goal: "Share 3 actionable tips to help the customer get the most out of the product." } },
+      { type: "wait", delayAmount: 5, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Check-in", goal: "Ask how things are going and offer direct support. Include a clear way to reach the team." } },
+    ],
+  },
+  {
+    id: "re-engagement",
+    name: "Re-engagement",
+    description: "A 3-email sequence to win back contacts who have gone quiet.",
+    emailCount: 3,
+    stepSpecs: [
+      { type: "email", emailPrompt: { stepName: "Miss you", goal: "Acknowledge the contact hasn't been active and highlight what's new. Keep it friendly and low-pressure." } },
+      { type: "wait", delayAmount: 3, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Incentive", goal: "Offer an incentive (discount, free resource, or exclusive content) to re-engage. Be specific and concrete." } },
+      { type: "wait", delayAmount: 4, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Final nudge", goal: "Give a final compelling reason to return. Indicate this may be the last outreach if there's no response." } },
+    ],
+  },
+  {
+    id: "post-event",
+    name: "Post-event",
+    description: "A 3-email follow-up for contacts who attended a webinar, conference, or event.",
+    emailCount: 3,
+    stepSpecs: [
+      { type: "email", emailPrompt: { stepName: "Thank you", goal: "Thank the contact for attending and recap 2–3 key takeaways from the event." } },
+      { type: "wait", delayAmount: 2, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Resources", goal: "Share the recording, slides, or additional resources from the event. Make them easy to access." } },
+      { type: "wait", delayAmount: 3, delayUnit: "days" },
+      { type: "email", emailPrompt: { stepName: "Next step", goal: "Invite the contact to take the next step: a consultation, product demo, or free trial." } },
+    ],
+  },
+];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type WorkflowTrigger =

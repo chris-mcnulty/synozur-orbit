@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +30,10 @@ import {
   XCircle,
   Loader2,
   ListTree,
+  Sparkles,
+  BarChart2,
+  MousePointerClick,
+  Eye,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -859,13 +862,548 @@ function WorkflowDetail({
   );
 }
 
+// ─── Nurture Wizard ───────────────────────────────────────────────────────────
+
+interface NurtureTemplate {
+  id: string;
+  name: string;
+  description: string;
+  emailCount: number;
+  stepSpecs: Array<{
+    type: "email" | "wait";
+    delayAmount?: number;
+    delayUnit?: string;
+    emailPrompt?: { stepName: string; goal: string };
+  }>;
+}
+
+interface NurtureStepDraft {
+  stepName: string;
+  subject: string;
+  body: string;
+  loading: boolean;
+}
+
+const TEMPLATE_ICONS: Record<string, React.ReactNode> = {
+  welcome: <Sparkles className="w-5 h-5 text-violet-500" />,
+  onboarding: <CheckCircle2 className="w-5 h-5 text-green-500" />,
+  "re-engagement": <Zap className="w-5 h-5 text-amber-500" />,
+  "post-event": <Bell className="w-5 h-5 text-blue-500" />,
+};
+
+function NurtureWizardDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated: (workflowId: string) => void;
+}) {
+  const { toast } = useToast();
+  const [wizardStep, setWizardStep] = useState(0);
+  // Step 0: pick template
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  // Step 1: trigger + name
+  const [sequenceName, setSequenceName] = useState("");
+  const [triggerType, setTriggerType] = useState("manual");
+  const [segmentId, setSegmentId] = useState("");
+  const [persona, setPersona] = useState("");
+  const [solutionArea, setSolutionArea] = useState("");
+  // Step 2: email drafts
+  const [stepDrafts, setStepDrafts] = useState<NurtureStepDraft[]>([]);
+  const [draftsGenerated, setDraftsGenerated] = useState(false);
+  // Step 3: creating
+  const [creating, setCreating] = useState(false);
+
+  const { data: templates = [] } = useQuery<NurtureTemplate[]>({
+    queryKey: ["/api/marketing-workflows/nurture-templates"],
+    queryFn: () => apiRequest("GET", "/api/marketing-workflows/nurture-templates").then((r) => r.json()),
+    enabled: open,
+  });
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
+
+  function resetWizard() {
+    setWizardStep(0);
+    setSelectedTemplateId(null);
+    setSequenceName("");
+    setTriggerType("manual");
+    setSegmentId("");
+    setPersona("");
+    setSolutionArea("");
+    setStepDrafts([]);
+    setDraftsGenerated(false);
+    setCreating(false);
+  }
+
+  async function generateDrafts() {
+    if (!selectedTemplate) return;
+    const emailSpecs = selectedTemplate.stepSpecs.filter((s) => s.type === "email");
+    const initial: NurtureStepDraft[] = emailSpecs.map((s) => ({
+      stepName: s.emailPrompt?.stepName ?? "Email",
+      subject: "",
+      body: "",
+      loading: true,
+    }));
+    setStepDrafts(initial);
+    setDraftsGenerated(true);
+
+    // Generate AI drafts for each email step in sequence
+    for (let i = 0; i < emailSpecs.length; i++) {
+      try {
+        const r = await apiRequest("POST", "/api/marketing-workflows/nurture-draft", {
+          templateId: selectedTemplate.id,
+          stepIndex: i,
+          persona: persona.trim() || undefined,
+          solutionArea: solutionArea.trim() || undefined,
+        });
+        const data = await r.json();
+        setStepDrafts((prev) =>
+          prev.map((d, idx) =>
+            idx === i ? { ...d, subject: data.subject ?? "", body: data.body ?? "", loading: false } : d,
+          ),
+        );
+      } catch {
+        setStepDrafts((prev) =>
+          prev.map((d, idx) =>
+            idx === i ? { ...d, subject: `${emailSpecs[i].emailPrompt?.stepName ?? "Email"} — edit me`, body: "", loading: false } : d,
+          ),
+        );
+      }
+    }
+  }
+
+  async function handleCreate() {
+    if (!selectedTemplate || !sequenceName.trim()) return;
+    setCreating(true);
+    try {
+      // 1. Build trigger
+      const triggerJson: any =
+        triggerType === "segment_membership"
+          ? { type: "segment_membership", segmentId, nurtureTemplate: selectedTemplate.id }
+          : { type: triggerType === "manual" ? "manual" : triggerType, nurtureTemplate: selectedTemplate.id };
+
+      // 2. Create workflow
+      const wfRes = await apiRequest("POST", "/api/marketing-workflows", {
+        name: sequenceName.trim(),
+        description: selectedTemplate.description,
+        triggerJson,
+        reEnrollPolicy: "never",
+        reEnrollDays: null,
+      });
+      const wf = await wfRes.json();
+
+      // 3. Add steps — interleave email drafts with wait steps
+      let emailIdx = 0;
+      for (const spec of selectedTemplate.stepSpecs) {
+        if (spec.type === "wait") {
+          await apiRequest("POST", `/api/marketing-workflows/${wf.id}/steps`, {
+            stepType: "wait",
+            configJson: { amount: spec.delayAmount ?? 1, unit: spec.delayUnit ?? "days" },
+          });
+        } else if (spec.type === "email") {
+          const draft = stepDrafts[emailIdx];
+          emailIdx++;
+          await apiRequest("POST", `/api/marketing-workflows/${wf.id}/steps`, {
+            stepType: "send_email",
+            configJson: {
+              generatedEmailId: null,
+              draftSubject: draft?.subject ?? "",
+              draftBody: draft?.body ?? "",
+              stepName: spec.emailPrompt?.stepName ?? "Email",
+            },
+          });
+        }
+      }
+
+      toast({ title: "Nurture sequence created", description: "Add your email IDs to each step to activate." });
+      onCreated(wf.id);
+      resetWizard();
+      onOpenChange(false);
+    } catch (err: any) {
+      toast({ title: "Failed to create sequence", variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  // Wizard navigation
+  function goNext() {
+    if (wizardStep === 0 && !selectedTemplateId) {
+      toast({ title: "Choose a template to continue", variant: "destructive" });
+      return;
+    }
+    if (wizardStep === 1 && !sequenceName.trim()) {
+      toast({ title: "Name your sequence", variant: "destructive" });
+      return;
+    }
+    if (wizardStep === 1) {
+      setWizardStep(2);
+      if (!draftsGenerated) generateDrafts();
+      return;
+    }
+    if (wizardStep === 2) {
+      setWizardStep(3);
+      return;
+    }
+    setWizardStep((s) => Math.min(s + 1, 3));
+  }
+
+  const STEP_LABELS = ["Choose template", "Configure", "Customize emails", "Review & create"];
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) resetWizard(); onOpenChange(v); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-violet-500" />
+            New Nurture Sequence
+          </DialogTitle>
+          {/* Progress indicators */}
+          <div className="flex items-center gap-1 mt-2">
+            {STEP_LABELS.map((label, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <div
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
+                    i === wizardStep
+                      ? "bg-violet-600 text-white"
+                      : i < wizardStep
+                      ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {i < wizardStep ? "✓" : i + 1}
+                </div>
+                <span className={`text-xs hidden sm:inline ${i === wizardStep ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                  {label}
+                </span>
+                {i < STEP_LABELS.length - 1 && <ChevronRight className="w-3 h-3 text-muted-foreground" />}
+              </div>
+            ))}
+          </div>
+        </DialogHeader>
+
+        <div className="py-2 space-y-4">
+          {/* ── Step 0: Choose template ───────────────────────────────── */}
+          {wizardStep === 0 && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Pick a pre-built template. You can customise every step after creation.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {templates.map((t) => (
+                  <button
+                    key={t.id}
+                    className={`text-left p-4 rounded-lg border-2 transition-colors ${
+                      selectedTemplateId === t.id
+                        ? "border-violet-500 bg-violet-50 dark:bg-violet-900/20"
+                        : "border-border hover:border-violet-300"
+                    }`}
+                    onClick={() => setSelectedTemplateId(t.id)}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      {TEMPLATE_ICONS[t.id] ?? <Mail className="w-5 h-5 text-muted-foreground" />}
+                      <span className="font-semibold text-sm">{t.name}</span>
+                      <Badge variant="secondary" className="text-xs ml-auto">{t.emailCount} emails</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t.description}</p>
+                    {/* Step preview */}
+                    <div className="flex items-center gap-1 mt-2 flex-wrap">
+                      {t.stepSpecs.map((s, i) => (
+                        <span
+                          key={i}
+                          className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded ${
+                            s.type === "email"
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                              : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                          }`}
+                        >
+                          {s.type === "email" ? <Mail className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                          {s.type === "email" ? s.emailPrompt?.stepName : `${s.delayAmount}d`}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 1: Configure ─────────────────────────────────────── */}
+          {wizardStep === 1 && (
+            <div className="space-y-4">
+              <div>
+                <Label>Sequence name</Label>
+                <Input
+                  className="mt-1"
+                  placeholder={`${selectedTemplate?.name ?? "Nurture"} sequence`}
+                  value={sequenceName}
+                  onChange={(e) => setSequenceName(e.target.value)}
+                />
+              </div>
+              <Separator />
+              <div>
+                <Label>Enrollment trigger</Label>
+                <Select value={triggerType} onValueChange={setTriggerType}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual (enroll contacts by hand)</SelectItem>
+                    <SelectItem value="segment_membership">Segment membership</SelectItem>
+                    <SelectItem value="contact_event">Contact event</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {triggerType === "segment_membership" && (
+                <div>
+                  <Label>Segment ID</Label>
+                  <Input
+                    className="mt-1"
+                    placeholder="Paste segment ID…"
+                    value={segmentId}
+                    onChange={(e) => setSegmentId(e.target.value)}
+                  />
+                </div>
+              )}
+              <Separator />
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">AI email context (optional)</p>
+              <div>
+                <Label>Target persona</Label>
+                <Input
+                  className="mt-1"
+                  placeholder="e.g. Marketing managers at mid-market SaaS companies"
+                  value={persona}
+                  onChange={(e) => setPersona(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Product / solution area</Label>
+                <Input
+                  className="mt-1"
+                  placeholder="e.g. AI-powered marketing automation platform"
+                  value={solutionArea}
+                  onChange={(e) => setSolutionArea(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2: Customise email drafts ────────────────────────── */}
+          {wizardStep === 2 && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                AI-drafted subject lines and body copy for each email step. Edit them here or in the workflow builder after creation.
+              </p>
+              {stepDrafts.map((draft, i) => (
+                <Card key={i}>
+                  <CardHeader className="py-3 pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-violet-500" />
+                      Email {i + 1}: {draft.stepName}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 pt-0 pb-3">
+                    {draft.loading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Drafting with AI…
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <Label className="text-xs">Subject line</Label>
+                          <Input
+                            className="mt-1 text-sm"
+                            value={draft.subject}
+                            onChange={(e) =>
+                              setStepDrafts((prev) =>
+                                prev.map((d, idx) => (idx === i ? { ...d, subject: e.target.value } : d)),
+                              )
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Email body</Label>
+                          <Textarea
+                            className="mt-1 text-sm"
+                            rows={4}
+                            value={draft.body}
+                            onChange={(e) =>
+                              setStepDrafts((prev) =>
+                                prev.map((d, idx) => (idx === i ? { ...d, body: e.target.value } : d)),
+                              )
+                            }
+                          />
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                Note: the sequence will use these drafts as starting copy. You'll still need to link a generated email template to each send step before activating.
+              </p>
+            </div>
+          )}
+
+          {/* ── Step 3: Review ────────────────────────────────────────── */}
+          {wizardStep === 3 && selectedTemplate && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Review the sequence before creating. You can further edit steps in the workflow builder.</p>
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-24">Name</span>
+                    <span className="text-sm font-medium">{sequenceName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-24">Template</span>
+                    <span className="text-sm">{selectedTemplate.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-24">Trigger</span>
+                    <span className="text-sm">
+                      {triggerType === "segment_membership" ? `Segment ${segmentId || "(unset)"}` : triggerType === "contact_event" ? "Contact event" : "Manual"}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Steps</p>
+                {selectedTemplate.stepSpecs.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    {s.type === "email" ? (
+                      <Mail className="w-4 h-4 text-violet-500 shrink-0" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+                    )}
+                    <span className={s.type === "email" ? "font-medium" : "text-muted-foreground"}>
+                      {s.type === "email" ? `Send "${s.emailPrompt?.stepName}"` : `Wait ${s.delayAmount} ${s.delayUnit}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                HubSpot timeline events (email_sent, email_open, email_click) will be logged automatically for each enrolled contact.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (wizardStep === 0) { resetWizard(); onOpenChange(false); }
+              else setWizardStep((s) => s - 1);
+            }}
+          >
+            {wizardStep === 0 ? "Cancel" : "Back"}
+          </Button>
+          {wizardStep < 3 ? (
+            <Button onClick={goNext}>
+              Next <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          ) : (
+            <Button onClick={handleCreate} disabled={creating}>
+              {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              Create sequence
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Sequence Stats Row ───────────────────────────────────────────────────────
+
+interface SequenceStat {
+  workflowId: string;
+  totalSent: number;
+  totalOpens: number;
+  totalClicks: number;
+  openRate: number;
+  clickRate: number;
+}
+
+function MiniRateBar({ rate, color }: { rate: number; color: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-20 bg-muted rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(rate, 100)}%` }} />
+      </div>
+      <span className="text-xs text-muted-foreground w-8">{rate}%</span>
+    </div>
+  );
+}
+
+// ─── Workflow Card ────────────────────────────────────────────────────────────
+
+function WorkflowCard({
+  wf,
+  onSelect,
+  onDelete,
+}: {
+  wf: Workflow;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <Card
+      className="cursor-pointer hover:border-primary/50 transition-colors"
+      onClick={() => onSelect(wf.id)}
+    >
+      <CardContent className="py-4 flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {(wf.triggerJson as any)?.nurtureTemplate && (
+              <Sparkles className="w-4 h-4 text-violet-500 shrink-0" />
+            )}
+            <p className="font-medium">{wf.name}</p>
+            <Badge className={STATUS_COLORS[wf.status]}>{wf.status}</Badge>
+          </div>
+          {wf.description && (
+            <p className="text-sm text-muted-foreground mt-0.5 truncate">{wf.description}</p>
+          )}
+          <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Zap className="w-3 h-3" />{triggerLabel(wf.triggerJson)}
+            </span>
+            <span className="flex items-center gap-1">
+              <ListTree className="w-3 h-3" />{wf.stepCount} step{wf.stepCount !== 1 ? "s" : ""}
+            </span>
+            <span className="flex items-center gap-1">
+              <Users className="w-3 h-3" />{wf.activeEnrollments} active · {wf.totalEnrollments} total
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(wf.id);
+            }}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WorkflowsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [nurtureWizardOpen, setNurtureWizardOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pageTab, setPageTab] = useState("all");
 
   // Create form state
   const [formName, setFormName] = useState("");
@@ -882,6 +1420,16 @@ export default function WorkflowsPage() {
     queryKey: ["/api/marketing-workflows"],
     queryFn: () => apiRequest("GET", "/api/marketing-workflows").then((r) => r.json()),
   });
+
+  const { data: sequenceStats = [] } = useQuery<SequenceStat[]>({
+    queryKey: ["/api/marketing-workflows/sequence-stats"],
+    queryFn: () => apiRequest("GET", "/api/marketing-workflows/sequence-stats").then((r) => r.json()),
+    enabled: pageTab === "sequences",
+  });
+
+  // Nurture sequences: workflows whose triggerJson contains a nurtureTemplate field
+  const sequences = workflows.filter((wf) => (wf.triggerJson as any)?.nurtureTemplate);
+  const statsMap = new Map(sequenceStats.map((s) => [s.workflowId, s]));
 
   const createMutation = useMutation({
     mutationFn: (body: any) =>
@@ -949,7 +1497,7 @@ export default function WorkflowsPage() {
     <AppLayout>
       <div className="p-6 max-w-5xl mx-auto space-y-6">
         {/* Page header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold flex items-center gap-2">
               <ListTree className="w-6 h-6 text-violet-500" />
@@ -959,77 +1507,163 @@ export default function WorkflowsPage() {
               Automate multi-step sequences: enroll contacts based on segments, events, or lead score, then send emails, wait, branch, and update properties.
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />New workflow
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" onClick={() => setNurtureWizardOpen(true)}>
+              <Sparkles className="w-4 h-4 mr-2 text-violet-500" />New nurture sequence
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />New workflow
+            </Button>
+          </div>
         </div>
 
-        {/* Workflow list */}
-        {isLoading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : workflows.length === 0 ? (
-          <Card>
-            <CardContent className="py-20 text-center">
-              <ListTree className="w-10 h-10 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground text-sm">No workflows yet.</p>
-              <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />Create your first workflow
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4">
-            {workflows.map((wf) => (
-              <Card
-                key={wf.id}
-                className="cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => setSelectedId(wf.id)}
-              >
-                <CardContent className="py-4 flex items-center gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium">{wf.name}</p>
-                      <Badge className={STATUS_COLORS[wf.status]}>{wf.status}</Badge>
-                    </div>
-                    {wf.description && (
-                      <p className="text-sm text-muted-foreground mt-0.5 truncate">{wf.description}</p>
-                    )}
-                    <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Zap className="w-3 h-3" />{triggerLabel(wf.triggerJson)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <ListTree className="w-3 h-3" />{wf.stepCount} step{wf.stepCount !== 1 ? "s" : ""}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" />{wf.activeEnrollments} active · {wf.totalEnrollments} total
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteMutation.mutate(wf.id);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
+        {/* Page tabs */}
+        <Tabs value={pageTab} onValueChange={setPageTab}>
+          <TabsList>
+            <TabsTrigger value="all">All workflows</TabsTrigger>
+            <TabsTrigger value="sequences" className="flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5" />Sequences
+              {sequences.length > 0 && (
+                <Badge variant="secondary" className="text-xs ml-1">{sequences.length}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── All workflows tab ───────────────────────────────────── */}
+          <TabsContent value="all" className="mt-4">
+            {isLoading ? (
+              <div className="flex justify-center py-20">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : workflows.length === 0 ? (
+              <Card>
+                <CardContent className="py-20 text-center">
+                  <ListTree className="w-10 h-10 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground text-sm">No workflows yet.</p>
+                  <div className="flex justify-center gap-2 mt-4">
+                    <Button variant="outline" onClick={() => setNurtureWizardOpen(true)}>
+                      <Sparkles className="w-4 h-4 mr-2" />New nurture sequence
                     </Button>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    <Button onClick={() => setCreateOpen(true)}>
+                      <Plus className="w-4 h-4 mr-2" />Create workflow from scratch
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+            ) : (
+              <div className="grid gap-4">
+                {workflows.map((wf) => (
+                  <WorkflowCard
+                    key={wf.id}
+                    wf={wf}
+                    onSelect={setSelectedId}
+                    onDelete={(id) => deleteMutation.mutate(id)}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Sequences tab ───────────────────────────────────────── */}
+          <TabsContent value="sequences" className="mt-4">
+            {sequences.length === 0 ? (
+              <Card>
+                <CardContent className="py-20 text-center">
+                  <Sparkles className="w-10 h-10 mx-auto text-violet-400 mb-4" />
+                  <p className="font-medium mb-1">No nurture sequences yet</p>
+                  <p className="text-muted-foreground text-sm mb-4">
+                    Use the wizard to create a pre-built welcome, onboarding, re-engagement, or post-event sequence.
+                  </p>
+                  <Button onClick={() => setNurtureWizardOpen(true)}>
+                    <Sparkles className="w-4 h-4 mr-2" />New nurture sequence
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {sequences.map((wf) => {
+                  const stats = statsMap.get(wf.id);
+                  return (
+                    <Card
+                      key={wf.id}
+                      className="cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => setSelectedId(wf.id)}
+                    >
+                      <CardContent className="py-4 flex items-center gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Sparkles className="w-4 h-4 text-violet-500 shrink-0" />
+                            <p className="font-medium">{wf.name}</p>
+                            <Badge className={STATUS_COLORS[wf.status]}>{wf.status}</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {(wf.triggerJson as any)?.nurtureTemplate ?? "sequence"}
+                            </Badge>
+                          </div>
+                          {wf.description && (
+                            <p className="text-sm text-muted-foreground mt-0.5 truncate">{wf.description}</p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 flex-wrap">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Users className="w-3 h-3" />
+                              {wf.activeEnrollments} active · {wf.totalEnrollments} total
+                            </span>
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <ListTree className="w-3 h-3" />{wf.stepCount} steps
+                            </span>
+                            {stats && stats.totalSent > 0 && (
+                              <>
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Eye className="w-3 h-3" />
+                                  <MiniRateBar rate={stats.openRate} color="bg-blue-500" />
+                                  open
+                                </span>
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <MousePointerClick className="w-3 h-3" />
+                                  <MiniRateBar rate={stats.clickRate} color="bg-green-500" />
+                                  click
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {stats.totalSent.toLocaleString()} sent
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMutation.mutate(wf.id);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
 
-      {/* Create dialog */}
+      {/* Nurture wizard */}
+      <NurtureWizardDialog
+        open={nurtureWizardOpen}
+        onOpenChange={setNurtureWizardOpen}
+        onCreated={(id) => {
+          qc.invalidateQueries({ queryKey: ["/api/marketing-workflows"] });
+          setSelectedId(id);
+        }}
+      />
+
+      {/* Create blank workflow dialog */}
       <Dialog open={createOpen} onOpenChange={(o) => { setCreateOpen(o); if (!o) resetForm(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
