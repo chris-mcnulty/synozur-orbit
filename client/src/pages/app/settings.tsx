@@ -1885,6 +1885,7 @@ interface HubspotStatus {
     lastSyncError: string | null;
     lastSyncStats: any;
     emailSyncReady: boolean;
+    activeProspectSuppressionDefault?: string | null;
   };
 }
 

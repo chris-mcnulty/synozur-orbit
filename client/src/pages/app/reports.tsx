@@ -457,7 +457,7 @@ export default function Reports() {
             <div className="space-y-3 p-4 rounded-lg bg-muted/30 border">
               <Label className="text-sm font-medium">Select Sections</Label>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                {[
+                {([
                   { key: "executiveSummary", label: "Executive Summary", icon: Sparkles },
                   { key: "companyBaseline", label: "Company Profile", icon: Building2 },
                   { key: "competitorProfiles", label: "Competitors", icon: Target },
@@ -467,7 +467,7 @@ export default function Reports() {
                   { key: "gtmPlan", label: "GTM Plan", icon: Megaphone, disabled: !hasGtmPlan, disabledReason: "Generate a GTM Plan first to include it in the report.", generatedAt: gtmPlanGeneratedAt, stale: gtmPlanStale },
                   { key: "messagingFramework", label: "Messaging Framework", icon: MessageSquareText, disabled: !hasMessagingFramework, disabledReason: "Generate a Messaging Framework first to include it in the report.", generatedAt: messagingFrameworkGeneratedAt, stale: messagingFrameworkStale },
                   { key: "activityLog", label: "Activity Log", icon: Activity },
-                ].map((item: {
+                ] as {
                   key: keyof ReportSections;
                   label: string;
                   icon: React.ComponentType<{ className?: string }>;
@@ -475,7 +475,7 @@ export default function Reports() {
                   disabledReason?: string;
                   generatedAt?: string | null;
                   stale?: boolean;
-                }) => {
+                }[]).map((item) => {
                   const { key, label, icon: Icon, disabled, disabledReason, generatedAt, stale } = item;
                   const checked = sections[key];
                   const tile = (

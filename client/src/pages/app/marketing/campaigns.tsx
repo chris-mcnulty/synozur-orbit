@@ -233,6 +233,7 @@ export default function CampaignsPage() {
       selectedProductIds: [],
       startDate: format(new Date(), "yyyy-MM-dd"),
       numberOfDays: 7, includeSaturday: false, includeSunday: false,
+      briefOnlyMode: false,
     });
     setStep(0);
     setStepAttempted({});

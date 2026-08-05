@@ -878,7 +878,7 @@ export default function EditorialCalendarPage() {
       if (!res.ok) throw new Error((await res.json()).error || "Failed to repurpose");
       return res.json();
     },
-    onSuccess: (data: { asset: { id: string; title: string }; slideImages?: CarouselSlideImage[] }) => {
+    onSuccess: (data: { asset: { id: string; title: string }; brief?: { id: string } | null; slideImages?: CarouselSlideImage[] }) => {
       if (data.slideImages?.length) {
         setCarouselSlides({ assetId: data.asset.id, title: data.asset.title, slides: data.slideImages });
         toast.success(`Created "${data.asset.title}" with ${data.slideImages.length} branded slides`);

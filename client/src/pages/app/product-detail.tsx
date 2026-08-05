@@ -38,6 +38,8 @@ interface Product {
   linkedInUrl: string | null;
   instagramUrl: string | null;
   twitterUrl: string | null;
+  blogUrl?: string | null;
+  isBaseline?: boolean | null;
   socialCheckFrequency: string | null;
   lastSocialCrawl: string | null;
   tenantDomain: string;

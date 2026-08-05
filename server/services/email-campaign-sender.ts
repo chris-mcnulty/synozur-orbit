@@ -427,12 +427,12 @@ export interface DispatchSendResult {
 }
 
 /** Shared values used when inserting a new email_sends row. */
-function baseSendValues(opts: DispatchSendOptions & { listId: string; queueAt: Date }) {
+function baseSendValues(opts: DispatchSendOptions & { listId: string | null | undefined; queueAt: Date }) {
   return {
     tenantDomain: opts.tenantDomain,
     marketId: opts.marketId,
     generatedEmailId: opts.email.id,
-    listId: opts.listId,
+    listId: opts.listId ?? null,
     testRecipient: null as null,
     status: "queued" as const,
     scheduledAt: opts.queueAt,

@@ -4726,7 +4726,8 @@ async function generatePostsAsync(
       loadGroundingContext(tenantDomain, marketId),
       briefOnlyMode ? Promise.resolve(null) : loadStrategicContext(tenantDomain, marketId),
     ]);
-    const strategicContext = briefOnlyMode ? "" : formatStrategicContextForPrompt(strategicCtx);
+    // strategicCtx is only null in briefOnlyMode; non-null in the else branch.
+    const strategicContext = briefOnlyMode ? "" : formatStrategicContextForPrompt(strategicCtx!);
 
     let personaContext = "";
     if (personaIds.length > 0) {
@@ -4788,8 +4789,8 @@ async function generatePostsAsync(
           parts.push(`Top news items to announce (the specific things worth talking about this push):\n${interview.newsItems.map((n) => `- ${n}`).join("\n")}`);
         }
         if (interview.product?.productName?.trim()) {
-          const feats = Array.isArray(interview.product.features) && interview.product.features.length
-            ? `\n${interview.product.features.slice(0, 12).map((f) => `  - ${f}`).join("\n")}`
+          const feats = Array.isArray(interview.product.matchedFeatures) && interview.product.matchedFeatures.length
+            ? `\n${interview.product.matchedFeatures.slice(0, 12).map((f) => `  - ${f}`).join("\n")}`
             : "";
           parts.push(`Product in focus: ${interview.product.productName.trim()}${feats}`);
         }

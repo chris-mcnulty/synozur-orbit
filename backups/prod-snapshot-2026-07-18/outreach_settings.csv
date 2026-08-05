@@ -1,0 +1,2 @@
+tenant_domain,global_pause,master_daily_cap,email_daily_cap,email_weekly_cap,linkedin_daily_cap,linkedin_weekly_cap,weekly_per_domain_cap,min_reply_rate_floor,default_voice_profile_id,updated_at
+synozur.com,f,100,50,200,15,50,3,0,,2026-06-14 17:22:53.621

@@ -21,6 +21,7 @@ import {
   ShadingType,
   convertInchesToTwip,
   LevelFormat,
+  type IRunOptions,
 } from "docx";
 
 const BRAND_COLOR = "810FFB";
@@ -144,7 +145,7 @@ function parseInline(text: string): RunSegment[] {
   return segments.length > 0 ? segments : [{ text }];
 }
 
-function segmentsToRuns(segments: RunSegment[], extra?: Partial<Parameters<typeof TextRun>[0]>): TextRun[] {
+function segmentsToRuns(segments: RunSegment[], extra?: Partial<IRunOptions>): TextRun[] {
   return segments.map(
     (s) =>
       new TextRun({

@@ -1,0 +1,4 @@
+id,tenant_domain,market_id,name,slug,description,color,icon,parent_id,sort_order,created_by,created_at,updated_at
+d8e4c7cb-94e5-4b0f-af7e-7d2b5a0a55a6,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,AI,ai,Ai strategy and design ,#810FFB,,,0,116500d0-357e-4ace-a7af-7264ed58e22a,2026-05-31 07:22:30.605471,2026-05-31 07:23:28.291
+30fa6b5d-ec12-433b-81e1-8ebc37c0135b,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Company OS,company-os,,#64748B,,,0,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-08 23:23:20.884428,2026-06-08 23:23:20.884428
+d6bb1ad7-114f-4f2c-92fa-6ef5d8b8d9cb,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,GTM,gtm,,#10B981,,,0,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-08 23:23:29.849502,2026-06-08 23:23:29.849502

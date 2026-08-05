@@ -2246,7 +2246,7 @@ export function registerAdminRoutes(app: Express) {
             probedStatus,
           });
         }
-        if (probedStatus && probedStatus >= 400) {
+        if (probedStatus != null && (probedStatus as number) >= 400) {
           return res.status(400).json({
             error: `The website returned HTTP ${probedStatus}. Please verify the URL is correct and publicly accessible.`,
             probedStatus,
@@ -2256,7 +2256,7 @@ export function registerAdminRoutes(app: Express) {
       }
 
       // Combine page content for AI analysis
-      const combinedContent = crawlResult.pages.map(p => `${p.title}\n${p.content}`).join("\n\n");
+      const combinedContent = crawlResult.pages.map((p: any) => `${p.title}\n${p.content}`).join("\n\n");
 
       // Extract company name from URL or analysis
       let companyName = parsedUrl.hostname.replace(/^www\./, "").split(".")[0];
@@ -2301,10 +2301,13 @@ Respond in JSON format:
 
       let result = { companyName, description: "", businessType: "b2b" };
       try {
-        const responseText = message.content[0].type === "text" ? message.content[0].text : "";
+        // Narrow to a text block; cast because the SDK's ContentBlock union
+        // doesn't reliably narrow via the discriminant at this call site.
+        const firstBlock = message.content[0] as { type: string; text?: string };
+        const responseText = firstBlock.type === "text" ? (firstBlock.text ?? "") : "";
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch![0]);
           result.companyName = parsed.companyName || companyName;
           result.description = parsed.description || "";
           result.businessType = parsed.businessType === "b2c" ? "b2c" : "b2b";

@@ -1684,6 +1684,7 @@ async function runScheduledBriefingJob(): Promise<void> {
             try {
               const market = await storage.getMarket(marketId);
               const baselineProfile = await storage.getCompanyProfileByContext({
+                tenantId: tenant.id,
                 tenantDomain,
                 marketId,
                 isDefaultMarket: false,

@@ -105,7 +105,7 @@ export function registerIntelligenceRoutes(app: Express) {
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
       // Load personas for context
-      const tenantPersonas = await storage.getPersonasByContext({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId });
+      const tenantPersonas = await storage.getPersonasByContext(toContextFilter(ctx));
       const personaContext = tenantPersonas.length > 0 ? formatPersonaContextForPrompt(tenantPersonas) : "";
 
       // Build context for AI
@@ -266,7 +266,7 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
       // Load personas for context
-      const tenantPersonas = await storage.getPersonasByContext({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId });
+      const tenantPersonas = await storage.getPersonasByContext(toContextFilter(ctx));
       const personaContext = tenantPersonas.length > 0 ? formatPersonaContextForPrompt(tenantPersonas) : "";
 
       let productContext = "";
@@ -437,7 +437,7 @@ Make this practical and ready for use by ${isB2C ? "marketing, brand, and social
       }
 
       // Load personas for context
-      const tenantPersonas = await storage.getPersonasByContext({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId });
+      const tenantPersonas = await storage.getPersonasByContext(toContextFilter(ctx));
       const personaContext = tenantPersonas.length > 0 ? formatPersonaContextForPrompt(tenantPersonas) : "";
 
       // Get product features for context

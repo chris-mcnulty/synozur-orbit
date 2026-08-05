@@ -27,7 +27,7 @@ export function isResizableContentType(contentType: string | undefined): boolean
  */
 export function snapWidth(requested: number): AllowedWidth {
   if (!Number.isFinite(requested) || requested <= 0) return ALLOWED_WIDTHS[0];
-  let nearest = ALLOWED_WIDTHS[0];
+  let nearest: AllowedWidth = ALLOWED_WIDTHS[0];
   let minDist = Math.abs(requested - nearest);
   for (const w of ALLOWED_WIDTHS) {
     const dist = Math.abs(requested - w);

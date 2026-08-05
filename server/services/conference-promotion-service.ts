@@ -1834,13 +1834,14 @@ async function runGeneration(
     for (const account of accounts) {
       await getVariants(mi, account);
     }
+    const progressMoment = momentOrder[mi];
     reportProgress?.({
       phase: "Generating copy",
       percent: 42 + Math.round(((mi + 1) / numMoments) * 8),
       currentItem: mi + 1,
       totalItems: numMoments,
-      currentItemName: momentOrder[mi].kind === "session"
-        ? momentOrder[mi].session.title
+      currentItemName: progressMoment.kind === "session"
+        ? progressMoment.session.title
         : "Anchor post",
     });
   }

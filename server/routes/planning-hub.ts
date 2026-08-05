@@ -568,7 +568,9 @@ User's rough idea: "${String(idea).trim()}"
 
 Return one polished blog post title based on this idea in the context of the campaign.`;
 
-      const result = await completeForFeature("contentBriefs", userPrompt, {
+      // "contentBriefs" was not a valid AIFeature; this generates marketing
+      // planning content, so use the marketing_tasks feature bucket.
+      const result = await completeForFeature("marketing_tasks", userPrompt, {
         systemPrompt,
         tenantDomain: ctx.tenantDomain,
         maxTokens: 100,

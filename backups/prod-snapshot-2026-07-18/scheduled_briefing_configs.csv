@@ -1,0 +1,3 @@
+id,tenant_domain,market_id,enabled,frequency,created_at,updated_at
+f14127f9-6797-4b6c-adeb-1d4e0d6aed7d,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,t,weekly,2026-03-25 16:00:14.68516,2026-03-25 16:00:14.68516
+988eb835-9959-426c-a493-0501106f109c,synozur.com,872dde94-3e6c-4115-acdc-2c79b3276138,f,weekly,2026-05-06 00:06:43.590523,2026-05-06 00:06:46.237

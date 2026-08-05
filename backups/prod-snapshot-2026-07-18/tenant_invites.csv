@@ -1,0 +1,2 @@
+id,token,email,tenant_domain,invited_role,invited_by,status,expires_at,accepted_at,created_at
+349c26c3-c907-4c81-8ec4-23bfa1223606,a8d76136-6f64-4ce3-a511-291a3898ddc3,bdewyer@reveillesoftware.com,reveillesoftware.com,Standard User,d816008f-9e8e-434b-8a60-bad260959ddb,pending,2026-03-18 22:16:01.07,,2026-03-11 22:16:01.0834

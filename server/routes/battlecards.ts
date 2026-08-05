@@ -255,9 +255,11 @@ Return ONLY valid JSON, no markdown or explanation.`;
               competitorId: updatedBattlecard.competitorId,
               competitorName: competitor.name,
               battlecardId: updatedBattlecard.id,
-              strengths: updatedBattlecard.strengths,
-              weaknesses: updatedBattlecard.weaknesses,
-              ourAdvantages: updatedBattlecard.ourAdvantages,
+              // jsonb columns read back as `unknown`; battlecard content is
+              // persisted as string arrays, so narrow to the expected shape.
+              strengths: updatedBattlecard.strengths as string[] | null,
+              weaknesses: updatedBattlecard.weaknesses as string[] | null,
+              ourAdvantages: updatedBattlecard.ourAdvantages as string[] | null,
               planName: tenant.plan,
             }).catch(() => null);
           }

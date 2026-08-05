@@ -42,7 +42,7 @@ export async function refreshLinkedInToken(
   tenantDomain: string,
 ): Promise<string | null> {
   const creds = getGlobalLinkedInCredentials();
-  if (!creds) {
+  if (!creds || !creds.clientSecret) {
     console.warn(
       `[LinkedIn API] Cannot refresh token for tenant ${tenantDomain}: ` +
       `LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET not configured.`,

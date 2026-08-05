@@ -182,6 +182,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
           scheduledDate: generatedPosts.scheduledDate,
           publishedAt: generatedPosts.publishedAt,
           status: generatedPosts.status,
+          deliveryMode: generatedPosts.deliveryMode,
           campaignId: generatedPosts.campaignId,
           solutionAreaId: generatedPosts.solutionAreaId,
           conferenceId: generatedPosts.conferenceId,
@@ -1347,10 +1348,10 @@ export function registerMarketingCalendarRoutes(app: Express) {
           affected += r.length;
         }
         if (byType.content.length) {
-          // Archive marketing links tied to these briefs before soft-deleting them
-          await db.update(marketingLinks).set({ status: "archived", updatedAt: new Date() }).where(
-            and(eq(marketingLinks.tenantDomain, ctx.tenantDomain), inArray(marketingLinks.sourceBriefId, byType.content))
-          );
+          // NOTE: marketing_links has no brief linkage column in this schema,
+          // so there are no per-brief links to archive here (the prior
+          // marketingLinks.sourceBriefId update referenced a nonexistent
+          // column and has been removed).
           const r = await db.update(contentBriefs).set({ status: "removed", updatedAt: new Date() })
             .where(and(eq(contentBriefs.tenantDomain, ctx.tenantDomain), eq(contentBriefs.marketId, ctx.marketId), inArray(contentBriefs.id, byType.content))).returning({ id: contentBriefs.id });
           affected += r.length;

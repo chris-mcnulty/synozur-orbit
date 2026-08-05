@@ -353,7 +353,9 @@ export function registerSalesOutreachRoutes(app: Express) {
           channel: outreachTouches.channel,
           stepNumber: outreachTouches.stepNumber,
           subject: outreachTouches.subject,
-          createdAt: outreachTouches.createdAt,
+          // outreach_touches has no created_at column; generatedAt is the
+          // creation timestamp. Expose it as createdAt for the client.
+          createdAt: outreachTouches.generatedAt,
           prospectName: prospects.name,
           companyName: prospects.companyName,
           campaignName: outreachCampaigns.name,
@@ -365,7 +367,7 @@ export function registerSalesOutreachRoutes(app: Express) {
           eq(outreachTouches.tenantDomain, ctx.tenantDomain),
           eq(outreachTouches.status, "draft_pending_approval"),
         ))
-        .orderBy(desc(outreachTouches.createdAt))
+        .orderBy(desc(outreachTouches.generatedAt))
         .limit(50);
       res.json(rows);
     } catch (err: any) {

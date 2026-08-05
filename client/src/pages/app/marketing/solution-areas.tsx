@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -195,7 +195,7 @@ export default function SolutionAreasPage() {
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
                         className="w-3 h-3 rounded-full shrink-0 ring-2 ring-offset-1"
-                        style={{ backgroundColor: area.color || "#810FFB", ringColor: area.color || "#810FFB" }}
+                        style={{ backgroundColor: area.color || "#810FFB", "--tw-ring-color": area.color || "#810FFB" } as CSSProperties}
                       />
                       <CardTitle className="text-base leading-tight truncate">{area.name}</CardTitle>
                     </div>

@@ -117,7 +117,8 @@ describe("useDeepLinkFocus", () => {
 
   beforeEach(() => {
     scrollIntoViewMock = vi.fn();
-    window.HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+    window.HTMLElement.prototype.scrollIntoView =
+      scrollIntoViewMock as unknown as HTMLElement["scrollIntoView"];
   });
 
   afterEach(() => {

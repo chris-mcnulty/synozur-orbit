@@ -315,6 +315,7 @@ export const FORMAT_LABELS: Record<ContentBriefFormat, string> = {
   webinar: "Webinar",
   press_release: "Press release",
   linkedin_digest: "LinkedIn Digest",
+  carousel: "Carousel",
   other: "Content",
 };
 

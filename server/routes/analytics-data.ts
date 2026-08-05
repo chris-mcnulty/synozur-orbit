@@ -914,7 +914,7 @@ Only use these timeframe values: ${periods.join(", ")}`;
         if (market) contextName = market.name;
       }
       if (!contextName) {
-        const profile = await storage.getCompanyProfileByContext({ tenantDomain: ctx.tenantDomain, marketId, isDefaultMarket: !marketId });
+        const profile = await storage.getCompanyProfileByContext({ tenantId: ctx.tenantId, tenantDomain: ctx.tenantDomain, marketId: marketId ?? "", isDefaultMarket: !marketId });
         if (profile) contextName = profile.companyName;
       }
       const safeName = contextName ? `_${contextName.replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "_")}` : "";

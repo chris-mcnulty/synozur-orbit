@@ -267,7 +267,7 @@ export function registerTenantAdminRoutes(app: Express) {
       // Use active tenant context for Global Admins, otherwise use user's email domain
       let tenant;
       if (currentUser.role === "Global Admin" && getActiveTenantId(req)) {
-        tenant = await storage.getTenant(getActiveTenantId(req));
+        tenant = await storage.getTenant(getActiveTenantId(req)!);
         console.log(`[Entra Search] Global Admin using active tenant context: ${tenant?.domain}, Azure Tenant ID: ${tenant?.entraTenantId}`);
       } else {
         const userDomain = currentUser.email.split("@")[1];
@@ -322,7 +322,7 @@ export function registerTenantAdminRoutes(app: Express) {
       // Use active tenant context for Global Admins, otherwise use user's email domain
       let tenant;
       if (currentUser.role === "Global Admin" && getActiveTenantId(req)) {
-        tenant = await storage.getTenant(getActiveTenantId(req));
+        tenant = await storage.getTenant(getActiveTenantId(req)!);
       } else {
         const userDomain = currentUser.email.split("@")[1];
         tenant = await storage.getTenantByDomain(userDomain);
@@ -362,7 +362,7 @@ export function registerTenantAdminRoutes(app: Express) {
       // Use active tenant context for Global Admins, otherwise use user's email domain
       let tenant;
       if (currentUser.role === "Global Admin" && getActiveTenantId(req)) {
-        tenant = await storage.getTenant(getActiveTenantId(req));
+        tenant = await storage.getTenant(getActiveTenantId(req)!);
       } else {
         const userDomain = currentUser.email.split("@")[1];
         tenant = await storage.getTenantByDomain(userDomain);

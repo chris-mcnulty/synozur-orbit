@@ -1754,10 +1754,9 @@ function ItemPill({ item, filterOpts, onSelect, draggable }: { item: CalendarIte
       {(assignments.length > 0 || item.websitePostSlug) && (
         <span className="ml-auto flex shrink-0 items-center gap-0.5" data-testid={`assign-dots-${item.id}`}>
           {item.websitePostSlug && (
-            <Globe
-              className="h-2.5 w-2.5 text-violet-400"
-              title={`On website: ${item.websitePostStatus ?? "draft"}`}
-            />
+            <span title={`On website: ${item.websitePostStatus ?? "draft"}`} className="inline-flex">
+              <Globe className="h-2.5 w-2.5 text-violet-400" />
+            </span>
           )}
           {assignments.map((a) => (
             <span key={a.kind} className={`h-1.5 w-1.5 rounded-full ${ASSIGN_META[a.kind].dot}`} />
@@ -2234,6 +2233,11 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
   const toggleChannel = (c: string) =>
     setChannels((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
   const { toast } = useToast();
+  const qc = useQueryClient();
+  const invalidate = () =>
+    qc.invalidateQueries({
+      predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith("/api/marketing-calendar"),
+    });
   // Combine the date + time fields into an ISO string the reschedule PATCH
   // understands. Clearing the date unschedules the item (null); time defaults to
   // 9:00 AM when left blank.
@@ -2633,7 +2637,7 @@ function DetailDialog({ item, filterOpts, onOpenChange, onApprove, onDelete, onE
                     const d = await r.json().catch(() => ({}));
                     if (!r.ok) throw new Error(d.error || "Publish failed");
                     invalidate();
-                    setDetail(null);
+                    onOpenChange(false);
                     toast({ title: "Published!", description: d.publishedUrl ? `Live at ${d.publishedUrl}` : "Post published successfully." });
                   } catch (err: any) {
                     toast({ title: "Publish failed", description: err.message, variant: "destructive" });

@@ -55,6 +55,7 @@ interface BattleCardData {
   competitorId: string;
   competitorName: string;
   lastGeneratedAt?: string;
+  generatedFromDataAsOf?: string | null;
   createdAt: string;
   strengths?: string[];
   weaknesses?: string[];

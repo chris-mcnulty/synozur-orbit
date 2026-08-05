@@ -22,6 +22,7 @@ type LongFormRecommendation = {
   content: string | null;
   status: string;
   lastGeneratedAt: string | null;
+  generatedFromDataAsOf?: string | null;
   updatedAt?: string | null;
   savedPrompts?: { customGuidance?: string; lastManualEdit?: string; versionHistory?: Array<{ content: string; savedAt: string; savedBy: string }> };
 };

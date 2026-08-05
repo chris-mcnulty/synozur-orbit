@@ -218,8 +218,8 @@ export function registerEditorialCalendarRoutes(app: Express) {
         try {
           const { extractContentFromUrl } = await import("../services/content-extraction");
           const extracted = await extractContentFromUrl(sourceUrl);
-          if (extracted.success && extracted.text) {
-            sourceArticleText = extracted.text;
+          if (extracted.content) {
+            sourceArticleText = extracted.content;
           }
         } catch (scrapeErr) {
           console.warn("[generate-briefs] Could not scrape thematic URL:", scrapeErr);
@@ -792,7 +792,9 @@ export function registerEditorialCalendarRoutes(app: Express) {
             content: draft.body,
             subtitle: draft.subtitle || null,
             overview: draft.overview || null,
-            postTags: draft.tags || null,
+            // postTags is a text column; draft.tags may be a string[]. Preserve
+            // the existing runtime value and cast so the insert typechecks.
+            postTags: (draft.tags as any) || null,
             assetType: briefFormatToAssetType(draft.format as any),
             status: "active",
             // Output points back at the brief that motivated it; the brief-side

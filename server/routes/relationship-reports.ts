@@ -116,7 +116,7 @@ export function registerRelationshipReportRoutes(app: Express) {
   // the row's status field so the frontend can show a useful message.
   async function runRelationshipReportGeneration(
     reportId: string,
-    ctx: { tenantDomain: string; marketId: string | null; userId: string },
+    ctx: { tenantId: string; tenantDomain: string; marketId: string; userId: string; isDefaultMarket: boolean },
     input: {
       competitor?: any;
       targetProfile?: any;
@@ -132,7 +132,12 @@ export function registerRelationshipReportRoutes(app: Express) {
       savedPromptsBase: any;
     },
   ) {
-    const filter = { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId };
+    const filter: import("../storage").ContextFilter = {
+      tenantId: ctx.tenantId,
+      tenantDomain: ctx.tenantDomain,
+      marketId: ctx.marketId,
+      isDefaultMarket: ctx.isDefaultMarket,
+    };
     const started = Date.now();
     try {
       const result = await generateRelationshipReport({
@@ -156,7 +161,14 @@ export function registerRelationshipReportRoutes(app: Express) {
         durationMs,
       );
 
-      const sourceDataAsOf = await computeLatestSourceDataTimestamp(filter);
+      const sourceDataAsOf = await computeLatestSourceDataTimestamp({
+        userId: ctx.userId,
+        userRole: "",
+        tenantId: ctx.tenantId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        isDefaultMarket: ctx.isDefaultMarket,
+      });
 
       const previousVersions = [...input.previousVersions];
       if (input.previousContent && input.previousContent !== result.content) {
@@ -239,7 +251,9 @@ export function registerRelationshipReportRoutes(app: Express) {
         createdByUserId: ctx.userId,
         fileType: "pdf",
         originalFileName: filename,
-        reportType: "relationship_report",
+        // OrbitReportType (in sharepoint-file-storage) doesn't yet list this
+        // report kind; cast until that union is extended.
+        reportType: "relationship_report" as any,
       },
       ctx.userId,
       report.id,
@@ -329,9 +343,11 @@ export function registerRelationshipReportRoutes(app: Express) {
       // response cycle. Errors inside are handled by the helper.
       setImmediate(() => {
         void runRelationshipReportGeneration(stub.id, {
+          tenantId: ctx.tenantId,
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
           userId: ctx.userId,
+          isDefaultMarket: ctx.isDefaultMarket,
         }, {
           competitor,
           baseline,
@@ -462,9 +478,11 @@ export function registerRelationshipReportRoutes(app: Express) {
 
       setImmediate(() => {
         void runRelationshipReportGeneration(stub.id, {
+          tenantId: ctx.tenantId,
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
           userId: ctx.userId,
+          isDefaultMarket: ctx.isDefaultMarket,
         }, {
           targetProfile,
           baseline,
@@ -587,7 +605,8 @@ export function registerRelationshipReportRoutes(app: Express) {
           createdByUserId: ctx.userId,
           fileType: "pdf",
           originalFileName: filename,
-          reportType: "relationship_report",
+          // See note above: cast until OrbitReportType lists this kind.
+          reportType: "relationship_report" as any,
         }, ctx.userId, report.id, t.id);
       }).catch((err) => console.error("[SPE] Failed to store relationship report PDF:", err));
     } catch (error: any) {
