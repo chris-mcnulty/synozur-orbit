@@ -1172,7 +1172,7 @@ export function registerAdminRoutes(app: Express) {
         return res.status(404).json({ error: "Company profile not found. Please set up your company profile first." });
       }
 
-      return res.status(503).json({ error: "Website crawl analysis is no longer available in Observatory." });
+      return res.status(503).json({ error: "Website crawl analysis is no longer available in Orbit." });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -2216,7 +2216,7 @@ export function registerAdminRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid URL format" });
       }
 
-      return res.status(503).json({ error: "Website crawl analysis is no longer available in Observatory." });
+      return res.status(503).json({ error: "Website crawl analysis is no longer available in Orbit." });
       /* eslint-disable-next-line no-unreachable */
       const crawlResult = { pages: [], totalWordCount: 0 } as any;
       
@@ -2387,7 +2387,7 @@ Respond in JSON format:
           
           console.log(`[Unarchive] Triggering refresh for market ${market.name} - ${competitors.length} competitors`);
           
-          console.log(`[Unarchive] Market ${market.name} unarchived — website/social monitoring removed from Observatory.`);
+          console.log(`[Unarchive] Market ${market.name} unarchived — website/social monitoring removed from Orbit.`);
         }
       }
       

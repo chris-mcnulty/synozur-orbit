@@ -25,13 +25,6 @@ import { registerConsultantPlansRoutes } from "./routes/consultant-plans";
 import { registerClientProjectRoutes } from "./routes/client-projects";
 import { registerProductRoutes } from "./routes/products";
 import { registerProductFeedbackRoutes } from "./routes/product-feedback";
-import { registerObservatoryRoutes } from "./routes/observatory";
-import { registerObservatoryModuleRoutes } from "./routes/observatory-modules";
-import { registerObservatoryInsightRoutes } from "./routes/observatory-insights";
-import { registerScanner } from "./services/observatory-scanners";
-import { axeCoreScanner } from "./services/accessibility-scanner";
-import { securityScanner } from "./services/security-scanner";
-import { performanceScanner } from "./services/performance-scanner";
 import { registerIntelligenceRoutes } from "./routes/intelligence";
 import { registerExecutiveRegenRoutes } from "./routes/executive-regen";
 import { registerRelationshipReportRoutes } from "./routes/relationship-reports";
@@ -61,17 +54,11 @@ import { registerMarketingPerformanceRoutes } from "./routes/marketing-performan
 import { registerPlanningHubRoutes } from "./routes/planning-hub";
 import { registerMarketingNextActionsRoutes } from "./routes/marketing-next-actions";
 import { registerTestHelperRoutes } from "./routes/test-helpers";
-import { registerObservatoryPerformanceRoutes } from "./routes/observatory-performance";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Register built-in scanner providers before any route handler runs
-  registerScanner(axeCoreScanner);
-  registerScanner(securityScanner);
-  registerScanner(performanceScanner);
-
   registerObjectStorageRoutes(app);
   registerEntraRoutes(app);
   registerGoogleRoutes(app);
@@ -127,10 +114,6 @@ export async function registerRoutes(
   registerClientProjectRoutes(app);
   registerProductRoutes(app);
   registerProductFeedbackRoutes(app);
-  registerObservatoryRoutes(app);
-  registerObservatoryModuleRoutes(app);
-  registerObservatoryInsightRoutes(app);
-  registerObservatoryPerformanceRoutes(app);
   registerIntelligenceRoutes(app);
   registerExecutiveRegenRoutes(app);
   registerRelationshipReportRoutes(app);

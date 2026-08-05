@@ -2,13 +2,7 @@ import React, { useState } from "react";
 import PublicLayout from "@/components/layout/PublicLayout";
 import SEOHead from "@/components/SEOHead";
 import { Link } from "wouter";
-import {
-  ArrowRight, CheckCircle2, Shield, FileText, Brain, Users, Eye,
-  Lock, Code2, Accessibility, Cpu, Activity, ClipboardList,
-  BarChart3, TrendingUp, Search, AlertTriangle, BookOpen,
-  FileDown, Layers, GitBranch, Sparkles, Telescope, ScanLine,
-  BadgeCheck, Scale, Gauge, ChevronRight
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, Shield, Zap, Target, BarChart3, FileText, Brain, Users, TrendingUp, Clock, Eye, Lightbulb, Radar, CalendarDays, Layers, Rocket, MapPin, GitBranch, PieChart, Gem, Download, Table, FileDown, Sparkles, Mail, HardDrive, Cpu, Handshake, Activity, Share2, BookOpen, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 
@@ -28,443 +22,271 @@ const landingJsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "Observatory",
+    "name": "Orbit",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web",
-    "description": "Application assurance platform for security, code quality, and accessibility assessment.",
+    "description": "AI-powered go-to-market intelligence platform that unifies competitive intelligence, marketing planning, and product management.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD",
+      "description": "60-day free trial with full access"
+    },
     "author": {
       "@type": "Organization",
       "name": "The Synozur Alliance"
     },
     "featureList": [
-      "Security & penetration test findings management",
-      "Code quality assessment",
-      "Accessibility (WCAG / VPAT) testing",
-      "Application readiness scoring",
-      "Evidence vault with audit trails",
-      "Microsoft Entra SSO"
+      "AI-powered competitive analysis",
+      "Competitive battlecards",
+      "Marketing planning",
+      "Product roadmap management",
+      "PDF report generation",
+      "Microsoft Entra SSO",
+      "Multi-tenant architecture"
     ]
   }
 ];
 
-const modules = [
+const platformPillars = [
   {
-    id: "security",
-    icon: Shield,
-    title: "Security Assessment",
-    tagline: "Find it before they do",
-    description: "Track penetration test findings, vulnerability disclosures, and remediation progress in one structured workbench. Every finding is rated, assigned, linked to evidence, and tracked through to closure.",
+    id: "intelligence",
+    icon: Radar,
+    title: "Competitive Intelligence",
+    tagline: "Know your battlefield",
+    description: "AI-powered analysis of competitor positioning, messaging, and market movements. Track changes, identify gaps, and stay ahead of the competition.",
     features: [
-      "Pen-test finding triage with severity ratings",
-      "Remediation workflow with owner assignment",
-      "Evidence attachments per finding",
-      "CVSS scoring and compliance mapping",
-      "Audit trail from discovery to sign-off"
+      "Automated competitor monitoring",
+      "Claude-powered positioning analysis",
+      "Messaging gap identification",
+      "Competitive battlecards"
     ]
   },
   {
-    id: "code",
-    icon: Code2,
-    title: "Code Quality",
-    tagline: "Ship with confidence",
-    description: "Assess code health across repositories — architecture quality, technical debt, dependency risk, and engineering practice maturity. Link findings directly to source files and track improvement over time.",
+    id: "marketing",
+    icon: CalendarDays,
+    title: "Marketing Projects",
+    tagline: "Plan with precision",
+    description: "Transform competitive insights into actionable marketing plans. Quarterly, half-year, and annual planning with AI-generated task recommendations—plus direct generation of social posts and email campaigns.",
     features: [
-      "Repository-level quality assessments",
-      "Dependency and licence risk tracking",
-      "Engineering practice maturity scoring",
-      "Technical debt cataloguing",
-      "Branch and commit traceability"
+      "AI-suggested marketing activities",
+      "Quarterly & annual planning",
+      "Social post & email campaign generation",
+      "Activity-based organization",
+      "Progress tracking"
     ]
   },
   {
-    id: "accessibility",
-    icon: Accessibility,
-    title: "Accessibility (WCAG / VPAT)",
-    tagline: "Build for everyone",
-    description: "Run structured WCAG 2.1/2.2 assessments against every application component. Generate VPAT worksheets for procurement, export compliance reports as PDF or Word, and track remediation through to certification.",
+    id: "product",
+    icon: GitBranch,
+    title: "Product Management",
+    tagline: "Build what matters",
+    description: "Align product development with market reality. Manage roadmaps, track competitive features, and prioritize based on intelligence—not intuition.",
     features: [
-      "WCAG 2.1 / 2.2 criterion-level assessment",
-      "VPAT worksheet generation (PDF & Word export)",
-      "Component-level findings with screenshots",
-      "Remediation tracking per criterion",
-      "Accessibility readiness score and trend"
-    ]
-  },
-  {
-    id: "architecture",
-    icon: Layers,
-    title: "Architecture Review",
-    tagline: "Validate every layer",
-    description: "Document and assess the architecture of each application against your organisation's standards. Capture design decisions, identify structural risks, and measure alignment with approved patterns.",
-    features: [
-      "Structured architecture review workbench",
-      "Design decision documentation",
-      "Risk identification and scoring",
-      "Pattern compliance checks",
-      "Evidence-linked review records"
-    ]
-  },
-  {
-    id: "performance",
-    icon: Gauge,
-    title: "Performance",
-    tagline: "Measure what matters",
-    description: "Capture load testing results, SLA benchmarks, and performance findings against each application. Surface regressions early and track performance readiness as part of the release gate.",
-    features: [
-      "Load test result ingestion",
-      "SLA benchmark tracking",
-      "Performance finding management",
-      "Trend charting across assessment cycles",
-      "Readiness gate integration"
-    ]
-  },
-  {
-    id: "compliance",
-    icon: Scale,
-    title: "Compliance Mapping",
-    tagline: "Prove it to auditors",
-    description: "Map findings and evidence to compliance frameworks — ISO 27001, SOC 2, NIST, and more. Generate audit-ready reports that link each control to its assessed status and supporting evidence.",
-    features: [
-      "Multi-framework control mapping",
-      "Control-to-finding linkage",
-      "Evidence vault with file attachments",
-      "Audit-ready PDF report export",
-      "Control status dashboard"
+      "Product roadmap management",
+      "Competitive feature tracking",
+      "Market-driven prioritization",
+      "Release planning"
     ]
   }
 ];
 
-const howItWorks = [
+const capabilities = [
   {
-    step: 1,
-    icon: ScanLine,
-    title: "Register",
-    desc: "Add your applications and define the scope — repositories, URLs, environments, and frameworks"
+    id: "intelligence",
+    label: "Market Intelligence",
+    title: "Know your competitive landscape",
+    description: "Orbit continuously monitors competitor websites, extracting key messaging, value propositions, and positioning changes. Get real-time insights into how your market is evolving.",
+    image: "/images/capabilities/market-intelligence.png"
   },
   {
-    step: 2,
-    icon: ClipboardList,
-    title: "Assess",
-    desc: "Run structured assessments across security, code, accessibility, architecture, performance, and compliance"
+    id: "analysis",
+    label: "AI Analysis",
+    title: "Understand what sets you apart",
+    description: "Claude-powered analysis compares your positioning against competitors, identifying gaps in your messaging and opportunities to differentiate. See exactly where you're winning—and where you're vulnerable.",
+    image: "/images/capabilities/ai-analysis.png"
   },
   {
-    step: 3,
-    icon: AlertTriangle,
-    title: "Find",
-    desc: "Log findings with severity, owner, and evidence. Link them to WCAG criteria, CVEs, or framework controls"
+    id: "recommendations",
+    label: "Recommendations",
+    title: "Get actionable guidance",
+    description: "AI-generated recommendations tailored to your industry and audience. Move from insight to action with specific messaging improvements, positioning shifts, and competitive responses.",
+    image: "/images/capabilities/recommendations.png"
   },
   {
-    step: 4,
-    icon: Activity,
-    title: "Remediate",
-    desc: "Track each finding through triage, fix, and verification. The evidence vault captures every decision"
+    id: "battlecards",
+    label: "Battlecards",
+    title: "Arm your sales team",
+    description: "Generate competitive battlecards with Harvey Ball scoring, qualitative comparisons, and sales challenge questions. Give your team the ammunition they need to win deals.",
+    image: "/images/capabilities/battlecards.png"
   },
   {
-    step: 5,
-    icon: TrendingUp,
-    title: "Report",
-    desc: "Publish readiness scores, VPAT worksheets, and compliance reports to stakeholders"
+    id: "planning",
+    label: "Marketing Projects",
+    title: "Plan your GTM activities",
+    description: "Transform insights into action with AI-powered marketing planning. Generate quarterly, half-year, or annual marketing plans based on competitive intelligence and industry best practices.",
+    image: "/images/capabilities/planning.png"
+  },
+  {
+    id: "roadmap",
+    label: "Product Roadmap",
+    title: "Prioritize with market context",
+    description: "Align product development with competitive reality. Track feature gaps, manage your roadmap, and make data-driven prioritization decisions based on market intelligence.",
+    image: "/images/capabilities/roadmap.png"
+  },
+  {
+    id: "reporting",
+    label: "Reporting",
+    title: "Share insights across the org",
+    description: "Export branded PDF reports for leadership, sales enablement, or board presentations. Track positioning changes over time with assessment snapshots and share intelligence that drives decisions.",
+    image: "/images/capabilities/reporting.png"
+  },
+  {
+    id: "social-email",
+    label: "Social & Email",
+    title: "Generate marketing assets in seconds",
+    description: "Create platform-specific social posts for LinkedIn, Twitter/X, and Facebook with tone selection and Saturn-parity content extraction. Generate email newsletters targeting Outlook, Dynamics 365, HubSpot Marketing, or HubSpot 1:1—complete with CTA fields, tone control, and platform-specific coaching tips.",
+    image: "/images/capabilities/social-email.png"
+  },
+  {
+    id: "content-libraries",
+    label: "Content & Brand Libraries",
+    title: "Organize your brand and content assets",
+    description: "Manage content libraries with filtering, grouping, and asset cards. Maintain brand libraries with asset categories, tagging, and CSV export. Keep your positioning docs, brand guidelines, and marketing collateral organized and accessible to the entire team.",
+    image: "/images/capabilities/content-libraries.png"
+  },
+  {
+    id: "ai-flexibility",
+    label: "AI Flexibility",
+    title: "Multi-provider AI with Azure Foundry",
+    description: "Choose the right AI model for every task. Azure AI Foundry brings GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API. Switch providers per-task or set organization-wide defaults.",
+    image: "/images/capabilities/ai-flexibility.png"
   }
 ];
-
-function ModulePreview({ id }: { id: string }) {
-  const base = "bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl border border-primary/20 aspect-video flex items-center justify-center p-6 overflow-hidden";
-
-  if (id === "security") return (
-    <div className={base}>
-      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl space-y-2 text-left">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-foreground">Pen-Test Findings — Q3</span>
-          <span className="text-xs text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">3 critical open</span>
-        </div>
-        {[
-          { id: "PT-041", title: "SQL injection — /api/search", sev: "Critical", sc: "text-red-400 bg-red-400/10", status: "Open" },
-          { id: "PT-038", title: "Insecure direct object ref", sev: "High", sc: "text-orange-400 bg-orange-400/10", status: "In Fix" },
-          { id: "PT-035", title: "Missing HSTS header", sev: "Medium", sc: "text-yellow-500 bg-yellow-500/10", status: "Verified" },
-        ].map((f, i) => (
-          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
-            <span className="text-[10px] font-mono text-muted-foreground w-12 flex-shrink-0">{f.id}</span>
-            <span className="text-xs text-foreground flex-1 truncate">{f.title}</span>
-            <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", f.sc)}>{f.sev}</span>
-          </div>
-        ))}
-        <div className="pt-1 flex gap-3 text-[10px] text-muted-foreground">
-          <span className="text-red-400">● 3 critical</span>
-          <span className="text-orange-400">● 7 high</span>
-          <span className="text-green-500">● 12 closed</span>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (id === "code") return (
-    <div className={base}>
-      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-foreground">Code Quality — portal-api</span>
-          <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">Score: 74/100</span>
-        </div>
-        <div className="space-y-2">
-          {[
-            { label: "Architecture", score: 82, color: "bg-green-500" },
-            { label: "Test coverage", score: 61, color: "bg-yellow-500" },
-            { label: "Dependency risk", score: 70, color: "bg-yellow-500" },
-            { label: "Eng. practices", score: 88, color: "bg-green-500" },
-          ].map((row, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <span className="text-[10px] text-muted-foreground w-24 flex-shrink-0">{row.label}</span>
-              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                <div className={cn("h-full rounded-full", row.color)} style={{ width: `${row.score}%` }} />
-              </div>
-              <span className="text-[10px] font-mono text-foreground w-8 text-right">{row.score}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20 flex gap-2 items-start">
-          <AlertTriangle size={10} className="text-yellow-500 mt-0.5 flex-shrink-0" />
-          <span className="text-[10px] text-muted-foreground">4 dependencies with known CVEs — review recommended</span>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (id === "accessibility") return (
-    <div className={base}>
-      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-foreground">WCAG 2.1 Assessment</span>
-          <span className="text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">Partial — Level AA</span>
-        </div>
-        {[
-          { criterion: "1.1.1 Non-text content", status: "Pass", sc: "text-green-500" },
-          { criterion: "1.4.3 Contrast (min)", status: "Fail", sc: "text-red-400" },
-          { criterion: "2.1.1 Keyboard", status: "Pass", sc: "text-green-500" },
-          { criterion: "2.4.6 Headings & labels", status: "Partial", sc: "text-yellow-500" },
-        ].map((r, i) => (
-          <div key={i} className="flex items-center gap-2 p-1.5 bg-muted/50 rounded-lg">
-            <span className="text-[10px] text-muted-foreground flex-1">{r.criterion}</span>
-            <span className={cn("text-[10px] font-medium", r.sc)}>{r.status}</span>
-          </div>
-        ))}
-        <div className="text-[10px] text-primary mt-1">↓ Export VPAT worksheet</div>
-      </div>
-    </div>
-  );
-
-  if (id === "architecture") return (
-    <div className={base}>
-      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left">
-        <div className="text-xs font-semibold text-foreground mb-3">Architecture Review — intranet-app</div>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { area: "API design", status: "Approved", sc: "text-green-500 bg-green-500/10" },
-            { area: "Auth model", status: "Approved", sc: "text-green-500 bg-green-500/10" },
-            { area: "Data layer", status: "Review", sc: "text-yellow-500 bg-yellow-500/10" },
-            { area: "Infra pattern", status: "Deviation", sc: "text-red-400 bg-red-400/10" },
-          ].map((a, i) => (
-            <div key={i} className="p-2 bg-muted/50 rounded-lg">
-              <div className="text-[10px] text-muted-foreground">{a.area}</div>
-              <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full mt-1 inline-block", a.sc)}>{a.status}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  if (id === "performance") return (
-    <div className={base}>
-      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-foreground">Load Test — v2.4 release</span>
-          <span className="text-xs text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">SLA Met</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { l: "P95 latency", v: "142ms", c: "text-green-500" },
-            { l: "Throughput", v: "1,840 rps", c: "text-foreground" },
-            { l: "Error rate", v: "0.04%", c: "text-green-500" },
-          ].map((m, i) => (
-            <div key={i} className="text-center p-2 bg-muted/50 rounded-lg">
-              <div className={cn("text-sm font-bold", m.c)}>{m.v}</div>
-              <div className="text-[10px] text-muted-foreground">{m.l}</div>
-            </div>
-          ))}
-        </div>
-        <div className="h-8 bg-muted/30 rounded-lg flex items-end gap-0.5 px-2 pb-1 overflow-hidden">
-          {[40, 55, 60, 72, 68, 80, 75, 85, 78, 82, 90, 88].map((h, i) => (
-            <div key={i} className="flex-1 bg-primary/60 rounded-sm" style={{ height: `${h}%` }} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  // compliance
-  return (
-    <div className={base}>
-      <div className="w-full bg-background/90 rounded-xl p-4 shadow-xl text-left space-y-2">
-        <div className="text-xs font-semibold text-foreground mb-2">ISO 27001 Control Coverage</div>
-        {[
-          { control: "A.12.6 — Vulnerability mgmt", status: "Compliant", sc: "text-green-500" },
-          { control: "A.14.2 — Secure development", status: "Partial", sc: "text-yellow-500" },
-          { control: "A.18.1 — Legal requirements", status: "Compliant", sc: "text-green-500" },
-          { control: "A.9.4 — Access control", status: "Review", sc: "text-yellow-500" },
-        ].map((r, i) => (
-          <div key={i} className="flex items-center gap-2 p-1.5 bg-muted/50 rounded-lg">
-            <span className="text-[10px] text-muted-foreground flex-1 truncate">{r.control}</span>
-            <span className={cn("text-[10px] font-medium", r.sc)}>{r.status}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export default function Landing() {
   usePageTracking("/");
-  const [activeModule, setActiveModule] = useState("security");
-  const currentModule = modules.find(m => m.id === activeModule) || modules[0];
+  const [activeCapability, setActiveCapability] = useState("intelligence");
+  const [activePillar, setActivePillar] = useState("intelligence");
+  const currentCapability = capabilities.find(c => c.id === activeCapability) || capabilities[0];
+  const currentPillar = platformPillars.find(p => p.id === activePillar) || platformPillars[0];
 
   return (
     <PublicLayout>
       <SEOHead
-        title="Observatory — Application Assurance Platform | Synozur"
-        description="Observatory unifies security assessment, code quality, accessibility testing, and compliance mapping so engineering and assurance teams can measure, track, and prove application readiness."
+        title="Orbit — AI-Powered Go-to-Market Intelligence Platform | Synozur"
+        description="Orbit unifies competitive intelligence, marketing planning, and product management. AI-powered analysis, battlecards, and GTM planning for teams that compete to win."
         path="/"
         jsonLd={landingJsonLd}
       />
       <article>
-
-      {/* ── Hero ── */}
+      {/* Hero Section */}
       <section aria-label="Hero" className="relative overflow-hidden py-24 md:py-32 px-6 min-h-[85vh] flex items-center justify-center">
-        <div
+        <div 
           className="absolute inset-0 z-0 select-none bg-cover bg-center bg-no-repeat"
-          style={{ backgroundImage: "url('/images/hero-background.jpg')" }}
+          style={{ backgroundImage: "url('/images/hero-background.png')" }}
         />
         <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
-
+        
         <div className="max-w-5xl mx-auto text-center relative z-10">
-          <div
-            className="mx-auto mb-4 -mt-8 text-7xl md:text-9xl font-bold tracking-tight text-white select-none"
-            style={{ fontFamily: "'Avenir Next LT Pro', sans-serif" }}
-          >
-            Observatory
-          </div>
-
+          <img 
+            src="/brand/orbit-logo-white.png" 
+            alt="Orbit — Go-to-Market Intelligence Platform by Synozur" 
+            className="h-48 md:h-60 mx-auto mb-4 object-contain -mt-8"
+          />
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
-            <Telescope size={16} />
-            <span>Application Assurance Platform</span>
+            <Gem size={16} />
+            <span>Go-to-Market Intelligence Platform</span>
           </div>
-
-          <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-            Know your applications.<br />
-            <span className="text-primary">Prove they're ready.</span>
+          
+          <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
+            From insight to action<br />
+            <span className="text-primary">in one platform</span>
           </h1>
-
+          
           <p className="text-xl text-muted-foreground mb-10 max-w-3xl mx-auto leading-relaxed">
-            Observatory gives engineering, security, and assurance teams one place to run structured assessments — security, code quality, accessibility, architecture, performance, and compliance — then track every finding through to closure.
+            Orbit unifies competitive intelligence, marketing planning, and product management—giving GTM teams the clarity to compete, plan, and build with confidence.
           </p>
-
+          
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
             <Link href="/auth/signup" className="bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 flex items-center justify-center gap-2">
-              Request access <ArrowRight size={20} />
+              Start your 60-day trial <ArrowRight size={20} />
             </Link>
             <Link href="/auth/signin" className="bg-muted hover:bg-muted/80 text-primary px-8 py-4 rounded-lg text-lg font-medium transition-all">
-              Sign in
+              Log in
             </Link>
           </div>
+
+          <p className="text-sm text-muted-foreground mb-12">
+            No credit card required. No sales call needed. Full access for 60 days.
+          </p>
 
           {/* Trust Badges */}
           <div className="flex flex-wrap justify-center gap-6 text-xs text-muted-foreground">
-            {[
-              { icon: Shield, label: "Security-first architecture" },
-              { icon: Users, label: "Microsoft Entra SSO" },
-              { icon: BadgeCheck, label: "Role-based access" },
-              { icon: Brain, label: "AI-assisted analysis" },
-              { icon: Cpu, label: "Azure AI Foundry" },
-              { icon: FileText, label: "Full audit trails" },
-            ].map(({ icon: Icon, label }, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Icon size={16} className="text-primary" />
-                <span>{label}</span>
-              </div>
-            ))}
+            <div className="flex items-center gap-2">
+              <Shield size={16} className="text-primary" />
+              <span>SOC 2 Type II</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Users size={16} className="text-primary" />
+              <span>Microsoft Entra SSO</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Shield size={16} className="text-primary" />
+              <span>Role-based access</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Brain size={16} className="text-primary" />
+              <span>Claude AI powered</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Cpu size={16} className="text-primary" />
+              <span>Azure AI Foundry</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <FileText size={16} className="text-primary" />
+              <span>Audit trails</span>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── What is Observatory ── */}
-      <section aria-label="What is Observatory" className="py-20 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-lg text-muted-foreground leading-relaxed">
-            <span className="font-semibold text-foreground">Application assurance is more than a checklist.</span>{" "}
-            Observatory brings structure to the way your teams assess applications — turning one-off audits and scattered spreadsheets into a repeatable, evidence-backed process that leadership can actually trust.
-          </p>
-          <div className="grid sm:grid-cols-3 gap-8 mt-12 text-left">
-            {[
-              {
-                icon: Eye,
-                title: "Complete visibility",
-                desc: "Every application, every assessment cycle, every open finding — in one view. No more chasing spreadsheets across teams."
-              },
-              {
-                icon: ClipboardList,
-                title: "Structured workflows",
-                desc: "Six specialist workbenches guide assessors through consistent, repeatable processes with evidence requirements built in."
-              },
-              {
-                icon: TrendingUp,
-                title: "Readiness over time",
-                desc: "Readiness scores trend across assessment cycles so leaders can see progress — not just a snapshot on audit day."
-              }
-            ].map(({ icon: Icon, title, desc }, i) => (
-              <div key={i} className="flex flex-col gap-3">
-                <Icon size={28} className="text-primary" />
-                <h3 className="font-semibold">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Six Assessment Modules ── */}
-      <section aria-label="Assessment Modules" className="py-24 px-6 bg-card/30 border-y border-border">
+      {/* Platform Pillars - The Big Three */}
+      <section aria-label="Platform Pillars" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-6xl mx-auto">
-          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Assessment Modules</p>
-          <h2 className="text-3xl font-bold text-center mb-4">Six workbenches. One platform.</h2>
-          <p className="text-center text-muted-foreground mb-14 max-w-2xl mx-auto">
-            Each module is purpose-built for its domain — with the right scoring models, evidence requirements, and report formats — so assessors aren't forcing general-purpose tools to do specialist work.
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">The Platform</p>
+          <h2 className="text-3xl font-bold text-center mb-6">Three pillars of GTM excellence</h2>
+          <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
+            Most tools give you data. Orbit gives you a complete system—from understanding your market to planning your response to building what wins.
           </p>
-
-          {/* Module Selector */}
-          <div className="flex flex-wrap justify-center gap-3 mb-12">
-            {modules.map((mod) => (
+          
+          {/* Pillar Selector */}
+          <div className="flex flex-wrap justify-center gap-4 mb-12">
+            {platformPillars.map((pillar) => (
               <button
-                key={mod.id}
-                onClick={() => setActiveModule(mod.id)}
+                key={pillar.id}
+                onClick={() => setActivePillar(pillar.id)}
                 className={cn(
-                  "px-5 py-2.5 rounded-xl font-medium transition-all flex items-center gap-2 text-sm",
-                  activeModule === mod.id
+                  "px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-3",
+                  activePillar === pillar.id
                     ? "bg-primary text-white shadow-lg shadow-primary/25"
                     : "bg-muted hover:bg-muted/80 text-foreground"
                 )}
               >
-                <mod.icon size={16} />
-                {mod.title}
+                <pillar.icon size={20} />
+                {pillar.title}
               </button>
             ))}
           </div>
 
-          {/* Module Content */}
+          {/* Pillar Content */}
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <p className="text-primary font-medium mb-2">{currentModule.tagline}</p>
-              <h3 className="text-2xl font-bold mb-4">{currentModule.title}</h3>
-              <p className="text-muted-foreground leading-relaxed mb-6">{currentModule.description}</p>
+              <p className="text-primary font-medium mb-2">{currentPillar.tagline}</p>
+              <h3 className="text-2xl font-bold mb-4">{currentPillar.title}</h3>
+              <p className="text-muted-foreground leading-relaxed mb-6">{currentPillar.description}</p>
               <ul className="space-y-3">
-                {currentModule.features.map((feature, i) => (
+                {currentPillar.features.map((feature, i) => (
                   <li key={i} className="flex items-center gap-3">
                     <CheckCircle2 size={18} className="text-primary flex-shrink-0" />
                     <span className="text-sm">{feature}</span>
@@ -472,21 +294,48 @@ export default function Landing() {
                 ))}
               </ul>
             </div>
-            <ModulePreview id={currentModule.id} />
+            <div className="bg-muted/50 rounded-xl p-8 aspect-video flex items-center justify-center border border-border">
+              <div className="text-center">
+                <currentPillar.icon size={48} className="mx-auto mb-4 text-primary/50" />
+                <p className="text-sm text-muted-foreground">[Screenshot: {currentPillar.title}]</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── How It Works ── */}
-      <section aria-label="How It Works" className="py-24 px-6">
+      {/* Built on Synozur Framework */}
+      <section aria-label="Built on Synozur Framework" className="py-16 px-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <p className="text-lg text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground">Built on proven GTM methodology.</span>{" "}
+            Orbit reflects how real marketing, sales, and product teams work together—refined through decades of go-to-market consulting by Synozur. It's not just software; it's a system.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4 mt-6 text-sm">
+            <a href="https://www.synozur.com/case-studies" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">View case studies</a>
+            <span className="text-muted-foreground">|</span>
+            <a href="https://orion.synozur.com/gtm" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Take the GTM Maturity Assessment</a>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works - The Flow */}
+      <section aria-label="How It Works" className="py-24 px-6 bg-card/30 border-y border-border">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">How It Works</p>
-          <h2 className="text-3xl font-bold text-center mb-16">From registration to readiness report</h2>
-
+          <h2 className="text-3xl font-bold text-center mb-16">Intelligence that flows into action</h2>
+          
           <div className="relative">
-            <div className="hidden md:block absolute top-12 left-[10%] right-[10%] h-0.5 bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
-            <div className="grid md:grid-cols-5 gap-6">
-              {howItWorks.map((item) => (
+            {/* Connection Line */}
+            <div className="hidden md:block absolute top-12 left-[12.5%] right-[12.5%] h-0.5 bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
+            
+            <div className="grid md:grid-cols-4 gap-8">
+              {[
+                { step: 1, icon: Radar, title: "Monitor", desc: "Track competitor websites, messaging, and market changes automatically" },
+                { step: 2, icon: Brain, title: "Analyze", desc: "Claude AI identifies positioning gaps and competitive opportunities" },
+                { step: 3, icon: CalendarDays, title: "Plan", desc: "Generate marketing plans with AI-suggested activities and timelines" },
+                { step: 4, icon: Rocket, title: "Execute", desc: "Generate social posts, email campaigns, and align product roadmaps with market intelligence" }
+              ].map((item) => (
                 <div key={item.step} className="text-center relative">
                   <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary to-primary/70 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/25">
                     <item.icon size={36} />
@@ -503,187 +352,228 @@ export default function Landing() {
 
           <div className="text-center mt-12">
             <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-all items-center gap-2">
-              Request access <ArrowRight size={18} />
+              Start your 60-day trial <ArrowRight size={18} />
             </Link>
+            <p className="text-xs text-muted-foreground mt-3">No credit card required</p>
           </div>
         </div>
       </section>
 
-      {/* ── Evidence Vault ── */}
-      <section aria-label="Evidence Vault" className="py-24 px-6 bg-card/30 border-y border-border">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Evidence Vault</p>
-              <h2 className="text-3xl font-bold mb-6">Every claim, every proof, in one place</h2>
-              <p className="text-muted-foreground mb-8 leading-relaxed">
-                Assertions without evidence don't survive audits. Observatory's evidence vault lets assessors attach screenshots, test results, configuration files, and reports directly to findings — then links them automatically to compliance controls and VPAT criteria.
-              </p>
-              <ul className="space-y-4">
-                {[
-                  "File attachments on every finding and assessment",
-                  "Evidence linked to compliance controls",
-                  "Immutable upload records with timestamps",
-                  "Tenant-isolated secure object storage",
-                  "Orphan detection — no evidence left dangling",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    <CheckCircle2 size={18} className="text-primary flex-shrink-0" />
-                    <span className="text-sm">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {/* What's New */}
+      <section className="py-24 px-6" data-testid="section-whats-new">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">What's New</p>
+          <h2 className="text-3xl font-bold text-center mb-6">Recently shipped capabilities</h2>
+          <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
+            Orbit keeps evolving. Here are the latest features powering your go-to-market teams.
+          </p>
 
-            {/* Evidence vault mockup */}
-            <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-6 border border-primary/20 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <BookOpen size={14} className="text-primary" /> Evidence Vault
-                </span>
-                <span className="text-xs text-muted-foreground">14 items</span>
-              </div>
-              {[
-                { name: "pentest-q3-report.pdf", linked: "PT-041, PT-038", type: "PDF" },
-                { name: "wcag-screenshot-contrast.png", linked: "1.4.3 Contrast", type: "IMG" },
-                { name: "load-test-results.csv", linked: "Perf Assessment", type: "CSV" },
-                { name: "iso27001-audit-log.xlsx", linked: "A.12.6, A.14.2", type: "XLS" },
-              ].map((f, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-background/80 rounded-xl border border-border">
-                  <span className="text-[10px] font-mono bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0">{f.type}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-foreground truncate">{f.name}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">→ {f.linked}</div>
-                  </div>
-                  <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Readiness Scoring ── */}
-      <section aria-label="Readiness Scoring" className="py-24 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            {/* Readiness mockup */}
-            <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-6 border border-primary/20">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-semibold text-foreground">Readiness — portal-app</span>
-                <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">Q3 2026</span>
-              </div>
-              <div className="space-y-3 mb-4">
-                {[
-                  { label: "Security", score: 68, color: "bg-yellow-500" },
-                  { label: "Code Quality", score: 74, color: "bg-yellow-500" },
-                  { label: "Accessibility", score: 52, color: "bg-red-400" },
-                  { label: "Architecture", score: 91, color: "bg-green-500" },
-                  { label: "Performance", score: 87, color: "bg-green-500" },
-                  { label: "Compliance", score: 79, color: "bg-yellow-500" },
-                ].map((row, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="text-[10px] text-muted-foreground w-24 flex-shrink-0">{row.label}</span>
-                    <div className="flex-1 h-2 bg-background rounded-full overflow-hidden">
-                      <div className={cn("h-full rounded-full", row.color)} style={{ width: `${row.score}%` }} />
-                    </div>
-                    <span className="text-[10px] font-mono text-foreground w-8 text-right">{row.score}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="border-t border-border pt-3 flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Overall readiness</span>
-                <span className="text-lg font-bold text-yellow-500">75 / 100</span>
-              </div>
-              <div className="mt-2 flex gap-2 text-[10px] text-muted-foreground">
-                <span className="text-green-500">▲ +8 vs Q2</span>
-                <span>· 3 blockers remaining</span>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Readiness Scoring</p>
-              <h2 className="text-3xl font-bold mb-6">A single number leaders can act on</h2>
-              <p className="text-muted-foreground mb-8 leading-relaxed">
-                Observatory combines findings across all six workbenches into a weighted readiness score for each application. Leaders see one clear number — and the breakdown behind it — so release gates, remediation priorities, and investment decisions are grounded in real data.
-              </p>
-              <ul className="space-y-4">
-                {[
-                  "Weighted scoring across all six assessment domains",
-                  "Configurable weights to match your organisation's priorities",
-                  "Blocker identification — what's preventing a passing score",
-                  "Trend charts across assessment cycles",
-                  "Exportable reports for leadership and auditors",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    <CheckCircle2 size={18} className="text-primary flex-shrink-0" />
-                    <span className="text-sm">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Who It's For ── */}
-      <section aria-label="Who It's For" className="py-24 px-6 bg-card/30 border-y border-border">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Who It's For</p>
-          <h2 className="text-3xl font-bold text-center mb-16">Built for everyone who owns application quality</h2>
-
-          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
-                icon: Shield,
-                title: "Security Teams",
-                desc: "Manage pen-test findings, track remediation, link evidence to CVEs and compliance controls, and close the loop with engineering"
+                icon: Share2,
+                title: "Marketing Assets — Social Posts",
+                desc: "AI-generated social content with platform-specific formatting for LinkedIn, Twitter/X, and Facebook. Choose your tone and extract Saturn-parity content automatically."
               },
               {
-                icon: Code2,
-                title: "Engineering Leaders",
-                desc: "Maintain code quality baselines, track technical debt, flag dependency risk, and demonstrate improvement across release cycles"
+                icon: Mail,
+                title: "Marketing Assets — Email Newsletters",
+                desc: "Platform-targeted email generation for Outlook, Dynamics 365, HubSpot Marketing, and HubSpot 1:1. Includes tone control, CTA fields, and platform-specific coaching tips."
               },
               {
-                icon: Accessibility,
-                title: "Accessibility Specialists",
-                desc: "Run WCAG assessments, generate VPAT worksheets for procurement, and track criterion-level remediation through to certification"
+                icon: HardDrive,
+                title: "SharePoint Embedded Support",
+                desc: "Enterprise data residency via SharePoint Embedded containers through Microsoft Graph API. Keep your sensitive data within your own tenant."
               },
               {
-                icon: BarChart3,
-                title: "Assurance & Audit",
-                desc: "Review evidence-backed assessment records, produce compliance reports for ISO 27001 / SOC 2 / NIST, and brief executive stakeholders"
+                icon: Cpu,
+                title: "Microsoft Azure AI Foundry",
+                desc: "Multi-model support including GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API."
+              },
+              {
+                icon: Handshake,
+                title: "Consortia ID / Partner Program",
+                desc: "Microsoft Content AI Partner Program membership and consortia-level identification for enterprise customers and partners."
+              },
+              {
+                icon: Activity,
+                title: "Insight Analytics",
+                desc: "AI usage tracking dashboard with tenant-level cost attribution and page-level engagement analytics. Understand how your organization uses AI."
               }
-            ].map((role, i) => (
-              <div key={i} className="p-6 rounded-xl bg-card border border-border text-center">
-                <role.icon size={28} className="mx-auto mb-3 text-primary" />
-                <h3 className="font-semibold text-sm mb-2">{role.title}</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">{role.desc}</p>
+            ].map((feature, i) => (
+              <div key={i} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all" data-testid={`card-whats-new-${i}`}>
+                <feature.icon size={28} className="text-primary mb-4" />
+                <h3 className="font-semibold mb-3">{feature.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Enterprise ── */}
+      {/* Capabilities - Tabbed Section */}
+      <section id="capabilities" aria-label="Capabilities" className="py-24 px-6 bg-card/30 border-y border-border">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Capabilities</p>
+          <h2 className="text-3xl font-bold text-center mb-16">Everything you need to compete and win</h2>
+          
+          {/* Capability Tabs */}
+          <div className="flex flex-wrap justify-center gap-2 mb-12">
+            {capabilities.map((cap) => (
+              <button
+                key={cap.id}
+                onClick={() => setActiveCapability(cap.id)}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                  activeCapability === cap.id
+                    ? "bg-primary text-white"
+                    : "bg-muted hover:bg-muted/80 text-foreground"
+                )}
+              >
+                {cap.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Capability Content */}
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <h3 className="text-2xl font-bold mb-4">{currentCapability.title}</h3>
+              <p className="text-muted-foreground leading-relaxed">{currentCapability.description}</p>
+            </div>
+            <div className="bg-muted/50 rounded-xl p-8 aspect-video flex items-center justify-center border border-border">
+              <p className="text-sm text-muted-foreground">[Screenshot: {currentCapability.label}]</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Three Outcomes */}
+      <section aria-label="Outcomes" className="py-24 px-6 bg-card/30 border-y border-border">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Outcomes</p>
+          <h2 className="text-3xl font-bold text-center mb-16">What you'll achieve</h2>
+          
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                icon: Eye,
+                title: "See clearly",
+                desc: "Understand exactly how competitors position themselves—and where you have the advantage."
+              },
+              {
+                icon: Target,
+                title: "Act decisively",
+                desc: "Transform intelligence into marketing plans and product priorities—not just reports."
+              },
+              {
+                icon: TrendingUp,
+                title: "Win consistently",
+                desc: "Arm teams with battlecards, align roadmaps to market reality, and outmaneuver the competition."
+              }
+            ].map((outcome, i) => (
+              <div key={i} className="text-center p-8 rounded-2xl bg-background border border-border">
+                <outcome.icon size={40} className="mx-auto mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-3">{outcome.title}</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed">{outcome.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Who It's For */}
+      <section aria-label="Who It's For" className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Who It's For</p>
+          <h2 className="text-3xl font-bold text-center mb-16">Built for the entire GTM team</h2>
+          
+          <div className="grid md:grid-cols-4 gap-6">
+            {[
+              {
+                icon: BarChart3,
+                title: "Marketing Leaders",
+                desc: "Competitive positioning, messaging strategy, and campaign planning"
+              },
+              {
+                icon: Users,
+                title: "Sales Teams",
+                desc: "Battlecards, competitive objection handling, and deal intelligence"
+              },
+              {
+                icon: Layers,
+                title: "Product Managers",
+                desc: "Roadmap prioritization, feature gap analysis, and market context"
+              },
+              {
+                icon: MapPin,
+                title: "GTM Consultants",
+                desc: "Multi-client analysis, assessment frameworks, and branded deliverables"
+              }
+            ].map((role, i) => (
+              <div key={i} className="p-6 rounded-xl bg-card border border-border text-center">
+                <role.icon size={28} className="mx-auto mb-3 text-primary" />
+                <h3 className="font-semibold text-sm mb-2">{role.title}</h3>
+                <p className="text-xs text-muted-foreground">{role.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How Orbit is Different */}
+      <section aria-label="Why Orbit" className="py-24 px-6 bg-card/30 border-y border-border">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest text-center mb-4">Why Orbit</p>
+          <h2 className="text-3xl font-bold text-center mb-4">Not another dashboard. A decision engine.</h2>
+          <p className="text-center text-muted-foreground mb-16 max-w-2xl mx-auto">
+            Other tools stop at data collection. Orbit turns intelligence into plans, priorities, and action.
+          </p>
+          
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                title: "Intelligence + Action",
+                desc: "We don't just show you competitors—we help you respond with marketing plans and roadmap priorities."
+              },
+              {
+                title: "Grounded in your context",
+                desc: "Upload positioning docs and brand guidelines. Every AI recommendation is tailored to who you are."
+              },
+              {
+                title: "One platform, full workflow",
+                desc: "From competitive monitoring to marketing planning to product roadmaps—it's all connected."
+              }
+            ].map((item, i) => (
+              <div key={i} className="p-6 rounded-xl bg-background border border-border">
+                <h3 className="font-semibold mb-3">{item.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Enterprise Ready */}
       <section aria-label="Enterprise Grade" className="py-24 px-6">
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
               <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Enterprise Grade</p>
-              <h2 className="text-3xl font-bold mb-6">Built for organisations that can't afford gaps</h2>
+              <h2 className="text-3xl font-bold mb-6">Enterprise-ready by design</h2>
               <p className="text-muted-foreground mb-8">
-                Observatory is designed for enterprises operating in regulated, security-sensitive environments. Multi-tenant isolation, Entra SSO, and immutable audit logs are built in — not bolted on.
+                Built for organizations that take security, compliance, and governance seriously. Multi-tenant isolation, SSO, and audit trails come standard—with SharePoint Embedded data residency and Azure AI Foundry for enterprise-grade AI.
               </p>
               <div className="space-y-4">
                 {[
+                  "SOC 2 Type II certified",
                   "Microsoft Entra ID SSO",
                   "Role-based access control",
-                  "Multi-tenant data isolation",
-                  "Immutable audit log with full history",
-                  "Tenant-isolated object storage for evidence files",
-                  "Azure AI Foundry multi-model AI support",
+                  "Multi-tenant isolation",
+                  "SharePoint Embedded data residency",
+                  "Azure AI Foundry multi-model support",
                   "Encryption in transit and at rest",
+                  "Complete audit logging",
                   "Microsoft Content AI Partner Program"
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
@@ -693,23 +583,18 @@ export default function Landing() {
                 ))}
               </div>
             </div>
-
             <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl p-8 border border-primary/20">
-              <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
                 {[
-                  { icon: FileDown, label: "Export anywhere", desc: "PDF reports, Word VPAT worksheets, CSV exports for every workbench" },
-                  { icon: GitBranch, label: "Consultant access", desc: "Cross-tenant Consultant role for advisory teams assessing multiple clients" },
-                  { icon: Lock, label: "Access controls", desc: "Granular roles — Global Admin, Tenant Admin, Assessor, Standard User" },
-                  { icon: Search, label: "Full-text audit log", desc: "Every action, every user, every timestamp — browsable and exportable" },
-                ].map(({ icon: Icon, label, desc }, i) => (
-                  <div key={i} className="flex gap-4 items-start">
-                    <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      <Icon size={16} className="text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
-                    </div>
+                  { label: "Multi-market support", desc: "Manage multiple clients/brands" },
+                  { label: "Consultant access", desc: "Cross-tenant collaboration" },
+                  { label: "Branded reports", desc: "White-label PDF exports" },
+                  { label: "API access", desc: "Integration ready" }
+                ].map((feature, i) => (
+                  <div key={i}>
+                    <Gem size={16} className="text-primary mb-2" />
+                    <p className="font-medium text-sm">{feature.label}</p>
+                    <p className="text-xs text-muted-foreground">{feature.desc}</p>
                   </div>
                 ))}
               </div>
@@ -718,36 +603,116 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Final CTA ── */}
+      {/* Export & Portability */}
+      <section aria-label="Export and Portability" className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16">
+            <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Export & Portability</p>
+            <h2 className="text-3xl font-bold mb-6">Take your intelligence everywhere</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Orbit makes it easy to export data for collaboration, presentations, and digital visioning tools like Mural or Miro.
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                icon: FileDown,
+                category: "PDF Reports",
+                items: ["Competitive Analysis Report", "Battlecard PDFs", "Full Analysis Report", "Product-Scoped Reports"]
+              },
+              {
+                icon: Table,
+                category: "CSV Exports",
+                items: ["Gap Analysis", "Strategic Recommendations", "AI Roadmap Suggestions", "Product Features", "Roadmap Items"]
+              },
+              {
+                icon: Download,
+                category: "Markdown & Word",
+                items: ["GTM Plans", "Messaging Frameworks", "Executive Summaries", "Market Export"]
+              }
+            ].map((exportType, i) => (
+              <div key={i} className="p-6 rounded-xl bg-card border border-border">
+                <exportType.icon size={28} className="text-primary mb-4" />
+                <h3 className="font-semibold mb-4">{exportType.category}</h3>
+                <ul className="space-y-2">
+                  {exportType.items.map((item, j) => (
+                    <li key={j} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CheckCircle2 size={14} className="text-primary flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Preview */}
+      <section aria-label="Pricing Preview" className="py-24 px-6 bg-card/30 border-y border-border">
+        <div className="max-w-4xl mx-auto text-center">
+          <p className="text-sm font-medium text-primary uppercase tracking-widest mb-4">Get Started</p>
+          <h2 className="text-3xl font-bold mb-6">Start with a 60-day free trial</h2>
+          <p className="text-muted-foreground mb-10 max-w-2xl mx-auto">
+            Full access to Orbit's competitive intelligence, marketing planning, and product management capabilities. No credit card required.
+          </p>
+          
+          <div className="grid md:grid-cols-3 gap-6 mb-12">
+            {[
+              { plan: "Free", desc: "Basic competitive monitoring", features: ["1 competitor", "1 analysis/month", "Core features"] },
+              { plan: "Pro", desc: "Full intelligence suite", features: ["Up to 10 competitors", "Unlimited analysis", "Marketing Projects"], highlight: true },
+              { plan: "Enterprise", desc: "Complete GTM platform", features: ["Unlimited competitors", "Product Management", "Multi-market support"] }
+            ].map((tier, i) => (
+              <div key={i} className={cn(
+                "p-6 rounded-xl border",
+                tier.highlight 
+                  ? "bg-primary/5 border-primary/30" 
+                  : "bg-background border-border"
+              )}>
+                <h3 className="font-bold text-lg mb-1">{tier.plan}</h3>
+                <p className="text-sm text-muted-foreground mb-4">{tier.desc}</p>
+                <ul className="space-y-2 text-sm">
+                  {tier.features.map((f, j) => (
+                    <li key={j} className="flex items-center gap-2">
+                      <CheckCircle2 size={14} className="text-primary" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          
+          <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
+            Start your 60-day trial <ArrowRight size={20} />
+          </Link>
+          <p className="text-sm text-muted-foreground mt-4">Questions? Contact us at <a href="mailto:contactus@synozur.com" className="text-primary hover:underline">contactus@synozur.com</a></p>
+        </div>
+      </section>
+
+      {/* Final CTA */}
       <section aria-label="Call to Action" className="py-24 px-6 relative overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-20"
+        <div 
+          className="absolute inset-0 opacity-30"
           style={{
-            backgroundImage: "url('/images/hero-background.jpg')",
+            backgroundImage: "url('/images/orbit-background.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/85 to-background/70" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/60" />
         <div className="max-w-4xl mx-auto text-center relative z-10">
-          <h2 className="text-4xl font-bold mb-6">Ready to bring rigour to your assessments?</h2>
-          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            Give your teams the structure, evidence, and readiness reporting that auditors and leaders actually trust.
+          <h2 className="text-4xl font-bold mb-6">Ready to transform your GTM?</h2>
+          <p className="text-xl text-muted-foreground mb-10">
+            Join teams who compete with intelligence, plan with precision, and build what wins.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
-              Request access <ArrowRight size={20} />
-            </Link>
-            <a href="mailto:contactus@synozur.com" className="inline-flex bg-muted hover:bg-muted/80 text-foreground px-8 py-4 rounded-lg text-lg font-medium transition-all items-center gap-2">
-              Talk to us <ChevronRight size={20} />
-            </a>
-          </div>
-          <p className="text-sm text-muted-foreground mt-6">
-            Questions? <a href="mailto:contactus@synozur.com" className="text-primary hover:underline">contactus@synozur.com</a>
-          </p>
+          <Link href="/auth/signup" className="inline-flex bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-lg text-lg font-medium transition-all shadow-lg shadow-primary/25 items-center gap-2">
+            Start your 60-day trial <ArrowRight size={20} />
+          </Link>
+          <p className="text-sm text-muted-foreground mt-4">No credit card required. Full access for 60 days.</p>
         </div>
       </section>
-
       </article>
     </PublicLayout>
   );

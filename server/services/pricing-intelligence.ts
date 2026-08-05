@@ -4,7 +4,7 @@ import { storage } from "../storage";
 async function crawlPricingPage(url: string, options?: { signal?: AbortSignal }): Promise<{ content: string } | null> {
   try {
     const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Observatory/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Orbit/1.0)" },
       signal: options?.signal,
     });
     if (!resp.ok) return null;

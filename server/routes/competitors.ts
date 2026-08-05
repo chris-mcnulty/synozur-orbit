@@ -10,7 +10,7 @@ import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations,
 import { buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "../services/competitor-document-context";
 import Anthropic from "@anthropic-ai/sdk";
 import { captureVisualAssets } from "../services/visual-capture";
-import { enqueueCrawl } from "../services/job-queue";
+import { enqueueMonitor } from "../services/job-queue";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "../services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
 import { logAiUsage } from "./helpers";
@@ -478,7 +478,7 @@ export function registerCompetitorRoutes(app: Express) {
       // instead of waiting for the next hourly sweep. Fire-and-forget; does not
       // consume manual crawl quota.
       const competitorSnapshot = { ...competitor, organizationId: org.id };
-      enqueueCrawl(`crawl:initial:${competitor.name}`, async () => {
+      enqueueMonitor(`crawl:initial:${competitor.name}`, async () => {
         console.log(`[Initial Crawl] Starting crawl for new competitor: ${competitor.name} (${normalizedUrl})`);
         let crawlResult;
         try {
@@ -632,7 +632,7 @@ export function registerCompetitorRoutes(app: Express) {
 
           // Full mode: Re-crawl and analyze
           // Full with change mode: Also include social/blog monitoring
-          // full_with_change: social/website monitoring removed from Observatory
+          // full_with_change: social/website monitoring removed from Orbit
           if (analysisType === "full_with_change") {
             console.log(`[Analysis] Skipping social/website monitoring for ${competitor.name} (feature removed)`);
           }

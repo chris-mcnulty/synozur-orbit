@@ -364,20 +364,6 @@ export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) =
   return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
 }
 
-/** Enqueue an Observatory automated scan (accessibility / security / performance). */
-export function enqueueScan<T>(
-  label: string,
-  work: ((signal?: AbortSignal, reportProgress?: ProgressReporter) => Promise<T>) | (() => Promise<T>),
-  options?: { timeoutMs?: number; ctx?: JobContext },
-): Promise<T> {
-  return enqueue("scan", label, work, {
-    priority: PRIORITY.scan,
-    timeoutMs: options?.timeoutMs ?? 5 * 60 * 1000,
-    ctx: options?.ctx,
-    maxRetries: 1, // Scans are expensive — only one retry
-  });
-}
-
 /**
  * Enqueue an outbound Microsoft Planner sync job. Planner sync runs through
  * the queue so slow/failing Graph calls don't block the originating HTTP

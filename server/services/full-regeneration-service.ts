@@ -124,7 +124,7 @@ async function runRegenerationInBackground(
     progress.currentStep = "Refreshing baseline data";
     progress.stepsCompleted = 1;
 
-    // Website crawl and social monitoring removed from Observatory
+    // Website crawl and social monitoring removed from Orbit
     console.log(`Full regen: Skipping website crawl and social monitoring (features removed).`);
 
     progress.currentStep = "Analyzing competitors";

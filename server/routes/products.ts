@@ -488,7 +488,7 @@ Write 2-3 sentences that capture what this product does, its key differentiators
         return res.status(400).json({ error: "Product has no URL to scan" });
       }
 
-      return res.status(503).json({ error: "Product website scanning is no longer available in Observatory." });
+      return res.status(503).json({ error: "Product website scanning is no longer available in Orbit." });
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });

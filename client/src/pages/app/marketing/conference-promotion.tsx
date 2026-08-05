@@ -168,8 +168,9 @@ export default function ConferencePromotionPage() {
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Website</Label>
-                  <Input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="https://…" />
+                  <Label>Event website / registration link</Label>
+                  <Input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="https://techcon365seattle.com" />
+                  <p className="text-xs text-muted-foreground">The AI will use this URL as the call-to-action link in generated posts.</p>
                 </div>
                 <div className="grid gap-2">
                   <Label>Registration offer / discount code</Label>

@@ -32,6 +32,7 @@ import {
   conferenceBackgrounds,
   generatedPosts,
   socialAccounts,
+  campaignSocialAccounts,
   scheduledJobRuns,
   tenants,
   markets,
@@ -1830,6 +1831,23 @@ async function runGeneration(
       currentItem: created,
       totalItems: slots.length,
     });
+  }
+
+  // Ensure every social account used in generation is linked to the campaign so
+  // the posting queue and publish worker don't show posts as "disconnected".
+  if (conf.campaignId && accounts.length > 0) {
+    await db
+      .insert(campaignSocialAccounts)
+      .values(
+        accounts.map((a) => ({
+          campaignId: conf.campaignId!,
+          socialAccountId: a.id,
+          autoPublish: false, // preserves manual-approval workflow; user can enable in campaign settings
+        })),
+      )
+      .onConflictDoNothing({
+        target: [campaignSocialAccounts.campaignId, campaignSocialAccounts.socialAccountId],
+      });
   }
 
   reportProgress?.({ phase: "Done", percent: 100 });

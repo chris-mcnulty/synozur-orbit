@@ -157,11 +157,11 @@ async function runAutoBuildWithProfile(
   };
 
   updateStep("Step 1/14: Crawling baseline company website...");
-  progress.details.push("Website crawl skipped (feature removed from Observatory).");
+  progress.details.push("Website crawl skipped (feature removed from Orbit).");
   progress.stepsCompleted = 1;
 
   updateStep("Step 2/14: Refreshing baseline social media...");
-  progress.details.push("Social media monitoring skipped (feature removed from Observatory).");
+  progress.details.push("Social media monitoring skipped (feature removed from Orbit).");
   progress.stepsCompleted = 2;
 
   updateStep("Step 3/14: Discovering competitors with AI...");
@@ -290,7 +290,7 @@ Only return the JSON array, no other text.`;
   }
 
   updateStep("Step 5/14: Crawling competitor websites...");
-  progress.details.push("Competitor website crawl skipped (feature removed from Observatory).");
+  progress.details.push("Competitor website crawl skipped (feature removed from Orbit).");
   progress.stepsCompleted = 5;
 
   // Step 6 (NEW): Detect pricing pages from the crawl results, persist
@@ -345,7 +345,7 @@ Only return the JSON array, no other text.`;
   progress.stepsCompleted = 6;
 
   updateStep("Step 7/14: Refreshing competitor social profiles...");
-  progress.details.push("Social media monitoring skipped (feature removed from Observatory).");
+  progress.details.push("Social media monitoring skipped (feature removed from Orbit).");
   progress.stepsCompleted = 7;
 
   updateStep("Step 8/14: Running AI analysis on competitors...");
