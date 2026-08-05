@@ -22,7 +22,7 @@ import {
   hasHubspotEmailScopes,
   HUBSPOT_REST_HOST,
 } from "./hubspot-integration";
-import { dedupeEmails, isOptedOutFromStatusPayload, normalizeEmail } from "./hubspot-email-sync-core";
+import { dedupeEmails, isOptedOutFromStatusPayload, isOptedOutForSubscription, normalizeEmail } from "./hubspot-email-sync-core";
 import { checkFeatureAccessAsync } from "./plan-policy";
 
 /**
@@ -67,10 +67,18 @@ const EMPTY_SKIPPED = (reason: ConsentPullResult["skippedReason"]): ConsentPullR
  * Returns the subset of `emails` that HubSpot reports as opted out of
  * marketing email. Best-effort: on any failure returns an empty opted-out set
  * (never throws), so the caller falls back to local suppression alone.
+ *
+ * When `emailCategory` is provided, the check is scoped to the HubSpot
+ * subscription ID mapped to that Orbit category. This means a contact opted
+ * out of "Product Updates" is NOT flagged when sending a "Newsletter" and vice
+ * versa. Falls back to the default subscription ID when no mapping exists, and
+ * to the global aggregate check when neither is configured.
  */
 export async function pullSubscriptionStatus(
   tenantDomain: string,
   emails: string[],
+  /** Orbit email subscription type name (e.g. "Newsletter"). */
+  emailCategory?: string | null,
 ): Promise<ConsentPullResult> {
   const candidates = dedupeEmails(emails);
   if (candidates.length === 0) return { optedOut: new Set(), ran: true };
@@ -88,6 +96,13 @@ export async function pullSubscriptionStatus(
     return EMPTY_SKIPPED("error");
   }
 
+  // Resolve the subscription ID to use for per-contact checks.
+  // When a category-specific mapping exists it is used; otherwise the global
+  // default applies. If neither is set, fetchOptedOut uses the aggregate rule.
+  const subscriptionId = emailCategory
+    ? await resolveSubscriptionIdForCategory(tenantDomain, conn, emailCategory)
+    : resolveSubscriptionId(conn);
+
   const optedOut = new Set<string>();
   let hadError = false;
 
@@ -97,7 +112,7 @@ export async function pullSubscriptionStatus(
     while (cursor < candidates.length) {
       const email = candidates[cursor++];
       try {
-        const optOut = await fetchOptedOut(accessToken, email);
+        const optOut = await fetchOptedOut(accessToken, email, subscriptionId);
         if (optOut) optedOut.add(email);
       } catch {
         hadError = true; // best-effort: skip this address, keep going
@@ -123,6 +138,23 @@ function resolveSubscriptionId(conn: { defaultSubscriptionId?: string | null }):
 }
 
 /**
+ * Look up the HubSpot subscription ID for a given Orbit email category,
+ * falling back to the connection's global default when no mapping exists.
+ * Returns undefined when neither a mapping nor a default is configured.
+ */
+async function resolveSubscriptionIdForCategory(
+  tenantDomain: string,
+  conn: { defaultSubscriptionId?: string | null },
+  emailCategory?: string | null,
+): Promise<string | undefined> {
+  if (emailCategory) {
+    const mapped = await storage.getHubspotSubscriptionId(tenantDomain, emailCategory);
+    if (mapped) return mapped;
+  }
+  return resolveSubscriptionId(conn);
+}
+
+/**
  * Push an unsubscribe (opt-out) for `email` back to HubSpot's communication
  * preferences. Best-effort, never throws.
  *
@@ -138,12 +170,15 @@ export async function pushUnsubscribe(
   email: string,
   /** When provided, uses this specific HubSpot subscription ID instead of the tenant default. */
   subscriptionIdOverride?: string | null,
+  /** Orbit email category name. Used to look up the mapped subscription ID when no override is given. */
+  emailCategory?: string | null,
 ): Promise<ConsentWriteResult> {
   try {
     if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
-    const subscriptionId = subscriptionIdOverride?.trim() || resolveSubscriptionId(conn);
+    const subscriptionId = subscriptionIdOverride?.trim()
+      || await resolveSubscriptionIdForCategory(tenantDomain, conn, emailCategory);
     if (!subscriptionId) return "skipped";
 
     const { accessToken } = await getTenantAccessToken(tenantDomain);
@@ -174,12 +209,15 @@ export async function pushSubscribe(
   email: string,
   /** When provided, uses this specific HubSpot subscription ID instead of the tenant default. */
   subscriptionIdOverride?: string | null,
+  /** Orbit email category name. Used to look up the mapped subscription ID when no override is given. */
+  emailCategory?: string | null,
 ): Promise<ConsentWriteResult> {
   try {
     if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
-    const subscriptionId = subscriptionIdOverride?.trim() || resolveSubscriptionId(conn);
+    const subscriptionId = subscriptionIdOverride?.trim()
+      || await resolveSubscriptionIdForCategory(tenantDomain, conn, emailCategory);
     if (!subscriptionId) return "skipped";
 
     const { accessToken } = await getTenantAccessToken(tenantDomain);
@@ -204,8 +242,17 @@ export async function pushSubscribe(
 /**
  * Fetch a single recipient's subscription status. A 404 (recipient unknown to
  * the preferences system) is treated as "not opted out".
+ *
+ * When subscriptionId is provided the check is scoped to that specific
+ * subscription (uses isOptedOutForSubscription). Without it the global
+ * aggregate logic (isOptedOutFromStatusPayload) applies — opted out only when
+ * all subscriptions show UNSUBSCRIBED with no SUBSCRIBED remaining.
  */
-async function fetchOptedOut(accessToken: string, email: string): Promise<boolean> {
+async function fetchOptedOut(
+  accessToken: string,
+  email: string,
+  subscriptionId?: string,
+): Promise<boolean> {
   const url = `${HUBSPOT_REST_HOST}/communication-preferences/v3/status/email/${encodeURIComponent(email)}`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
@@ -215,5 +262,6 @@ async function fetchOptedOut(accessToken: string, email: string): Promise<boolea
     throw new Error(`HubSpot subscription status ${res.status}`);
   }
   const payload = await res.json().catch(() => null);
+  if (subscriptionId) return isOptedOutForSubscription(payload, subscriptionId);
   return isOptedOutFromStatusPayload(payload);
 }

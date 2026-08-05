@@ -53,3 +53,4 @@
 - [Crawl slot semaphore starvation](crawl-slot-starvation.md) — waiting semaphore for browser slots must cap waits (90s→HTTP fallback) or timed-out jobs' zombie pages starve all crawls to 0%.
 - [No-AI-slop integration](no-ai-slop-integration.md) — Task #518 plan + full rollback path; rules may be too aggressive on human-written words; prompt-layer and sharpen endpoint are independently reversible.
 - [Observatory removed from Orbit](observatory-removed.md) — Observatory lives in a separate Repl/repo; all obs_* tables dropped (migration 0076); never re-add observatory code here.
+- [HubSpot per-category subscription mapping](hubspot-subscription-mapping.md) — hubspot_subscription_mappings maps Orbit sub-type name → HubSpot subscription ID; consent checks and push/unsubscribe resolve the mapped ID, falling back to defaultSubscriptionId; preference-center per-type sync passes type.name not hubspotTypeId.

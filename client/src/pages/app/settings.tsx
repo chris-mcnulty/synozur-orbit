@@ -1880,6 +1880,7 @@ interface HubspotStatus {
     autoCreateHubspotContacts: boolean;
     defaultSubscriptionId: string | null;
     defaultOwnerId: string | null;
+    activeProspectSuppressionDefault: string | null;
     connectedAt: string;
     lastSyncAt: string | null;
     lastSyncError: string | null;
@@ -2009,6 +2010,73 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/status"] });
     },
     onError: (err: any) => toast.error(err?.message || "Could not update preference"),
+  });
+
+  // ── Subscription mappings (Task #467) ───────────────────────────────────
+  const emailSyncReady = status?.connection?.emailSyncReady === true;
+
+  const { data: hsSubTypes } = useQuery<{ types: Array<{ id: string; name: string; description: string | null }> }>({
+    queryKey: ["/api/integrations/hubspot/subscription-types"],
+    enabled: planEligible && emailSyncReady,
+    queryFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/subscription-types", { credentials: "include" });
+      if (!res.ok) return { types: [] };
+      return res.json();
+    },
+  });
+
+  const { data: orbitSubTypes } = useQuery<Array<{ id: string; name: string; description: string | null }>>({
+    queryKey: ["/api/email-subscription-types"],
+    enabled: planEligible && emailSyncReady,
+    queryFn: async () => {
+      const res = await fetch("/api/email-subscription-types", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data.types ?? []);
+    },
+  });
+
+  const { data: savedMappings } = useQuery<{ mappings: Array<{ emailCategory: string; hubspotSubscriptionId: string }> }>({
+    queryKey: ["/api/integrations/hubspot/subscription-mappings"],
+    enabled: planEligible && emailSyncReady,
+    queryFn: async () => {
+      const res = await fetch("/api/integrations/hubspot/subscription-mappings", { credentials: "include" });
+      if (!res.ok) return { mappings: [] };
+      return res.json();
+    },
+  });
+
+  // pendingMappings: Orbit subscription type name → HubSpot subscription ID (or "__default__" = use default)
+  const [pendingMappings, setPendingMappings] = React.useState<Record<string, string>>({});
+  // Initialize from saved when data loads
+  React.useEffect(() => {
+    if (savedMappings?.mappings) {
+      const init: Record<string, string> = {};
+      for (const m of savedMappings.mappings) {
+        init[m.emailCategory] = m.hubspotSubscriptionId;
+      }
+      setPendingMappings(init);
+    }
+  }, [savedMappings]);
+
+  const saveMappingsMutation = useMutation({
+    mutationFn: async () => {
+      const mappings = Object.entries(pendingMappings)
+        .filter(([, v]) => v && v.trim() && v !== "__default__")
+        .map(([emailCategory, hubspotSubscriptionId]) => ({ emailCategory, hubspotSubscriptionId }));
+      const res = await fetch("/api/integrations/hubspot/subscription-mappings", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mappings }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Save failed");
+    },
+    onSuccess: () => {
+      toast.success("Subscription mappings saved");
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/hubspot/subscription-mappings"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "Could not save mappings"),
   });
 
   if (!planEligible) {
@@ -2252,6 +2320,79 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
                 }}
                 data-testid="input-hubspot-subscription-id"
               />
+            </div>
+          )}
+
+          {/* ── Subscription mappings ─────────────────────────────────────── */}
+          {status?.outboundAllowed && conn.emailSyncReady && (orbitSubTypes ?? []).length > 0 && (
+            <div className="pt-2 space-y-2" data-testid="section-hubspot-subscription-mappings">
+              <div>
+                <Label className="text-sm">Subscription mappings</Label>
+                <p className="text-xs text-muted-foreground">
+                  Map each Orbit email subscription type to a specific HubSpot subscription. Consent checks and
+                  unsubscribe sync use the matched ID instead of the global default above.
+                  "Use default" falls back to the Marketing subscription ID when no mapping is set.
+                </p>
+              </div>
+              <div className="rounded-md border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Orbit subscription type</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">HubSpot subscription</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(orbitSubTypes ?? []).map((ot) => (
+                      <tr key={ot.id} className="border-t">
+                        <td className="px-3 py-2">
+                          <span className="font-medium">{ot.name}</span>
+                          {ot.description && (
+                            <p className="text-xs text-muted-foreground">{ot.description}</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Select
+                            value={pendingMappings[ot.name] || "__default__"}
+                            onValueChange={(v) =>
+                              setPendingMappings((prev) => ({ ...prev, [ot.name]: v }))
+                            }
+                          >
+                            <SelectTrigger className="w-64" data-testid={`select-hs-sub-${ot.id}`}>
+                              <SelectValue placeholder="Use default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__default__">Use default</SelectItem>
+                              {(hsSubTypes?.types ?? []).map((hs) => (
+                                <SelectItem key={hs.id} value={hs.id}>
+                                  {hs.name}
+                                  {hs.description ? ` — ${hs.description.slice(0, 60)}` : ""}
+                                </SelectItem>
+                              ))}
+                              {(hsSubTypes?.types ?? []).length === 0 && (
+                                <SelectItem value="__loading__" disabled>
+                                  {hsSubTypes ? "No active types found" : "Loading…"}
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => saveMappingsMutation.mutate()}
+                  disabled={saveMappingsMutation.isPending}
+                  data-testid="button-save-subscription-mappings"
+                >
+                  {saveMappingsMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+                  Save mappings
+                </Button>
+              </div>
             </div>
           )}
         </div>

@@ -72,6 +72,32 @@ import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
 import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
 import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
 
+/**
+ * Resolve the Orbit email subscription type name for a given send so the
+ * per-category HubSpot subscription mapping can be applied when mirroring
+ * unsubscribes / resubscribes. Returns the first non-transactional type name,
+ * or undefined when the send has no subscription type tags.
+ */
+async function resolveEmailCategoryForSend(
+  tenantDomain: string,
+  sendId: string,
+): Promise<string | undefined> {
+  const [send] = await db.select({ subscriptionTypeIds: emailSends.subscriptionTypeIds })
+    .from(emailSends)
+    .where(and(eq(emailSends.id, sendId), eq(emailSends.tenantDomain, tenantDomain)));
+  const typeIds = (send?.subscriptionTypeIds ?? []) as string[];
+  if (!typeIds.length) return undefined;
+  const [type] = await db.select({ name: emailSubscriptionTypes.name })
+    .from(emailSubscriptionTypes)
+    .where(and(
+      eq(emailSubscriptionTypes.tenantDomain, tenantDomain),
+      inArray(emailSubscriptionTypes.id, typeIds),
+      eq(emailSubscriptionTypes.isTransactional, false),
+    ))
+    .limit(1);
+  return type?.name;
+}
+
 /** Build the per-subscription-type preference center page. */
 function preferenceCenterHtml(
   token: string,
@@ -297,8 +323,11 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
           details: { email: recipientRow.email, sendId: recipientRow.sendId },
         });
         await pushRecipientTimeline(recipientRow, "email_unsubscribed", {}, new Date());
-        // Mirror the opt-out to HubSpot subscription preferences.
-        pushUnsubscribe(recipientRow.tenantDomain, recipientRow.email).catch(() => {});
+        // Mirror the opt-out to HubSpot using the send's subscription category so
+        // the correct per-category subscription mapping is applied.
+        resolveEmailCategoryForSend(recipientRow.tenantDomain, recipientRow.sendId)
+          .then(cat => pushUnsubscribe(recipientRow.tenantDomain, recipientRow.email, undefined, cat))
+          .catch(() => {});
       }
     } catch (err: any) {
       console.error("[Unsubscribe] Failed:", err.message);
@@ -442,8 +471,8 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
       // Load all enabled non-transactional types for the tenant.
       const allTypes = await db.select({
         id: emailSubscriptionTypes.id,
+        name: emailSubscriptionTypes.name,
         isTransactional: emailSubscriptionTypes.isTransactional,
-        hubspotTypeId: emailSubscriptionTypes.hubspotTypeId,
       }).from(emailSubscriptionTypes)
         .where(and(
           eq(emailSubscriptionTypes.tenantDomain, row.tenantDomain),
@@ -471,13 +500,14 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
           set: { optedOutAt, updatedAt: now },
         });
 
-        // Mirror to HubSpot using the type-specific subscription ID when mapped.
-        if (type.hubspotTypeId) {
-          if (!isOptedIn) {
-            pushUnsubscribe(row.tenantDomain, email, type.hubspotTypeId).catch(() => {});
-          } else {
-            pushSubscribe(row.tenantDomain, email, type.hubspotTypeId).catch(() => {});
-          }
+        // Mirror to HubSpot using the category-mapped subscription ID. Pass
+        // undefined for the subscriptionIdOverride so the resolver looks up
+        // hubspot_subscription_mappings by type name (4th arg), falling back
+        // to the tenant's global default subscription ID.
+        if (!isOptedIn) {
+          pushUnsubscribe(row.tenantDomain, email, undefined, type.name).catch(() => {});
+        } else {
+          pushSubscribe(row.tenantDomain, email, undefined, type.name).catch(() => {});
         }
       }
 
@@ -781,8 +811,10 @@ async function handleSendGridEvent(ev: any) {
       // stays in sync with this global choice.
       await writeGlobalOptOut(recipient.tenantDomain, recipient.email);
       await pushRecipientTimeline(recipient, "email_unsubscribed", {}, now);
-      // Mirror the opt-out to HubSpot subscription preferences.
-      pushUnsubscribe(recipient.tenantDomain, recipient.email).catch(() => {});
+      // Mirror the opt-out to HubSpot using the send's subscription category.
+      resolveEmailCategoryForSend(recipient.tenantDomain, recipient.sendId)
+        .then(cat => pushUnsubscribe(recipient.tenantDomain, recipient.email, undefined, cat))
+        .catch(() => {});
       break;
     }
   }

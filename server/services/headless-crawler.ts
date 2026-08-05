@@ -274,7 +274,6 @@ async function launchBrowser(): Promise<Browser> {
 
   return browserInstance;
 }
-
 async function setupStealthPage(browser: Browser): Promise<Page> {
   const page = await browser.newPage();
   const userAgent = getRandomUserAgent();

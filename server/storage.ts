@@ -122,8 +122,10 @@ import {
   executiveSummaries,
   scheduledJobRuns,
   hubspotConnections,
+  hubspotSubscriptionMappings,
   type HubspotConnection,
   type InsertHubspotConnection,
+  type HubspotSubscriptionMapping,
   type ScheduledJobRun,
   type InsertScheduledJobRun,
   type ScoreHistory,
@@ -658,6 +660,11 @@ export interface IStorage {
   deleteHubspotConnection(tenantDomain: string): Promise<void>;
   markHubspotSyncResult(tenantDomain: string, result: { stats: any; error: string | null }): Promise<void>;
   listAllHubspotConnections(): Promise<HubspotConnection[]>;
+
+  // HubSpot subscription mappings (Task #467)
+  getHubspotSubscriptionMappings(tenantDomain: string): Promise<HubspotSubscriptionMapping[]>;
+  getHubspotSubscriptionId(tenantDomain: string, emailCategory: string): Promise<string | undefined>;
+  upsertHubspotSubscriptionMappings(tenantDomain: string, mappings: Array<{ emailCategory: string; hubspotSubscriptionId: string }>): Promise<HubspotSubscriptionMapping[]>;
 
   // SEO & Share-of-Voice Tracking
   getTrackedKeyword(id: string): Promise<TrackedKeyword | undefined>;
@@ -4672,6 +4679,59 @@ export class DatabaseStorage implements IStorage {
 
   async listAllHubspotConnections(): Promise<HubspotConnection[]> {
     return db.select().from(hubspotConnections);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // HubSpot subscription mappings (Task #467)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async getHubspotSubscriptionMappings(tenantDomain: string): Promise<HubspotSubscriptionMapping[]> {
+    return db.select().from(hubspotSubscriptionMappings)
+      .where(eq(hubspotSubscriptionMappings.tenantDomain, tenantDomain))
+      .orderBy(hubspotSubscriptionMappings.emailCategory);
+  }
+
+  async getHubspotSubscriptionId(tenantDomain: string, emailCategory: string): Promise<string | undefined> {
+    const [row] = await db.select({ hubspotSubscriptionId: hubspotSubscriptionMappings.hubspotSubscriptionId })
+      .from(hubspotSubscriptionMappings)
+      .where(and(
+        eq(hubspotSubscriptionMappings.tenantDomain, tenantDomain),
+        eq(hubspotSubscriptionMappings.emailCategory, emailCategory),
+      ));
+    return row?.hubspotSubscriptionId;
+  }
+
+  async upsertHubspotSubscriptionMappings(
+    tenantDomain: string,
+    mappings: Array<{ emailCategory: string; hubspotSubscriptionId: string }>,
+  ): Promise<HubspotSubscriptionMapping[]> {
+    if (mappings.length === 0) {
+      // Clear all mappings for this tenant when the list is empty.
+      await db.delete(hubspotSubscriptionMappings)
+        .where(eq(hubspotSubscriptionMappings.tenantDomain, tenantDomain));
+      return [];
+    }
+    const now = new Date();
+    const rows = mappings.map(m => ({
+      tenantDomain,
+      emailCategory: m.emailCategory,
+      hubspotSubscriptionId: m.hubspotSubscriptionId,
+    }));
+    const result = await db.insert(hubspotSubscriptionMappings)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: [hubspotSubscriptionMappings.tenantDomain, hubspotSubscriptionMappings.emailCategory],
+        set: { hubspotSubscriptionId: sql`excluded.hubspot_subscription_id`, updatedAt: now },
+      })
+      .returning();
+    // Delete any stale mappings (categories removed from the payload).
+    const categories = mappings.map(m => m.emailCategory);
+    await db.delete(hubspotSubscriptionMappings)
+      .where(and(
+        eq(hubspotSubscriptionMappings.tenantDomain, tenantDomain),
+        sql`${hubspotSubscriptionMappings.emailCategory} NOT IN (${sql.join(categories.map(c => sql`${c}`), sql`, `)})`,
+      ));
+    return result;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

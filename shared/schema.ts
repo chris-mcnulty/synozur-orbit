@@ -5134,7 +5134,6 @@ export const marketingContactEventsRelations = relations(marketingContactEvents,
     references: [marketingContacts.id],
   }),
 }));
-
 export type EmailCampaignVariant = typeof emailCampaignVariants.$inferSelect;
 
 export type MarketingLifecycleThreshold = typeof marketingLifecycleThresholds.$inferSelect;
@@ -5223,8 +5222,34 @@ export const insertMarketingScoringRuleSchema = createInsertSchema(marketingScor
   updatedAt: true,
 });
 
+export type HubspotSubscriptionMapping = typeof hubspotSubscriptionMappings.$inferSelect;
+
 export type InsertMarketingScoringRule = z.infer<typeof insertMarketingScoringRuleSchema>;
 
 export type InsertMarketingLifecycleThreshold = z.infer<typeof insertMarketingLifecycleThresholdSchema>;
 
 export type InsertEmailCampaignVariant = z.infer<typeof insertEmailCampaignVariantSchema>;
+
+export const hubspotSubscriptionMappings = pgTable("hubspot_subscription_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  /** Orbit subscription type name (e.g. "Newsletter"). */
+  emailCategory: text("email_category").notNull(),
+  /** HubSpot subscription type ID to use for this category. */
+  hubspotSubscriptionId: text("hubspot_subscription_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantCategoryUniq: uniqueIndex("hubspot_subscription_mappings_tenant_category_uniq").on(
+    table.tenantDomain,
+    table.emailCategory,
+  ),
+}));
+
+export type InsertHubspotSubscriptionMapping = z.infer<typeof insertHubspotSubscriptionMappingSchema>;
+
+export const insertHubspotSubscriptionMappingSchema = createInsertSchema(hubspotSubscriptionMappings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});

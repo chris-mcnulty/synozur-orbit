@@ -504,6 +504,78 @@ export function registerIntegrationRoutes(app: Express) {
     }
   });
 
+  // ── HubSpot subscription types (live list from the portal) ──────────────
+  // Proxies HubSpot's /communication-preferences/v3/definitions endpoint so
+  // the admin UI can show a dropdown of real subscription types rather than
+  // asking the admin to look up IDs manually.
+  app.get("/api/integrations/hubspot/subscription-types", async (req: Request, res: Response) => {
+    try {
+      const ctx = await loadHubspotContext(req, res);
+      if (!ctx) return;
+      const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!conn) return res.status(404).json({ error: "HubSpot is not connected." });
+      if (!hubspot.hasHubspotEmailScopes(conn)) {
+        return res.status(403).json({ error: "Re-authorize HubSpot to enable email-sync scopes before fetching subscription types." });
+      }
+      const { accessToken } = await hubspot.getTenantAccessToken(ctx.tenantDomain);
+      const hsRes = await fetch(`${hubspot.HUBSPOT_REST_HOST}/communication-preferences/v3/definitions`, {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      });
+      if (!hsRes.ok) {
+        const txt = await hsRes.text().catch(() => "");
+        return res.status(502).json({ error: `HubSpot returned ${hsRes.status}: ${txt.slice(0, 200)}` });
+      }
+      const body = await hsRes.json() as { subscriptionDefinitions?: unknown[] };
+      const defs = Array.isArray(body.subscriptionDefinitions) ? body.subscriptionDefinitions : [];
+      const types = defs.map((d: unknown) => {
+        const def = d as Record<string, unknown>;
+        return {
+          id: String(def.id ?? ""),
+          name: String(def.name ?? ""),
+          description: def.description ? String(def.description) : null,
+          active: def.active !== false,
+        };
+      }).filter(t => t.id && t.active);
+      res.json({ types });
+    } catch (err) {
+      res.status(500).json({ error: errorMessage(err) });
+    }
+  });
+
+  // ── HubSpot subscription mappings CRUD ──────────────────────────────────
+  // GET  — return saved mappings for this tenant.
+  app.get("/api/integrations/hubspot/subscription-mappings", async (req: Request, res: Response) => {
+    try {
+      const ctx = await loadHubspotContext(req, res);
+      if (!ctx) return;
+      const mappings = await storage.getHubspotSubscriptionMappings(ctx.tenantDomain);
+      res.json({ mappings });
+    } catch (err) {
+      res.status(500).json({ error: errorMessage(err) });
+    }
+  });
+
+  // PUT — replace the full set of mappings for this tenant.
+  const subscriptionMappingsSchema = z.object({
+    mappings: z.array(z.object({
+      emailCategory: z.string().min(1).max(200),
+      hubspotSubscriptionId: z.string().min(1).max(100),
+    })).max(100),
+  });
+
+  app.put("/api/integrations/hubspot/subscription-mappings", async (req: Request, res: Response) => {
+    try {
+      const ctx = await loadHubspotContext(req, res);
+      if (!ctx) return;
+      const parsed = subscriptionMappingsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: fromError(parsed.error).toString() });
+      const mappings = await storage.upsertHubspotSubscriptionMappings(ctx.tenantDomain, parsed.data.mappings);
+      res.json({ mappings });
+    } catch (err) {
+      res.status(500).json({ error: errorMessage(err) });
+    }
+  });
+
   // Suggested competitors from CRM
   app.get("/api/integrations/hubspot/suggested-competitors", async (req: Request, res: Response) => {
     try {

@@ -87,6 +87,29 @@ export function isOptedOutFromStatusPayload(payload: unknown): boolean {
   return hasUnsubscribed && !hasSubscribed;
 }
 
+/**
+ * Check whether a contact is opted out of a *specific* HubSpot subscription
+ * type. Unlike isOptedOutFromStatusPayload which looks at the aggregate, this
+ * filters by subscriptionId so a contact unsubscribed from "Product Updates"
+ * is not incorrectly suppressed from "Newsletter" and vice versa.
+ *
+ * Returns true only when the matching subscription entry has status UNSUBSCRIBED.
+ * Returns false when the subscription is not present in the payload (never
+ * set a preference) — conservative opt-in-by-default rule.
+ */
+export function isOptedOutForSubscription(payload: unknown, subscriptionId: string): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const statuses = (payload as { subscriptionStatuses?: unknown }).subscriptionStatuses;
+  if (!Array.isArray(statuses) || statuses.length === 0) return false;
+  for (const s of statuses) {
+    const entry = s as { id?: unknown; status?: unknown };
+    if (String(entry.id ?? "") === subscriptionId) {
+      return String(entry.status ?? "").toUpperCase() === "UNSUBSCRIBED";
+    }
+  }
+  return false; // subscription not found in payload → treat as opted in
+}
+
 export type SuppressionReason = string;
 
 /**

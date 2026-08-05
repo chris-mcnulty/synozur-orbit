@@ -58,6 +58,24 @@ async function getTenantPlan(tenantDomain: string): Promise<string> {
   }
 }
 
+/**
+ * Resolve the name of the first non-transactional Orbit subscription type
+ * from a list of type IDs. Used to pass the email category to the HubSpot
+ * consent pull so per-category subscription mappings are honoured.
+ * Returns undefined when the list is empty or all types are transactional.
+ */
+async function resolveFirstSubTypeName(tenantDomain: string, typeIds: string[]): Promise<string | undefined> {
+  if (!typeIds.length) return undefined;
+  const [row] = await db.select({ name: emailSubscriptionTypes.name })
+    .from(emailSubscriptionTypes)
+    .where(and(
+      eq(emailSubscriptionTypes.tenantDomain, tenantDomain),
+      inArray(emailSubscriptionTypes.id, typeIds),
+      eq(emailSubscriptionTypes.isTransactional, false),
+    ))
+    .limit(1);
+  return row?.name;
+}
 async function tenantHasDeliveryAccess(tenantDomain: string): Promise<boolean> {
   const plan = await getTenantPlan(tenantDomain);
   const gate = await checkFeatureAccessAsync(plan, "directEmailDelivery");
@@ -553,7 +571,8 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
           const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.email]));
           let hubspotOptedOut = new Set<string>();
           try {
-            const consent = await pullSubscriptionStatus(tenantDomain, deliverable.map(r => r.email));
+            const emailCategory = await resolveFirstSubTypeName(tenantDomain, optsWithQueue.subscriptionTypeIds ?? []);
+            const consent = await pullSubscriptionStatus(tenantDomain, deliverable.map(r => r.email), emailCategory);
             hubspotOptedOut = consent.optedOut;
           } catch { /* best-effort */ }
           const supMap = reconcileSuppression({
@@ -724,6 +743,14 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       recipients.push(...preRows.map(r => ({ email: r.email, name: r.name ?? null })));
       usePreAssigned = true;
     }
+  } else if (opts.segmentId) {
+    // Resolve the saved segment to a dynamic contact list at delivery time.
+    const { resolveSegmentContacts } = await import("./marketing-contact-service");
+    const { contacts } = await resolveSegmentContacts(opts.segmentId, tenantDomain, MAX_RECIPIENTS_PER_SEND);
+    for (const c of contacts) {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || null;
+      recipients.push({ email: c.email.trim().toLowerCase(), name });
+    }
   }
 
   // Load from list when not using a pre-assigned cohort.
@@ -772,7 +799,8 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       // Skip the HubSpot round-trip for single-address test sends to keep
       // preview latency low; local suppression is sufficient for tests.
       try {
-        const consent = await pullSubscriptionStatus(tenantDomain, recipients.map(r => r.email));
+        const emailCategory = await resolveFirstSubTypeName(tenantDomain, opts.subscriptionTypeIds ?? []);
+        const consent = await pullSubscriptionStatus(tenantDomain, recipients.map(r => r.email), emailCategory);
         hubspotOptedOut = consent.optedOut;
       } catch { /* best-effort */ }
     }
