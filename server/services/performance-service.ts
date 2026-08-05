@@ -169,7 +169,16 @@ export async function computePerformanceReport(params: PerformanceParams): Promi
   }
 
   // ── Campaign metadata + utm→campaignId map ────────────────────────────────
-  const campaignIds = Array.from(new Set(posts.map((p) => p.campaignId).filter((x): x is string => !!x)));
+  // Include campaign IDs from both posts AND clicks — clicks come from
+  // marketing_links which can reference campaigns that had zero posts in the
+  // period but still drove link clicks. Without this, those campaigns would
+  // render as "(unknown campaign)" even though the campaign still exists.
+  const campaignIds = Array.from(
+    new Set([
+      ...posts.map((p) => p.campaignId).filter((x): x is string => !!x),
+      ...Array.from(clicksByCampaignId.keys()).filter((k) => k !== "__none__"),
+    ]),
+  );
   const campaignRows = campaignIds.length
     ? await db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).where(inArray(campaigns.id, campaignIds))
     : [];
