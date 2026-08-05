@@ -28,6 +28,7 @@ import { verifyWebhookSignature } from "../services/marketing-contact-webhook-au
 import {
   ingestEvent,
   backfillContactTimeline,
+  backfillContactOptOuts,
   type ContactEventType,
 } from "../services/marketing-contact-service";
 import { parsePaginationParams } from "../utils/pagination";
@@ -133,7 +134,7 @@ export function registerMarketingContactsRoutes(app: Express) {
 
     const allowedEventTypes: ContactEventType[] = [
       "form_submit", "page_view", "email_sent", "email_open",
-      "email_click", "link_click", "social_engage",
+      "email_click", "link_click", "social_engage", "unsubscribe",
     ];
     if (!eventType || !allowedEventTypes.includes(eventType as ContactEventType)) {
       return res.status(400).json({
@@ -437,7 +438,8 @@ export function registerMarketingContactsRoutes(app: Express) {
       }
 
       const summary = await backfillContactTimeline(ctx.tenantDomain);
-      res.json({ ok: true, ...summary });
+      const optOutSummary = await backfillContactOptOuts(ctx.tenantDomain);
+      res.json({ ok: true, ...summary, optOutsFromSendGrid: optOutSummary.fromSendGrid, optOutsFromHubSpot: optOutSummary.fromHubSpot });
     } catch (err: any) {
       console.error("[marketing-contacts] backfill failed:", err.message);
       res.status(500).json({ error: err.message || "Backfill failed" });

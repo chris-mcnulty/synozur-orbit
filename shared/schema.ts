@@ -5000,6 +5000,7 @@ export const MARKETING_CONTACT_EVENT_TYPES = [
   "email_click",
   "link_click",
   "social_engage",
+  "unsubscribe",
 ] as const;
 export type MarketingContactEventType = (typeof MARKETING_CONTACT_EVENT_TYPES)[number];
 
@@ -5021,6 +5022,12 @@ export const marketingContacts = pgTable(
     source: text("source").notNull().default("manual"),
     metadata: jsonb("metadata"),
     lastEventAt: timestamp("last_event_at"),
+    // Cross-channel opt-out: set true when a contact opts out via any channel
+    // (SendGrid unsubscribe event, HubSpot opt-out, webbase form, etc.).
+    // The email sender checks this flag before every delivery.
+    emailOptOut: boolean("email_opt_out").notNull().default(false),
+    emailOptOutAt: timestamp("email_opt_out_at"),
+    emailOptOutSource: text("email_opt_out_source"), // e.g. 'sendgrid_event' | 'hubspot' | 'ingest_event' | 'backfill'
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

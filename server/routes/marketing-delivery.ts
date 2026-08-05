@@ -49,6 +49,7 @@ import {
   emailSubscriptionTypes,
   emailSubscriptionPreferences,
   marketingAuditLog,
+  marketingContacts,
   prospects,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
@@ -393,6 +394,14 @@ export function registerMarketingDeliveryPublicRoutes(app: Express) {
             eq(emailRecipients.tenantDomain, row.tenantDomain),
             eq(emailRecipients.email, email),
           ));
+        // Clear the first-party opt-out flag so the contact is eligible for
+        // future list sends again. Must be atomic with the suppression delete.
+        await db.update(marketingContacts)
+          .set({ emailOptOut: false, emailOptOutAt: null, emailOptOutSource: null, updatedAt: now })
+          .where(and(
+            eq(marketingContacts.tenantDomain, row.tenantDomain),
+            eq(marketingContacts.email, email),
+          ));
         pushSubscribe(row.tenantDomain, email).catch(() => {});
         const types = await loadPreferenceState(row.tenantDomain, email);
         return res.status(200).send(preferenceCenterHtml(req.params.token, email, types, true, false));
@@ -565,6 +574,20 @@ async function writeGlobalOptOut(tenantDomain: string, email: string): Promise<v
           set: { optedOutAt: now, updatedAt: now },
         });
     }
+
+    // Stamp the marketing_contacts opt-out flag so the email sender has a
+    // first-party suppression source without needing a separate backfill run.
+    await tx.update(marketingContacts)
+      .set({
+        emailOptOut: true,
+        emailOptOutAt: now,
+        emailOptOutSource: "public_unsub",
+        updatedAt: now,
+      })
+      .where(and(
+        eq(marketingContacts.tenantDomain, tenantDomain),
+        eq(marketingContacts.email, normalEmail),
+      ));
   });
 }
 async function handleSendGridEvent(ev: any) {
@@ -666,6 +689,19 @@ async function handleSendGridEvent(ev: any) {
           reason: "spam",
           source: "sendgrid_event",
         }).onConflictDoNothing();
+        // Stamp the contact opt-out flag so the sender suppresses this address
+        // on future list sends without requiring a backfill run.
+        await db.update(marketingContacts)
+          .set({
+            emailOptOut: true,
+            emailOptOutAt: now,
+            emailOptOutSource: "sendgrid_event",
+            updatedAt: now,
+          })
+          .where(and(
+            eq(marketingContacts.tenantDomain, recipient.tenantDomain),
+            eq(marketingContacts.email, recipient.email.toLowerCase()),
+          ));
       }
       break;
     }

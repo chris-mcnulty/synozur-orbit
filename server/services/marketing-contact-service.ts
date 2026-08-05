@@ -17,12 +17,14 @@ import {
   emailRecipients,
   emailSendRecipients,
   emailSends,
+  emailSuppressions,
   marketingLinkClicks,
   marketingLinks,
   type MarketingContact,
   type InsertMarketingContact,
   type InsertMarketingContactEvent,
 } from "@shared/schema";
+import { pullSubscriptionStatus } from "./hubspot-email-sync";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for unit tests)
@@ -73,7 +75,8 @@ export type ContactEventType =
   | "email_open"
   | "email_click"
   | "link_click"
-  | "social_engage";
+  | "social_engage"
+  | "unsubscribe";
 
 export interface IngestEventPayload {
   tenantDomain: string;
@@ -248,6 +251,20 @@ export async function ingestEvent(
     source: payload.source || payload.eventType,
     lastEventAt: occurredAt,
   });
+
+  // When the event signals an opt-out, stamp the contact immediately so the
+  // next email send is suppressed without requiring a separate backfill pass.
+  if (payload.eventType === "unsubscribe") {
+    await db
+      .update(marketingContacts)
+      .set({
+        emailOptOut: true,
+        emailOptOutAt: occurredAt,
+        emailOptOutSource: payload.source || "ingest_event",
+        updatedAt: new Date(),
+      })
+      .where(eq(marketingContacts.id, contact.id));
+  }
 
   const eventId = randomUUID();
   await db.insert(marketingContactEvents).values({
@@ -425,6 +442,114 @@ export async function backfillContactTimeline(tenantDomain: string): Promise<{
   // email address. This is Phase 2 (contact identity resolution).
 
   return { contactsCreated, contactsFound, eventsCreated };
+}
+
+// ---------------------------------------------------------------------------
+// Backfill email opt-outs from SendGrid suppressions + HubSpot
+// ---------------------------------------------------------------------------
+
+/**
+ * One-shot backfill: mark existing contacts as opted-out when their email
+ * address appears in:
+ *   1. `email_suppressions` (reason = 'unsubscribe' | 'spam') — SendGrid events.
+ *   2. HubSpot subscription opt-out state (via pullSubscriptionStatus).
+ *
+ * Only contacts that do NOT already have emailOptOut=true are touched.
+ * Returns a summary of how many contacts were opted-out by each source.
+ */
+export async function backfillContactOptOuts(tenantDomain: string): Promise<{
+  fromSendGrid: number;
+  fromHubSpot: number;
+}> {
+  let fromSendGrid = 0;
+  let fromHubSpot = 0;
+  const now = new Date();
+
+  // ── 1. SendGrid suppressions (unsubscribe / spam) ───────────────────────
+  const suppressionRows = await db
+    .select({ email: emailSuppressions.email, source: emailSuppressions.source, createdAt: emailSuppressions.createdAt })
+    .from(emailSuppressions)
+    .where(
+      and(
+        eq(emailSuppressions.tenantDomain, tenantDomain),
+        inArray(emailSuppressions.reason, ["unsubscribe", "spam"]),
+      ),
+    );
+
+  for (const row of suppressionRows) {
+    const updated = await db
+      .update(marketingContacts)
+      .set({
+        emailOptOut: true,
+        emailOptOutAt: row.createdAt ?? now,
+        emailOptOutSource: row.source ?? "sendgrid_event",
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, tenantDomain),
+          eq(marketingContacts.email, row.email.trim().toLowerCase()),
+          sql`${marketingContacts.emailOptOut} = false`,
+        ),
+      )
+      .returning({ id: marketingContacts.id });
+    if (updated.length > 0) fromSendGrid++;
+  }
+
+  // ── 2. HubSpot opt-outs ──────────────────────────────────────────────────
+  // Fetch all known contact emails and ask HubSpot for their consent state.
+  const contactRows = await db
+    .select({ email: marketingContacts.email })
+    .from(marketingContacts)
+    .where(
+      and(
+        eq(marketingContacts.tenantDomain, tenantDomain),
+        sql`${marketingContacts.emailOptOut} = false`,
+      ),
+    );
+
+  if (contactRows.length > 0) {
+    const emails = contactRows.map(r => r.email);
+
+    // pullSubscriptionStatus rejects batches larger than its internal cap
+    // (MARKETING_HS_CONSENT_PULL_MAX, default 1 000). Chunk the full email
+    // list into safe-sized batches so every contact is checked regardless of
+    // how large the tenant's contact list is.
+    const BATCH_SIZE = 950; // stay safely under the 1 000 cap
+    for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+      const batch = emails.slice(i, i + BATCH_SIZE);
+      let hubspotOptedOut = new Set<string>();
+      try {
+        const result = await pullSubscriptionStatus(tenantDomain, batch);
+        hubspotOptedOut = result.optedOut;
+      } catch {
+        // best-effort: HubSpot may not be connected for this tenant
+        continue;
+      }
+
+      for (const email of hubspotOptedOut) {
+        const updated = await db
+          .update(marketingContacts)
+          .set({
+            emailOptOut: true,
+            emailOptOutAt: now,
+            emailOptOutSource: "hubspot",
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(marketingContacts.tenantDomain, tenantDomain),
+              eq(marketingContacts.email, email.trim().toLowerCase()),
+              sql`${marketingContacts.emailOptOut} = false`,
+            ),
+          )
+          .returning({ id: marketingContacts.id });
+        if (updated.length > 0) fromHubSpot++;
+      }
+    }
+  }
+
+  return { fromSendGrid, fromHubSpot };
 }
 
 // ---------------------------------------------------------------------------

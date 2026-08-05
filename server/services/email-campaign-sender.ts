@@ -33,6 +33,7 @@ import {
   emailSubscriptionTypes,
   emailSubscriptionPreferences,
   marketingAuditLog,
+  marketingContacts,
   prospects,
   type GeneratedEmail,
   type EmailSend,
@@ -500,6 +501,32 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       .limit(MAX_RECIPIENTS_PER_SEND);
     for (const r of rows) {
       recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
+    }
+  }
+
+  // ── Cross-channel opt-out check (marketing_contacts.emailOptOut) ────────
+  // Contacts who unsubscribed via any channel (SendGrid event, HubSpot,
+  // webbase form) are suppressed here as first-party source of truth.
+  // Applied to list sends only — test sends are always to the sender.
+  if (!testRecipient && recipients.length > 0) {
+    const optedOutRows = await db
+      .select({ email: marketingContacts.email })
+      .from(marketingContacts)
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, tenantDomain),
+          inArray(marketingContacts.email, recipients.map(r => r.email)),
+          eq(marketingContacts.emailOptOut, true),
+        ),
+      );
+    const optedOutEmails = new Set(optedOutRows.map(r => r.email.toLowerCase()));
+    if (optedOutEmails.size > 0) {
+      for (let i = recipients.length - 1; i >= 0; i--) {
+        if (optedOutEmails.has(recipients[i].email)) {
+          suppressedFromSend.push({ email: recipients[i].email, reason: "email_opt_out" });
+          recipients.splice(i, 1);
+        }
+      }
     }
   }
 
