@@ -1,3 +1,4 @@
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 - [Content library = url-fronted source assets](content-library-source-vs-drafts.md) — Digital/Web Assets library shows only content_assets with url/fileUrl; content-only drafts excluded by design.
 - [Hero compositor font paths](hero-compositor-fonts.md) — Avenir Next LT Pro TTFs must use absolute path via path.resolve(cwd, "client/public/fonts/") for Sharp/librsvg to embed them.
 - [Conference backgrounds CRUD](conference-backgrounds.md) — conferenceBackgrounds table + routes added; backgroundId FK on conferenceImages links hero composites to location photos.
@@ -54,3 +55,7 @@
 - [No-AI-slop integration](no-ai-slop-integration.md) — Task #518 plan + full rollback path; rules may be too aggressive on human-written words; prompt-layer and sharpen endpoint are independently reversible.
 - [Observatory removed from Orbit](observatory-removed.md) — Observatory lives in a separate Repl/repo; all obs_* tables dropped (migration 0076); never re-add observatory code here.
 - [HubSpot per-category subscription mapping](hubspot-subscription-mapping.md) — hubspot_subscription_mappings maps Orbit sub-type name → HubSpot subscription ID; consent checks and push/unsubscribe resolve the mapped ID, falling back to defaultSubscriptionId; preference-center per-type sync passes type.name not hubspotTypeId.
+- [Synozur Website Codebase](synozur-website-codebase.md) — website MCP target is Replit project "Synozur-Baseline"; GitHub: github.com/chris-mcnulty/Synozur-WebBase.
+- [Observatory workbenches](observatory-workbenches.md) — six modules on one table; pen-test findings wrap shared obs_findings; readiness weights/bands/blockers are a product contract; VPAT disclaimer mandatory.
+- [Schema table-before-relations TDZ rule](schema-tdz-rule.md) — every pgTable declaration must appear BEFORE the relations() call that references it; rebase commits repeatedly re-break this for marketingSegmentMembers; fix by moving the table above its relations.
+- [Headless launch circuit breaker](headless-launch-breaker.md) — Chromium may fail to launch in prod; breaker disables headless 10 min after 2 launch failures so crawls fall back to HTTP instead of always timing out.

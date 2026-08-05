@@ -378,12 +378,13 @@ export interface DispatchSendOptions {
 
   listId?: string | null;
   /**
-   * When set, the send targets all contacts that match the saved segment's
-   * rules at delivery time (instead of a static recipient list). The segment
-   * is resolved to individual email addresses immediately before delivery so
-   * suppressions and subscription preferences still apply.
+   * When set, recipients are resolved from a marketing segment's materialised
+   * membership table rather than a static email_recipients list.
+   * Either listId or segmentId must be provided for non-test sends.
    */
+
   segmentId?: string | null;
+
   testRecipient?: string | null;
 
   createdBy: string;
@@ -783,6 +784,31 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   // Skipped for pre-assigned A/B cohorts — suppression was already applied
   // at dispatch time and cohort membership is immutable.
   if (!usePreAssigned && recipients.length > 0) {
+    // Cross-channel opt-out check (marketing_contacts.emailOptOut) — first-party
+    // source of truth for contacts who unsubscribed via any channel.
+    // Applied to list/segment sends only — test sends are always to the sender.
+    if (!testRecipient) {
+      const optedOutRows = await db
+        .select({ email: marketingContacts.email })
+        .from(marketingContacts)
+        .where(
+          and(
+            eq(marketingContacts.tenantDomain, tenantDomain),
+            inArray(marketingContacts.email, recipients.map(r => r.email)),
+            eq(marketingContacts.emailOptOut, true),
+          ),
+        );
+      const optedOutEmails = new Set(optedOutRows.map(r => r.email.toLowerCase()));
+      if (optedOutEmails.size > 0) {
+        for (let i = recipients.length - 1; i >= 0; i--) {
+          if (optedOutEmails.has(recipients[i].email)) {
+            suppressedFromSend.push({ email: recipients[i].email, reason: "email_opt_out" });
+            recipients.splice(i, 1);
+          }
+        }
+      }
+    }
+
     // Global suppression + HubSpot consent reconciliation.
     const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
       .from(emailSuppressions)
@@ -1246,7 +1272,6 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     errorMessage: finalStatus === "failed" ? "All recipients failed" : undefined,
   };
 }
-
 /**
  * Compute a deliverability preview for a list+tenant pair without actually
  * sending. The send dialog uses this to surface "X deliverable / Y suppressed"
@@ -1287,10 +1312,6 @@ export async function previewListDeliverability(opts: {
 const EMAIL_WORKER_BATCH = 5;
 let emailWorkerInFlight = false;
 
-/**
- * Process queued email_sends whose scheduledAt has elapsed. Called from
- * scheduled-jobs on a short interval; per-tick batch is bounded.
- */
 export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ processed: number; sent: number; failed: number }> {
   if (emailWorkerInFlight) return { processed: 0, sent: 0, failed: 0 };
   emailWorkerInFlight = true;
@@ -1316,7 +1337,7 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           marketId: row.send.marketId ?? null,
           email: row.email,
           listId: row.send.listId ?? null,
-          // Recover the segment audience target persisted at queue time.
+          // Preserve segment targeting captured at schedule time.
           segmentId: (row.send as any).segmentId ?? null,
           testRecipient: null,
           createdBy: row.send.createdBy,

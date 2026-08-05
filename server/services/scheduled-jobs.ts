@@ -2422,6 +2422,39 @@ export function startScheduledJobs(): void {
     runHubspotSyncJob();
   }, 24 * 60 * 60 * 1000);
 
+  // Segment membership refresh — runs every 15 minutes. Each segment's
+  // refreshIntervalMinutes gates whether it's actually due; this tick just
+  // provides the heartbeat. Uses the primary DB (contact data) which is fine
+  // because segment evaluation is a read-heavy SELECT, not a crawl operation.
+  setInterval(async () => {
+    try {
+      const { refreshDueSegments } = await import("./segment-evaluation-service");
+      const { checked, refreshed, errors, refreshedSegments } = await refreshDueSegments();
+      if (refreshed > 0 || errors > 0) {
+        console.log(`[Segments] Refresh sweep: checked=${checked} refreshed=${refreshed} errors=${errors}`);
+      }
+      // Mirror only the segments that were actually refreshed this sweep —
+      // never all HubSpot-mirrored segments, to avoid spurious rate-limit pressure.
+      const hubspotTargets = refreshedSegments.filter((s) => s.hubspotListId);
+      if (hubspotTargets.length > 0) {
+        try {
+          const { syncSegmentToHubSpotList } = await import("./hubspot-service");
+          const { getSegmentMemberEmails } = await import("./segment-evaluation-service");
+          for (const seg of hubspotTargets) {
+            const emails = await getSegmentMemberEmails(seg.id, seg.tenantDomain);
+            syncSegmentToHubSpotList(seg.tenantDomain, seg.hubspotListId!, emails).catch((err: any) =>
+              console.warn(`[Segments] HubSpot mirror failed for ${seg.id}: ${err.message}`),
+            );
+          }
+        } catch (hsErr: any) {
+          console.warn("[Segments] HubSpot mirror sweep failed:", hsErr.message);
+        }
+      }
+    } catch (err: any) {
+      console.error("[Segments] Refresh sweep error:", err.message);
+    }
+  }, 15 * 60 * 1000); // every 15 minutes
+
   // Set up recurring intervals
   // Hourly sweeps are staggered by 2-3 minutes each so they never all fire
   // simultaneously and flood the connection pool.
@@ -2692,7 +2725,6 @@ export function startScheduledJobs(): void {
   console.log("[Scheduled Jobs] Jobs scheduled - website crawl, social monitor, website monitor, product monitor (hourly), trial reminders (every 6 hours), weekly digest (checks hourly, runs when 7+ days since last), scheduled briefing (checks hourly), Planner two-way sync (every 15 minutes), SEO refresh (weekly)");
   console.log("[Scheduled Jobs] Initial job sweep will start in 5 seconds to process any overdue items");
 }
-
 export function stopScheduledJobs(): void {
   if (websiteCrawlInterval) {
     clearInterval(websiteCrawlInterval);

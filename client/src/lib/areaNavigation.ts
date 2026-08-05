@@ -1,3 +1,4 @@
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 import type { ComponentType } from "react";
 import {
   Home,
@@ -60,8 +61,8 @@ import {
   Crosshair,
   Network,
   Lock,
+  Filter,
 } from "lucide-react";
-
 export interface AreaNavItem {
   label: string;
   icon: ComponentType<{ size?: number; className?: string }>;
@@ -191,6 +192,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Composer", icon: PencilLine, href: "/app/marketing/composer", enterprise: true, section: "Create", description: "Draft and refine individual social posts with AI assistance." },
         { label: "Email Newsletters", icon: Mail, href: "/app/marketing/email-newsletters", enterprise: true, section: "Create", description: "AI-generated newsletter content grounded in your intelligence." },
         { label: "Email Sends", icon: Send, href: "/app/marketing/sends", enterprise: true, section: "Create", indent: true, description: "Delivery tracking: recipient lists, send status, and suppressions." },
+        { label: "Segments", icon: Filter, href: "/app/marketing/segments", enterprise: true, section: "Create", indent: true, description: "Rule-based contact segments that recompute automatically from contact properties and activity." },
         { label: "Event Promotion", icon: TicketIcon, href: "/app/marketing/conferences", enterprise: true, section: "Create", description: "Coordinated social promotion for an event: anchor posts plus a post and graphic per session." },
         { label: "Themes Hub", icon: Target, href: "/app/marketing/planning-hub", enterprise: true, section: "Create", description: "Plan every piece of marketing for a solution-area theme or campaign in one view." },
         { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true, section: "Libraries", description: "Central repository for URLs, articles, and web-based content." },

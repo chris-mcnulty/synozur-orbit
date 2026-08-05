@@ -4167,8 +4167,9 @@ export const emailSends = pgTable("email_sends", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   generatedEmailId: varchar("generated_email_id").notNull().references(() => generatedEmails.id, { onDelete: "cascade" }),
   listId: varchar("list_id").references(() => emailRecipientLists.id, { onDelete: "set null" }),
-  /** When set, the send targets contacts resolved from this saved segment (instead of a static list). */
-  segmentId: varchar("segment_id").references(() => marketingContactSegments.id, { onDelete: "set null" }),
+  // When set, recipients are resolved from a marketing segment (marketing_segments)
+  // instead of a static list. Task #588's marketing_contact_segments use a separate FK path.
+  segmentId: varchar("segment_id").references((): AnyPgColumn => marketingSegments.id, { onDelete: "set null" }),
   testRecipient: text("test_recipient"), // when set, this was a "send to me" test send
   status: text("status").notNull().default("pending"), // pending | queued | sending | sent | failed | partial
   scheduledAt: timestamp("scheduled_at"), // when set, dispatch is deferred to the email-send worker
@@ -5126,6 +5127,7 @@ export const marketingScoringRules = pgTable(
 );
 export const marketingContactsRelations = relations(marketingContacts, ({ many }) => ({
   events: many(marketingContactEvents),
+  segmentMembers: many(marketingSegmentMembers),
 }));
 
 export const marketingContactEventsRelations = relations(marketingContactEvents, ({ one }) => ({
@@ -5134,6 +5136,50 @@ export const marketingContactEventsRelations = relations(marketingContactEvents,
     references: [marketingContacts.id],
   }),
 }));
+
+/**
+ * rule_json shape:
+ * {
+ *   logic: "AND" | "OR",
+ *   conditions: Array<FieldCondition | EventCondition>
+ * }
+ *
+ * FieldCondition  — filter on a contact property:
+ *   { type:"field", field:"lifecycleStage"|"company"|"jobTitle"|"email"|"source",
+ *     operator:"eq"|"neq"|"contains"|"not_contains"|"starts_with"|"ends_with"|"is_null"|"is_not_null",
+ *     value?:string }
+ *
+ * EventCondition  — filter on whether a contact has/hasn't done an event:
+ *   { type:"event", eventType:string,
+ *     operator:"has_done"|"has_not_done",
+ *     withinDays?:number }
+ */
+export const marketingSegments = pgTable(
+  "marketing_segments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    // Serialised rule tree — see JSDoc above for the shape.
+    ruleJson: jsonb("rule_json").notNull().default({}),
+    // How often (in minutes) the member set is recomputed. 0 = manual only.
+    refreshIntervalMinutes: integer("refresh_interval_minutes").notNull().default(60),
+    // When the member set was last recomputed.
+    lastRefreshedAt: timestamp("last_refreshed_at"),
+    // Optional HubSpot list ID — when set, membership is mirrored to that list.
+    hubspotListId: text("hubspot_list_id"),
+    // Whether this segment is active and should be refreshed by the scheduler.
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantDomainIdx: index("marketing_segments_tenant_idx").on(table.tenantDomain),
+    activeIdx: index("marketing_segments_active_idx").on(table.tenantDomain, table.isActive),
+  }),
+);
 export type EmailCampaignVariant = typeof emailCampaignVariants.$inferSelect;
 
 export type MarketingLifecycleThreshold = typeof marketingLifecycleThresholds.$inferSelect;
@@ -5184,6 +5230,7 @@ export const insertMarketingContactSegmentSchema = createInsertSchema(marketingC
 
 export type MarketingContactSegment = typeof marketingContactSegments.$inferSelect;
 
+export type MarketingSegment = typeof marketingSegments.$inferSelect;
 export const insertEmailCampaignVariantSchema = createInsertSchema(emailCampaignVariants).omit({
   id: true, createdAt: true, updatedAt: true,
 });
@@ -5222,6 +5269,13 @@ export const insertMarketingScoringRuleSchema = createInsertSchema(marketingScor
   updatedAt: true,
 });
 
+export const insertMarketingSegmentSchema = createInsertSchema(marketingSegments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastRefreshedAt: true,
+});
+
 export type HubspotSubscriptionMapping = typeof hubspotSubscriptionMappings.$inferSelect;
 
 export type InsertMarketingScoringRule = z.infer<typeof insertMarketingScoringRuleSchema>;
@@ -5229,6 +5283,26 @@ export type InsertMarketingScoringRule = z.infer<typeof insertMarketingScoringRu
 export type InsertMarketingLifecycleThreshold = z.infer<typeof insertMarketingLifecycleThresholdSchema>;
 
 export type InsertEmailCampaignVariant = z.infer<typeof insertEmailCampaignVariantSchema>;
+
+export const marketingSegmentMembers = pgTable(
+  "marketing_segment_members",
+  {
+    segmentId: varchar("segment_id")
+      .notNull()
+      .references(() => marketingSegments.id, { onDelete: "cascade" }),
+    contactId: varchar("contact_id")
+      .notNull()
+      .references(() => marketingContacts.id, { onDelete: "cascade" }),
+    tenantDomain: text("tenant_domain").notNull(),
+    addedAt: timestamp("added_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.segmentId, table.contactId] }),
+    segmentIdx: index("marketing_segment_members_segment_idx").on(table.segmentId),
+    contactIdx: index("marketing_segment_members_contact_idx").on(table.contactId),
+    tenantIdx: index("marketing_segment_members_tenant_idx").on(table.tenantDomain),
+  }),
+);
 
 export const hubspotSubscriptionMappings = pgTable("hubspot_subscription_mappings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -5253,3 +5327,21 @@ export const insertHubspotSubscriptionMappingSchema = createInsertSchema(hubspot
   createdAt: true,
   updatedAt: true,
 });
+
+export const marketingSegmentMembersRelations = relations(marketingSegmentMembers, ({ one }) => ({
+  segment: one(marketingSegments, {
+    fields: [marketingSegmentMembers.segmentId],
+    references: [marketingSegments.id],
+  }),
+  contact: one(marketingContacts, {
+    fields: [marketingSegmentMembers.contactId],
+    references: [marketingContacts.id],
+  }),
+}));
+
+export const marketingSegmentsRelations = relations(marketingSegments, ({ many }) => ({
+  members: many(marketingSegmentMembers),
+}));
+
+
+export type MarketingSegmentMember = typeof marketingSegmentMembers.$inferSelect;

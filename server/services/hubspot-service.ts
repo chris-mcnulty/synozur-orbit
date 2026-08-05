@@ -252,6 +252,113 @@ export async function isHubSpotConfigured(): Promise<boolean> {
 }
 
 /**
+ * Mirror a segment's current member emails to a HubSpot static list.
+ *
+ * Uses the per-tenant OAuth client (getTenantClient) so it operates in the
+ * correct CRM portal. The list must already exist in HubSpot — this function
+ * only adds/removes members; it does not create the list.
+ *
+ * The sync is a full reconciliation: contacts in the segment are added to the
+ * HubSpot list and contacts that are no longer in the segment are removed.
+ * Empty segments cause all current members to be removed.
+ */
+export async function syncSegmentToHubSpotList(
+  tenantDomain: string,
+  hubspotListId: string,
+  memberEmails: string[],
+): Promise<{ added: number; removed: number; errors: number }> {
+
+  const { getTenantClient } = await import("./hubspot-integration");
+  let client: any;
+  try {
+    const result = await getTenantClient(tenantDomain);
+    client = result.client;
+  } catch (err: any) {
+    console.warn(
+      `[HubSpot] Segment mirror skipped for ${tenantDomain} — not connected: ${err.message}`,
+    );
+    return { added: 0, removed: 0, errors: 0 };
+  }
+
+  let added = 0;
+  let removed = 0;
+  let errors = 0;
+
+  // ── Step 1: Fetch current HubSpot list membership ──────────────────────────
+  const currentMemberIds = new Set<string>();
+  try {
+    let after: string | undefined;
+    do {
+      const page: any = await client.crm.lists.membershipsApi.getPage(
+        hubspotListId,
+        after,
+        undefined,
+        500,
+      );
+      for (const r of page.results ?? []) {
+        currentMemberIds.add(String(r.recordId ?? r.id));
+      }
+      after = page.paging?.next?.after;
+    } while (after);
+  } catch (err: any) {
+    console.error(`[HubSpot] Segment mirror: failed to fetch current members for list ${hubspotListId}: ${err.message}`);
+    errors++;
+  }
+
+  // ── Step 2: Resolve segment member emails → HubSpot contact IDs ───────────
+  const BATCH = 50;
+  const desiredContactIds = new Set<string>();
+  for (let i = 0; i < memberEmails.length; i += BATCH) {
+    const batch = memberEmails.slice(i, i + BATCH);
+    for (const email of batch) {
+      try {
+        const result = await client.crm.contacts.searchApi.doSearch({
+          filterGroups: [
+            { filters: [{ propertyName: "email", operator: "EQ" as any, value: email }] },
+          ],
+          properties: ["email"],
+          limit: 1,
+          after: "0",
+          sorts: [],
+        });
+        if (result.results.length > 0) {
+          desiredContactIds.add(result.results[0].id);
+        }
+      } catch (err: any) {
+        console.error(`[HubSpot] Segment mirror: lookup failed for ${email}: ${err.message}`);
+        errors++;
+      }
+    }
+    // Throttle to stay within HubSpot rate limits (100 req/10s)
+    if (i + BATCH < memberEmails.length) {
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  }
+
+  // ── Step 3: Reconcile — add new members, remove lapsed ones ───────────────
+  const toAdd = [...desiredContactIds].filter((id) => !currentMemberIds.has(id));
+  const toRemove = [...currentMemberIds].filter((id) => !desiredContactIds.has(id));
+
+  if (toAdd.length > 0 || toRemove.length > 0) {
+    try {
+      await client.crm.lists.membershipsApi.addAndRemoveMember(hubspotListId, {
+        recordIdsToAdd: toAdd,
+        recordIdsToRemove: toRemove,
+      });
+      added = toAdd.length;
+      removed = toRemove.length;
+    } catch (err: any) {
+      console.error(`[HubSpot] Segment mirror: reconcile failed for list ${hubspotListId}: ${err.message}`);
+      errors++;
+    }
+  }
+
+  console.log(
+    `[HubSpot] Segment mirror complete for list ${hubspotListId} — added=${added} removed=${removed} errors=${errors}`,
+  );
+  return { added, removed, errors };
+}
+/**
  * Enrich marketing_contacts rows with data from a tenant's connected HubSpot portal.
  *
  * Uses the per-tenant OAuth client from hubspot-integration (getTenantClient) so it

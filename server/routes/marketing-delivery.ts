@@ -1676,6 +1676,15 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       return res.status(400).json({ error: "Either listId, segmentId, or testRecipient is required" });
     }
 
+    // Validate segmentId belongs to this tenant before dispatching.
+    if (segmentId && !testRecipient) {
+      const { marketingSegments } = await import("@shared/schema");
+      const [seg] = await db.select({ id: marketingSegments.id })
+        .from(marketingSegments)
+        .where(and(eq(marketingSegments.id, segmentId), eq(marketingSegments.tenantDomain, ctx.tenantDomain)));
+      if (!seg) return res.status(404).json({ error: "Segment not found" });
+    }
+
     // Approval gating — only approved emails (or already-sent ones being
     // re-sent to a different list) may be dispatched. Test sends to the
     // creator are exempt so reviewers can preview without a state change.
@@ -1700,7 +1709,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         marketId: ctx.marketId,
         email,
         listId: listId ?? null,
-        segmentId: typeof segmentId === "string" ? segmentId : null,
+        segmentId: segmentId ?? null,
         testRecipient: testRecipient ?? null,
         createdBy: req.session.userId!,
         baseUrl: getBaseUrl(req),
