@@ -18,6 +18,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
@@ -35,6 +36,8 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  GitMerge,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -133,6 +136,120 @@ function EventIcon({ eventType }: { eventType: string }) {
   return <Icon className={`h-3.5 w-3.5 ${config.color}`} />;
 }
 
+type AttributionModel = "first-touch" | "last-touch" | "linear" | "position-based";
+
+const ATTRIBUTION_MODEL_LABELS: Record<AttributionModel, string> = {
+  "first-touch": "First Touch",
+  "last-touch": "Last Touch",
+  "linear": "Linear",
+  "position-based": "Position-Based",
+};
+
+interface JourneyStep {
+  id: string;
+  occurredAt: string;
+  eventType: string;
+  channel: string;
+  source: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  isConversion: boolean;
+  credit: number | null;
+  creditPct: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+interface JourneyResult {
+  contact: MarketingContact;
+  model: AttributionModel;
+  journey: JourneyStep[];
+  hasConversion: boolean;
+  conversionCount: number;
+}
+
+function CustomerJourneyTab({ contact }: { contact: MarketingContact }) {
+  const [model, setModel] = useState<AttributionModel>("last-touch");
+
+  const { data, isLoading } = useQuery<JourneyResult | null>({
+    queryKey: ["/api/marketing-contacts", contact.id, "journey", model],
+    queryFn: async () => {
+      const res = await fetch(`/api/marketing-contacts/${contact.id}/journey?model=${model}`);
+      if (!res.ok) throw new Error("Failed to load journey");
+      return res.json();
+    },
+  });
+
+  return (
+    <div className="space-y-3">
+      {/* Model selector */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Attribution:</span>
+        <Select value={model} onValueChange={(v) => setModel(v as AttributionModel)}>
+          <SelectTrigger className="h-7 text-xs w-[170px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.entries(ATTRIBUTION_MODEL_LABELS) as [AttributionModel, string][]).map(([k, label]) => (
+              <SelectItem key={k} value={k} className="text-xs">{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : !data || data.journey.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No touchpoints recorded yet.</p>
+      ) : (
+        <>
+          {data.hasConversion && (
+            <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {data.conversionCount} conversion{data.conversionCount !== 1 ? "s" : ""} detected — credit allocated using {ATTRIBUTION_MODEL_LABELS[model]}
+            </div>
+          )}
+          {!data.hasConversion && (
+            <p className="text-xs text-muted-foreground">No conversion events found. Showing full touchpoint sequence.</p>
+          )}
+          <ol className="relative border-l border-border ml-2 space-y-3">
+            {data.journey.map((step) => {
+              const config = EVENT_TYPE_CONFIG[step.eventType];
+              const Icon = step.isConversion ? CheckCircle2 : (config?.icon ?? Globe);
+              const iconColor = step.isConversion ? "text-emerald-500" : (config?.color ?? "text-slate-400");
+              return (
+                <li key={step.id} className="ml-4">
+                  <span className={`absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full border border-border ${step.isConversion ? "bg-emerald-50 dark:bg-emerald-950" : "bg-muted"}`}>
+                    <Icon className={`h-2.5 w-2.5 ${iconColor}`} />
+                  </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <p className={`text-sm font-medium leading-tight ${step.isConversion ? "text-emerald-600" : ""}`}>
+                        {step.isConversion ? "Conversion" : (config?.label ?? step.eventType)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(step.occurredAt), { addSuffix: true })}
+                        {" · "}{step.channel}
+                        {step.campaignName && <span className="text-primary"> · {step.campaignName}</span>}
+                      </p>
+                    </div>
+                    {step.creditPct && (
+                      <Badge variant="secondary" className="shrink-0 text-xs font-mono">
+                        {step.creditPct}
+                      </Badge>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      )}
+    </div>
+  );
+}
+
 function TimelinePanel({
   contact,
   open,
@@ -159,7 +276,7 @@ function TimelinePanel({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent className="w-[420px] sm:w-[480px] overflow-y-auto">
+      <SheetContent className="w-[420px] sm:w-[520px] overflow-y-auto">
         <SheetHeader className="pb-4 border-b border-border">
           <SheetTitle className="flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
@@ -188,42 +305,59 @@ function TimelinePanel({
         </SheetHeader>
 
         <div className="pt-4">
-          <p className="text-sm font-medium mb-3">Activity Timeline</p>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : !events || events.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No activity yet.</p>
-          ) : (
-            <ol className="relative border-l border-border ml-2 space-y-4">
-              {events.map((ev) => {
-                const config = EVENT_TYPE_CONFIG[ev.eventType];
-                const Icon = config?.icon ?? Globe;
-                return (
-                  <li key={ev.id} className="ml-4">
-                    <span className="absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full bg-muted border border-border">
-                      <Icon className={`h-2.5 w-2.5 ${config?.color ?? "text-slate-400"}`} />
-                    </span>
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-sm font-medium leading-tight">
-                        {config?.label ?? ev.eventType}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(ev.occurredAt), { addSuffix: true })}
-                        {ev.source ? ` · via ${ev.source}` : ""}
-                      </p>
-                      {ev.metadata && Object.keys(ev.metadata).length > 0 && (
-                        <p className="text-xs text-muted-foreground font-mono truncate">
-                          {JSON.stringify(ev.metadata).slice(0, 80)}
-                        </p>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
+          <Tabs defaultValue="timeline">
+            <TabsList className="w-full mb-4">
+              <TabsTrigger value="timeline" className="flex-1 text-xs">
+                Activity Timeline
+              </TabsTrigger>
+              <TabsTrigger value="journey" className="flex-1 text-xs gap-1">
+                <GitMerge className="h-3.5 w-3.5" />
+                Customer Journey
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="timeline">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : !events || events.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No activity yet.</p>
+              ) : (
+                <ol className="relative border-l border-border ml-2 space-y-4">
+                  {events.map((ev) => {
+                    const config = EVENT_TYPE_CONFIG[ev.eventType];
+                    const Icon = config?.icon ?? Globe;
+                    return (
+                      <li key={ev.id} className="ml-4">
+                        <span className="absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full bg-muted border border-border">
+                          <Icon className={`h-2.5 w-2.5 ${config?.color ?? "text-slate-400"}`} />
+                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <p className="text-sm font-medium leading-tight">
+                            {config?.label ?? ev.eventType}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(ev.occurredAt), { addSuffix: true })}
+                            {ev.source ? ` · via ${ev.source}` : ""}
+                          </p>
+                          {ev.metadata && Object.keys(ev.metadata).length > 0 && (
+                            <p className="text-xs text-muted-foreground font-mono truncate">
+                              {JSON.stringify(ev.metadata).slice(0, 80)}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </TabsContent>
+
+            <TabsContent value="journey">
+              {contact && <CustomerJourneyTab contact={contact} />}
+            </TabsContent>
+          </Tabs>
         </div>
       </SheetContent>
     </Sheet>
