@@ -48,8 +48,8 @@
 - [Crawl auto-pause storm recovery](crawl-auto-pause-storm.md) — infra failure storms auto-pause the whole portfolio (6-fail rule); Global Admin Resume All is the fix, check exclude_from_crawl first.
 - [Marketing calendar deep-link to undated posts](marketing-calendar-deeplink-undated.md) — undated ?post= targets live individually in the backlog query (not the rolled-up grid); highlight them in the rail, never drill an "unscheduled" batch.
 - [Drizzle correlated subquery counts](drizzle-correlated-subquery.md) — sql`` correlated count subqueries silently return 0; use leftJoin+groupBy instead and verify aggregates against direct SQL.
-- [Observatory workbenches](observatory-workbenches.md) — six modules on one table; pen-test findings wrap shared obs_findings; readiness weights/bands/blockers are a product contract; VPAT disclaimer mandatory.
 - [E2E API auth verification](e2e-api-auth-verification.md) — preview is login-gated; verify via temp bcrypt password on e2e-test user + curl session + X-Active-Tenant-Id header; dev AI provider 404s (env, not code).
 - [Manual crawl endpoints queued](manual-crawl-queued.md) — refresh/crawl HTTP routes must enqueue + return 202; inline crawls caused proxy-timeout on-screen errors (July 2026 incident).
 - [Crawl slot semaphore starvation](crawl-slot-starvation.md) — waiting semaphore for browser slots must cap waits (90s→HTTP fallback) or timed-out jobs' zombie pages starve all crawls to 0%.
 - [No-AI-slop integration](no-ai-slop-integration.md) — Task #518 plan + full rollback path; rules may be too aggressive on human-written words; prompt-layer and sharpen endpoint are independently reversible.
+- [Observatory removed from Orbit](observatory-removed.md) — Observatory lives in a separate Repl/repo; all obs_* tables dropped (migration 0076); never re-add observatory code here.
