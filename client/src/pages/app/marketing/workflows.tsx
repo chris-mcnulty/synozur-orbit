@@ -122,16 +122,61 @@ function stepSummary(step: WorkflowStep): string {
   return step.stepType;
 }
 
+// ─── Branch path helpers ──────────────────────────────────────────────────────
+
+/** Short label for a step used in the branch summary line. */
+function stepShortLabel(step: WorkflowStep): string {
+  return `Step ${step.stepOrder + 1} (${STEP_LABELS[step.stepType] ?? step.stepType})`;
+}
+
+/** Summary line shown below a branch step card. */
+function BranchPathSummary({ step, steps }: { step: WorkflowStep; steps: WorkflowStep[] }) {
+  const yesStep = step.nextStepId ? steps.find((s) => s.id === step.nextStepId) : null;
+  const noStep = step.branchNoStepId ? steps.find((s) => s.id === step.branchNoStepId) : null;
+
+  if (!yesStep && !noStep) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1">
+        <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 font-semibold text-[10px] leading-none">
+          Yes →
+        </span>
+        {yesStep ? stepShortLabel(yesStep) : <span className="italic">not set</span>}
+      </span>
+      <span className="text-border">·</span>
+      <span className="flex items-center gap-1">
+        <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 font-semibold text-[10px] leading-none">
+          No →
+        </span>
+        {noStep ? stepShortLabel(noStep) : <span className="italic">not set</span>}
+      </span>
+    </div>
+  );
+}
+
 // ─── Step Config Editor ───────────────────────────────────────────────────────
 
 function StepConfigEditor({
   stepType,
   config,
   onChange,
+  steps,
+  currentStepId,
+  nextStepId,
+  branchNoStepId,
+  onNextStepIdChange,
+  onBranchNoStepIdChange,
 }: {
   stepType: string;
   config: any;
   onChange: (cfg: any) => void;
+  steps?: WorkflowStep[];
+  currentStepId?: string | null;
+  nextStepId?: string | null;
+  branchNoStepId?: string | null;
+  onNextStepIdChange?: (id: string | null) => void;
+  onBranchNoStepIdChange?: (id: string | null) => void;
 }) {
   if (stepType === "wait") {
     return (
@@ -175,8 +220,9 @@ function StepConfigEditor({
 
   if (stepType === "branch") {
     const cond = config.condition ?? {};
+    const otherSteps = (steps ?? []).filter((s) => s.id !== currentStepId);
     return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         <p className="text-xs text-muted-foreground">If condition is true → yes branch; otherwise → no branch.</p>
         <div className="flex gap-2">
           <div className="flex-1">
@@ -216,6 +262,44 @@ function StepConfigEditor({
             />
           </div>
         </div>
+        {otherSteps.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 border rounded-md p-3 bg-muted/40">
+            <div>
+              <Label className="text-xs font-semibold text-green-700 dark:text-green-400">Yes → go to</Label>
+              <Select
+                value={nextStepId ?? "__end__"}
+                onValueChange={(v) => onNextStepIdChange?.(v === "__end__" ? null : v)}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="End of workflow" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__end__">End of workflow</SelectItem>
+                  {otherSteps.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      Step {s.stepOrder + 1} — {STEP_LABELS[s.stepType] ?? s.stepType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-red-700 dark:text-red-400">No → go to</Label>
+              <Select
+                value={branchNoStepId ?? "__end__"}
+                onValueChange={(v) => onBranchNoStepIdChange?.(v === "__end__" ? null : v)}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="End of workflow" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__end__">End of workflow</SelectItem>
+                  {otherSteps.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      Step {s.stepOrder + 1} — {STEP_LABELS[s.stepType] ?? s.stepType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -304,6 +388,8 @@ function WorkflowDetail({
   const [newStepType, setNewStepType] = useState("wait");
   const [newStepConfig, setNewStepConfig] = useState<any>({});
   const [editStepConfig, setEditStepConfig] = useState<any>({});
+  const [editStepNextStepId, setEditStepNextStepId] = useState<string | null>(null);
+  const [editStepBranchNoStepId, setEditStepBranchNoStepId] = useState<string | null>(null);
   const [enrollTab, setEnrollTab] = useState("active");
   const [manualEnrollOpen, setManualEnrollOpen] = useState(false);
   const [manualEnrollEmail, setManualEnrollEmail] = useState("");
@@ -355,10 +441,12 @@ function WorkflowDetail({
   });
 
   const updateStepMutation = useMutation({
-    mutationFn: (data: { stepId: string; configJson: any; stepType: string }) =>
+    mutationFn: (data: { stepId: string; configJson: any; stepType: string; nextStepId?: string | null; branchNoStepId?: string | null }) =>
       apiRequest("PATCH", `/api/marketing-workflows/${workflowId}/steps/${data.stepId}`, {
         configJson: data.configJson,
         stepType: data.stepType,
+        nextStepId: data.nextStepId,
+        branchNoStepId: data.branchNoStepId,
       }).then((r) => r.json()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/marketing-workflows", workflowId] });
@@ -500,18 +588,21 @@ function WorkflowDetail({
           {steps.map((step, i) => (
             <div key={step.id} className="flex items-start gap-3">
               <div className="flex flex-col items-center">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step.stepType === "branch" ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}>
                   {STEP_ICONS[step.stepType] ?? <Settings2 className="w-4 h-4" />}
                 </div>
                 {i < steps.length - 1 && <div className="w-px h-6 bg-border mt-1" />}
               </div>
               <Card className="flex-1">
-                <CardContent className="py-3 flex items-center justify-between gap-2">
-                  <div>
+                <CardContent className="py-3 flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs text-muted-foreground">{STEP_LABELS[step.stepType] ?? step.stepType}</p>
                     <p className="text-sm font-medium">{stepSummary(step)}</p>
+                    {step.stepType === "branch" && (
+                      <BranchPathSummary step={step} steps={steps} />
+                    )}
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 shrink-0">
                     <Button
                       size="icon"
                       variant="ghost"
@@ -519,6 +610,8 @@ function WorkflowDetail({
                       onClick={() => {
                         setEditStep(step);
                         setEditStepConfig(step.configJson ?? {});
+                        setEditStepNextStepId(step.nextStepId ?? null);
+                        setEditStepBranchNoStepId(step.branchNoStepId ?? null);
                       }}
                     >
                       <Settings2 className="w-3.5 h-3.5" />
@@ -734,6 +827,12 @@ function WorkflowDetail({
               stepType={editStep.stepType}
               config={editStepConfig}
               onChange={setEditStepConfig}
+              steps={steps}
+              currentStepId={editStep.id}
+              nextStepId={editStepNextStepId}
+              branchNoStepId={editStepBranchNoStepId}
+              onNextStepIdChange={setEditStepNextStepId}
+              onBranchNoStepIdChange={setEditStepBranchNoStepId}
             />
           )}
           <DialogFooter>
@@ -741,7 +840,13 @@ function WorkflowDetail({
             <Button
               onClick={() => {
                 if (!editStep) return;
-                updateStepMutation.mutate({ stepId: editStep.id, configJson: editStepConfig, stepType: editStep.stepType });
+                updateStepMutation.mutate({
+                  stepId: editStep.id,
+                  configJson: editStepConfig,
+                  stepType: editStep.stepType,
+                  nextStepId: editStep.stepType === "branch" ? editStepNextStepId : undefined,
+                  branchNoStepId: editStep.stepType === "branch" ? editStepBranchNoStepId : undefined,
+                });
               }}
               disabled={updateStepMutation.isPending}
             >
