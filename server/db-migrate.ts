@@ -63,6 +63,22 @@ function extractCreatedTableNames(sql: string): string[] {
   return [...new Set(names)];
 }
 
+/**
+ * Parse a migration file's SQL for table names in DROP TABLE statements.
+ * Destructive migrations (drop-only, no CREATE TABLE) must not be
+ * backfill-stamped while their target tables still exist, or the drop would
+ * be recorded as applied without ever running.
+ */
+export function extractDroppedTableNames(sql: string): string[] {
+  const re = /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?/gi;
+  const names: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sql)) !== null) {
+    names.push(m[1].toLowerCase());
+  }
+  return [...new Set(names)];
+}
+
 /** Check whether a given table exists in the public schema. */
 async function tableExists(pool: pg.Pool, tableName: string): Promise<boolean> {
   const r = await pool.query(
@@ -102,7 +118,7 @@ async function loadApplied(pool: pg.Pool): Promise<Map<string, string>> {
  * actually exist. Only stamp files whose schema objects are confirmed present;
  * return an array of files that must be applied for real (objects absent).
  */
-async function computeBackfillPlan(
+export async function computeBackfillPlan(
   pool: pg.Pool,
   files: string[],
   label: string
@@ -116,8 +132,27 @@ async function computeBackfillPlan(
     const tableNames = extractCreatedTableNames(content);
 
     if (tableNames.length === 0) {
-      // File only has ALTER TABLE / CREATE INDEX / DO blocks — no new tables.
-      // Assume present: if we're here, users exists so the DB is established.
+      // No new tables in this file. If it DROPs tables that still exist, it is
+      // a destructive migration that has NOT been applied — apply it for real
+      // instead of stamping, or the drop would be permanently skipped.
+      const droppedNames = extractDroppedTableNames(content);
+      let pendingDrop = false;
+      for (const tbl of droppedNames) {
+        if (await tableExists(pool, tbl)) {
+          console.log(
+            `${label} backfill: dropped table '${tbl}' still present — will apply: ${filename}`
+          );
+          pendingDrop = true;
+          break;
+        }
+      }
+      if (pendingDrop) {
+        toApply.push(filePath);
+        continue;
+      }
+      // Otherwise the file only has ALTER TABLE / CREATE INDEX / DO blocks (or
+      // its drops already took effect). Assume present: if we're here, users
+      // exists so the DB is established.
       console.log(`${label} backfill: stamping (no CREATE TABLE, alter-only): ${filename}`);
       toStamp.push(filePath);
       continue;
