@@ -63,6 +63,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "visualizationDashboard", label: "Visualization Dashboard", description: "Interactive Recharts-based dashboard with engagement trends, posting frequency, sentiment over time, and competitor activity analytics.", category: "intelligence" },
   { key: "marketingContacts", label: "Marketing Contacts", description: "First-party contact database with lifecycle stages and activity timeline — the spine for segmentation, nurture, and attribution.", category: "marketing" },
   { key: "leadScoring", label: "Lead Scoring", description: "Rule-based lead scoring with AI-suggested rules, lifecycle stage transitions, and HubSpot score push. Requires Marketing Contacts.", category: "marketing" },
+  { key: "marketingWorkflows", label: "Marketing Workflows", description: "Visual multi-step automation engine: enrollment triggers (segment, event, score), email sends, waits, branches, property updates, and notifications.", category: "marketing" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -137,6 +138,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     visualizationDashboard: false,
     marketingContacts: false,
     leadScoring: false,
+    marketingWorkflows: false,
   },
   trial: {
     battlecards: true,
@@ -189,6 +191,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     visualizationDashboard: false,
     marketingContacts: false,
     leadScoring: false,
+    marketingWorkflows: false,
   },
   pro: {
     battlecards: true,
@@ -241,6 +244,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     visualizationDashboard: false,
     marketingContacts: false,
     leadScoring: false,
+    marketingWorkflows: false,
   },
   enterprise: {
     battlecards: true,
@@ -298,6 +302,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outreachCadence: true,
     marketingContacts: true,
     leadScoring: true,
+    marketingWorkflows: true,
   },
   unlimited: {
     battlecards: true,
@@ -355,6 +360,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     outreachCadence: true,
     marketingContacts: true,
     leadScoring: true,
+    marketingWorkflows: true,
   },
 };
 

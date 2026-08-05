@@ -21,6 +21,7 @@ import { tickMarketingPublishWorker, sweepMissedPosts } from "./marketing-publis
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { tickAbTestEvaluationWorker } from "./email-ab-test";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
+import { tickWorkflowEngine, sweepAllTenantWorkflowTriggers } from "./marketing-workflow-service";
 import { refreshSeoForContext } from "../routes/seo";
 import { db, crawlDb } from "../db";
 import { marketingPlans, seoMetrics, trackedKeywords, collaborationComments, collaborationThreads, annotations, generatedPosts, scheduledJobRuns, type SeoMetric } from "@shared/schema";
@@ -2628,6 +2629,30 @@ export function startScheduledJobs(): void {
       console.error("[HubSpot Email Backfill] Tick error:", err?.message || err);
     });
   }, 10 * 60 * 1000);
+
+  // Marketing Workflow Engine — advance enrollments whose nextRunAt has elapsed
+  // (wait steps that are now due). Runs every 60 seconds; cheap no-op when no
+  // enrollments are pending.
+  setInterval(() => {
+    tickWorkflowEngine().catch(err => {
+      console.error("[Workflow Engine] Tick error:", err?.message || err);
+    });
+  }, 60 * 1000);
+  // First tick after 30s so initial startup doesn't add contention.
+  setTimeout(() => {
+    tickWorkflowEngine().catch(err => {
+      console.error("[Workflow Engine] Startup tick error:", err?.message || err);
+    });
+  }, 30_000);
+
+  // Segment-trigger sweep — enroll newly-added segment members into active
+  // segment_membership workflows. Runs every 5 minutes; lightweight when no
+  // segment-triggered workflows exist.
+  setInterval(() => {
+    sweepAllTenantWorkflowTriggers().catch(err => {
+      console.error("[Workflow Engine] Segment trigger sweep error:", err?.message || err);
+    });
+  }, 5 * 60 * 1000);
 
   // CRITICAL: Clean up any stuck jobs from previous runs
   cleanupStuckJobs().catch(err => {

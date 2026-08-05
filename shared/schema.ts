@@ -5345,3 +5345,166 @@ export const marketingSegmentsRelations = relations(marketingSegments, ({ many }
 
 
 export type MarketingSegmentMember = typeof marketingSegmentMembers.$inferSelect;
+
+// ─── Marketing Workflow Engine ────────────────────────────────────────────────
+
+/**
+ * marketing_workflows — a named automation workflow with a trigger and a list of steps.
+ *
+ * trigger_json shape:
+ *   { type: "segment_membership", segmentId: string }
+ *   { type: "contact_event", eventType: "form_submit" | "link_click" | "email_open" | ... }
+ *   { type: "lead_score_threshold", threshold: number, direction: "above" | "below" }
+ *   { type: "manual" }
+ *
+ * re_enroll_policy:
+ *   "never"         — a contact can only enroll once, ever.
+ *   "always"        — re-enroll every time the trigger fires.
+ *   "once_per_days" — re-enroll when re_enroll_days have passed since last enrollment.
+ */
+export const marketingWorkflows = pgTable("marketing_workflows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  triggerJson: jsonb("trigger_json").notNull().default({}),
+  status: text("status").notNull().default("draft"), // draft | active | paused
+  reEnrollPolicy: text("re_enroll_policy").notNull().default("never"),
+  reEnrollDays: integer("re_enroll_days"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index("marketing_workflows_tenant_idx").on(table.tenantDomain),
+  statusIdx: index("marketing_workflows_status_idx").on(table.tenantDomain, table.status),
+}));
+
+export const insertMarketingWorkflowSchema = createInsertSchema(marketingWorkflows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type MarketingWorkflow = typeof marketingWorkflows.$inferSelect;
+export type InsertMarketingWorkflow = z.infer<typeof insertMarketingWorkflowSchema>;
+
+/**
+ * marketing_workflow_steps — ordered steps inside a workflow.
+ *
+ * step_type values and their config_json shapes:
+ *   "send_email"    — { generatedEmailId: string, subjectOverride?: string }
+ *   "wait"          — { amount: number, unit: "hours" | "days" }
+ *   "branch"        — { condition: SegmentRuleExpr, yesNextStepId?: string, noNextStepId?: string }
+ *   "set_property"  — { field: string, value: string }
+ *   "create_task"   — { title: string, description?: string, assigneeUserId?: string }
+ *   "notify"        — { message: string, targetUserIds?: string[] }
+ */
+export const marketingWorkflowSteps = pgTable("marketing_workflow_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workflowId: varchar("workflow_id").notNull().references(() => marketingWorkflows.id, { onDelete: "cascade" }),
+  stepType: text("step_type").notNull(),
+  configJson: jsonb("config_json").notNull().default({}),
+  stepOrder: integer("step_order").notNull().default(0),
+  /** Branch steps point to a specific next step id for the yes branch; no-branch falls through to stepOrder+1. */
+  nextStepId: varchar("next_step_id"),
+  branchNoStepId: varchar("branch_no_step_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  workflowOrderIdx: index("marketing_workflow_steps_workflow_order_idx").on(table.workflowId, table.stepOrder),
+}));
+
+export const insertMarketingWorkflowStepSchema = createInsertSchema(marketingWorkflowSteps).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type MarketingWorkflowStep = typeof marketingWorkflowSteps.$inferSelect;
+export type InsertMarketingWorkflowStep = z.infer<typeof insertMarketingWorkflowStepSchema>;
+
+/**
+ * marketing_workflow_enrollments — a contact's position in a running workflow.
+ * status: active | completed | exited | paused
+ */
+export const marketingWorkflowEnrollments = pgTable("marketing_workflow_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workflowId: varchar("workflow_id").notNull().references(() => marketingWorkflows.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").notNull().references(() => marketingContacts.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  currentStepId: varchar("current_step_id"),
+  status: text("status").notNull().default("active"),
+  enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  exitedAt: timestamp("exited_at"),
+  exitReason: text("exit_reason"),
+  /** When the next advance should be scheduled (used for wait steps). */
+  nextRunAt: timestamp("next_run_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  workflowContactIdx: index("marketing_workflow_enrollments_workflow_contact_idx").on(table.workflowId, table.contactId),
+  tenantStatusIdx: index("marketing_workflow_enrollments_tenant_status_idx").on(table.tenantDomain, table.status),
+  nextRunIdx: index("marketing_workflow_enrollments_next_run_idx").on(table.nextRunAt),
+}));
+
+export const insertMarketingWorkflowEnrollmentSchema = createInsertSchema(marketingWorkflowEnrollments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type MarketingWorkflowEnrollment = typeof marketingWorkflowEnrollments.$inferSelect;
+export type InsertMarketingWorkflowEnrollment = z.infer<typeof insertMarketingWorkflowEnrollmentSchema>;
+
+/**
+ * marketing_workflow_step_runs — audit log of every step execution for an enrollment.
+ */
+export const marketingWorkflowStepRuns = pgTable("marketing_workflow_step_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  enrollmentId: varchar("enrollment_id").notNull().references(() => marketingWorkflowEnrollments.id, { onDelete: "cascade" }),
+  stepId: varchar("step_id").notNull().references(() => marketingWorkflowSteps.id, { onDelete: "cascade" }),
+  ranAt: timestamp("ran_at").notNull().defaultNow(),
+  outcomeJson: jsonb("outcome_json"),
+  error: text("error"),
+}, (table) => ({
+  enrollmentIdx: index("marketing_workflow_step_runs_enrollment_idx").on(table.enrollmentId),
+}));
+
+export const insertMarketingWorkflowStepRunSchema = createInsertSchema(marketingWorkflowStepRuns).omit({
+  id: true,
+});
+export type MarketingWorkflowStepRun = typeof marketingWorkflowStepRuns.$inferSelect;
+
+// Relations
+export const marketingWorkflowsRelations = relations(marketingWorkflows, ({ many }) => ({
+  steps: many(marketingWorkflowSteps),
+  enrollments: many(marketingWorkflowEnrollments),
+}));
+
+export const marketingWorkflowStepsRelations = relations(marketingWorkflowSteps, ({ one }) => ({
+  workflow: one(marketingWorkflows, {
+    fields: [marketingWorkflowSteps.workflowId],
+    references: [marketingWorkflows.id],
+  }),
+}));
+
+export const marketingWorkflowEnrollmentsRelations = relations(marketingWorkflowEnrollments, ({ one, many }) => ({
+  workflow: one(marketingWorkflows, {
+    fields: [marketingWorkflowEnrollments.workflowId],
+    references: [marketingWorkflows.id],
+  }),
+  contact: one(marketingContacts, {
+    fields: [marketingWorkflowEnrollments.contactId],
+    references: [marketingContacts.id],
+  }),
+  stepRuns: many(marketingWorkflowStepRuns),
+}));
+
+export const marketingWorkflowStepRunsRelations = relations(marketingWorkflowStepRuns, ({ one }) => ({
+  enrollment: one(marketingWorkflowEnrollments, {
+    fields: [marketingWorkflowStepRuns.enrollmentId],
+    references: [marketingWorkflowEnrollments.id],
+  }),
+  step: one(marketingWorkflowSteps, {
+    fields: [marketingWorkflowStepRuns.stepId],
+    references: [marketingWorkflowSteps.id],
+  }),
+}));

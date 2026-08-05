@@ -39,6 +39,7 @@ const STATIC_ROUTE_LABELS: Record<string, string> = {
   "/app/marketing/personas": "Personas",
   "/app/marketing/contacts": "Contacts",
   "/app/marketing/lead-scoring": "Lead Scoring",
+  "/app/marketing/workflows": "Workflows",
   "/app/marketing/projects": "Marketing Projects",
   "/app/marketing/campaigns": "Campaigns",
   "/app/marketing/email-newsletters": "Email Newsletters",

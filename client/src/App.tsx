@@ -101,6 +101,7 @@ import GlobalPlatformCredentialsPage from "@/pages/app/admin/platform-credential
 import DeveloperPortalPage from "@/pages/app/developer";
 import LeadScoringPage from "@/pages/app/marketing/lead-scoring";
 import SegmentsPage from "@/pages/app/marketing/segments";
+import WorkflowsPage from "@/pages/app/marketing/workflows";
 
 function GlobalAdminOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
@@ -222,6 +223,7 @@ function Router() {
       <Route path="/app/marketing/contacts">{() => <PageFeatureGate featureKey="marketingContacts" label="Marketing Contacts" description="First-party contact database with lifecycle stages and activity timeline. Upgrade to unlock this feature."><ContactsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/lead-scoring">{() => <PageFeatureGate featureKey="marketingContacts" label="Lead Scoring" description="Rule-based lead scoring with lifecycle stage transitions. Upgrade to unlock this feature."><LeadScoringPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/segments">{() => <PageFeatureGate featureKey="marketingContacts" label="Contact Segments" description="Rule-based contact segments that recompute automatically. Upgrade to unlock this feature."><SegmentsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/workflows">{() => <PageFeatureGate featureKey="marketingWorkflows" label="Marketing Workflows" description="Multi-step automation sequences with enrollment triggers, email sends, waits, and branches. Upgrade to unlock this feature."><WorkflowsPage /></PageFeatureGate>}</Route>
       {/* Marketing Projects (formerly "Marketing Planner" at /app/marketing-planner). */}
       <Route path="/app/marketing/projects" component={MarketingPlannerPage} />
       <Route path="/app/marketing/projects/:id" component={MarketingPlanDetail} />

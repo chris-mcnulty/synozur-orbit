@@ -57,6 +57,7 @@ import { registerMarketingContactsRoutes } from "./routes/marketing-contacts";
 import { registerLeadScoringRoutes } from "./routes/lead-scoring";
 import { registerTestHelperRoutes } from "./routes/test-helpers";
 import { registerMarketingSegmentsRoutes } from "./routes/marketing-segments";
+import { registerMarketingWorkflowRoutes } from "./routes/marketing-workflows";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -147,6 +148,7 @@ export async function registerRoutes(
   registerMarketingContactsRoutes(app);
   registerLeadScoringRoutes(app);
   registerMarketingSegmentsRoutes(app);
+  registerMarketingWorkflowRoutes(app);
   registerSalesOutreachRoutes(app);
   registerTestHelperRoutes(app);
 
