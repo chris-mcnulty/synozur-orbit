@@ -1,4 +1,0 @@
-id,tenant_domain,name,archetype,anchor,is_default,created_at,updated_at
-812efeff-28dc-4041-a637-e561542b6d6e,synozur.com,2026 Q3 NYC PE cadence,event_invite,event_date,f,2026-06-14 17:28:06.752097,2026-06-14 17:28:06.752097
-b8ab5939-9892-4e72-91f1-681d051c1656,synozur.com,2027-07 AI GTM Webinar cadence,event_invite,event_date,f,2026-06-23 19:07:58.712495,2026-06-23 19:07:58.712495
-82585eed-3228-42f0-bad3-0777e020614d,synozur.com,Seko cadence,meeting_drive,start_date,f,2026-07-08 21:54:30.228323,2026-07-08 21:54:30.228323

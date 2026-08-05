@@ -1,2 +1,0 @@
-id,default_provider,default_model,max_tokens_per_request,monthly_token_budget,alert_thresholds,alert_enabled,updated_by,updated_at,created_at
-97f3545e-f376-4c22-86f8-193ec376b11e,azure_foundry,claude-sonnet-4-6,8192,,"[75, 90, 100]",t,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-30 17:46:11.308,2026-03-23 17:51:25.898399
