@@ -4159,6 +4159,8 @@ export const emailSends = pgTable("email_sends", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   generatedEmailId: varchar("generated_email_id").notNull().references(() => generatedEmails.id, { onDelete: "cascade" }),
   listId: varchar("list_id").references(() => emailRecipientLists.id, { onDelete: "set null" }),
+  /** When set, the send targets contacts resolved from this saved segment (instead of a static list). */
+  segmentId: varchar("segment_id").references(() => marketingContactSegments.id, { onDelete: "set null" }),
   testRecipient: text("test_recipient"), // when set, this was a "send to me" test send
   status: text("status").notNull().default("pending"), // pending | queued | sending | sent | failed | partial
   scheduledAt: timestamp("scheduled_at"), // when set, dispatch is deferred to the email-send worker
@@ -5095,3 +5097,49 @@ export const marketingContactEventsRelations = relations(marketingContactEvents,
     references: [marketingContacts.id],
   }),
 }));
+
+/**
+ * A segment is a named, saved set of filter rules that resolves to a dynamic
+ * list of marketing_contacts rows at evaluation time. Rules are stored as
+ * JSON so new filter types can be added without schema changes.
+ *
+ * Rule shape (SegmentRule[] in marketing-contact-service.ts):
+ *   { field: "lifecycleStage", op: "eq"|"in", value: string|string[] }
+ *   { field: "source",         op: "eq"|"in", value: string|string[] }
+ *   { field: "company",        op: "contains"|"eq", value: string }
+ *   { field: "domain",         op: "eq"|"in", value: string|string[] }  (email domain)
+ *   { field: "eventType",      op: "seen"|"not_seen", value: string }
+ *   { field: "lastEventAt",    op: "within_days"|"older_than_days", value: number }
+ */
+export const marketingContactSegments = pgTable(
+  "marketing_contact_segments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    /** JSON array of SegmentRule objects */
+    rules: jsonb("rules").notNull().default(sql`'[]'::jsonb`),
+    /** Cached contact count from last evaluation — null until first preview */
+    previewCount: integer("preview_count"),
+    previewedAt: timestamp("previewed_at"),
+    createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantIdx: index("marketing_contact_segments_tenant_idx").on(table.tenantDomain),
+  }),
+);
+
+export type InsertMarketingContactSegment = z.infer<typeof insertMarketingContactSegmentSchema>;
+
+export const insertMarketingContactSegmentSchema = createInsertSchema(marketingContactSegments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  previewCount: true,
+  previewedAt: true,
+});
+
+export type MarketingContactSegment = typeof marketingContactSegments.$inferSelect;

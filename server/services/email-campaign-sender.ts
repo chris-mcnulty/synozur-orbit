@@ -354,6 +354,13 @@ export interface DispatchSendOptions {
   email: GeneratedEmail;
   /** Either listId+null testRecipient, or testRecipient set for one-off "send to me". */
   listId?: string | null;
+  /**
+   * When set, the send targets all contacts that match the saved segment's
+   * rules at delivery time (instead of a static recipient list). The segment
+   * is resolved to individual email addresses immediately before delivery so
+   * suppressions and subscription preferences still apply.
+   */
+  segmentId?: string | null;
   testRecipient?: string | null;
   createdBy: string;
   baseUrl: string;
@@ -405,17 +412,17 @@ export interface DispatchSendResult {
  * inline (test-recipient sends always go inline).
  */
 export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<DispatchSendResult> {
-  const { tenantDomain, marketId, email, listId, testRecipient, createdBy, baseUrl, scheduledAt } = opts;
+  const { tenantDomain, marketId, email, listId, segmentId, testRecipient, createdBy, baseUrl, scheduledAt } = opts;
 
-  // All list sends are queued for the worker — this gives us per-tick rate
-  // shaping, retry safety, and avoids holding the request open while we
+  // All list/segment sends are queued for the worker — this gives us per-tick
+  // rate shaping, retry safety, and avoids holding the request open while we
   // loop over thousands of recipients. Test recipients (single-message
   // preview sends) deliver inline so reviewers see the result immediately.
   if (testRecipient) {
     return deliverEmailSend(opts);
   }
-  if (!listId) {
-    throw Object.assign(new Error("listId is required for list sends"), { status: 400 });
+  if (!listId && !segmentId) {
+    throw Object.assign(new Error("listId or segmentId is required for list sends"), { status: 400 });
   }
   const queueAt = scheduledAt && scheduledAt.getTime() > Date.now() + 1000
     ? scheduledAt
@@ -424,7 +431,8 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     tenantDomain,
     marketId,
     generatedEmailId: email.id,
-    listId,
+    listId: listId ?? null,
+    segmentId: segmentId ?? null,
     testRecipient: null,
     status: "queued",
     scheduledAt: queueAt,
@@ -453,7 +461,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     entityId: send.id,
     status: "ok",
     message: scheduledAt ? `Scheduled for ${scheduledAt.toISOString()}` : "Queued for immediate delivery",
-    details: { listId, scheduledAt: queueAt.toISOString(), generatedEmailId: email.id },
+    details: { listId, segmentId, scheduledAt: queueAt.toISOString(), generatedEmailId: email.id },
   });
   return { send, totalRecipients: 0, sentCount: 0, failedCount: 0, queued: true };
 }
@@ -501,6 +509,14 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       .limit(MAX_RECIPIENTS_PER_SEND);
     for (const r of rows) {
       recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
+    }
+  } else if (opts.segmentId) {
+    // Resolve the saved segment to a dynamic contact list at delivery time.
+    const { resolveSegmentContacts } = await import("./marketing-contact-service");
+    const { contacts } = await resolveSegmentContacts(opts.segmentId, tenantDomain, MAX_RECIPIENTS_PER_SEND);
+    for (const c of contacts) {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || null;
+      recipients.push({ email: c.email.trim().toLowerCase(), name });
     }
   }
 
@@ -667,6 +683,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       marketId,
       generatedEmailId: email.id,
       listId: testRecipient ? null : (listId ?? null),
+      segmentId: testRecipient ? null : (opts.segmentId ?? null),
       testRecipient: testRecipient ?? null,
       status: "sending",
       trackOpens,
@@ -995,6 +1012,8 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           marketId: row.send.marketId ?? null,
           email: row.email,
           listId: row.send.listId ?? null,
+          // Recover the segment audience target persisted at queue time.
+          segmentId: (row.send as any).segmentId ?? null,
           testRecipient: null,
           createdBy: row.send.createdBy,
           baseUrl: opts.baseUrl,

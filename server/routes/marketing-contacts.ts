@@ -6,6 +6,7 @@
  *   GET    /api/marketing-contacts                 list contacts (paginated, search, lifecycle filter)
  *   GET    /api/marketing-contacts/:id             single contact
  *   GET    /api/marketing-contacts/:id/events      timeline events
+ *   GET    /api/marketing-contacts/:id/journey     attribution journey
  *   POST   /api/admin/marketing-contacts/backfill  admin-only one-shot backfill
  */
 
@@ -15,6 +16,7 @@ import { eq, and, desc, asc, ilike, or, count, inArray } from "drizzle-orm";
 import {
   marketingContacts,
   marketingContactEvents,
+  marketingContactSegments,
   tenants,
   marketingLinks,
   emailSends,
@@ -29,9 +31,79 @@ import {
   ingestEvent,
   backfillContactTimeline,
   backfillContactOptOuts,
+  evaluateSegmentRules,
+  resolveSegmentContacts,
+  LIFECYCLE_STAGES,
   type ContactEventType,
+  type SegmentRule,
 } from "../services/marketing-contact-service";
+
+// ---------------------------------------------------------------------------
+// Rule validation
+// ---------------------------------------------------------------------------
+
+const VALID_FIELDS = new Set(["lifecycleStage", "source", "company", "domain", "eventType", "lastEventAt"]);
+const VALID_OPS_BY_FIELD: Record<string, Set<string>> = {
+  lifecycleStage: new Set(["eq", "in"]),
+  source:         new Set(["eq", "in"]),
+  company:        new Set(["contains", "eq"]),
+  domain:         new Set(["eq", "in"]),
+  eventType:      new Set(["seen", "not_seen"]),
+  lastEventAt:    new Set(["within_days", "older_than_days"]),
+};
+const VALID_EVENT_TYPES = new Set([
+  "form_submit", "page_view", "email_sent", "email_open",
+  "email_click", "link_click", "social_engage",
+]);
+const LIFECYCLE_SET = new Set(LIFECYCLE_STAGES as readonly string[]);
+
+/**
+ * Validates an array of segment rules. Returns an error string if invalid,
+ * or null if all rules are well-formed. Requires at least one rule.
+ */
+function validateRules(rules: unknown): string | null {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    return "At least one filter rule is required";
+  }
+  for (let i = 0; i < rules.length; i++) {
+    const r = rules[i];
+    if (!r || typeof r !== "object") return `Rule ${i + 1}: must be an object`;
+    const { field, op, value } = r as any;
+    if (!VALID_FIELDS.has(field)) return `Rule ${i + 1}: unknown field "${field}"`;
+    const validOps = VALID_OPS_BY_FIELD[field];
+    if (!validOps?.has(op)) return `Rule ${i + 1}: invalid operator "${op}" for field "${field}"`;
+
+    // Value validation per field
+    if (field === "lifecycleStage") {
+      if (op === "eq") {
+        if (!LIFECYCLE_SET.has(value)) return `Rule ${i + 1}: unknown lifecycle stage "${value}"`;
+      } else {
+        if (!Array.isArray(value) || value.length === 0) return `Rule ${i + 1}: "in" requires a non-empty array`;
+        for (const v of value) {
+          if (!LIFECYCLE_SET.has(v)) return `Rule ${i + 1}: unknown lifecycle stage "${v}"`;
+        }
+      }
+    } else if (field === "eventType") {
+      if (!VALID_EVENT_TYPES.has(value)) return `Rule ${i + 1}: unknown event type "${value}"`;
+    } else if (field === "lastEventAt") {
+      if (typeof value !== "number" || value < 1 || !Number.isInteger(value)) {
+        return `Rule ${i + 1}: lastEventAt value must be a positive integer (number of days)`;
+      }
+    } else if (op === "in") {
+      if (!Array.isArray(value) || value.length === 0) return `Rule ${i + 1}: "in" requires a non-empty array`;
+      if (value.some((v: unknown) => typeof v !== "string" || !v.trim())) {
+        return `Rule ${i + 1}: all values must be non-empty strings`;
+      }
+    } else {
+      if (typeof value !== "string" || !value.trim()) {
+        return `Rule ${i + 1}: value must be a non-empty string`;
+      }
+    }
+  }
+  return null;
+}
 import { parsePaginationParams } from "../utils/pagination";
+import { randomUUID } from "crypto";
 import {
   type AttributionModel,
   ATTRIBUTION_MODELS,
@@ -482,6 +554,132 @@ export function registerMarketingContactsRoutes(app: Express) {
     } catch (err: any) {
       console.error("[marketing-contacts] HubSpot enrichment failed:", err.message);
       res.status(500).json({ error: err.message || "Enrichment failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // SEGMENT CRUD
+  // ──────────────────────────────────────────────────────────
+
+  /** List all segments for the tenant */
+  app.get("/api/marketing-contacts/segments", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const rows = await db
+      .select()
+      .from(marketingContactSegments)
+      .where(eq(marketingContactSegments.tenantDomain, ctx.tenantDomain))
+      .orderBy(desc(marketingContactSegments.updatedAt));
+    res.json(rows);
+  });
+
+  /** Create a new segment */
+  app.post("/api/marketing-contacts/segments", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { name, description, rules } = req.body ?? {};
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ error: "name is required" });
+    }
+    const ruleError = validateRules(rules);
+    if (ruleError) return res.status(400).json({ error: ruleError });
+    const [row] = await db
+      .insert(marketingContactSegments)
+      .values({
+        id: randomUUID(),
+        tenantDomain: ctx.tenantDomain,
+        name: name.trim(),
+        description: description?.trim() || null,
+        rules: rules as SegmentRule[],
+        createdBy: ctx.userId,
+      })
+      .returning();
+    res.status(201).json(row);
+  });
+
+  /** Update a segment */
+  app.put("/api/marketing-contacts/segments/:id", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { name, description, rules } = req.body ?? {};
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (name && typeof name === "string") patch.name = name.trim();
+    if (typeof description === "string") patch.description = description.trim() || null;
+    if (rules !== undefined) {
+      const ruleError = validateRules(rules);
+      if (ruleError) return res.status(400).json({ error: ruleError });
+      patch.rules = rules;
+    }
+    const [updated] = await db
+      .update(marketingContactSegments)
+      .set(patch)
+      .where(
+        and(
+          eq(marketingContactSegments.id, req.params.id),
+          eq(marketingContactSegments.tenantDomain, ctx.tenantDomain),
+        ),
+      )
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Segment not found" });
+    res.json(updated);
+  });
+
+  /** Delete a segment */
+  app.delete("/api/marketing-contacts/segments/:id", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const [deleted] = await db
+      .delete(marketingContactSegments)
+      .where(
+        and(
+          eq(marketingContactSegments.id, req.params.id),
+          eq(marketingContactSegments.tenantDomain, ctx.tenantDomain),
+        ),
+      )
+      .returning({ id: marketingContactSegments.id });
+    if (!deleted) return res.status(404).json({ error: "Segment not found" });
+    res.json({ ok: true });
+  });
+
+  /**
+   * Preview a segment — evaluates rules and returns matching contacts + count.
+   * Accepts either a saved segment id OR an ad-hoc rules array in the body.
+   */
+  app.post("/api/marketing-contacts/segments/preview", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    const ctx = await getRequestContext(req);
+    const { segmentId, rules } = req.body ?? {};
+    try {
+      if (segmentId && typeof segmentId === "string") {
+        const { segment, contacts } = await resolveSegmentContacts(segmentId, ctx.tenantDomain, 200);
+        return res.json({ count: contacts.length, contacts, previewCount: segment.previewCount });
+      }
+      if (Array.isArray(rules)) {
+        const ruleError = validateRules(rules);
+        if (ruleError) return res.status(400).json({ error: ruleError });
+        const contacts = await evaluateSegmentRules(ctx.tenantDomain, rules as SegmentRule[], 200);
+        return res.json({ count: contacts.length, contacts });
+      }
+      return res.status(400).json({ error: "Provide segmentId or rules array" });
+    } catch (err: any) {
+      const status = err?.status ?? 500;
+      res.status(status).json({ error: err?.message || "Preview failed" });
+    }
+  });
+
+  /**
+   * Resolve a saved segment to the full contact list (up to 2000 rows).
+   * Used by the email sender when targeting a segment.
+   */
+  app.get("/api/marketing-contacts/segments/:id/contacts", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    const ctx = await getRequestContext(req);
+    try {
+      const { segment, contacts } = await resolveSegmentContacts(req.params.id, ctx.tenantDomain);
+      res.json({ segment, contacts, count: contacts.length });
+    } catch (err: any) {
+      const status = err?.status ?? 500;
+      res.status(status).json({ error: err?.message || "Failed to resolve segment" });
     }
   });
 }

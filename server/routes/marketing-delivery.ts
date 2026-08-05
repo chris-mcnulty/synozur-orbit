@@ -1637,9 +1637,9 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
     if (!email) return res.status(404).json({ error: "Email not found" });
 
-    const { listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds } = req.body ?? {};
-    if (!listId && !testRecipient) {
-      return res.status(400).json({ error: "Either listId or testRecipient is required" });
+    const { listId, segmentId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds } = req.body ?? {};
+    if (!listId && !segmentId && !testRecipient) {
+      return res.status(400).json({ error: "Either listId, segmentId, or testRecipient is required" });
     }
 
     // Approval gating — only approved emails (or already-sent ones being
@@ -1666,6 +1666,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         marketId: ctx.marketId,
         email,
         listId: listId ?? null,
+        segmentId: typeof segmentId === "string" ? segmentId : null,
         testRecipient: testRecipient ?? null,
         createdBy: req.session.userId!,
         baseUrl: getBaseUrl(req),

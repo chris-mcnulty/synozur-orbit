@@ -307,8 +307,9 @@ export default function EmailNewslettersPage() {
   const [labelInput, setLabelInput] = useState("");
   const [sendDialogEmail, setSendDialogEmail] = useState<SavedEmail | null>(null);
   const [sendListId, setSendListId] = useState<string>("");
+  const [sendSegmentId, setSendSegmentId] = useState<string>("");
   const [sendTestRecipient, setSendTestRecipient] = useState<string>("");
-  const [sendMode, setSendMode] = useState<"list" | "test">("test");
+  const [sendMode, setSendMode] = useState<"list" | "segment" | "test">("test");
   const [sendScheduleAt, setSendScheduleAt] = useState<string>("");
   const [sendTrackOpens, setSendTrackOpens] = useState<boolean>(true);
   const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
@@ -356,6 +357,15 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed && directDeliveryEnabled,
   });
 
+  const { data: contactSegments = [] } = useQuery<Array<{ id: string; name: string; previewCount: number | null }>>({
+    queryKey: ["/api/marketing-contacts/segments"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketing-contacts/segments", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && directDeliveryEnabled,
+  });
+
   const { data: senderIdentities = [] } = useQuery<Array<{ id: string; name: string; email: string; replyToEmail: string | null; isDefault: boolean }>>({
     queryKey: ["/api/email-sender-identities"],
     queryFn: async () => {
@@ -375,13 +385,14 @@ export default function EmailNewslettersPage() {
   });
 
   const sendEmailMutation = useMutation({
-    mutationFn: async ({ emailId, listId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds }: { emailId: string; listId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean; senderIdentityId?: string; subscriptionTypeIds?: string[] }) => {
+    mutationFn: async ({ emailId, listId, segmentId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds }: { emailId: string; listId?: string; segmentId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean; senderIdentityId?: string; subscriptionTypeIds?: string[] }) => {
       const r = await fetch(`/api/generated-emails/${emailId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           listId: listId || undefined,
+          segmentId: segmentId || undefined,
           testRecipient: testRecipient || undefined,
           scheduledAt: scheduledAt || undefined,
           trackOpens,
@@ -1814,6 +1825,13 @@ export default function EmailNewslettersPage() {
                   onClick={() => setSendMode("list")}
                   data-testid="button-send-mode-list"
                 >Recipient list</Button>
+                <Button
+                  variant={sendMode === "segment" ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setSendMode("segment")}
+                  data-testid="button-send-mode-segment"
+                >Segment</Button>
               </div>
               {sendMode === "test" ? (
                 <div>
@@ -1826,7 +1844,7 @@ export default function EmailNewslettersPage() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">A single test message will be sent and recorded under Sends.</p>
                 </div>
-              ) : (
+              ) : sendMode === "list" ? (
                 <div>
                   <Label>Recipient list</Label>
                   {recipientLists.length === 0 ? (
@@ -1846,8 +1864,29 @@ export default function EmailNewslettersPage() {
                     </Select>
                   )}
                 </div>
+              ) : (
+                <div>
+                  <Label>Contact segment</Label>
+                  {contactSegments.length === 0 ? (
+                    <p className="text-xs text-muted-foreground mt-2">No segments yet. Create one in Contacts → Segments.</p>
+                  ) : (
+                    <Select value={sendSegmentId} onValueChange={setSendSegmentId}>
+                      <SelectTrigger data-testid="select-segment">
+                        <SelectValue placeholder="Choose a segment..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contactSegments.map(s => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}{s.previewCount !== null ? ` (~${s.previewCount.toLocaleString()} contacts)` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">Contacts are resolved from the segment's filter rules at send time. Suppressions and opt-outs are always honored.</p>
+                </div>
               )}
-              {sendMode === "list" && (
+              {(sendMode === "list" || sendMode === "segment") && (
                 <>
                   <div>
                     <Label htmlFor="send-schedule-at">Schedule for later (optional)</Label>
@@ -1952,7 +1991,7 @@ export default function EmailNewslettersPage() {
                   </div>
                 </>
               )}
-              {sendDialogEmail && sendDialogEmail.status !== "approved" && sendDialogEmail.status !== "sent" && sendMode === "list" && (
+              {sendDialogEmail && sendDialogEmail.status !== "approved" && sendDialogEmail.status !== "sent" && (sendMode === "list" || sendMode === "segment") && (
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="text-approval-warning">
                   This email is in <strong>{sendDialogEmail.status}</strong> status. Approve it before sending to a list. Test sends are still allowed.
                 </div>
@@ -1962,23 +2001,27 @@ export default function EmailNewslettersPage() {
                 <Button
                   disabled={
                     sendEmailMutation.isPending ||
-                    (sendMode === "test" ? !sendTestRecipient.includes("@") : !sendListId)
+                    (sendMode === "test" ? !sendTestRecipient.includes("@") :
+                     sendMode === "list" ? !sendListId :
+                     !sendSegmentId)
                   }
                   onClick={() => {
                     if (!sendDialogEmail) return;
-                    const scheduledAt = sendMode === "list" && sendScheduleAt
+                    const isListLike = sendMode === "list" || sendMode === "segment";
+                    const scheduledAt = isListLike && sendScheduleAt
                       ? new Date(sendScheduleAt).toISOString()
                       : undefined;
                     sendEmailMutation.mutate({
                       emailId: sendDialogEmail.id,
                       listId: sendMode === "list" ? sendListId : undefined,
+                      segmentId: sendMode === "segment" ? sendSegmentId : undefined,
                       testRecipient: sendMode === "test" ? sendTestRecipient.trim() : undefined,
                       scheduledAt,
-                      trackOpens: sendMode === "list" ? sendTrackOpens : undefined,
-                      trackClicks: sendMode === "list" ? sendTrackClicks : undefined,
-                      excludeActiveProspects: sendMode === "list" ? sendExcludeActiveProspects : undefined,
+                      trackOpens: isListLike ? sendTrackOpens : undefined,
+                      trackClicks: isListLike ? sendTrackClicks : undefined,
+                      excludeActiveProspects: isListLike ? sendExcludeActiveProspects : undefined,
                       senderIdentityId: sendSenderIdentityId || undefined,
-                      subscriptionTypeIds: sendMode === "list" ? sendSubscriptionTypeIds : undefined,
+                      subscriptionTypeIds: isListLike ? sendSubscriptionTypeIds : undefined,
                     });
                   }}
                   data-testid="button-confirm-send"

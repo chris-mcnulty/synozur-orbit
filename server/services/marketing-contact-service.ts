@@ -9,11 +9,12 @@
  */
 
 import { db } from "../db";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql, gte, lte, notInArray, ilike } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   marketingContacts,
   marketingContactEvents,
+  marketingContactSegments,
   emailRecipients,
   emailSendRecipients,
   emailSends,
@@ -21,6 +22,7 @@ import {
   marketingLinkClicks,
   marketingLinks,
   type MarketingContact,
+  type MarketingContactSegment,
   type InsertMarketingContact,
   type InsertMarketingContactEvent,
 } from "@shared/schema";
@@ -444,6 +446,25 @@ export async function backfillContactTimeline(tenantDomain: string): Promise<{
   return { contactsCreated, contactsFound, eventsCreated };
 }
 
+/**
+ * A single filter rule inside a segment definition.
+ *
+ * Supported fields and operators:
+ *   lifecycleStage  — eq (string) | in (string[])
+ *   source          — eq (string) | in (string[])
+ *   company         — contains (string) | eq (string)
+ *   domain          — eq (string) | in (string[])   (right-hand side of email address)
+ *   eventType       — seen | not_seen               (value = event type string)
+ *   lastEventAt     — within_days | older_than_days (value = positive integer)
+ */
+export type SegmentRuleField =
+  | "lifecycleStage"
+  | "source"
+  | "company"
+  | "domain"
+  | "eventType"
+  | "lastEventAt";
+
 // ---------------------------------------------------------------------------
 // Backfill email opt-outs from SendGrid suppressions + HubSpot
 // ---------------------------------------------------------------------------
@@ -619,4 +640,185 @@ export async function enrichContactFromHubSpot(opts: {
       source: "hubspot",
     });
   }
+}
+
+/**
+ * Resolve a saved segment by ID into a list of matching contacts.
+ * Also updates the segment's previewCount + previewedAt.
+ */
+export async function resolveSegmentContacts(
+  segmentId: string,
+  tenantDomain: string,
+  limit = 2000,
+): Promise<{ segment: MarketingContactSegment; contacts: MarketingContact[] }> {
+  const [segment] = await db
+    .select()
+    .from(marketingContactSegments)
+    .where(
+      and(
+        eq(marketingContactSegments.id, segmentId),
+        eq(marketingContactSegments.tenantDomain, tenantDomain),
+      ),
+    )
+    .limit(1);
+
+  if (!segment) throw Object.assign(new Error("Segment not found"), { status: 404 });
+
+  const rules = (segment.rules as SegmentRule[]) ?? [];
+  const contacts = await evaluateSegmentRules(tenantDomain, rules, limit);
+
+  // Update cached count
+  await db
+    .update(marketingContactSegments)
+    .set({ previewCount: contacts.length, previewedAt: new Date(), updatedAt: new Date() })
+    .where(eq(marketingContactSegments.id, segmentId));
+
+  return { segment, contacts };
+}
+
+export type SegmentRuleOp =
+  | "eq"
+  | "in"
+  | "contains"
+  | "seen"
+  | "not_seen"
+  | "within_days"
+  | "older_than_days";
+
+/**
+ * Evaluate a list of segment rules against marketing_contacts for the given
+ * tenant. All rules are AND-ed together (every rule must match).
+ *
+ * Returns the matching contacts (up to `limit`). Default limit 2000 to keep
+ * preview/export payloads bounded.
+ */
+export async function evaluateSegmentRules(
+  tenantDomain: string,
+  rules: SegmentRule[],
+  limit = 2000,
+): Promise<MarketingContact[]> {
+  // Build WHERE conditions incrementally.
+  const conditions: any[] = [eq(marketingContacts.tenantDomain, tenantDomain)];
+
+  // Separate event-based rules — they require subquery joins.
+  const seenEventTypes: string[] = [];
+  const notSeenEventTypes: string[] = [];
+
+  for (const rule of rules) {
+    switch (rule.field) {
+      case "lifecycleStage":
+        if (rule.op === "eq" && typeof rule.value === "string") {
+          conditions.push(eq(marketingContacts.lifecycleStage, rule.value));
+        } else if (rule.op === "in" && Array.isArray(rule.value)) {
+          conditions.push(inArray(marketingContacts.lifecycleStage, rule.value as string[]));
+        }
+        break;
+
+      case "source":
+        if (rule.op === "eq" && typeof rule.value === "string") {
+          conditions.push(eq(marketingContacts.source, rule.value));
+        } else if (rule.op === "in" && Array.isArray(rule.value)) {
+          conditions.push(inArray(marketingContacts.source, rule.value as string[]));
+        }
+        break;
+
+      case "company":
+        if (typeof rule.value === "string") {
+          if (rule.op === "eq") {
+            conditions.push(eq(marketingContacts.company, rule.value));
+          } else if (rule.op === "contains") {
+            conditions.push(ilike(marketingContacts.company, `%${rule.value}%`));
+          }
+        }
+        break;
+
+      case "domain":
+        // Match right-hand side of email (after @).
+        if (rule.op === "eq" && typeof rule.value === "string") {
+          conditions.push(ilike(marketingContacts.email, `%@${rule.value}`));
+        } else if (rule.op === "in" && Array.isArray(rule.value)) {
+          const domainConditions = (rule.value as string[]).map(
+            (d) => ilike(marketingContacts.email, `%@${d}`),
+          );
+          if (domainConditions.length === 1) {
+            conditions.push(domainConditions[0]);
+          } else if (domainConditions.length > 1) {
+            // Use sql OR manually
+            conditions.push(sql`(${domainConditions.reduce((acc, c, i) =>
+              i === 0 ? c : sql`${acc} OR ${c}`, domainConditions[0])})`);
+          }
+        }
+        break;
+
+      case "lastEventAt":
+        if (typeof rule.value === "number" && rule.value > 0) {
+          const cutoff = new Date(Date.now() - rule.value * 24 * 60 * 60 * 1000);
+          if (rule.op === "within_days") {
+            conditions.push(gte(marketingContacts.lastEventAt, cutoff));
+          } else if (rule.op === "older_than_days") {
+            conditions.push(lte(marketingContacts.lastEventAt, cutoff));
+          }
+        }
+        break;
+
+      case "eventType":
+        if (typeof rule.value === "string") {
+          if (rule.op === "seen") seenEventTypes.push(rule.value);
+          else if (rule.op === "not_seen") notSeenEventTypes.push(rule.value);
+        }
+        break;
+    }
+  }
+
+  // Event-based subqueries:
+  // "seen eventType X" → contact.id IN (SELECT DISTINCT contact_id FROM marketing_contact_events WHERE ...)
+  for (const et of seenEventTypes) {
+    conditions.push(
+      inArray(
+        marketingContacts.id,
+        db
+          .selectDistinct({ contactId: marketingContactEvents.contactId })
+          .from(marketingContactEvents)
+          .where(
+            and(
+              eq(marketingContactEvents.tenantDomain, tenantDomain),
+              eq(marketingContactEvents.eventType, et),
+            ),
+          ),
+      ),
+    );
+  }
+
+  // "not_seen eventType X" → contact.id NOT IN (...)
+  for (const et of notSeenEventTypes) {
+    conditions.push(
+      notInArray(
+        marketingContacts.id,
+        db
+          .selectDistinct({ contactId: marketingContactEvents.contactId })
+          .from(marketingContactEvents)
+          .where(
+            and(
+              eq(marketingContactEvents.tenantDomain, tenantDomain),
+              eq(marketingContactEvents.eventType, et),
+            ),
+          ),
+      ),
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(marketingContacts)
+    .where(and(...conditions))
+    .orderBy(marketingContacts.lastEventAt)
+    .limit(limit);
+
+  return rows;
+}
+
+export interface SegmentRule {
+  field: SegmentRuleField;
+  op: SegmentRuleOp;
+  value: string | string[] | number;
 }
