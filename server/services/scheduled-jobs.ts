@@ -2238,10 +2238,12 @@ async function runHubspotSyncJob(): Promise<void> {
           // Best-effort: enrich marketing_contacts for this tenant using the
           // same per-tenant OAuth portal. Errors are caught inside the function.
           try {
-            const { syncHubSpotContactEnrichment } = await import("./hubspot-service");
+            const { syncHubSpotContactEnrichment, pushLeadScoresToHubSpot } = await import("./hubspot-service");
             const planAllowsContacts = await checkFeatureAccessAsync(tenant.plan, "marketingContacts");
             if (planAllowsContacts.allowed) {
               await syncHubSpotContactEnrichment({ tenantDomain: conn.tenantDomain });
+              // Push Orbit lead scores back to HubSpot contact properties
+              await pushLeadScoresToHubSpot({ tenantDomain: conn.tenantDomain });
             }
           } catch (enrichErr: any) {
             console.warn(`[HubSpot Sync] Contact enrichment error for ${conn.tenantDomain}: ${enrichErr.message}`);

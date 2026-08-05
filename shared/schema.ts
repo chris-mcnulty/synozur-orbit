@@ -5003,6 +5003,7 @@ export const MARKETING_CONTACT_EVENT_TYPES = [
   "link_click",
   "social_engage",
   "unsubscribe",
+  "lifecycle_stage_changed",
 ] as const;
 export type MarketingContactEventType = (typeof MARKETING_CONTACT_EVENT_TYPES)[number];
 
@@ -5018,6 +5019,8 @@ export const marketingContacts = pgTable(
     jobTitle: text("job_title"),
     // Lifecycle stage: subscriber | lead | mql | sql | opportunity | customer | evangelist
     lifecycleStage: text("lifecycle_stage").notNull().default("subscriber"),
+    // Lead score — computed by lead-scoring-service on every event ingest
+    score: integer("score").notNull().default(0),
     // HubSpot contact ID for read-enrichment sync
     hubspotContactId: text("hubspot_contact_id"),
     // Source that first created this contact
@@ -5087,6 +5090,28 @@ export const insertMarketingContactEventSchema = createInsertSchema(marketingCon
 export type MarketingContactEvent = typeof marketingContactEvents.$inferSelect;
 export type InsertMarketingContactEvent = z.infer<typeof insertMarketingContactEventSchema>;
 
+/** A weighted scoring rule evaluated against a contact's properties or timeline. */
+export const marketingScoringRules = pgTable(
+  "marketing_scoring_rules",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    name: text("name").notNull(),
+    // 'property' — check a contact field value
+    // 'event'    — count matching timeline events
+    ruleType: text("rule_type").notNull(),
+    // property rule: { field, operator, value? }
+    // event rule:    { eventType, minCount }
+    conditionJson: jsonb("condition_json").notNull().default({}),
+    points: integer("points").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantIdx: index("marketing_scoring_rules_tenant_idx").on(table.tenantDomain),
+  }),
+);
 export const marketingContactsRelations = relations(marketingContacts, ({ many }) => ({
   events: many(marketingContactEvents),
 }));
@@ -5097,6 +5122,8 @@ export const marketingContactEventsRelations = relations(marketingContactEvents,
     references: [marketingContacts.id],
   }),
 }));
+
+export type MarketingLifecycleThreshold = typeof marketingLifecycleThresholds.$inferSelect;
 
 /**
  * A segment is a named, saved set of filter rules that resolves to a dynamic
@@ -5143,3 +5170,41 @@ export const insertMarketingContactSegmentSchema = createInsertSchema(marketingC
 });
 
 export type MarketingContactSegment = typeof marketingContactSegments.$inferSelect;
+
+/** Per-tenant configurable score thresholds that drive lifecycle stage transitions. */
+export const marketingLifecycleThresholds = pgTable(
+  "marketing_lifecycle_thresholds",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    // 'lead' | 'mql' | 'sql' | 'opportunity' | 'customer'
+    stage: text("stage").notNull(),
+    minScore: integer("min_score").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantStageUniq: uniqueIndex("marketing_lifecycle_thresholds_tenant_stage_uniq").on(
+      table.tenantDomain,
+      table.stage,
+    ),
+  }),
+);
+
+export type MarketingScoringRule = typeof marketingScoringRules.$inferSelect;
+
+export const insertMarketingLifecycleThresholdSchema = createInsertSchema(marketingLifecycleThresholds).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMarketingScoringRuleSchema = createInsertSchema(marketingScoringRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMarketingScoringRule = z.infer<typeof insertMarketingScoringRuleSchema>;
+
+export type InsertMarketingLifecycleThreshold = z.infer<typeof insertMarketingLifecycleThresholdSchema>;

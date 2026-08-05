@@ -185,6 +185,8 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Digital/Web Assets", icon: Library, href: "/app/marketing/content-library", enterprise: true, section: "Libraries", description: "Central repository for URLs, articles, and web-based content." },
         { label: "Visual/Brand Assets", icon: Image, href: "/app/marketing/brand-library", enterprise: true, section: "Libraries", description: "Manage approved images, logos, and visual brand identity." },
         { label: "Performance", icon: LineChart, href: "/app/marketing/performance", enterprise: true, section: "Measure", description: "Track link clicks and content performance across channels." },
+        { label: "Contacts", icon: Users, href: "/app/marketing/contacts", enterprise: true, section: "Contacts", description: "First-party contact database with lifecycle stages and activity timeline." },
+        { label: "Lead Scoring", icon: Target, href: "/app/marketing/lead-scoring", enterprise: true, section: "Contacts", indent: true, description: "Rule-based lead scoring with AI-suggested rules and lifecycle stage transitions." },
       ],
     },
     {

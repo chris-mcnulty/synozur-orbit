@@ -279,6 +279,16 @@ export async function ingestEvent(
     metadata: payload.metadata || null,
   } as InsertMarketingContactEvent);
 
+  // Recompute lead score asynchronously — fire-and-forget so ingest latency
+  // is not affected by the scoring evaluation.
+  setImmediate(() => {
+    import("./lead-scoring-service")
+      .then(({ recomputeScore }) => recomputeScore(contact.id))
+      .catch((err: any) =>
+        console.error("[marketing-contact] recomputeScore failed:", err.message),
+      );
+  });
+
   return { contact, eventId };
 }
 

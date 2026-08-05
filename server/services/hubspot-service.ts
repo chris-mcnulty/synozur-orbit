@@ -375,3 +375,123 @@ export async function syncHubSpotContactEnrichment(opts: {
   );
   return { enriched, notFound, errors };
 }
+
+/**
+ * Push Orbit lead scores to HubSpot contact properties.
+ *
+ * Writes two custom properties to matching HubSpot contacts:
+ *   orbit_lead_score     — current numeric score
+ *   orbit_lifecycle_stage — current lifecycle stage string
+ *
+ * Contacts are matched by the stored hubspotContactId.  Contacts without a
+ * HubSpot ID are skipped (enrichment must run first).
+ *
+ * Designed to be called from the nightly HubSpot sync sweep.
+ */
+// ---------------------------------------------------------------------------
+// DI-based core for pushLeadScoresToHubSpot — exported for unit tests
+// ---------------------------------------------------------------------------
+
+export interface LeadScoreContact {
+  id: string;
+  email: string;
+  hubspotContactId: string | null;
+  score: number | null;
+  lifecycleStage: string | null;
+}
+
+export interface PushLeadScoresDeps {
+  /** Load contacts for a single tenant that have a HubSpot ID */
+  loadContacts: (tenantDomain: string, limit: number) => Promise<LeadScoreContact[]>;
+  /** Push orbit_lead_score + orbit_lifecycle_stage to one HubSpot contact */
+  updateHubSpotContact: (hubspotContactId: string, score: number, stage: string) => Promise<void>;
+}
+
+export async function _pushLeadScoresWithDeps(
+  tenantDomain: string,
+  limit: number,
+  deps: PushLeadScoresDeps,
+): Promise<{ pushed: number; skipped: number; errors: number }> {
+  const contacts = await deps.loadContacts(tenantDomain, limit);
+
+  let pushed = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const contact of contacts) {
+    if (!contact.hubspotContactId) { skipped++; continue; }
+    try {
+      await deps.updateHubSpotContact(
+        contact.hubspotContactId,
+        contact.score ?? 0,
+        contact.lifecycleStage ?? "subscriber",
+      );
+      pushed++;
+    } catch (err: any) {
+      console.warn(
+        `[HubSpot] lead-score push failed for contact ${contact.hubspotContactId}: ${err.message}`,
+      );
+      errors++;
+    }
+  }
+
+  return { pushed, skipped, errors };
+}
+
+export async function pushLeadScoresToHubSpot(opts: {
+  tenantDomain: string;
+  limit?: number;
+}): Promise<{ pushed: number; skipped: number; errors: number }> {
+  const { tenantDomain, limit = 500 } = opts;
+
+  const { getTenantClient } = await import("./hubspot-integration");
+  let client: any;
+  try {
+    const result = await getTenantClient(tenantDomain);
+    client = result.client;
+  } catch (err: any) {
+    console.warn(
+      `[HubSpot] lead-score push skipped for ${tenantDomain} — not connected: ${err.message}`,
+    );
+    return { pushed: 0, skipped: 0, errors: 0 };
+  }
+
+  const { db } = await import("../db");
+  const { marketingContacts } = await import("@shared/schema");
+  const { eq, and, isNotNull } = await import("drizzle-orm");
+
+  const deps: PushLeadScoresDeps = {
+    loadContacts: async (td, lim) =>
+      db
+        .select({
+          id: marketingContacts.id,
+          email: marketingContacts.email,
+          hubspotContactId: marketingContacts.hubspotContactId,
+          score: marketingContacts.score,
+          lifecycleStage: marketingContacts.lifecycleStage,
+        })
+        .from(marketingContacts)
+        .where(
+          and(
+            eq(marketingContacts.tenantDomain, td),
+            isNotNull(marketingContacts.hubspotContactId),
+          ),
+        )
+        .limit(lim),
+    updateHubSpotContact: async (hubspotContactId, score, stage) => {
+      await client.crm.contacts.basicApi.update(hubspotContactId, {
+        properties: {
+          orbit_lead_score: String(score),
+          orbit_lifecycle_stage: stage,
+        },
+      });
+    },
+  };
+
+  const result = await _pushLeadScoresWithDeps(tenantDomain, limit, deps);
+
+  console.log(
+    `[HubSpot] lead-score push complete for ${tenantDomain} — pushed=${result.pushed} skipped=${result.skipped} errors=${result.errors}`,
+  );
+  return result;
+}
