@@ -387,6 +387,14 @@ export interface DispatchSendOptions {
 
   testRecipient?: string | null;
 
+  /**
+   * For workflow single-contact sends: provide recipients directly.
+   * Unlike testRecipient, these go through ALL production suppression checks
+   * (emailOptOut, emailSuppressions, HubSpot consent, plan access).
+   * Cannot be combined with testRecipient.
+   */
+  workflowRecipients?: Array<{ email: string; name: string | null }>;
+
   createdBy: string;
 
   baseUrl: string;
@@ -490,6 +498,10 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
   // loop over thousands of recipients. Test recipients (single-message
   // preview sends) deliver inline so reviewers see the result immediately.
   if (testRecipient) {
+    return deliverEmailSend(opts);
+  }
+  // Workflow single-contact sends: deliver inline with full production suppression.
+  if (opts.workflowRecipients?.length) {
     return deliverEmailSend(opts);
   }
   if (!listId && !segmentId) {
@@ -758,6 +770,12 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   if (!usePreAssigned) {
     if (testRecipient) {
       recipients.push({ email: testRecipient.trim().toLowerCase(), name: null });
+    } else if (opts.workflowRecipients?.length) {
+      // Workflow single-contact sends: use provided recipients directly.
+      // All production suppression checks below still apply (no testRecipient skip).
+      for (const r of opts.workflowRecipients) {
+        recipients.push({ email: r.email.trim().toLowerCase(), name: r.name });
+      }
     } else if (listId) {
       const rows = await db.select().from(emailRecipients)
         .where(and(

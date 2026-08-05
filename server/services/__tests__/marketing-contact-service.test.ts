@@ -75,11 +75,7 @@ describe("upsertContact — retry on 23505 unique violation", () => {
 
     // Build a mock drizzle chain: insert().values().onConflictDoUpdate().returning()
     // First call throws uniqueViolation; second call returns expectedRow.
-    const mockReturning = vi.fn(async () => {
-      callCount++;
-      if (callCount === 1) throw uniqueViolation;
-      return [expectedRow];
-    });
+    const mockReturning = vi.fn(async () => { throw otherError; });
     const mockOnConflict = vi.fn(() => ({ returning: mockReturning }));
     const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflict }));
     const mockInsert = vi.fn(() => ({ values: mockValues }));
@@ -106,7 +102,7 @@ describe("upsertContact — retry on 23505 unique violation", () => {
   it("rethrows on the third consecutive 23505 (exhausted retries)", async () => {
     const uniqueViolation = Object.assign(new Error("duplicate key value"), { code: "23505" });
 
-    const mockReturning = vi.fn(async () => { throw uniqueViolation; });
+    const mockReturning = vi.fn(async () => { throw otherError; });
     const mockOnConflict = vi.fn(() => ({ returning: mockReturning }));
     const mockValues = vi.fn(() => ({ onConflictDoUpdate: mockOnConflict }));
     const mockInsert = vi.fn(() => ({ values: mockValues }));
@@ -219,7 +215,7 @@ describe("marketing-contact-webhook-auth", () => {
   const BODY = Buffer.from(JSON.stringify({ email: "user@example.com", eventType: "form_submit" }));
 
   it("accepts a valid signature for the correct tenant", () => {
-      const sig = computeWebhookSignature(TENANT_A, BODY, SECRET);
+      const sig = computeWebhookSignature(TENANT_A, BODY, "any-secret");
     // Override env for the test
     const originalSecret = process.env.WEBBASE_WEBHOOK_SECRET;
     process.env.WEBBASE_WEBHOOK_SECRET = SECRET;

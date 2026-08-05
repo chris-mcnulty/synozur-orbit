@@ -206,7 +206,9 @@ async function executeSendEmail(
     if (!cfg.generatedEmailId) {
       return { ok: false, outcome: null, error: "send_email step missing generatedEmailId" };
     }
-    // Delegate to email-campaign-sender: single test-recipient send to contact email.
+    // Delegate to email-campaign-sender using workflowRecipients (not testRecipient)
+    // so that all production suppression checks apply: emailOptOut, emailSuppressions,
+    // HubSpot consent, and plan delivery-access gating.
     // Import lazily to avoid circular dependency at module load.
     const { dispatchEmailSend } = await import("./email-campaign-sender");
     const { generatedEmails } = await import("@shared/schema");
@@ -224,15 +226,16 @@ async function executeSendEmail(
       return { ok: false, outcome: null, error: `Email ${cfg.generatedEmailId} not found for this tenant` };
     }
     const baseUrl = process.env.PUBLIC_APP_URL || "https://localhost:5000";
+    const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || null;
     const result = await dispatchEmailSend({
       tenantDomain: enrollment.tenantDomain,
       marketId: null,
       email: emailRow,
-      testRecipient: contact.email,
+      workflowRecipients: [{ email: contact.email, name: contactName }],
       createdBy: "workflow",
       baseUrl,
     });
-    return { ok: !result.errorMessage, outcome: { sendId: result.send?.id, sentCount: result.sentCount }, error: result.errorMessage };
+    return { ok: !result.errorMessage, outcome: { sendId: result.send?.id, sentCount: result.sentCount, suppressed: result.suppressed }, error: result.errorMessage };
   } catch (err: any) {
     return { ok: false, outcome: null, error: err?.message ?? String(err) };
   }
