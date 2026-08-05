@@ -321,6 +321,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.conferencePromotion === false) locked.add("/app/marketing/conferences");
     if (f.socialAccounts === false) locked.add("/app/marketing/social-accounts");
     if (f.saturnCapture === false) locked.add("/app/marketing/browser-extension");
+    if (f.marketingWorkflows === false) locked.add("/app/marketing/workflows");
     return locked;
   }, [tenantInfo]);
 

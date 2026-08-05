@@ -200,6 +200,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Performance", icon: LineChart, href: "/app/marketing/performance", enterprise: true, section: "Measure", description: "Track link clicks and content performance across channels." },
         { label: "Contacts", icon: Users, href: "/app/marketing/contacts", enterprise: true, section: "Contacts", description: "First-party contact database with lifecycle stages and activity timeline." },
         { label: "Lead Scoring", icon: Target, href: "/app/marketing/lead-scoring", enterprise: true, section: "Contacts", indent: true, description: "Rule-based lead scoring with AI-suggested rules and lifecycle stage transitions." },
+        { label: "Workflows", icon: GitBranch, href: "/app/marketing/workflows", enterprise: true, section: "Contacts", indent: true, description: "Automated contact workflows triggered by events, segments, or lead scores." },
       ],
     },
     {
