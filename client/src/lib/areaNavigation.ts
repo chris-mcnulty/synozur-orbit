@@ -120,7 +120,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       label: "Research",
       icon: Telescope,
       hubHref: "/app/dashboard",
-      inHeader: false,
+      inHeader: true,
       // Grouped into scannable sections (Workspace / Analysis / Signals /
       // Insights / Sources) so the long Research surface reads as a handful
       // of clusters rather than a flat 16-item list.
@@ -148,7 +148,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       label: "Product",
       icon: Package,
       hubHref: "/app/products",
-      inHeader: false,
+      inHeader: true,
       items: [
         {
           label: "Products",
@@ -169,7 +169,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       label: "Marketing",
       icon: Megaphone,
       hubHref: "/app/marketing",
-      inHeader: false,
+      inHeader: true,
       items: [
         { label: "Marketing Home", icon: Megaphone, href: "/app/marketing" },
         // Calendar: one cluster for the ways to see scheduled work — the
@@ -208,7 +208,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       label: "Sales",
       icon: Handshake,
       hubHref: "/app/sales",
-      inHeader: false,
+      inHeader: true,
       items: [
         { label: "Sales Home", icon: Handshake, href: "/app/sales" },
         { label: "Outreach", icon: Send, href: "/app/sales/outreach", description: "Goal-driven outbound campaigns: prospect, score, draft in your voice, and sequence follow-ups — you approve every send." },
