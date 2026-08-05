@@ -3312,6 +3312,13 @@ export const generatedEmails = pgTable("generated_emails", {
   conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at"),
   sourceAssetIds: text("source_asset_ids").array(),
+  // A/B test configuration
+  abTestEnabled: boolean("ab_test_enabled").notNull().default(false),
+  abTestSplit: integer("ab_test_split").notNull().default(20), // % of list each variant gets; remainder is holdback
+  abWinnerMetric: text("ab_winner_metric"), // "open_rate" | "click_rate"
+  abEvaluationHours: integer("ab_evaluation_hours").notNull().default(24),
+  abWinnerVariantLabel: text("ab_winner_variant_label"), // "A" | "B" once declared
+  abWinnerDeclaredAt: timestamp("ab_winner_declared_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -3339,18 +3346,17 @@ export type GeneratedEmail = typeof generatedEmails.$inferSelect;
 export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
 
-// ---------------------------------------------------------------------------
-// Conference Social Promotion
-//
-// Drives coordinated social promotion for a single conference: 1-2 anchor posts
-// for overall presence plus one post per delivered session, each with a matched
-// 1:1 graphic. Conference images live in their own dedicated space (not the main
-// brand library) so they never clutter it, and the whole conference can be
-// archived with one click after the event. The actual posts reuse the existing
-// generatedPosts table (via conferenceId/conferenceSessionId) so they flow
-// through the same scheduling, calendar, and publishing machinery.
-// ---------------------------------------------------------------------------
-
+export const emailCampaignVariants = pgTable("email_campaign_variants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  generatedEmailId: varchar("generated_email_id").notNull().references(() => generatedEmails.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  variantLabel: text("variant_label").notNull(), // 'B' (only B is stored; A = original email)
+  subject: text("subject").notNull(),
+  htmlBody: text("html_body").notNull().default(""),
+  textBody: text("text_body"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 export const CONFERENCE_IMAGE_SOURCES = ["ai_generated", "template_composite", "uploaded", "logo_composite"] as const;
 export type ConferenceImageSource = (typeof CONFERENCE_IMAGE_SOURCES)[number];
 
@@ -4183,10 +4189,14 @@ export const emailSends = pgTable("email_sends", {
   clickCount: integer("click_count").notNull().default(0),
   deliveredCount: integer("delivered_count").notNull().default(0),
   senderIdentityId: varchar("sender_identity_id").references(() => emailSenderIdentities.id, { onDelete: "set null" }),
-  // Subscription types this send is tagged with. At delivery time, recipients
-  // who have opted out of any non-transactional type in this list are filtered.
   // Empty array = no per-type filtering (falls back to global suppression only).
   subscriptionTypeIds: text("subscription_type_ids").array().notNull().default(sql`ARRAY[]::text[]`),
+  // A/B test tracking
+  abVariantLabel: text("ab_variant_label"), // "A" | "B" | null for non-A/B sends
+  isAbHoldback: boolean("is_ab_holdback").notNull().default(false), // holdback cohort waiting for winner
+  // Groups all three send rows from one dispatch (A + B + holdback) so winner
+  // evaluation and holdback release are scoped to the correct test run.
+  abTestRunId: text("ab_test_run_id"),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
@@ -5123,6 +5133,8 @@ export const marketingContactEventsRelations = relations(marketingContactEvents,
   }),
 }));
 
+export type EmailCampaignVariant = typeof emailCampaignVariants.$inferSelect;
+
 export type MarketingLifecycleThreshold = typeof marketingLifecycleThresholds.$inferSelect;
 
 /**
@@ -5171,6 +5183,10 @@ export const insertMarketingContactSegmentSchema = createInsertSchema(marketingC
 
 export type MarketingContactSegment = typeof marketingContactSegments.$inferSelect;
 
+export const insertEmailCampaignVariantSchema = createInsertSchema(emailCampaignVariants).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+
 /** Per-tenant configurable score thresholds that drive lifecycle stage transitions. */
 export const marketingLifecycleThresholds = pgTable(
   "marketing_lifecycle_thresholds",
@@ -5208,3 +5224,5 @@ export const insertMarketingScoringRuleSchema = createInsertSchema(marketingScor
 export type InsertMarketingScoringRule = z.infer<typeof insertMarketingScoringRuleSchema>;
 
 export type InsertMarketingLifecycleThreshold = z.infer<typeof insertMarketingLifecycleThresholdSchema>;
+
+export type InsertEmailCampaignVariant = z.infer<typeof insertEmailCampaignVariantSchema>;

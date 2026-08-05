@@ -79,8 +79,25 @@ interface SavedEmail {
   sourceAssetIds?: string[] | null;
   scheduledAt?: string | null;
   createdAt: string;
+  // A/B test config
+  abTestEnabled?: boolean;
+  abTestSplit?: number;
+  abWinnerMetric?: string;
+  abEvaluationHours?: number;
+  abWinnerVariantLabel?: string | null;
+  abWinnerDeclaredAt?: string | null;
 }
 
+interface AbTestResults {
+  abTestEnabled: boolean;
+  abWinnerMetric: string;
+  abEvaluationHours: number;
+  abTestSplit: number;
+  winnerVariantLabel: string | null;
+  winnerDeclaredAt: string | null;
+  variantA: { subjectLine: string; recipientCount: number; openCount: number; clickCount: number; openRate: number; clickRate: number; status: string } | null;
+  variantB: { subjectLine: string; recipientCount: number; openCount: number; clickCount: number; openRate: number; clickRate: number; status: string } | null;
+}
 interface PreviewEmail {
   subject: string;
   htmlBody: string;
@@ -201,6 +218,67 @@ function ProspectCheckBanner({ listId }: { listId: string }) {
  * breakdown so they know exactly how many addresses will be skipped — and
  * why — *before* confirming the send.
  */
+/**
+ * A/B test results bar shown inline on email cards when a test is active or
+ * completed.  Fetches live results from /api/generated-emails/:id/ab-results.
+ */
+function AbTestResultsPanel({ emailId, winnerLabel }: { emailId: string; winnerLabel?: string | null }) {
+  const { data, isLoading } = useQuery<AbTestResults>({
+    queryKey: [`/api/generated-emails/${emailId}/ab-results`],
+    queryFn: async () => {
+      const r = await fetch(`/api/generated-emails/${emailId}/ab-results`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load A/B results");
+      return r.json();
+    },
+    refetchInterval: winnerLabel ? false : 60_000, // poll until winner declared
+  });
+  if (isLoading || !data || (!data.variantA && !data.variantB)) return null;
+  const metric = data.abWinnerMetric === "click_rate" ? "click" : "open";
+  const maxRate = Math.max(
+    data.variantA ? (metric === "click" ? data.variantA.clickRate : data.variantA.openRate) : 0,
+    data.variantB ? (metric === "click" ? data.variantB.clickRate : data.variantB.openRate) : 0,
+    0.001,
+  );
+  const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+  const variantRow = (label: "A" | "B", v: NonNullable<typeof data.variantA>) => {
+    const rate = metric === "click" ? v.clickRate : v.openRate;
+    const isWinner = data.winnerVariantLabel === label;
+    return (
+      <div key={label} className="space-y-0.5">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className={`font-medium ${isWinner ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`}>
+            Variant {label}{isWinner ? " 🏆" : ""}
+          </span>
+          <span className="text-muted-foreground">{fmtPct(rate)} {metric} · {v.recipientCount.toLocaleString()} rcpt</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${isWinner ? "bg-green-500" : "bg-blue-400"}`}
+            style={{ width: `${Math.min(100, (rate / maxRate) * 100)}%` }}
+          />
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div
+      className="mt-2 p-2 rounded border border-border bg-muted/30 space-y-1.5"
+      onClick={e => e.stopPropagation()}
+      data-testid={`panel-ab-results-${emailId}`}
+    >
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+        A/B {metric} rate · {data.abTestSplit}% split
+        {data.winnerDeclaredAt && <span className="ml-1 text-green-600 font-normal">· winner declared</span>}
+        {!data.winnerDeclaredAt && <span className="ml-1 font-normal">· evaluating in {data.abEvaluationHours}h</span>}
+      </p>
+      {data.variantA && variantRow("A", data.variantA)}
+      {data.variantB && variantRow("B", data.variantB)}
+      {!data.winnerDeclaredAt && !data.variantA?.status.match(/sent|completed/) && (
+        <p className="text-[10px] text-muted-foreground italic">Results will appear once the test send completes.</p>
+      )}
+    </div>
+  );
+}
 function SendDeliverabilityPreview({ listId }: { listId: string }) {
   const { data, isLoading } = useQuery<{ deliverable: number; suppressed: Array<{ email: string; reason: string }> }>({
     queryKey: [`/api/email-recipient-lists/${listId}/deliverability`],
@@ -298,6 +376,14 @@ export default function EmailNewslettersPage() {
   const [editAssetSearch, setEditAssetSearch] = useState("");
   const [editMode, setEditMode] = useState<"visual" | "source">("visual");
   const editableRef = useRef<HTMLDivElement>(null);
+  // A/B test editing state
+  const [abEnabled, setAbEnabled] = useState(false);
+  const [abSplit, setAbSplit] = useState(20);
+  const [abMetric, setAbMetric] = useState<"open_rate" | "click_rate">("open_rate");
+  const [abEvalHours, setAbEvalHours] = useState(24);
+  const [bVariantSubject, setBVariantSubject] = useState("");
+  const [bVariantBody, setBVariantBody] = useState("");
+  const [abSaving, setAbSaving] = useState(false);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<{ url: string; name: string }[]>([]);
@@ -1278,8 +1364,16 @@ export default function EmailNewslettersPage() {
                             Scheduled for {format(new Date(email.scheduledAt), "MMM d, yyyy")}
                           </Badge>
                         )}
+                        {email.abTestEnabled && (
+                          <Badge variant="outline" className={`text-[10px] gap-1 ${email.abWinnerVariantLabel ? "text-green-700 border-green-400 bg-green-50" : "text-blue-700 border-blue-400 bg-blue-50"}`} data-testid={`badge-ab-test-${email.id}`}>
+                            {email.abWinnerVariantLabel ? `A/B winner: ${email.abWinnerVariantLabel}` : "A/B test"}
+                          </Badge>
+                        )}
                         <p className="text-xs text-muted-foreground">{format(new Date(email.createdAt), "MMM d, yyyy 'at' h:mm a")}</p>
                       </div>
+                      {email.abTestEnabled && (
+                        <AbTestResultsPanel emailId={email.id} winnerLabel={email.abWinnerVariantLabel} />
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge variant="outline" className="capitalize">{email.status}</Badge>
@@ -1374,7 +1468,7 @@ export default function EmailNewslettersPage() {
                         variant="ghost"
                         size="sm"
                         title="Edit email"
-                        onClick={e => {
+                        onClick={async e => {
                           e.stopPropagation();
                           setEditMode("visual");
                           setEditingEmail(email);
@@ -1382,6 +1476,21 @@ export default function EmailNewslettersPage() {
                           setEditBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
                           setEditSourceAssetIds(Array.isArray(email.sourceAssetIds) ? email.sourceAssetIds : []);
                           setEditAssetSearch("");
+                          // Load A/B test config
+                          setAbEnabled(email.abTestEnabled ?? false);
+                          setAbSplit(email.abTestSplit ?? 20);
+                          setAbMetric((email.abWinnerMetric ?? "open_rate") as "open_rate" | "click_rate");
+                          setAbEvalHours(email.abEvaluationHours ?? 24);
+                          // Load B variant if exists
+                          try {
+                            const r = await fetch(`/api/generated-emails/${email.id}/variants`, { credentials: "include" });
+                            if (r.ok) {
+                              const variants: Array<{ variantLabel: string; subject: string; htmlBody: string }> = await r.json();
+                              const b = variants.find(v => v.variantLabel === "B");
+                              setBVariantSubject(b?.subject ?? "");
+                              setBVariantBody(b?.htmlBody ?? "");
+                            }
+                          } catch { /* ignore */ }
                         }}
                         data-testid={`button-edit-email-${email.id}`}
                       >
@@ -1710,6 +1819,133 @@ export default function EmailNewslettersPage() {
               >
                 {updateEmailMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
+
+              {/* ── A/B Test configuration ─────────────────────────────── */}
+              <div className="border-t pt-4 space-y-3" data-testid="ab-test-section">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">A/B Subject Test</p>
+                    <p className="text-xs text-muted-foreground">Test two subject lines and auto-send the winner to the holdback cohort.</p>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={abEnabled}
+                      onChange={e => setAbEnabled(e.target.checked)}
+                      className="rounded"
+                      data-testid="checkbox-ab-enabled"
+                    />
+                    <span className="text-xs">Enable</span>
+                  </label>
+                </div>
+
+                {abEnabled && (
+                  <div className="space-y-3 bg-muted/30 rounded p-3">
+                    <div>
+                      <Label className="text-xs">Variant B — subject line</Label>
+                      <Input
+                        value={bVariantSubject}
+                        onChange={e => setBVariantSubject(e.target.value)}
+                        placeholder="Alternative subject line…"
+                        className="mt-1 text-sm"
+                        data-testid="input-b-variant-subject"
+                      />
+                      <TokenPicker onInsert={token => setBVariantSubject(prev => prev + token)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Variant B — body (optional, leave blank to only test subject)</Label>
+                      <Textarea
+                        value={bVariantBody}
+                        onChange={e => setBVariantBody(e.target.value)}
+                        placeholder="Leave blank to keep the same body as variant A…"
+                        rows={4}
+                        className="mt-1 text-xs font-mono"
+                        data-testid="input-b-variant-body"
+                      />
+                      <TokenPicker onInsert={token => setBVariantBody(prev => prev + token)} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs">Split % each</Label>
+                        <Input
+                          type="number"
+                          min={5}
+                          max={49}
+                          value={abSplit}
+                          onChange={e => setAbSplit(Number(e.target.value))}
+                          className="mt-1 text-sm"
+                          data-testid="input-ab-split"
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{100 - abSplit * 2}% holdback</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Winner metric</Label>
+                        <select
+                          value={abMetric}
+                          onChange={e => setAbMetric(e.target.value as "open_rate" | "click_rate")}
+                          className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                          data-testid="select-ab-metric"
+                        >
+                          <option value="open_rate">Open rate</option>
+                          <option value="click_rate">Click rate</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Evaluate after (h)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={168}
+                          value={abEvalHours}
+                          onChange={e => setAbEvalHours(Number(e.target.value))}
+                          className="mt-1 text-sm"
+                          data-testid="input-ab-eval-hours"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      disabled={abSaving || !bVariantSubject.trim()}
+                      data-testid="button-save-ab-config"
+                      onClick={async () => {
+                        if (!editingEmail) return;
+                        setAbSaving(true);
+                        try {
+                          // Save B variant
+                          await fetch(`/api/generated-emails/${editingEmail.id}/variants/B`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ subject: bVariantSubject, htmlBody: bVariantBody }),
+                          });
+                          // Save A/B config
+                          await fetch(`/api/generated-emails/${editingEmail.id}/ab-config`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ abTestEnabled: true, abTestSplit: abSplit, abWinnerMetric: abMetric, abEvaluationHours: abEvalHours }),
+                          });
+                          queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+                          toast({ title: "A/B test saved", description: "Variant B and test config saved." });
+                        } catch (err: any) {
+                          toast({ title: "Error", description: err.message, variant: "destructive" });
+                        } finally {
+                          setAbSaving(false);
+                        }
+                      }}
+                    >
+                      {abSaving ? "Saving…" : "Save A/B test config"}
+                    </Button>
+                    {abEnabled && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Variant A gets the original subject above. Variant B gets the subject set here. Each cohort receives {abSplit}% of your list. The remaining {100 - abSplit * 2}% is held back and sent the winner after {abEvalHours}h based on {abMetric === "open_rate" ? "open rate" : "click rate"}.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -2228,5 +2464,31 @@ export default function EmailNewslettersPage() {
         </Dialog>
       </div>
     </AppLayout>
+  );
+}
+
+/** Inline token picker button strip for body/subject edit areas. */
+function TokenPicker({ onInsert }: { onInsert: (token: string) => void }) {
+  const tokens = [
+    { token: "first_name", label: "First name" },
+    { token: "last_name", label: "Last name" },
+    { token: "company", label: "Company" },
+    { token: "job_title", label: "Job title" },
+  ];
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      <span className="text-xs text-muted-foreground self-center mr-1">Insert token:</span>
+      {tokens.map(t => (
+        <button
+          key={t.token}
+          type="button"
+          onClick={() => onInsert(`{{${t.token}}}`)}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-primary/50 text-primary hover:bg-primary/10 transition-colors"
+          title={`Insert {{${t.token}}}`}
+        >
+          {`{{${t.token}}}`}
+        </button>
+      ))}
+    </div>
   );
 }

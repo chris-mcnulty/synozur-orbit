@@ -40,6 +40,7 @@ import {
   socialPublishAttempts,
   generatedPosts,
   generatedEmails,
+  emailCampaignVariants,
   emailRecipientLists,
   emailRecipients,
   emailSuppressions,
@@ -52,6 +53,7 @@ import {
   marketingContacts,
   prospects,
 } from "@shared/schema";
+import { resolveTokensPreview, KNOWN_TOKENS } from "../services/email-ab-test";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
@@ -1771,5 +1773,193 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       .orderBy(desc(marketingAuditLog.createdAt))
       .limit(200);
     res.json(rows);
+  });
+
+  // ───── A/B Test variant management ──────────────────────────────────────
+
+  /** List variants for an email (currently only B). */
+  app.get("/api/generated-emails/:id/variants", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select({ id: generatedEmails.id }).from(generatedEmails)
+      .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+    if (!email) return res.status(404).json({ error: "Email not found" });
+    const variants = await db.select().from(emailCampaignVariants)
+      .where(eq(emailCampaignVariants.generatedEmailId, req.params.id));
+    res.json(variants);
+  });
+
+  /** Create or update the B variant. */
+  app.put("/api/generated-emails/:id/variants/B", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select().from(generatedEmails)
+      .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+    if (!email) return res.status(404).json({ error: "Email not found" });
+    const { subject, htmlBody, textBody } = req.body ?? {};
+    if (!subject || typeof subject !== "string") {
+      return res.status(400).json({ error: "subject is required" });
+    }
+    const [existing] = await db.select({ id: emailCampaignVariants.id }).from(emailCampaignVariants)
+      .where(and(
+        eq(emailCampaignVariants.generatedEmailId, req.params.id),
+        eq(emailCampaignVariants.variantLabel, "B"),
+      ));
+    if (existing) {
+      const [updated] = await db.update(emailCampaignVariants).set({
+        subject,
+        htmlBody: htmlBody ?? "",
+        textBody: textBody ?? null,
+        updatedAt: new Date(),
+      }).where(eq(emailCampaignVariants.id, existing.id)).returning();
+      return res.json(updated);
+    }
+    const [created] = await db.insert(emailCampaignVariants).values({
+      generatedEmailId: req.params.id,
+      tenantDomain: ctx.tenantDomain,
+      variantLabel: "B",
+      subject,
+      htmlBody: htmlBody ?? "",
+      textBody: textBody ?? null,
+    }).returning();
+    res.status(201).json(created);
+  });
+
+  /** Delete the B variant (also disables A/B on the parent email). */
+  app.delete("/api/generated-emails/:id/variants/B", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select({ id: generatedEmails.id }).from(generatedEmails)
+      .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+    if (!email) return res.status(404).json({ error: "Email not found" });
+    await db.delete(emailCampaignVariants)
+      .where(and(
+        eq(emailCampaignVariants.generatedEmailId, req.params.id),
+        eq(emailCampaignVariants.variantLabel, "B"),
+      ));
+    await db.update(generatedEmails).set({
+      abTestEnabled: false,
+      updatedAt: new Date(),
+    }).where(eq(generatedEmails.id, req.params.id));
+    res.json({ ok: true });
+  });
+
+  /** Update A/B test configuration on the email (split %, metric, hours). */
+  app.patch("/api/generated-emails/:id/ab-config", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select().from(generatedEmails)
+      .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+    if (!email) return res.status(404).json({ error: "Email not found" });
+    const { abTestEnabled, abTestSplit, abWinnerMetric, abEvaluationHours } = req.body ?? {};
+    const patch: Partial<typeof email> = { updatedAt: new Date() } as any;
+    if (typeof abTestEnabled === "boolean") (patch as any).abTestEnabled = abTestEnabled;
+    if (typeof abTestSplit === "number") (patch as any).abTestSplit = Math.max(5, Math.min(49, abTestSplit));
+    if (abWinnerMetric === "open_rate" || abWinnerMetric === "click_rate") (patch as any).abWinnerMetric = abWinnerMetric;
+    if (typeof abEvaluationHours === "number" && abEvaluationHours >= 1) (patch as any).abEvaluationHours = abEvaluationHours;
+    const [updated] = await db.update(generatedEmails).set(patch as any).where(eq(generatedEmails.id, req.params.id)).returning();
+    res.json(updated);
+  });
+
+  /** Get A/B test results (open/click rates per variant). */
+  app.get("/api/generated-emails/:id/ab-results", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select().from(generatedEmails)
+      .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+    if (!email) return res.status(404).json({ error: "Email not found" });
+
+    // Scope to the most recent test run: find the holdback row (one per run)
+    // ordered by creation time and use its abTestRunId to pull the A/B sends.
+    const [latestHoldback] = await db.select({ runId: emailSends.abTestRunId })
+      .from(emailSends)
+      .where(and(
+        eq(emailSends.generatedEmailId, req.params.id),
+        eq(emailSends.isAbHoldback, true),
+        sql`${emailSends.abTestRunId} IS NOT NULL`,
+      ))
+      .orderBy(desc(emailSends.createdAt))
+      .limit(1);
+
+    const sends = latestHoldback?.runId
+      ? await db.select().from(emailSends)
+          .where(and(
+            eq(emailSends.abTestRunId, latestHoldback.runId),
+            eq(emailSends.isAbHoldback, false),
+            sql`${emailSends.abVariantLabel} IS NOT NULL`,
+          ))
+      : [];
+
+    const sendA = sends.find(s => s.abVariantLabel === "A");
+    const sendB = sends.find(s => s.abVariantLabel === "B");
+    const [bVariant] = await db.select({ subject: emailCampaignVariants.subject }).from(emailCampaignVariants)
+      .where(and(
+        eq(emailCampaignVariants.generatedEmailId, req.params.id),
+        eq(emailCampaignVariants.variantLabel, "B"),
+      ));
+    res.json({
+      abTestEnabled: email.abTestEnabled,
+      abWinnerMetric: email.abWinnerMetric ?? "open_rate",
+      abEvaluationHours: email.abEvaluationHours,
+      abTestSplit: email.abTestSplit,
+      winnerVariantLabel: email.abWinnerVariantLabel ?? null,
+      winnerDeclaredAt: email.abWinnerDeclaredAt ?? null,
+      variantA: sendA ? {
+        subjectLine: email.subject,
+        recipientCount: sendA.recipientCount,
+        openCount: sendA.openCount,
+        clickCount: sendA.clickCount,
+        openRate: sendA.recipientCount > 0 ? sendA.openCount / sendA.recipientCount : 0,
+        clickRate: sendA.recipientCount > 0 ? sendA.clickCount / sendA.recipientCount : 0,
+        status: sendA.status,
+      } : null,
+      variantB: sendB ? {
+        subjectLine: bVariant?.subject ?? "",
+        recipientCount: sendB.recipientCount,
+        openCount: sendB.openCount,
+        clickCount: sendB.clickCount,
+        openRate: sendB.recipientCount > 0 ? sendB.openCount / sendB.recipientCount : 0,
+        clickRate: sendB.recipientCount > 0 ? sendB.clickCount / sendB.recipientCount : 0,
+        status: sendB.status,
+      } : null,
+    });
+  });
+
+  /** Preview email with personalization tokens resolved from a sample contact. */
+  app.post("/api/generated-emails/:id/preview-tokens", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select().from(generatedEmails)
+      .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+    if (!email) return res.status(404).json({ error: "Email not found" });
+    const { contactId, variant } = req.body ?? {};
+    let subject = email.subject;
+    let htmlBody = email.htmlBody;
+    if (variant === "B") {
+      const [bVariant] = await db.select().from(emailCampaignVariants)
+        .where(and(
+          eq(emailCampaignVariants.generatedEmailId, req.params.id),
+          eq(emailCampaignVariants.variantLabel, "B"),
+        ));
+      if (bVariant) { subject = bVariant.subject; htmlBody = bVariant.htmlBody; }
+    }
+    // Resolve tokens — if no contactId use synthetic example values
+    const resolvedSubject = await resolveTokensPreview(subject, ctx.tenantDomain, contactId ?? null);
+    const resolvedHtml = await resolveTokensPreview(htmlBody, ctx.tenantDomain, contactId ?? null);
+    // Fetch sample contact for display
+    let sampleContact: any = null;
+    if (contactId) {
+      const [c] = await db.select({ email: marketingContacts.email, firstName: marketingContacts.firstName, company: marketingContacts.company })
+        .from(marketingContacts)
+        .where(and(eq(marketingContacts.id, contactId), eq(marketingContacts.tenantDomain, ctx.tenantDomain)));
+      sampleContact = c ?? null;
+    }
+    res.json({ subject: resolvedSubject, htmlBody: resolvedHtml, sampleContact, knownTokens: KNOWN_TOKENS });
+  });
+
+  /** List available personalization tokens (for the token picker). */
+  app.get("/api/email-personalization-tokens", async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+    res.json(KNOWN_TOKENS);
   });
 }

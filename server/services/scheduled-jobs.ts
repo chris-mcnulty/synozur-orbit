@@ -19,6 +19,7 @@ import {
 } from "./planner-graph-client";
 import { tickMarketingPublishWorker, sweepMissedPosts } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
+import { tickAbTestEvaluationWorker } from "./email-ab-test";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
 import { refreshSeoForContext } from "../routes/seo";
 import { db, crawlDb } from "../db";
@@ -2573,6 +2574,15 @@ export function startScheduledJobs(): void {
     runEmailTick();
     setInterval(runEmailTick, 2 * 60 * 1000);
   }, 4.5 * 60 * 1000);
+
+  // A/B test winner evaluation — checks emails whose A/B window has elapsed,
+  // declares a winner, and queues the holdback cohort for the winning variant.
+  // Runs every 5 minutes; cheap no-op when no tests are pending evaluation.
+  setInterval(() => {
+    tickAbTestEvaluationWorker().catch(err => {
+      console.error("[AB Test Worker] Tick error:", err?.message || err);
+    });
+  }, 5 * 60 * 1000);
 
   // HubSpot marketing-email sync backfill (Phase 4) — retries pending/errored
   // contact resolution for recent sends, and re-pushes email_sent timeline
