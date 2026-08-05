@@ -1,5 +1,5 @@
 import { useState, useRef, KeyboardEvent, useCallback, useMemo } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -27,8 +27,13 @@ import {
   ChevronUp,
   ChevronsUpDown,
   UserSearch,
+  Scissors,
+  MoreHorizontal,
+  Archive,
+  Trash2,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
+import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +50,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -194,6 +209,7 @@ interface Prospect {
   hubspotContactId: string | null;
   disqualifiedReason: string | null;
   researchDossier: string | null;
+  signals?: { discoveryConfidence?: "verified" | "reconfirm" | null } | null;
 }
 
 interface HubspotContact {
@@ -245,6 +261,7 @@ interface DiscoveryCandidate {
   industry: string | null;
   segment: string | null;
   sourceUrl: string | null;
+  confidence?: "verified" | "reconfirm" | null;
   source: "web" | "salesnav" | "apollo";
 }
 interface ScoredDiscoveryCandidate {
@@ -269,6 +286,12 @@ interface DiscoverResult {
   /** Filters actually sent to Apollo when it returned 0 results. */
   apolloDiagnostics?: ApolloDiagnostics;
   expansionSummary?: { seedCompanies: string[]; expandedCount: number };
+  /** Set when the strict query returned 0 and a broader retry produced results. */
+  relaxationApplied?: string;
+  /** What the intent-expansion pass added to the targeting before searching. */
+  intentExpansion?: { addedGeographies: string[]; addedIndustries: string[]; addedRoles: string[]; method: "ai" | "static" | "none" };
+  /** Companies-first (event campaigns): the fitting orgs that seeded the people lookup. */
+  accountCluster?: string[];
 }
 interface DiscoveryBackend {
   id: "web" | "salesnav" | "apollo";
@@ -324,6 +347,31 @@ function SortIcon({ col, sortKey, sortDir }: { col: ProspectSortKey; sortKey: Pr
   return sortDir === "asc"
     ? <ChevronUp className="ml-1 inline h-3 w-3" />
     : <ChevronDown className="ml-1 inline h-3 w-3" />;
+}
+
+/** Small badge shown when a web-discovered prospect has a confidence flag. */
+function DiscoveryConfidenceBadge({ confidence }: { confidence?: "verified" | "reconfirm" | null }) {
+  if (!confidence) return null;
+  if (confidence === "verified") {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
+        data-testid="badge-discovery-verified"
+        title="Title and company verified via public sources"
+      >
+        <ShieldCheck className="w-2.5 h-2.5" /> Verified
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded px-1 py-0 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800"
+      data-testid="badge-discovery-reconfirm"
+      title="Title or company may need re-checking before outreach"
+    >
+      <ShieldAlert className="w-2.5 h-2.5" /> Re-confirm
+    </span>
+  );
 }
 
 function initEditForm(c: OutreachCampaign) {
@@ -428,10 +476,12 @@ function ApolloFallbackNotice({
 
 export default function OutreachCampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useUser();
   const [adding, setAdding] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
   const [marketingTouchesExpanded, setMarketingTouchesExpanded] = useState(true);
   const [form, setForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
@@ -445,6 +495,8 @@ export default function OutreachCampaignDetailPage() {
   const [draftProspect, setDraftProspect] = useState<Prospect | null>(null);
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
+  const [sharpenResult, setSharpenResult] = useState<{ body: string; subject: string | null; changelog: string[] } | null>(null);
+  const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
 
   // Discovery dialog state.
   const [discovering, setDiscovering] = useState(false);
@@ -623,6 +675,40 @@ export default function OutreachCampaignDetailPage() {
       toast({ title: "Campaign updated" });
     },
     onError: (err: any) => toast({ title: "Couldn't save changes", description: err?.message, variant: "destructive" }),
+  });
+
+  const archiveCampaign = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/sales-outreach/campaigns/${id}`, { status: "archived" });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Campaign archived" });
+      navigate("/app/sales/outreach");
+    },
+    onError: (err: any) => toast({ title: "Couldn't archive campaign", description: err?.message, variant: "destructive" }),
+  });
+
+  const deleteCampaign = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/sales-outreach/campaigns/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete campaign");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Campaign deleted" });
+      navigate("/app/sales/outreach");
+    },
+    onError: (err: any) => {
+      setConfirmDeleteOpen(false);
+      toast({ title: "Couldn't delete campaign", description: err?.message, variant: "destructive" });
+    },
   });
 
   function openEdit() {
@@ -818,6 +904,20 @@ export default function OutreachCampaignDetailPage() {
       toast({ title: "Saved", description: "Compliance re-scanned." });
     },
     onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
+  });
+
+  const sharpenTouch = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/sharpen`, {
+        body: draftBody,
+        subject: draftSubject || undefined,
+      });
+      return res.json() as Promise<{ body: string; subject: string | null; changelog: string[] }>;
+    },
+    onSuccess: (data) => {
+      setSharpenResult(data);
+    },
+    onError: (err: any) => toast({ title: "Sharpen failed", description: err?.message, variant: "destructive" }),
   });
 
   const markReplied = useMutation({
@@ -1118,6 +1218,37 @@ export default function OutreachCampaignDetailPage() {
                 <Pencil className="w-4 h-4 mr-1.5" /> Edit campaign
               </Button>
             )}
+            {canEdit && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" data-testid="button-campaign-detail-menu">
+                    <MoreHorizontal className="w-4 h-4" />
+                    <span className="sr-only">Campaign actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Campaign actions</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => archiveCampaign.mutate()}
+                    disabled={archiveCampaign.isPending}
+                    data-testid="button-archive-campaign"
+                  >
+                    <Archive className="w-4 h-4 mr-2" />
+                    Archive campaign
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    data-testid="button-delete-campaign"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete campaign
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Button variant="ghost" size="sm" onClick={() => tick.mutate()} disabled={tick.isPending} data-testid="button-refresh-cadence">
               {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
               Refresh cadence
@@ -1312,6 +1443,7 @@ export default function OutreachCampaignDetailPage() {
                       <TableCell>
                         <div className="font-medium">{p.name}</div>
                         {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
+                        <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
                       </TableCell>
                       <TableCell className="text-sm">{p.companyName ?? "—"}</TableCell>
                       <TableCell className={`text-center font-semibold ${scoreColor(p.icpScore)}`}>
@@ -1757,6 +1889,11 @@ export default function OutreachCampaignDetailPage() {
               {dossier?.icpScore != null ? ` · ICP ${dossier.icpScore}/100` : ""}
             </DialogDescription>
           </DialogHeader>
+          {dossier?.signals?.discoveryConfidence && (
+            <div className="mb-1">
+              <DiscoveryConfidenceBadge confidence={dossier.signals.discoveryConfidence} />
+            </div>
+          )}
           {dossier?.disqualifiedReason && <p className="text-sm text-destructive">{dossier.disqualifiedReason}</p>}
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{dossier?.researchDossier}</p>
           {marketingTouches.length > 0 && (
@@ -2155,13 +2292,25 @@ export default function OutreachCampaignDetailPage() {
                           {c.scored.disqualified ? "DQ" : c.scored.score}
                         </TableCell>
                         <TableCell>
-                          {c.candidate.sourceUrl ? (
-                            <a href={c.candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs inline-flex items-center gap-1">
-                              source <ExternalLink className="w-3 h-3" />
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {c.candidate.sourceUrl ? (
+                              <a href={c.candidate.sourceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs inline-flex items-center gap-1">
+                                source <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {c.candidate.confidence === "verified" && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-0" data-testid={`discovery-confidence-${i}`}>
+                                verified
+                              </Badge>
+                            )}
+                            {c.candidate.confidence === "reconfirm" && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700" data-testid={`discovery-confidence-${i}`}>
+                                re-confirm
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -2186,6 +2335,24 @@ export default function OutreachCampaignDetailPage() {
               </p>
             </div>
           ) : null}
+          {discoverResult?.relaxationApplied && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-relaxation-notice">
+              The exact filters returned no one, so the search was automatically broadened: {discoverResult.relaxationApplied}.
+            </p>
+          )}
+          {discoverResult?.intentExpansion && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-intent-expansion-notice">
+              Targeting interpreted broadly
+              {discoverResult.intentExpansion.addedGeographies.length > 0 && <> — nearby areas: {discoverResult.intentExpansion.addedGeographies.slice(0, 4).join(", ")}{discoverResult.intentExpansion.addedGeographies.length > 4 ? "…" : ""}</>}
+              {discoverResult.intentExpansion.addedIndustries.length > 0 && <> — adjacent industries: {discoverResult.intentExpansion.addedIndustries.slice(0, 4).join(", ")}{discoverResult.intentExpansion.addedIndustries.length > 4 ? "…" : ""}</>}
+              {discoverResult.intentExpansion.addedRoles.length > 0 && <> — title variants: {discoverResult.intentExpansion.addedRoles.slice(0, 4).join(", ")}{discoverResult.intentExpansion.addedRoles.length > 4 ? "…" : ""}</>}
+            </p>
+          )}
+          {discoverResult?.accountCluster && discoverResult.accountCluster.length > 0 && (
+            <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-account-cluster-notice">
+              Included decision-makers from {discoverResult.accountCluster.length} fitting compan{discoverResult.accountCluster.length === 1 ? "y" : "ies"} in your target area (companies-first search for event invites).
+            </p>
+          )}
           {discoverResult?.expansionSummary && (
             <p className="text-[11px] text-muted-foreground border-t pt-2 flex items-center gap-1" data-testid="discovery-expansion-notice">
               <Search className="w-3 h-3 shrink-0" />
@@ -2206,7 +2373,7 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       {/* Draft review dialog */}
-      <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
+      <Dialog open={!!draft} onOpenChange={(o) => { if (!o) { setDraft(null); setSharpenResult(null); } }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2318,7 +2485,57 @@ export default function OutreachCampaignDetailPage() {
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          {sharpenResult && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 space-y-3">
+              {sharpenResult.subject && sharpenOriginal.subject && sharpenResult.subject !== sharpenOriginal.subject && (
+                <SharpenDiffPanel
+                  before={sharpenOriginal.subject}
+                  after={sharpenResult.subject}
+                  beforeLabel="Subject — before"
+                  afterLabel="Subject — after"
+                  maxHeight="max-h-16"
+                />
+              )}
+              <SharpenDiffPanel
+                before={sharpenOriginal.body}
+                after={sharpenResult.body}
+                beforeLabel="Body — before"
+                afterLabel="Body — after"
+                maxHeight="max-h-40"
+              />
+              <div>
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">What changed</p>
+                <ul className="space-y-0.5">
+                  {sharpenResult.changelog.map((item, i) => (
+                    <li key={i} className="text-xs text-amber-700 dark:text-amber-400">• {item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setDraftBody(sharpenResult.body);
+                    if (sharpenResult.subject) setDraftSubject(sharpenResult.subject);
+                    setSharpenResult(null);
+                  }}
+                  data-testid="button-sharpen-accept"
+                >
+                  Accept changes
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSharpenResult(null)} data-testid="button-sharpen-reject">
+                  Discard
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => { setSharpenOriginal({ body: draftBody, subject: draftSubject }); setSharpenResult(null); sharpenTouch.mutate(); }} disabled={sharpenTouch.isPending} data-testid="button-sharpen-touch">
+              {sharpenTouch.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Scissors className="w-4 h-4 mr-1" />}
+              Sharpen writing
+            </Button>
+            <div className="flex-1" />
             <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending} data-testid="button-save-draft">
               {saveDraft.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PenLine className="w-4 h-4 mr-1" />}
               Save & re-scan
@@ -2330,6 +2547,28 @@ export default function OutreachCampaignDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete campaign confirmation */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{campaign?.name}</strong> will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteCampaign.mutate()}
+              data-testid="confirm-delete-campaign"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

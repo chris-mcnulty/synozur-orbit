@@ -4,6 +4,12 @@ import { generateThumbnail, snapWidth, isResizableContentType } from "../../serv
 import { Readable } from "stream";
 import dns from "dns";
 import { createHash } from "crypto";
+import {
+  MAX_IMAGE_FILE_SIZE,
+  MAX_DOCUMENT_FILE_SIZE,
+  ALLOWED_IMAGE_CONTENT_TYPES,
+  checkUploadSizeLimit,
+} from "@shared/upload-limits";
 
 /** 7-day TTL for persisted external thumbnail cache entries */
 const THUMB_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -107,14 +113,6 @@ const ALLOWED_DOCUMENT_TYPES = [
   "text/plain",
 ];
 
-const ALLOWED_IMAGE_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/svg+xml",
-];
-
 const ALLOWED_FONT_TYPES = [
   "font/ttf",
   "font/otf",
@@ -127,10 +125,10 @@ const ALLOWED_FONT_TYPES = [
   "application/octet-stream", // browsers often report font files with this generic type
 ];
 
-const ALLOWED_CONTENT_TYPES = [...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_IMAGE_TYPES, ...ALLOWED_FONT_TYPES];
+const ALLOWED_CONTENT_TYPES = [...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_IMAGE_CONTENT_TYPES, ...ALLOWED_FONT_TYPES];
 
-const MAX_IMAGE_FILE_SIZE = 15 * 1024 * 1024; // 15MB for images
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB for documents and other files
+// Re-export the shared limits so tests can import them from here too.
+export { MAX_IMAGE_FILE_SIZE, MAX_DOCUMENT_FILE_SIZE as MAX_FILE_SIZE, checkUploadSizeLimit };
 
 /**
  * Register object storage routes for file uploads.
@@ -181,12 +179,11 @@ export function registerObjectStorageRoutes(app: Express): void {
       }
 
       // Validate file size — images allow up to 15MB, all other files up to 10MB
-      const isImage = contentType && ALLOWED_IMAGE_TYPES.includes(contentType);
-      const effectiveMaxSize = isImage ? MAX_IMAGE_FILE_SIZE : MAX_FILE_SIZE;
-      if (size && size > effectiveMaxSize) {
-        return res.status(400).json({
-          error: `File too large. Maximum size is ${effectiveMaxSize / (1024 * 1024)}MB.`,
-        });
+      if (size) {
+        const sizeCheck = checkUploadSizeLimit(size, contentType ?? "");
+        if (!sizeCheck.allowed) {
+          return res.status(400).json({ error: sizeCheck.error });
+        }
       }
 
       // Sanitize filename to prevent path traversal

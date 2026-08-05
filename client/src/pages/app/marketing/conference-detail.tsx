@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X, ExternalLink } from "lucide-react";
 
 interface Speaker {
   name: string;
@@ -207,6 +207,7 @@ interface Post {
   scheduledDate?: string | null;
   overrideImageUrl?: string | null;
   status: string;
+  deliveryMode?: string | null;
 }
 interface SocialAccount {
   id: string;
@@ -342,7 +343,15 @@ export default function ConferenceDetailPage() {
             </p>
           </div>
           {conf.status === "archived" && <Badge variant="secondary">Archived</Badge>}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {conf.campaignId && (
+              <Link href={`/app/marketing/campaigns/${conf.campaignId}`}>
+                <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-view-campaign">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View Campaign
+                </Button>
+              </Link>
+            )}
             <EditEventDialog conf={conf} onSaved={refresh} />
           </div>
         </div>
@@ -577,6 +586,19 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">Link this event to a campaign so its posts roll up in the campaign view.</p>
+            {/* Warn when the user is about to remove or change an existing campaign link.
+                The campaign detail page shows an "origin" banner for events whose
+                campaignId points at it — changing this field will silently remove
+                that banner on the old campaign. */}
+            {conf.campaignId && form.campaignId !== conf.campaignId && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5" data-testid="warning-campaign-change">
+                ⚠ This event will no longer appear as an origin on the{" "}
+                {form.campaignId
+                  ? "previous campaign's"
+                  : "current campaign's"}{" "}
+                detail page. The conference origin banner there will be removed.
+              </p>
+            )}
           </div>
         </div>
         <DialogFooter>
@@ -1080,9 +1102,29 @@ function GraphicsTab({
 
   const deleteAnchorImage = async (imgId: string) => {
     try {
-      await fetch(`/api/conference-images/${imgId}/archive`, { method: "POST", credentials: "include" });
+      const r = await fetch(`/api/conference-images/${imgId}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to delete image");
       onChange();
-    } catch { /* ignore */ }
+      toast({ title: "Anchor image removed" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const removeEventLogo = async () => {
+    try {
+      const r = await fetch(`/api/conferences/${conf.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ eventLogoFileUrl: null, eventLogoFileType: null }),
+      });
+      if (!r.ok) throw new Error("Failed to remove event logo");
+      onChange();
+      toast({ title: "Event logo removed" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
   };
 
   const uploadEventLogo = async (file: File) => {
@@ -1156,6 +1198,17 @@ function GraphicsTab({
                   <span><Upload className="w-3.5 h-3.5 mr-1" /> {conf.eventLogoFileUrl ? "Replace" : "Upload logo"}</span>
                 </Button>
               </label>
+              {conf.eventLogoFileUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={removeEventLogo}
+                  data-testid="button-remove-event-logo"
+                >
+                  <X className="w-3.5 h-3.5 mr-1" /> Remove
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1492,6 +1545,10 @@ function GenerateTab({
   const [includePublished, setIncludePublished] = useState(false);
   const [csvFormat, setCsvFormat] = useState<string>("generic");
   const [polling, setPolling] = useState(false);
+  const [filterPlatform, setFilterPlatform] = useState("all");
+  const [filterSessionId, setFilterSessionId] = useState("all");
+  const [showRejected, setShowRejected] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const { data: status } = useQuery<{ status: string; errorMessage?: string | null }>({
     queryKey: ["/api/conferences", conferenceId, "gen-status"],
@@ -1562,8 +1619,78 @@ function GenerateTab({
     onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
   });
 
+  const approveGroup = useMutation({
+    mutationFn: async ({ postIds, action }: { postIds: string[]; action: "approve" | "csv_only" | "unapprove" | "reject" | "unreject" }) => {
+      const r = await fetch(`/api/conferences/${conferenceId}/posts/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ postIds, action }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update posts");
+    },
+    onSuccess: () => refetchPosts(),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const bulkApprove = useMutation({
+    mutationFn: async ({ platform, action }: { platform: string; action: "approve" | "csv_only" | "unapprove" }) => {
+      const r = await fetch(`/api/conferences/${conferenceId}/posts/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ platform, action }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update posts");
+    },
+    onSuccess: (_, vars) => {
+      refetchPosts();
+      const label = vars.action === "approve" ? "Approved for auto-publish" : vars.action === "csv_only" ? "Marked as CSV-only" : "Reset to draft";
+      toast({ title: label });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const groups = useMemo(() => groupPosts(posts), [posts]);
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  // Platforms that have connected accounts (for showing Twitter hint)
+  const connectedPlatforms = useMemo(() => new Set(accounts.map((a) => a.platform)), [accounts]);
+
+  // Group counts per platform for bulk-approve card
+  const platformGroups = useMemo(() => {
+    const map = new Map<string, PostGroup[]>();
+    for (const g of groups) {
+      if (g.approvalState === "rejected") continue;
+      if (!map.has(g.platform)) map.set(g.platform, []);
+      map.get(g.platform)!.push(g);
+    }
+    return map;
+  }, [groups]);
+
+  // Filtered view for the review list
+  const visibleGroups = useMemo(() => {
+    return groups.filter((g) => {
+      if (g.approvalState === "rejected" && !showRejected) return false;
+      if (filterPlatform !== "all" && g.platform !== filterPlatform) return false;
+      if (filterSessionId !== "all") {
+        if (filterSessionId === "__anchor__") { if (g.postRole !== "anchor") return false; }
+        else { if (g.sessionId !== filterSessionId) return false; }
+      }
+      return true;
+    });
+  }, [groups, showRejected, filterPlatform, filterSessionId]);
+
+  const rejectedCount = useMemo(() => groups.filter((g) => g.approvalState === "rejected").length, [groups]);
+
+  // Per-group selection helpers
+  const toggleKey = (key: string) => setSelectedKeys((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+  const clearSelection = () => setSelectedKeys(new Set());
+  const selectAllVisible = () => setSelectedKeys(new Set(visibleGroups.map((g) => g.key)));
 
   return (
     <div className="space-y-4">
@@ -1596,6 +1723,15 @@ function GenerateTab({
                   </button>
                 ))}
               </div>
+            )}
+            {!connectedPlatforms.has("twitter") && !connectedPlatforms.has("x_post") && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Want to generate X/Twitter posts?{" "}
+                <Link href="/app/marketing/social-accounts" className="underline">
+                  Connect an X account
+                </Link>{" "}
+                and it will appear here.
+              </p>
             )}
           </div>
 
@@ -1633,10 +1769,97 @@ function GenerateTab({
         </CardContent>
       </Card>
 
+      {posts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Approve posts for publishing</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Generated posts are drafts. <strong>Approve</strong> posts on a connected account and Orbit will
+              auto-publish them on schedule. Mark others as <strong>CSV-only</strong> to export them for external
+              schedulers (Buffer, Hootsuite, SocialPilot, etc.) instead.
+            </p>
+            {Array.from(platformGroups.entries()).map(([platform, pgs]) => {
+              const approvedCount = pgs.filter((g) => g.approvalState === "approved").length;
+              const csvCount = pgs.filter((g) => g.approvalState === "csv_only").length;
+              const draftCount = pgs.length - approvedCount - csvCount;
+              const isLinkedIn = platform === "linkedin";
+              const hasAccount = connectedPlatforms.has(platform) || connectedPlatforms.has(platform.replace("x_post", "twitter"));
+              return (
+                <div key={platform} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium capitalize">{platform === "twitter" || platform === "x_post" ? "X / Twitter" : platform}</span>
+                      <span className="text-xs text-muted-foreground">{pgs.length} post{pgs.length !== 1 ? "s" : ""}</span>
+                      {approvedCount > 0 && (
+                        <Badge variant="default" className="text-xs gap-1">
+                          <CheckCircle2 className="w-3 h-3" />{approvedCount} approved
+                        </Badge>
+                      )}
+                      {csvCount > 0 && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <Ban className="w-3 h-3" />{csvCount} CSV-only
+                        </Badge>
+                      )}
+                      {draftCount > 0 && (
+                        <Badge variant="outline" className="text-xs">{draftCount} draft</Badge>
+                      )}
+                    </div>
+                    {hasAccount ? (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="gap-1.5 h-7 text-xs"
+                          disabled={bulkApprove.isPending}
+                          onClick={() => bulkApprove.mutate({ platform, action: "approve" })}
+                          data-testid={`button-approve-all-${platform}`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />Approve all
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 h-7 text-xs"
+                          disabled={bulkApprove.isPending}
+                          onClick={() => bulkApprove.mutate({ platform, action: "csv_only" })}
+                          data-testid={`button-csvonly-all-${platform}`}
+                        >
+                          <Ban className="w-3.5 h-3.5" />CSV-only
+                        </Button>
+                        {(approvedCount > 0 || csvCount > 0) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-muted-foreground"
+                            disabled={bulkApprove.isPending}
+                            onClick={() => bulkApprove.mutate({ platform, action: "unapprove" })}
+                          >
+                            Reset
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {isLinkedIn ? "Connect a LinkedIn account to approve for auto-publish" : "No connected account — use CSV export"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <CardTitle className="text-base">Review ({groups.length} posts, {posts.length} variations)</CardTitle>
+            <CardTitle className="text-base">
+              Review ({groups.filter(g => g.approvalState !== "rejected").length} posts
+              {rejectedCount > 0 && `, ${rejectedCount} rejected`})
+            </CardTitle>
             {posts.length > 0 && (
               <div className="flex items-center gap-2">
                 <Select value={csvFormat} onValueChange={setCsvFormat}>
@@ -1650,61 +1873,185 @@ function GenerateTab({
                     <SelectItem value="sproutsocial">Sprout Social</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => exportCsv.mutate()}
-                  disabled={exportCsv.isPending}
-                  data-testid="button-export-csv-event"
-                >
+                <Button variant="outline" className="gap-2" onClick={() => exportCsv.mutate()} disabled={exportCsv.isPending} data-testid="button-export-csv-event">
                   <Download className="w-4 h-4" />Export CSV
                 </Button>
               </div>
             )}
           </div>
+
+          {/* Filter toolbar */}
+          {groups.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Select value={filterPlatform} onValueChange={(v) => { setFilterPlatform(v); clearSelection(); }}>
+                <SelectTrigger className="h-7 w-36 text-xs">
+                  <SelectValue placeholder="All platforms" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All platforms</SelectItem>
+                  {Array.from(new Set(groups.map(g => g.platform))).sort().map(p => (
+                    <SelectItem key={p} value={p} className="capitalize">{p === "twitter" || p === "x_post" ? "X / Twitter" : p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={filterSessionId} onValueChange={(v) => { setFilterSessionId(v); clearSelection(); }}>
+                <SelectTrigger className="h-7 w-40 text-xs">
+                  <SelectValue placeholder="All targets" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All targets</SelectItem>
+                  <SelectItem value="__anchor__">Anchor posts</SelectItem>
+                  {sessions.filter(s => s.id).map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {rejectedCount > 0 && (
+                <button
+                  className={`h-7 px-2 rounded text-xs border transition-colors ${showRejected ? "bg-destructive/10 border-destructive/30 text-destructive" : "border-input text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setShowRejected(v => !v)}
+                >
+                  {showRejected ? "Hide" : "Show"} {rejectedCount} rejected
+                </button>
+              )}
+
+              {(filterPlatform !== "all" || filterSessionId !== "all" || showRejected) && (
+                <button className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground" onClick={() => { setFilterPlatform("all"); setFilterSessionId("all"); setShowRejected(false); clearSelection(); }}>
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
         </CardHeader>
-        <CardContent className="space-y-4">
+
+        <CardContent className="space-y-3">
+          {/* Bulk action bar */}
+          {selectedKeys.size > 0 && (
+            <div className="flex items-center gap-2 rounded-md bg-muted/60 border px-3 py-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">{selectedKeys.size} selected</span>
+              <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+                <Button size="sm" variant="default" className="h-7 text-xs gap-1"
+                  disabled={approveGroup.isPending}
+                  onClick={() => { approveGroup.mutate({ postIds: visibleGroups.filter(g => selectedKeys.has(g.key)).flatMap(g => g.variants.map(v => v.id)), action: "approve" }); clearSelection(); }}>
+                  <CheckCircle2 className="w-3 h-3" />Approve
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                  disabled={approveGroup.isPending}
+                  onClick={() => { approveGroup.mutate({ postIds: visibleGroups.filter(g => selectedKeys.has(g.key)).flatMap(g => g.variants.map(v => v.id)), action: "csv_only" }); clearSelection(); }}>
+                  <Ban className="w-3 h-3" />CSV only
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
+                  disabled={approveGroup.isPending}
+                  onClick={() => { approveGroup.mutate({ postIds: visibleGroups.filter(g => selectedKeys.has(g.key)).flatMap(g => g.variants.map(v => v.id)), action: "reject" }); clearSelection(); }}>
+                  <X className="w-3 h-3" />Reject
+                </Button>
+                {visibleGroups.some(g => selectedKeys.has(g.key) && g.approvalState === "rejected") && (
+                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1"
+                    disabled={approveGroup.isPending}
+                    onClick={() => { approveGroup.mutate({ postIds: visibleGroups.filter(g => selectedKeys.has(g.key)).flatMap(g => g.variants.map(v => v.id)), action: "unreject" }); clearSelection(); }}>
+                    <RefreshCw className="w-3 h-3" />Restore
+                  </Button>
+                )}
+                <button className="text-xs text-muted-foreground hover:text-foreground ml-1" onClick={clearSelection}>Deselect all</button>
+              </div>
+            </div>
+          )}
+
+          {/* Select all / none bar */}
+          {visibleGroups.length > 0 && selectedKeys.size === 0 && (
+            <div className="flex items-center gap-2">
+              <button className="text-xs text-primary hover:underline" onClick={selectAllVisible}>Select all {visibleGroups.length}</button>
+            </div>
+          )}
+
           {groups.length === 0 ? (
             <p className="text-sm text-muted-foreground">No posts yet. Generate to see drafts here.</p>
+          ) : visibleGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No posts match the current filters.</p>
           ) : (
-            groups.map((g) => (
-              <div key={g.key} className="rounded-md border p-3">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant={g.postRole === "anchor" ? "default" : "secondary"}>
-                      {g.postRole === "anchor" ? "Anchor" : "Session"}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">{g.platform}</span>
+            visibleGroups.map((g) => {
+              const isSelected = selectedKeys.has(g.key);
+              const isRejected = g.approvalState === "rejected";
+              const sessionName = g.sessionId ? sessions.find(s => s.id === g.sessionId)?.title : null;
+              return (
+                <div
+                  key={g.key}
+                  className={`rounded-md border p-3 transition-colors ${isSelected ? "border-primary bg-primary/5" : ""} ${isRejected ? "opacity-50" : ""}`}
+                >
+                  <div className="flex items-start gap-2 mb-2 flex-wrap">
+                    {/* Checkbox */}
+                    <button
+                      className={`mt-0.5 h-4 w-4 shrink-0 rounded border flex items-center justify-center transition-colors ${isSelected ? "bg-primary border-primary" : "border-muted-foreground/50 hover:border-primary"}`}
+                      onClick={() => toggleKey(g.key)}
+                      aria-label={isSelected ? "Deselect" : "Select"}
+                    >
+                      {isSelected && <span className="text-[9px] text-primary-foreground font-bold leading-none">✓</span>}
+                    </button>
+
+                    <div className="flex items-center gap-2 flex-1 flex-wrap">
+                      <Badge variant={g.postRole === "anchor" ? "default" : "secondary"}>
+                        {g.postRole === "anchor" ? "Anchor" : sessionName ?? "Session"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground capitalize">{g.platform === "twitter" || g.platform === "x_post" ? "X / Twitter" : g.platform}</span>
+                      {g.approvalState === "approved" && <Badge variant="default" className="text-xs gap-1 bg-green-600"><CheckCircle2 className="w-3 h-3" />Approved</Badge>}
+                      {g.approvalState === "csv_only" && <Badge variant="secondary" className="text-xs gap-1"><Ban className="w-3 h-3" />CSV-only</Badge>}
+                      {g.approvalState === "rejected" && <Badge variant="destructive" className="text-xs gap-1"><X className="w-3 h-3" />Rejected</Badge>}
+                      {g.scheduledDate && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />{new Date(g.scheduledDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Per-post actions */}
+                    <div className="flex items-center gap-1">
+                      {!isRejected && g.approvalState !== "approved" && connectedPlatforms.has(g.platform) && (
+                        <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-green-600 hover:text-green-700 hover:bg-green-50" disabled={approveGroup.isPending}
+                          onClick={() => approveGroup.mutate({ postIds: g.variants.map(v => v.id), action: "approve" })}>
+                          <CheckCircle2 className="w-3 h-3" />Approve
+                        </Button>
+                      )}
+                      {!isRejected && g.approvalState !== "csv_only" && (
+                        <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground" disabled={approveGroup.isPending}
+                          onClick={() => approveGroup.mutate({ postIds: g.variants.map(v => v.id), action: "csv_only" })}>
+                          <Ban className="w-3 h-3" />CSV
+                        </Button>
+                      )}
+                      {!isRejected ? (
+                        <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground hover:text-destructive" disabled={approveGroup.isPending}
+                          onClick={() => approveGroup.mutate({ postIds: g.variants.map(v => v.id), action: "reject" })}>
+                          <X className="w-3 h-3" />Reject
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-muted-foreground" disabled={approveGroup.isPending}
+                          onClick={() => approveGroup.mutate({ postIds: g.variants.map(v => v.id), action: "unreject" })}>
+                          <RefreshCw className="w-3 h-3" />Restore
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  {g.scheduledDate && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(g.scheduledDate).toLocaleString()}
-                    </span>
-                  )}
+
+                  <div className="grid gap-3 md:grid-cols-[120px,1fr]">
+                    <div className="aspect-video rounded border bg-muted/40 flex items-center justify-center overflow-hidden">
+                      {g.imageUrl ? <img src={g.imageUrl} alt="graphic" className="w-full h-full object-cover" /> : <ImageIcon className="w-5 h-5 text-muted-foreground" />}
+                    </div>
+                    <div className="space-y-2">
+                      {g.variants.map((v, i) => (
+                        <div key={v.id} className="text-sm">
+                          <span className="text-xs font-semibold text-muted-foreground">Variation {i + 1}</span>
+                          <p className="whitespace-pre-wrap">{v.content}</p>
+                          {v.hashtags && v.hashtags.length > 0 && (
+                            <p className="text-xs text-primary mt-0.5">{v.hashtags.map(h => `#${h}`).join(" ")}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="grid gap-3 md:grid-cols-[120px,1fr]">
-                  <div className="aspect-video rounded border bg-muted/40 flex items-center justify-center overflow-hidden">
-                    {g.imageUrl ? (
-                      <img src={g.imageUrl} alt="graphic" className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon className="w-5 h-5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {g.variants.map((v, i) => (
-                      <div key={v.id} className="text-sm">
-                        <span className="text-xs font-semibold text-muted-foreground">Variation {i + 1}</span>
-                        <p className="whitespace-pre-wrap">{v.content}</p>
-                        {v.hashtags && v.hashtags.length > 0 && (
-                          <p className="text-xs text-primary mt-0.5">{v.hashtags.map((h) => `#${h}`).join(" ")}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </CardContent>
       </Card>
@@ -1718,7 +2065,9 @@ interface PostGroup {
   platform: string;
   scheduledDate?: string | null;
   imageUrl?: string | null;
+  sessionId?: string | null;
   variants: Post[];
+  approvalState?: "approved" | "csv_only" | "rejected" | "draft";
 }
 
 function groupPosts(posts: Post[]): PostGroup[] {
@@ -1732,12 +2081,20 @@ function groupPosts(posts: Post[]): PostGroup[] {
         platform: p.platform,
         scheduledDate: p.scheduledDate,
         imageUrl: p.overrideImageUrl,
+        sessionId: p.conferenceSessionId ?? null,
         variants: [],
       });
     }
     map.get(key)!.variants.push(p);
   }
-  return Array.from(map.values()).sort((a, b) => {
+  const groups = Array.from(map.values());
+  for (const g of groups) {
+    const rejected = g.variants.every((v) => v.status === "rejected");
+    const approved = !rejected && g.variants.every((v) => v.status === "approved");
+    const csvOnly = !rejected && g.variants.every((v) => v.deliveryMode === "csv");
+    g.approvalState = rejected ? "rejected" : approved ? "approved" : csvOnly ? "csv_only" : "draft";
+  }
+  return groups.sort((a, b) => {
     if (a.postRole === "anchor" && b.postRole !== "anchor") return -1;
     if (b.postRole === "anchor" && a.postRole !== "anchor") return 1;
     return (a.scheduledDate || "").localeCompare(b.scheduledDate || "");

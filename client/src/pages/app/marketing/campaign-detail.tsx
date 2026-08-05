@@ -52,6 +52,7 @@ import {
   Lightbulb,
   Upload,
   CheckCircle2,
+  Info,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -73,6 +74,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -134,6 +136,7 @@ interface Campaign {
   productIds?: string[];
   alwaysHashtags?: string[];
   parentCampaignId?: string | null;
+  briefOnlyMode?: boolean;
   thematicUrl?: string | null;
   thematicBrief?: string | null;
   foundingSignals?: FoundingSignals | null;
@@ -297,6 +300,7 @@ interface GeneratedPost {
   linkUrl?: string | null;
   linkLabel?: string | null;
   sourceBriefId?: string | null;
+  campaignId?: string | null;
 }
 
 // ── Post lifecycle stage (brief → draft → ready → scheduled → posted) ──────────
@@ -433,6 +437,16 @@ export default function CampaignDetailPage() {
       return next;
     });
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [digestDialogOpen, setDigestDialogOpen] = useState(false);
+  const [digestSourceContent, setDigestSourceContent] = useState("");
+  const [digestTitle, setDigestTitle] = useState("");
+  const [digestSocialAccountId, setDigestSocialAccountId] = useState("");
+  const [digestScrapeUrl, setDigestScrapeUrl] = useState("");
+  const [digestScrapeFrom, setDigestScrapeFrom] = useState("");
+  const [digestScrapeTo, setDigestScrapeTo] = useState("");
+  const [digestScrapedPosts, setDigestScrapedPosts] = useState<Array<{ id: string; text: string; postedAt: string; kept: boolean }>>([]);
+  const [digestScrapeLoading, setDigestScrapeLoading] = useState(false);
+  const [digestScrapeError, setDigestScrapeError] = useState("");
   const [newBlogDialogOpen, setNewBlogDialogOpen] = useState(false);
   const [blogIdeaText, setBlogIdeaText] = useState("");
   const [suggestedBlogTitle, setSuggestedBlogTitle] = useState("");
@@ -510,6 +524,11 @@ export default function CampaignDetailPage() {
   // Brief source navigation — highlights the source brief in the Content Plan tab
   const [highlightedBriefId, setHighlightedBriefId] = useState<string | null>(null);
 
+  // Link / unlink event state
+  const [linkEventOpen, setLinkEventOpen] = useState(false);
+  const [linkEventSearch, setLinkEventSearch] = useState("");
+  const [unlinkEventConfirmId, setUnlinkEventConfirmId] = useState<string | null>(null);
+
   const { data: campaign, isLoading } = useQuery<Campaign>({
     queryKey: [`/api/campaigns/${id}`],
     queryFn: async () => {
@@ -551,8 +570,46 @@ export default function CampaignDetailPage() {
     onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const generateDigestMutation = useMutation({
+    mutationFn: async () => {
+      const keptPosts = digestScrapedPosts.filter((p) => p.kept).map((p) => {
+        const dateLabel = p.postedAt ? `[${new Date(p.postedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}] ` : "";
+        return `${dateLabel}${p.text}`;
+      });
+      const combined = [...keptPosts, digestSourceContent.trim()].filter(Boolean).join("\n\n---\n\n");
+      const r = await fetch(`/api/campaigns/${id}/generate-digest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          sourceContent: combined,
+          title: digestTitle.trim() || undefined,
+          socialAccountId: digestSocialAccountId || undefined,
+        }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to generate digest");
+      return r.json() as Promise<{ title: string; digestBriefId: string; newsletterBriefId: string; postId: string | null; calendarId: string }>;
+    },
+    onSuccess: (data) => {
+      refreshHub();
+      setDigestDialogOpen(false);
+      setDigestSourceContent("");
+      setDigestTitle("");
+      setDigestSocialAccountId("");
+      setDigestScrapeUrl("");
+      setDigestScrapeFrom("");
+      setDigestScrapeTo("");
+      setDigestScrapedPosts([]);
+      setDigestScrapeError("");
+      const parts = ["digest article", "newsletter"];
+      if (data.postId) parts.push("LinkedIn post");
+      toast({ title: `"${data.title}" created`, description: `${parts.join(", ")} — all linked to this campaign.` });
+    },
+    onError: (e: any) => toast({ title: "Failed to generate digest", description: e.message, variant: "destructive" }),
+  });
+
   const hubCreateBlogPostMutation = useMutation({
-    mutationFn: async (title?: string) => {
+    mutationFn: async ({ title, writeMyself }: { title?: string; writeMyself?: boolean }) => {
       const res = await fetch("/api/planning-hub/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -560,7 +617,18 @@ export default function CampaignDetailPage() {
         body: JSON.stringify({ scope: "campaign", id, type: "content", format: "blog_post", title: title?.trim() || "New blog post" }),
       });
       if (!res.ok) throw new Error("Failed to create blog post brief");
-      return res.json() as Promise<{ type: string; id: string }>;
+      const brief = (await res.json()) as { type: string; id: string };
+      if (writeMyself) {
+        // Create a blank draft immediately (no AI) so the editor opens ready to write.
+        const draftRes = await fetch(`/api/content-briefs/${brief.id}/draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ blank: true }),
+        });
+        if (!draftRes.ok) throw new Error("Brief created, but the blank draft could not be created. Open it from the Content Briefs page.");
+      }
+      return brief;
     },
     onSuccess: (data) => {
       refreshHub();
@@ -835,6 +903,73 @@ export default function CampaignDetailPage() {
       const r = await fetch(`/api/campaigns/${id}/events`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+  });
+
+  // All conferences in this market — powers the "Link event" picker and orphan detection
+  const { data: allConferences = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string | null; campaignId?: string | null }[]>({
+    queryKey: ["/api/conferences", "for-link-picker"],
+    queryFn: async () => {
+      const r = await fetch("/api/conferences", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
+  // Detect events that previously generated posts for this campaign but have since been
+  // reassigned to a different campaign (or cleared). These are conferenceIds present on
+  // posts for this campaign that no longer appear in linkedEvents.
+  const orphanedConferences = useMemo(() => {
+    if (!posts.length || !allConferences.length) return [];
+    const linkedIds = new Set(linkedEvents.map((e) => e.id));
+    const orphanedIds = new Set(
+      posts
+        .filter((p) => p.conferenceId && !linkedIds.has(p.conferenceId))
+        .map((p) => p.conferenceId as string),
+    );
+    if (!orphanedIds.size) return [];
+    return allConferences.filter((c) => orphanedIds.has(c.id));
+  }, [posts, linkedEvents, allConferences]);
+
+  const linkEventMutation = useMutation({
+    mutationFn: async (conferenceId: string) => {
+      const r = await fetch(`/api/conferences/${conferenceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ campaignId: id }),
+      });
+      if (!r.ok) throw new Error("Failed to link event");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/events`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conferences", "for-link-picker"] });
+      setLinkEventOpen(false);
+      setLinkEventSearch("");
+      toast({ title: "Event linked", description: "The event is now associated with this campaign." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not link the event. Please try again.", variant: "destructive" }),
+  });
+
+  const unlinkEventMutation = useMutation({
+    mutationFn: async (conferenceId: string) => {
+      const r = await fetch(`/api/conferences/${conferenceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ campaignId: null }),
+      });
+      if (!r.ok) throw new Error("Failed to unlink event");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/events`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conferences", "for-link-picker"] });
+      setUnlinkEventConfirmId(null);
+      toast({ title: "Event unlinked", description: "The event has been detached from this campaign." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not unlink the event. Please try again.", variant: "destructive" }),
   });
 
   const { data: allCampaigns = [] } = useQuery<Array<{ id: string; name: string; status: string; parentCampaignId?: string | null }>>({
@@ -1231,7 +1366,7 @@ export default function CampaignDetailPage() {
   });
 
   const editCampaignMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; briefOnlyMode?: boolean; alwaysHashtags?: string[] }) => {
+    mutationFn: async (data: { name: string; description?: string; campaignType?: string; objective?: string | null; goal?: string | null; startDate?: string | null; endDate?: string | null; numberOfDays?: number | null; includeSaturday?: boolean; includeSunday?: boolean; briefOnlyMode?: boolean; alwaysHashtags?: string[]; thematicUrl?: string | null; thematicBrief?: string | null }) => {
       const r = await fetch(`/api/campaigns/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -2252,6 +2387,119 @@ export default function CampaignDetailPage() {
           </div>
         </div>
 
+        {/* Conference origin banner — shown when this campaign was auto-created from one or more events */}
+        {linkedEvents.length > 0 ? (
+          <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/40 rounded-lg border text-sm" data-testid="campaign-conference-origin-banner">
+            <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground">
+              {linkedEvents.length === 1
+                ? "Linked event:"
+                : "Linked events:"}
+            </span>
+            {linkedEvents.map((ev) => (
+              <span key={ev.id} className="inline-flex items-center gap-1.5">
+                <a
+                  href={`/app/marketing/conferences/${ev.id}`}
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                  data-testid={`link-conference-origin-${ev.id}`}
+                >
+                  {ev.name}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-muted-foreground hover:text-destructive gap-1"
+                  onClick={() => setUnlinkEventConfirmId(ev.id)}
+                  data-testid={`button-unlink-event-banner-${ev.id}`}
+                >
+                  <Unlink className="w-3 h-3" />
+                  Unlink
+                </Button>
+              </span>
+            ))}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="How event linking works"
+                  data-testid="button-event-link-info"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="end" className="max-w-xs text-sm space-y-1.5">
+                <p className="font-medium">Link controlled by the event</p>
+                <p className="text-muted-foreground">
+                  This campaign association is set on the event side via the{" "}
+                  <span className="font-medium text-foreground">Parent Campaign</span> field. If the
+                  event is reassigned to a different campaign (or cleared), it will no longer appear
+                  here.
+                </p>
+                <p className="text-muted-foreground">
+                  To change the assignment, open the event's detail page and click{" "}
+                  <span className="font-medium text-foreground">Edit event → Parent Campaign</span>.
+                </p>
+              </PopoverContent>
+            </Popover>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 p-3 bg-muted/40 rounded-lg border text-sm" data-testid="campaign-no-event-banner">
+            <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground">No event linked to this campaign.</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 ml-auto"
+              onClick={() => setLinkEventOpen(true)}
+              data-testid="button-link-event-banner"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              Link event
+            </Button>
+          </div>
+        )}
+
+        {/* Orphaned-event warning — shown when one or more events that generated posts for this
+            campaign have since been reassigned to a different campaign (or cleared entirely).
+            The posts remain here, but the event no longer appears in linkedEvents. */}
+        {orphanedConferences.length > 0 && (
+          <div
+            className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm"
+            data-testid="campaign-orphaned-event-warning"
+          >
+            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-amber-800 dark:text-amber-200">
+                {orphanedConferences.length === 1
+                  ? "An event was reassigned away from this campaign"
+                  : `${orphanedConferences.length} events were reassigned away from this campaign`}
+              </p>
+              <p className="text-amber-700 dark:text-amber-300 mt-0.5">
+                {orphanedConferences.map((c, i) => (
+                  <span key={c.id}>
+                    {i > 0 && ", "}
+                    <a
+                      href={`/app/marketing/conferences/${c.id}`}
+                      className="font-medium underline underline-offset-2 hover:no-underline"
+                      data-testid={`link-orphaned-conference-${c.id}`}
+                    >
+                      {c.name}
+                    </a>
+                  </span>
+                ))}{" "}
+                {orphanedConferences.length === 1 ? "is" : "are"} no longer linked here. Posts
+                generated for this campaign from{" "}
+                {orphanedConferences.length === 1 ? "that event" : "those events"} still exist but
+                the event's <span className="font-medium">Parent Campaign</span> field now points
+                elsewhere. To restore the link, open the event and change{" "}
+                <span className="font-medium">Edit event → Parent Campaign</span> back to this
+                campaign.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Rollup summary bar */}
         {campaign.rollup && (campaign.rollup.emailCount > 0 || campaign.rollup.postCount > 0 || Object.keys(campaign.rollup.assetsByType).length > 0) && (
           <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/40 rounded-lg border" data-testid="campaign-rollup-bar">
@@ -2381,11 +2629,7 @@ export default function CampaignDetailPage() {
                   className="gap-2"
                   data-testid="button-linkedin-digest"
                   onClick={() => {
-                    const calId = contentPlan?.calendar?.id;
-                    const url = calId
-                      ? `/app/marketing/editorial-calendar?calendar=${calId}&openDigest=1`
-                      : `/app/marketing/editorial-calendar?openDigest=1`;
-                    navigate(url);
+                    setDigestDialogOpen(true);
                   }}
                 >
                   <Newspaper className="w-4 h-4" />
@@ -2728,30 +2972,55 @@ export default function CampaignDetailPage() {
               </div>
             )}
 
-            {linkedEvents.length > 0 && (
-              <div className="space-y-2 pt-2" data-testid="campaign-events">
+            <div className="space-y-2 pt-2" data-testid="campaign-events">
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold flex items-center gap-1.5"><Calendar className="w-4 h-4" />Events</h3>
-                {linkedEvents.map((ev) => (
-                  <Card key={ev.id} data-testid={`event-${ev.id}`}>
-                    <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">{ev.name}</span>
-                          <Badge variant="secondary" className="text-[10px] capitalize">{ev.status}</Badge>
-                          <Badge variant="outline" className="text-[10px]">{ev.postCount} posts</Badge>
-                        </div>
-                        {ev.startDate && (
-                          <p className="text-xs text-muted-foreground mt-1">{format(new Date(ev.startDate), "MMM d, yyyy")}</p>
-                        )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setLinkEventOpen(true)}
+                  data-testid="button-link-event-overview"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  Link event
+                </Button>
+              </div>
+              {linkedEvents.length === 0 && (
+                <p className="text-sm text-muted-foreground py-2">No events linked to this campaign yet.</p>
+              )}
+              {linkedEvents.map((ev) => (
+                <Card key={ev.id} data-testid={`event-${ev.id}`}>
+                  <CardContent className="py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{ev.name}</span>
+                        <Badge variant="secondary" className="text-[10px] capitalize">{ev.status}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{ev.postCount} posts</Badge>
                       </div>
+                      {ev.startDate && (
+                        <p className="text-xs text-muted-foreground mt-1">{format(new Date(ev.startDate), "MMM d, yyyy")}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-muted-foreground hover:text-destructive"
+                        onClick={() => setUnlinkEventConfirmId(ev.id)}
+                        data-testid={`button-unlink-event-${ev.id}`}
+                      >
+                        <Unlink className="w-3.5 h-3.5" />
+                        Unlink
+                      </Button>
                       <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate(`/app/marketing/conferences/${ev.id}`)} data-testid={`button-open-event-${ev.id}`}>
                         Open event <ExternalLink className="w-3 h-3" />
                       </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
 
           <TabsContent value="links" className="space-y-4">
@@ -2906,7 +3175,7 @@ export default function CampaignDetailPage() {
                             variant="outline"
                             className="gap-1.5"
                             disabled={hubCreateBlogPostMutation.isPending}
-                            onClick={() => hubCreateBlogPostMutation.mutate()}
+                            onClick={() => hubCreateBlogPostMutation.mutate({})}
                             data-testid="button-hub-new-blog-post"
                           >
                             {hubCreateBlogPostMutation.isPending ? (
@@ -6160,6 +6429,203 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {/* LinkedIn Digest dialog */}
+      <Dialog
+        open={digestDialogOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDigestSourceContent(""); setDigestTitle(""); setDigestSocialAccountId("");
+            setDigestScrapeUrl(""); setDigestScrapeFrom(""); setDigestScrapeTo("");
+            setDigestScrapedPosts([]); setDigestScrapeError("");
+          }
+          setDigestDialogOpen(o);
+        }}
+      >
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Newspaper className="w-4 h-4" /> LinkedIn Digest
+            </DialogTitle>
+            <DialogDescription>
+              Pull in posts automatically, remove anything irrelevant, then add anything missing. Orbit generates a digest article, newsletter, and LinkedIn teaser — all linked to this campaign.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* ── Title ── */}
+            <div className="space-y-1.5">
+              <Label htmlFor="digest-title">Title <span className="text-muted-foreground font-normal text-xs">(optional — AI picks one if blank)</span></Label>
+              <input
+                id="digest-title"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder={`LinkedIn Digest \u2014 ${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}`}
+                value={digestTitle}
+                onChange={(e) => setDigestTitle(e.target.value)}
+              />
+            </div>
+
+            {/* ── Fetch from LinkedIn ── */}
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Step 1 — Fetch posts from LinkedIn</p>
+              <div className="space-y-2">
+                <div className="flex h-9 w-full rounded-md border border-input bg-background text-sm shadow-sm focus-within:ring-1 focus-within:ring-ring overflow-hidden">
+                  <span className="flex items-center px-3 text-muted-foreground bg-muted/50 border-r border-input shrink-0 select-none text-xs">
+                    linkedin.com/in/
+                  </span>
+                  <input
+                    className="flex-1 bg-transparent px-3 py-1 focus:outline-none placeholder:text-muted-foreground"
+                    placeholder="your-username"
+                    value={digestScrapeUrl}
+                    onChange={(e) => { setDigestScrapeUrl(e.target.value.replace(/.*linkedin\.com\/in\//i, "").replace(/\/$/, "")); setDigestScrapeError(""); }}
+                  />
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="date"
+                    className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={digestScrapeFrom}
+                    onChange={(e) => setDigestScrapeFrom(e.target.value)}
+                  />
+                  <span className="text-muted-foreground text-xs shrink-0">to</span>
+                  <input
+                    type="date"
+                    className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={digestScrapeTo}
+                    onChange={(e) => setDigestScrapeTo(e.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={digestScrapeLoading || !digestScrapeUrl.trim() || !digestScrapeFrom || !digestScrapeTo}
+                    onClick={async () => {
+                      setDigestScrapeError("");
+                      setDigestScrapeLoading(true);
+                      try {
+                        const r = await fetch("/api/linkedin-digest/preview", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: "include",
+                          body: JSON.stringify({ profileUrl: `https://www.linkedin.com/in/${digestScrapeUrl.trim()}`, startDate: digestScrapeFrom, endDate: digestScrapeTo }),
+                        });
+                        const data = await r.json();
+                        if (!r.ok) throw new Error(data.error || "Failed to fetch posts");
+                        const incoming: Array<{ id: string; text: string; postedAt: string; kept: boolean }> =
+                          (data.posts ?? []).map((p: any, i: number) => ({ id: `scraped-${i}-${Date.now()}`, text: p.text, postedAt: p.postedAt ?? "", kept: true }));
+                        setDigestScrapedPosts(incoming);
+                        if (incoming.length === 0) setDigestScrapeError("No posts found in that date range.");
+                      } catch (e: any) {
+                        setDigestScrapeError(e.message);
+                      } finally {
+                        setDigestScrapeLoading(false);
+                      }
+                    }}
+                  >
+                    {digestScrapeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Fetch"}
+                  </Button>
+                </div>
+                {digestScrapeError && <p className="text-xs text-destructive">{digestScrapeError}</p>}
+              </div>
+
+              {/* Fetched posts list */}
+              {digestScrapedPosts.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">{digestScrapedPosts.filter((p) => p.kept).length} of {digestScrapedPosts.length} posts selected</p>
+                    <div className="flex gap-2">
+                      <button className="text-xs text-primary hover:underline" onClick={() => setDigestScrapedPosts((ps) => ps.map((p) => ({ ...p, kept: true })))}>Select all</button>
+                      <button className="text-xs text-muted-foreground hover:underline" onClick={() => setDigestScrapedPosts((ps) => ps.map((p) => ({ ...p, kept: false })))}>Deselect all</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                    {digestScrapedPosts.map((post) => (
+                      <div
+                        key={post.id}
+                        className={`flex gap-2 rounded-md border p-2 text-xs cursor-pointer transition-colors ${post.kept ? "bg-background border-border" : "bg-muted/20 border-dashed opacity-50"}`}
+                        onClick={() => setDigestScrapedPosts((ps) => ps.map((p) => p.id === post.id ? { ...p, kept: !p.kept } : p))}
+                      >
+                        <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-sm border flex items-center justify-center ${post.kept ? "bg-primary border-primary" : "border-muted-foreground"}`}>
+                          {post.kept && <span className="text-[9px] text-primary-foreground font-bold leading-none">✓</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {post.postedAt && <p className="text-[10px] text-muted-foreground mb-0.5">{new Date(post.postedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>}
+                          <p className="line-clamp-3 leading-relaxed">{post.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Add anything missing ── */}
+            <div className="space-y-1.5">
+              <Label htmlFor="digest-source">
+                {digestScrapedPosts.length > 0
+                  ? <span>Step 2 — Add anything missing <span className="text-muted-foreground font-normal text-xs">(optional)</span></span>
+                  : <span>Source content <span className="text-destructive">*</span></span>}
+              </Label>
+              <Textarea
+                id="digest-source"
+                placeholder={digestScrapedPosts.length > 0
+                  ? "Paste any extra articles, news snippets, or notes not captured above\u2026"
+                  : "Paste your LinkedIn posts, industry articles, or notes here\u2026\n\nExample:\n\u2014 AI adoption in mid-market is accelerating\u2026\n\u2014 Three things I learned at the conference this week\u2026\n\u2014 Article: [paste headline + key points]"}
+                value={digestSourceContent}
+                onChange={(e) => setDigestSourceContent(e.target.value)}
+                className="min-h-[120px] text-sm leading-relaxed"
+              />
+              <p className="text-xs text-muted-foreground">The AI synthesizes this into a structured article, newsletter, and social post — no facts are invented.</p>
+            </div>
+
+            {/* ── LinkedIn account for teaser ── */}
+            {allSocialAccounts.filter((a) => a.platform === "linkedin").length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="digest-account">LinkedIn account for teaser post <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                <Select value={digestSocialAccountId || "__none__"} onValueChange={(v) => setDigestSocialAccountId(v === "__none__" ? "" : v)}>
+                  <SelectTrigger id="digest-account">
+                    <SelectValue placeholder="Skip social post" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Skip social post</SelectItem>
+                    {allSocialAccounts.filter((a) => a.platform === "linkedin").map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.accountName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* ── What gets created ── */}
+            <div className="rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+              <p className="font-medium text-foreground">What gets created:</p>
+              <p>• Digest article (LinkedIn Digest format)</p>
+              <p>• Newsletter (email-ready version)</p>
+              {digestSocialAccountId
+                ? <p>• LinkedIn teaser post → {allSocialAccounts.find((a) => a.id === digestSocialAccountId)?.accountName}</p>
+                : allSocialAccounts.filter((a) => a.platform === "linkedin").length > 0
+                  ? <p className="text-muted-foreground/70">• LinkedIn teaser post (select an account above to enable)</p>
+                  : null}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDigestDialogOpen(false)} disabled={generateDigestMutation.isPending}>Cancel</Button>
+            <Button
+              onClick={() => generateDigestMutation.mutate()}
+              disabled={
+                generateDigestMutation.isPending ||
+                (digestScrapedPosts.filter((p) => p.kept).length === 0 && !digestSourceContent.trim())
+              }
+            >
+              {generateDigestMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating…</>
+              ) : (
+                <><Sparkles className="w-4 h-4 mr-2" />Generate digest</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* New Blog Post dialog — idea input + AI title suggestion */}
       <Dialog open={newBlogDialogOpen} onOpenChange={(o) => { if (!o) { setBlogIdeaText(""); setSuggestedBlogTitle(""); } setNewBlogDialogOpen(o); }}>
         <DialogContent className="max-w-md">
@@ -6204,8 +6670,17 @@ export default function CampaignDetailPage() {
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setNewBlogDialogOpen(false)} data-testid="button-cancel-new-blog">Cancel</Button>
             <Button
+              variant="secondary"
               disabled={!suggestedBlogTitle.trim() || hubCreateBlogPostMutation.isPending}
-              onClick={() => hubCreateBlogPostMutation.mutate(suggestedBlogTitle)}
+              onClick={() => hubCreateBlogPostMutation.mutate({ title: suggestedBlogTitle, writeMyself: true })}
+              data-testid="button-write-blog-myself"
+            >
+              {hubCreateBlogPostMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+              Write myself
+            </Button>
+            <Button
+              disabled={!suggestedBlogTitle.trim() || hubCreateBlogPostMutation.isPending}
+              onClick={() => hubCreateBlogPostMutation.mutate({ title: suggestedBlogTitle })}
               data-testid="button-create-blog-post"
             >
               {hubCreateBlogPostMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
@@ -6989,6 +7464,101 @@ export default function CampaignDetailPage() {
           <CreateActionDialog open={hubCreateOpen} onOpenChange={setHubCreateOpen} scope="campaign" id={id} onDone={refreshHub} />
         </>
       )}
+
+      {/* Link event picker dialog */}
+      <Dialog open={linkEventOpen} onOpenChange={(o) => { setLinkEventOpen(o); if (!o) setLinkEventSearch(""); }}>
+        <DialogContent className="max-w-lg" data-testid="dialog-link-event">
+          <DialogHeader>
+            <DialogTitle>Link an event</DialogTitle>
+            <DialogDescription>
+              Associate an existing conference or event with this campaign. Only unlinked events are shown.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Search events…"
+              value={linkEventSearch}
+              onChange={(e) => setLinkEventSearch(e.target.value)}
+              data-testid="input-link-event-search"
+            />
+            <div className="max-h-72 overflow-y-auto border rounded-md divide-y" data-testid="list-link-event-options">
+              {(() => {
+                const linkedIds = new Set(linkedEvents.map((e) => e.id));
+                const filtered = allConferences.filter((c) => {
+                  if (linkedIds.has(c.id)) return false; // already linked to this campaign
+                  if (c.campaignId && c.campaignId !== id) return false; // linked to another campaign
+                  if (linkEventSearch.trim()) {
+                    return c.name.toLowerCase().includes(linkEventSearch.toLowerCase());
+                  }
+                  return true;
+                });
+                if (filtered.length === 0) {
+                  return (
+                    <p className="text-sm text-muted-foreground px-3 py-4">
+                      {linkEventSearch.trim() ? "No matching events found." : "No unlinked events available."}
+                    </p>
+                  );
+                }
+                return filtered.map((c) => (
+                  <button
+                    key={c.id}
+                    className="w-full text-left px-3 py-2.5 hover:bg-accent transition-colors text-sm flex items-center justify-between gap-3"
+                    onClick={() => linkEventMutation.mutate(c.id)}
+                    disabled={linkEventMutation.isPending}
+                    data-testid={`button-link-event-option-${c.id}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{c.name}</div>
+                      {c.startDate && (
+                        <div className="text-xs text-muted-foreground">{format(new Date(c.startDate), "MMM d, yyyy")}</div>
+                      )}
+                    </div>
+                    {linkEventMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-muted-foreground" />
+                    ) : (
+                      <Link2 className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                  </button>
+                ));
+              })()}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkEventOpen(false)} data-testid="button-cancel-link-event">
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unlink event confirmation dialog */}
+      <AlertDialog open={!!unlinkEventConfirmId} onOpenChange={(o) => { if (!o) setUnlinkEventConfirmId(null); }}>
+        <AlertDialogContent data-testid="dialog-unlink-event-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlink event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const ev = linkedEvents.find((e) => e.id === unlinkEventConfirmId);
+                return ev
+                  ? `"${ev.name}" will no longer be associated with this campaign. The event itself and its posts are not deleted.`
+                  : "The event will no longer be associated with this campaign.";
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-unlink-event">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => unlinkEventConfirmId && unlinkEventMutation.mutate(unlinkEventConfirmId)}
+              disabled={unlinkEventMutation.isPending}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-unlink-event"
+            >
+              {unlinkEventMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Unlink
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

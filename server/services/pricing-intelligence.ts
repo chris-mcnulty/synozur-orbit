@@ -1,26 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "../storage";
-/** Minimal pricing-page fetcher (plain HTTP + HTML strip) replacing the old web-crawler import. */
-async function crawlPricingPage(url: string, options?: { signal?: AbortSignal }): Promise<{ content: string } | null> {
-  try {
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Orbit/1.0)" },
-      signal: options?.signal,
-    });
-    if (!resp.ok) return null;
-    const html = await resp.text();
-    const text = html
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return text.length > 50 ? { content: text.substring(0, 50000) } : null;
-  } catch {
-    return null;
-  }
-}
+import { crawlPricingPage } from "./web-crawler";
+import { logAiUsage } from "./ai-usage-logger";
 import { notifications } from "./notifications";
 import {
   pricingTierSchema,
@@ -88,6 +69,8 @@ function stripJsonFences(raw: string): string {
 export async function extractPricingTiers(
   competitorName: string,
   rawContent: string,
+  tenantDomain?: string | null,
+  marketId?: string | null,
 ): Promise<ExtractionResult> {
   const fallback: ExtractionResult = {
     tiers: [],
@@ -141,6 +124,7 @@ JSON:`,
       ],
     });
 
+    void logAiUsage({ tenantDomain, marketId }, "extract_pricing_tiers", "anthropic", MODEL, response.usage);
     const textBlock = response.content.find(block => block.type === "text");
     const rawText = stripJsonFences(textBlock?.text || "");
     const parsed = JSON.parse(rawText);
@@ -171,6 +155,8 @@ export async function analyzePricingChanges(
   previousTiers: PricingTier[],
   currentTiers: PricingTier[],
   changeScore: number,
+  tenantDomain?: string | null,
+  marketId?: string | null,
 ): Promise<{ summary: string; analysis: PricingChangeAnalysis | null }> {
   try {
     const response = await anthropic.messages.create({
@@ -216,6 +202,7 @@ JSON:`,
       ],
     });
 
+    void logAiUsage({ tenantDomain, marketId }, "analyze_pricing_changes", "anthropic", MODEL, response.usage);
     const textBlock = response.content.find(block => block.type === "text");
     const rawText = stripJsonFences(textBlock?.text || "");
     const parsed = JSON.parse(rawText);
@@ -301,7 +288,7 @@ export async function monitorCompetitorPricing(
     };
   }
 
-  const extraction = await extractPricingTiers(competitor.name, fetched.content);
+  const extraction = await extractPricingTiers(competitor.name, fetched.content, options.tenantDomain || competitor.tenantDomain, competitor.marketId);
   const previousSnapshot = await storage.getLatestPricingSnapshotForCompetitor(competitor.id);
   const previousRaw = previousSnapshot?.rawContent || "";
   const changeScore = calculateChangeScore(previousRaw, fetched.content);
@@ -317,6 +304,8 @@ export async function monitorCompetitorPricing(
       (previousSnapshot?.tiers as PricingTier[] | null) || [],
       extraction.tiers,
       changeScore,
+      options.tenantDomain || competitor.tenantDomain,
+      competitor.marketId,
     );
     summary = result.summary;
     changeAnalysis = result.analysis;
@@ -475,7 +464,11 @@ export async function monitorBaselinePricing(
     };
   }
 
-  const extraction = await extractPricingTiers(profile.companyName, fetched.content);
+  // Resolve tenant context early so it can be threaded into AI calls for usage attribution.
+  const tenantDomain = options.tenantDomain || profile.tenantDomain || undefined;
+  const marketId = profile.marketId || null;
+
+  const extraction = await extractPricingTiers(profile.companyName, fetched.content, tenantDomain, marketId);
   const previousSnapshot = await storage.getLatestPricingSnapshotForCompanyProfile(profile.id);
   const previousRaw = previousSnapshot?.rawContent || "";
   const changeScore = calculateChangeScore(previousRaw, fetched.content);
@@ -491,12 +484,12 @@ export async function monitorBaselinePricing(
       (previousSnapshot?.tiers as PricingTier[] | null) || [],
       extraction.tiers,
       changeScore,
+      tenantDomain,
+      marketId,
     );
     summary = result.summary;
     changeAnalysis = result.analysis;
   }
-
-  const tenantDomain = options.tenantDomain || profile.tenantDomain || undefined;
   if (!tenantDomain) {
     return {
       companyProfileId: profile.id,
@@ -510,7 +503,7 @@ export async function monitorBaselinePricing(
 
   const snapshot = await storage.createPricingSnapshot({
     tenantDomain,
-    marketId: profile.marketId || null,
+    marketId,
     competitorId: null,
     companyProfileId: profile.id,
     pricingUrl: fetched.finalUrl,

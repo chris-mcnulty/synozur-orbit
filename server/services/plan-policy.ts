@@ -61,6 +61,8 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "hubspotEmailSync", label: "HubSpot Marketing Email Sync", description: "Sync marketing-email engagement (sent/open/click/bounce/unsubscribe) to HubSpot contact timelines and keep unsubscribe/subscription status in sync. Requires a connected HubSpot portal with the marketing-email scopes re-authorized.", category: "marketing" },
   { key: "pricingIntelligence", label: "Pricing Intelligence", description: "Track competitor pricing pages with structured tier extraction, change history, and AI-summarised diffs surfaced in activity, battlecards, and the visualization dashboard.", category: "monitoring" },
   { key: "visualizationDashboard", label: "Visualization Dashboard", description: "Interactive Recharts-based dashboard with engagement trends, posting frequency, sentiment over time, and competitor activity analytics.", category: "intelligence" },
+  { key: "marketingContacts", label: "Marketing Contacts", description: "First-party contact database with lifecycle stages and activity timeline — the spine for segmentation, nurture, and attribution.", category: "marketing" },
+  { key: "leadScoring", label: "Lead Scoring", description: "Rule-based lead scoring with AI-suggested rules, lifecycle stage transitions, and HubSpot score push. Requires Marketing Contacts.", category: "marketing" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -133,6 +135,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     hubspotEmailSync: false,
     pricingIntelligence: false,
     visualizationDashboard: false,
+    marketingContacts: false,
+    leadScoring: false,
   },
   trial: {
     battlecards: true,
@@ -183,6 +187,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     hubspotEmailSync: false,
     pricingIntelligence: false,
     visualizationDashboard: false,
+    marketingContacts: false,
+    leadScoring: false,
   },
   pro: {
     battlecards: true,
@@ -233,6 +239,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     hubspotEmailSync: true,
     pricingIntelligence: true,
     visualizationDashboard: false,
+    marketingContacts: false,
+    leadScoring: false,
   },
   enterprise: {
     battlecards: true,
@@ -288,6 +296,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     prospectResearch: true,
     outreachComposer: true,
     outreachCadence: true,
+    marketingContacts: true,
+    leadScoring: true,
   },
   unlimited: {
     battlecards: true,
@@ -343,6 +353,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     prospectResearch: true,
     outreachComposer: true,
     outreachCadence: true,
+    marketingContacts: true,
+    leadScoring: true,
   },
 };
 

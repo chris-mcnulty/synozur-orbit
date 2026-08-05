@@ -88,6 +88,7 @@ import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaCon
 import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
+import { resolveBrandAssetUrl } from "../services/brand-asset-url";
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
@@ -590,6 +591,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const docBuffer = await buildBrandedDocx(title, parts.join("\n\n"));
       const safeName = title.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "content_draft";
       const filename = `${safeName}_${new Date().toISOString().split("T")[0]}.docx`;
+      // Retain in SPE (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain: ctx.tenantDomain,
+          buffer: docBuffer,
+          filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          kind: "docx",
+          marketId: ctx.marketId,
+          createdByUserId: ctx.userId,
+        });
+      } catch (e: any) {
+        console.error("[content-assets download-docx] store failed:", e?.message);
+      }
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(docBuffer);
@@ -5093,7 +5108,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
       if (haveBrand) {
         for (let ii = 0; ii < brandImageAssets.length; ii++) {
           const img = brandImageAssets[ii];
-          const brandUrl = img.fileUrl || img.url || null;
+          const brandUrl = resolveBrandAssetUrl(img);
           for (let vi = 0; vi < cleanedVariantsForAccount.length; vi++) {
             const v = cleanedVariantsForAccount[vi];
             // Skip a brand image that duplicates this variant's own lead
@@ -5101,9 +5116,15 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             if (includeAssetLeadImages && v.leadImageUrl && brandUrl && brandUrl === v.leadImageUrl) {
               continue;
             }
+            // Only attach the brand asset FK when we have a resolved URL.
+            // Setting overrideBrandAssetId without overrideImageUrl would
+            // recreate the broken state that migration 0070 was written to
+            // repair. When brandUrl is null the post is emitted as text-only.
             generatedRows.push({
               ...buildBaseRow(v),
-              overrideBrandAssetId: img.id,
+              ...(brandUrl
+                ? { overrideBrandAssetId: img.id, overrideImageUrl: brandUrl }
+                : {}),
             });
             comboIndex++;
           }

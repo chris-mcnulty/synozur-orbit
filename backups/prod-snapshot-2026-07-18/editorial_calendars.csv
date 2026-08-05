@@ -1,0 +1,418 @@
+id,tenant_domain,market_id,name,description,period_start,period_end,funnel_targets,focus,status,created_by,created_at,updated_at,campaign_id
+a7d8eadf-b9a0-4e33-b236-6f689f8ee415,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Editorial Calendar — 2026-06-09,,,,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Repurposing Package — ""The wartime CEO's AI memo""
+
+**Prepared:** 2026-06-07 · **Skill:** repurposing-engine · **Source:** newsletter #6 (drafts/batch-1).
+**Voice:** Synozur / Chris (wartime, anti-hype). Sentence case, no em dashes, no hashtags, no filler. **10 standalone assets.**
+
+> ⚠️ Save target is `{sharepoint_root}/repurposed/`. Delivered to `output/repurposed/` — drop into `Marketing › Cowork › repurposed/` for distribution-planner.
+
+---
+
+### Asset 1 — LinkedIn · single post
+**Core idea:** AI and your operating system need to run at opposite speeds.
+**Posting window:** Tuesday, 8:00 AM ET.
+
+A Company Operating System is a peacetime discipline. AI is a wartime problem.
+
+Most leaders are running both at the wrong speeds.
+
+They bring wartime urgency to their operating rhythm, rebuilding the org chart every quarter. And they bring peacetime patience to AI, forming a committee while the window closes.
+
+Flip it.
+
+Run the operating system light and steady so it doesn't slow you down. Run AI like the clock is against you, because it is.
+
+The companies pulling ahead this year didn't out-pilot anyone. They picked one fight, moved fast, and kept the discipline where it mattered.
+
+What are you treating as peacetime that's actually wartime?
+
+**CTA:** If your AI work is stuck in committee, we run a Free Strategy Day that gets CEOs and boards moving in a single day. Comment ""strategy day"" and I'll share the details.
+
+---
+
+### Asset 2 — LinkedIn · single post (stat)
+**Core idea:** Almost no one can pass an AI governance audit, and that's the place to start.
+**Posting window:** Wednesday, 9:00 AM ET.
+
+Only 9% of private equity leaders are confident they could pass an AI governance audit in 90 days.
+
+Sit with that. Nine percent.
+
+Everyone's racing to deploy AI. Almost no one can answer three questions about it. Who owns the output. What data does it touch. How would you defend it if a regulator asked tomorrow.
+
+That's not a reason to slow down. It's a reason to govern while you move.
+
+The fastest companies I work with decide governance before they scale, not after the incident. It takes a fraction of the time and saves you the headline.
+
+Speed without control isn't speed. It's exposure.
+
+**CTA:** If you can't answer those three questions for your AI program today, start there. Comment ""guardrails"" and I'll send our one-page AI judgment standard.
+
+---
+
+### Asset 3 — LinkedIn · single post (stat)
+**Core idea:** The ROIC gap between AI builders and watchers is now too big to ignore.
+**Posting window:** Thursday, 8:00 AM ET.
+
+Companies building AI across their functions are running roughly twice the return on invested capital of the ones that aren't. That's BCG, 2026.
+
+That gap is the whole story.
+
+A year ago, ""we're watching AI closely"" was a defensible answer. It bought you time. It doesn't anymore.
+
+The leaders are not smarter or better funded. They just stopped studying AI and started shipping it, with discipline.
+
+Twice the return doesn't come from twelve pilots. It comes from one or two use cases tied to real money, governed properly, landed with the people who do the work.
+
+The cost of waiting is no longer zero. It compounds, in someone else's favor.
+
+**CTA:** Where would one well-run AI use case move your numbers this quarter? Comment or DM and I'll talk it through with you.
+
+---
+
+### Asset 4 — X · thread
+**Core idea:** The four-move AI memo, compressed.
+**Posting window:** Wednesday, 11:00 AM ET.
+
+**1/** If I were running a mid-market company right now, here's the entire AI memo I'd write to myself. Four moves. No deck required.
+
+**2/** 1. Pick the war. One or two use cases tied to real money. Not twelve pilots competing for attention. Focus is the strategy.
+
+**3/** 2. Govern before you scale. Decide who owns the output, what data it touches, and how you'd defend it tomorrow. First, not after.
+
+**4/** 3. Put a deadline on it. Four to six weeks to a working prototype beats a six-month strategy deck that ages on a shelf.
+
+**5/** 4. Land it with the people doing the work. Middle managers and individual contributors, not leadership theater. Value shows up where the work happens.
+
+**6/** That's it. Pick the fight, govern it, ship it. The companies pulling ahead didn't out-pilot anyone. They out-focused everyone.
+
+**CTA · 7/** I put the full playbook together for mid-market leaders. Link in the comments.
+
+---
+
+### Asset 5 — LinkedIn · carousel (slide outline)
+**Core idea:** The only three things an AI strategy owes a CEO: clarity, control, confidence.
+**Posting window:** Tuesday, 10:00 AM ET.
+
+- **Slide 1 (cover):** Your CEO doesn't need AI hype. They need three things.
+- **Slide 2:** Clarity. Where does AI actually earn its keep? One or two places that touch real money. Not everywhere.
+- **Slide 3:** Control. Who owns the output? What data does it see? How would you defend it tomorrow?
+- **Slide 4:** Confidence. The willingness to move while the competition forms a committee.
+- **Slide 5 (close):** Clarity. Control. Confidence. Everything else is noise.
+
+**CTA:** Comment ""strategy day"" for how we install all three in a single day.
+
+---
+
+### Asset 6 — LinkedIn · single post (hot take)
+**Core idea:** Focus beats breadth. Kill most of your pilots.
+**Posting window:** Monday, 9:00 AM ET.
+
+Kill nine of your twelve AI pilots. This week.
+
+I know how that sounds. But a pilot list is not a strategy. It's a way to look busy while committing to nothing.
+
+Twelve pilots means twelve half-resourced experiments. None of them owned. None of them tied to a number that matters.
+
+Pick one. Maybe two. The ones that touch real money. Put your best people on them. Govern them properly. Give them a deadline.
+
+The companies pulling ahead didn't run more experiments than you. They ran fewer, on purpose, and they finished them.
+
+Breadth feels safe. It is the slowest path there is.
+
+**Closer:** Look at your pilot list and circle the one tied to the biggest number. That's where you start. Everything else can wait.
+
+---
+
+### Asset 7 — Email · newsletter snippet (tactical tip)
+**Core idea:** A three-question governance check you can finish in an afternoon.
+**Posting window:** Thursday, 7:00 AM ET.
+
+One thing worth doing this week. Write down the answers to three questions for your biggest AI use case, before you scale it.
+
+Who owns the output? Name a human. Not a team, a person.
+What data does it touch? Be specific.
+How would you defend it if someone asked tomorrow?
+
+If you can answer all three in a paragraph each, you're ready to scale. If you can't, you just found the work that comes first.
+
+This is the difference between the 9% of leaders who say they could pass an AI governance audit in 90 days and everyone else. It isn't a six-month program. It's an afternoon and the discipline to do it before, not after.
+
+**CTA:** Reply if you want our one-page version. I'll send it.
+
+---
+
+### Asset 8 — Video · 60-second script
+**Core idea:** Stop running twelve pilots; run the four moves.
+**Posting window:** Wednesday, 12:00 PM ET (LinkedIn + YouTube).
+
+[Hook, 0 to 3 seconds] Stop running twelve AI pilots. You're not being thorough. You're being slow.
+
+Here's what I tell every CEO who shows me their pilot list.
+
+Pick one. Maybe two. Tied to real money. The rest is activity pretending to be a strategy.
+
+Then, before you scale it, answer three questions. Who owns the output. What data it touches. How you'd defend it tomorrow. That's your governance. It takes an afternoon, not a quarter.
+
+Then put a clock on it. Four to six weeks to a working prototype. Not a six-month deck that sits on a shelf.
+
+And land it with the people who actually do the work. Not the leadership offsite. The middle managers. The folks at the desk.
+
+That's the whole game. Pick the fight. Govern it. Ship it.
+
+Only nine percent of leaders say they could pass an AI governance audit in ninety days. Be one of them.
+
+**CTA:** If you want the playbook, it's in the description.
+
+---
+
+### Asset 9 — LinkedIn · single post (opinion)
+**Core idea:** A shippable six-week strategy beats a perfect six-month one.
+**Posting window:** Friday, 8:00 AM ET.
+
+The six-month AI strategy engagement is dead. It just doesn't know it yet.
+
+By the time the deck is done, the models have changed, the team has lost interest, and the prototype you could have shipped is still a slide.
+
+We run it differently. Four to six weeks. CEO and board in the room. You walk out with a working prototype, not a recommendation to consider.
+
+Speed isn't the enemy of rigor here. It's what forces it. A short clock makes you pick the use case that matters and cut the twelve that don't.
+
+A strategy you can ship in six weeks beats a perfect one that arrives in six months. Every time.
+
+**CTA:** If your AI plan is still a document, it isn't a plan yet. Comment ""sprint"" and I'll show you what a four to six week version looks like.
+
+---
+
+### Asset 10 — Blog · snippet (extract)
+**Core idea:** AI adoption lives with the people doing the work, not the offsite.
+**Posting window:** Tuesday, 7:00 AM ET (publish, then amplify on LinkedIn).
+
+Most AI programs die in the gap between the leadership offsite and the desk where the work happens.
+
+The executives leave energized. The strategy is sound. And then nothing changes, because the middle managers and individual contributors who actually run the workflows were never trained, asked, or equipped.
+
+Leadership theater feels like progress. It isn't. Adoption is the only metric that matters, and adoption lives with the people doing the work, not the people presenting about it.
+
+If you want AI to land, spend less of your rollout budget on the all-hands and more on the people three levels down. Show them where it helps in their actual day. Give them a reason to keep using it after week two.
+
+The companies seeing real returns didn't just decide to adopt AI. They made it usable for the person at the desk. That's where transformation either happens or quietly doesn't.
+
+**CTA:** Want our adoption-by-role guide? Comment ""adoption"" and I'll send it.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-09 13:45:47.136641,2026-06-09 13:45:47.136641,
+69629022-e388-4ec0-9a52-bc698e9daa8d,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Editorial Calendar — 2026-06-09,,,,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Repurposing Package — ""The wartime CEO's AI memo""
+
+**Prepared:** 2026-06-07 · **Skill:** repurposing-engine · **Source:** newsletter #6 (drafts/batch-1).
+**Voice:** Synozur / Chris (wartime, anti-hype). Sentence case, no em dashes, no hashtags, no filler. **10 standalone assets.**
+
+> ⚠️ Save target is `{sharepoint_root}/repurposed/`. Delivered to `output/repurposed/` — drop into `Marketing › Cowork › repurposed/` for distribution-planner.
+
+---
+
+### Asset 1 — LinkedIn · single post
+**Core idea:** AI and your operating system need to run at opposite speeds.
+**Posting window:** Tuesday, 8:00 AM ET.
+
+A Company Operating System is a peacetime discipline. AI is a wartime problem.
+
+Most leaders are running both at the wrong speeds.
+
+They bring wartime urgency to their operating rhythm, rebuilding the org chart every quarter. And they bring peacetime patience to AI, forming a committee while the window closes.
+
+Flip it.
+
+Run the operating system light and steady so it doesn't slow you down. Run AI like the clock is against you, because it is.
+
+The companies pulling ahead this year didn't out-pilot anyone. They picked one fight, moved fast, and kept the discipline where it mattered.
+
+What are you treating as peacetime that's actually wartime?
+
+**CTA:** If your AI work is stuck in committee, we run a Free Strategy Day that gets CEOs and boards moving in a single day. Comment ""strategy day"" and I'll share the details.
+
+---
+
+### Asset 2 — LinkedIn · single post (stat)
+**Core idea:** Almost no one can pass an AI governance audit, and that's the place to start.
+**Posting window:** Wednesday, 9:00 AM ET.
+
+Only 9% of private equity leaders are confident they could pass an AI governance audit in 90 days.
+
+Sit with that. Nine percent.
+
+Everyone's racing to deploy AI. Almost no one can answer three questions about it. Who owns the output. What data does it touch. How would you defend it if a regulator asked tomorrow.
+
+That's not a reason to slow down. It's a reason to govern while you move.
+
+The fastest companies I work with decide governance before they scale, not after the incident. It takes a fraction of the time and saves you the headline.
+
+Speed without control isn't speed. It's exposure.
+
+**CTA:** If you can't answer those three questions for your AI program today, start there. Comment ""guardrails"" and I'll send our one-page AI judgment standard.
+
+---
+
+### Asset 3 — LinkedIn · single post (stat)
+**Core idea:** The ROIC gap between AI builders and watchers is now too big to ignore.
+**Posting window:** Thursday, 8:00 AM ET.
+
+Companies building AI across their functions are running roughly twice the return on invested capital of the ones that aren't. That's BCG, 2026.
+
+That gap is the whole story.
+
+A year ago, ""we're watching AI closely"" was a defensible answer. It bought you time. It doesn't anymore.
+
+The leaders are not smarter or better funded. They just stopped studying AI and started shipping it, with discipline.
+
+Twice the return doesn't come from twelve pilots. It comes from one or two use cases tied to real money, governed properly, landed with the people who do the work.
+
+The cost of waiting is no longer zero. It compounds, in someone else's favor.
+
+**CTA:** Where would one well-run AI use case move your numbers this quarter? Comment or DM and I'll talk it through with you.
+
+---
+
+### Asset 4 — X · thread
+**Core idea:** The four-move AI memo, compressed.
+**Posting window:** Wednesday, 11:00 AM ET.
+
+**1/** If I were running a mid-market company right now, here's the entire AI memo I'd write to myself. Four moves. No deck required.
+
+**2/** 1. Pick the war. One or two use cases tied to real money. Not twelve pilots competing for attention. Focus is the strategy.
+
+**3/** 2. Govern before you scale. Decide who owns the output, what data it touches, and how you'd defend it tomorrow. First, not after.
+
+**4/** 3. Put a deadline on it. Four to six weeks to a working prototype beats a six-month strategy deck that ages on a shelf.
+
+**5/** 4. Land it with the people doing the work. Middle managers and individual contributors, not leadership theater. Value shows up where the work happens.
+
+**6/** That's it. Pick the fight, govern it, ship it. The companies pulling ahead didn't out-pilot anyone. They out-focused everyone.
+
+**CTA · 7/** I put the full playbook together for mid-market leaders. Link in the comments.
+
+---
+
+### Asset 5 — LinkedIn · carousel (slide outline)
+**Core idea:** The only three things an AI strategy owes a CEO: clarity, control, confidence.
+**Posting window:** Tuesday, 10:00 AM ET.
+
+- **Slide 1 (cover):** Your CEO doesn't need AI hype. They need three things.
+- **Slide 2:** Clarity. Where does AI actually earn its keep? One or two places that touch real money. Not everywhere.
+- **Slide 3:** Control. Who owns the output? What data does it see? How would you defend it tomorrow?
+- **Slide 4:** Confidence. The willingness to move while the competition forms a committee.
+- **Slide 5 (close):** Clarity. Control. Confidence. Everything else is noise.
+
+**CTA:** Comment ""strategy day"" for how we install all three in a single day.
+
+---
+
+### Asset 6 — LinkedIn · single post (hot take)
+**Core idea:** Focus beats breadth. Kill most of your pilots.
+**Posting window:** Monday, 9:00 AM ET.
+
+Kill nine of your twelve AI pilots. This week.
+
+I know how that sounds. But a pilot list is not a strategy. It's a way to look busy while committing to nothing.
+
+Twelve pilots means twelve half-resourced experiments. None of them owned. None of them tied to a number that matters.
+
+Pick one. Maybe two. The ones that touch real money. Put your best people on them. Govern them properly. Give them a deadline.
+
+The companies pulling ahead didn't run more experiments than you. They ran fewer, on purpose, and they finished them.
+
+Breadth feels safe. It is the slowest path there is.
+
+**Closer:** Look at your pilot list and circle the one tied to the biggest number. That's where you start. Everything else can wait.
+
+---
+
+### Asset 7 — Email · newsletter snippet (tactical tip)
+**Core idea:** A three-question governance check you can finish in an afternoon.
+**Posting window:** Thursday, 7:00 AM ET.
+
+One thing worth doing this week. Write down the answers to three questions for your biggest AI use case, before you scale it.
+
+Who owns the output? Name a human. Not a team, a person.
+What data does it touch? Be specific.
+How would you defend it if someone asked tomorrow?
+
+If you can answer all three in a paragraph each, you're ready to scale. If you can't, you just found the work that comes first.
+
+This is the difference between the 9% of leaders who say they could pass an AI governance audit in 90 days and everyone else. It isn't a six-month program. It's an afternoon and the discipline to do it before, not after.
+
+**CTA:** Reply if you want our one-page version. I'll send it.
+
+---
+
+### Asset 8 — Video · 60-second script
+**Core idea:** Stop running twelve pilots; run the four moves.
+**Posting window:** Wednesday, 12:00 PM ET (LinkedIn + YouTube).
+
+[Hook, 0 to 3 seconds] Stop running twelve AI pilots. You're not being thorough. You're being slow.
+
+Here's what I tell every CEO who shows me their pilot list.
+
+Pick one. Maybe two. Tied to real money. The rest is activity pretending to be a strategy.
+
+Then, before you scale it, answer three questions. Who owns the output. What data it touches. How you'd defend it tomorrow. That's your governance. It takes an afternoon, not a quarter.
+
+Then put a clock on it. Four to six weeks to a working prototype. Not a six-month deck that sits on a shelf.
+
+And land it with the people who actually do the work. Not the leadership offsite. The middle managers. The folks at the desk.
+
+That's the whole game. Pick the fight. Govern it. Ship it.
+
+Only nine percent of leaders say they could pass an AI governance audit in ninety days. Be one of them.
+
+**CTA:** If you want the playbook, it's in the description.
+
+---
+
+### Asset 9 — LinkedIn · single post (opinion)
+**Core idea:** A shippable six-week strategy beats a perfect six-month one.
+**Posting window:** Friday, 8:00 AM ET.
+
+The six-month AI strategy engagement is dead. It just doesn't know it yet.
+
+By the time the deck is done, the models have changed, the team has lost interest, and the prototype you could have shipped is still a slide.
+
+We run it differently. Four to six weeks. CEO and board in the room. You walk out with a working prototype, not a recommendation to consider.
+
+Speed isn't the enemy of rigor here. It's what forces it. A short clock makes you pick the use case that matters and cut the twelve that don't.
+
+A strategy you can ship in six weeks beats a perfect one that arrives in six months. Every time.
+
+**CTA:** If your AI plan is still a document, it isn't a plan yet. Comment ""sprint"" and I'll show you what a four to six week version looks like.
+
+---
+
+### Asset 10 — Blog · snippet (extract)
+**Core idea:** AI adoption lives with the people doing the work, not the offsite.
+**Posting window:** Tuesday, 7:00 AM ET (publish, then amplify on LinkedIn).
+
+Most AI programs die in the gap between the leadership offsite and the desk where the work happens.
+
+The executives leave energized. The strategy is sound. And then nothing changes, because the middle managers and individual contributors who actually run the workflows were never trained, asked, or equipped.
+
+Leadership theater feels like progress. It isn't. Adoption is the only metric that matters, and adoption lives with the people doing the work, not the people presenting about it.
+
+If you want AI to land, spend less of your rollout budget on the all-hands and more on the people three levels down. Show them where it helps in their actual day. Give them a reason to keep using it after week two.
+
+The companies seeing real returns didn't just decide to adopt AI. They made it usable for the person at the desk. That's where transformation either happens or quietly doesn't.
+
+**CTA:** Want our adoption-by-role guide? Comment ""adoption"" and I'll send it.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-09 13:51:56.960857,2026-06-09 13:51:56.960857,
+24e4a0ac-8e72-419b-a85f-cdd836a99eaf,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Boardroom Briefing: Secure the AI Data Control Plane Before the Next Breach Headline — Content Plan,"Run an executive webinar or virtual roundtable that helps Microsoft-aligned and midmarket leaders connect security exposure, data governance, and AI ROI—positioning Synozur as the strategic advisor that defines the controls, roles, and operating cadence needed before scaling AI.",2026-06-10 00:00:00,2026-06-30 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Run an executive webinar or virtual roundtable that helps Microsoft-aligned and midmarket leaders connect security exposure, data governance, and AI ROI—positioning Synozur as the strategic advisor that defines the controls, roles, and operating cadence needed before scaling AI.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-10 14:38:08.383211,2026-06-10 14:38:08.383211,bda6e1ef-e471-45fa-9672-28bf495a6ff1
+4ddbc35a-6e2b-4642-b7f2-2e0242bb1a26,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Stay Ahead of the Token Curve — Content Plan,"Promote Synozur's ROI-first AI transformation advisory by helping CEOs and CIOs evaluate whether AI revenue, productivity, and EBITDA gains are outpacing rising token-based model costs, then move them into an AI-first operating model roadmap with measurable 30/60/90 value milestones.",2026-06-10 00:00:00,2026-06-19 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Promote Synozur's ROI-first AI transformation advisory by helping CEOs and CIOs evaluate whether AI revenue, productivity, and EBITDA gains are outpacing rising token-based model costs, then move them into an AI-first operating model roadmap with measurable 30/60/90 value milestones.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-10 19:31:38.27068,2026-06-10 19:31:38.27068,4d247ea5-870b-4828-8816-dda89cb5420f
+f3fd148e-8abf-4ca7-9a75-0857458fe1f1,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Portfolio AI Value Creation Sprint — Content Plan,"Package a PE-focused advisory sprint that assesses AI readiness, duplicated spend, governance risk, and EBITDA upside across portfolio companies, then delivers a prioritized AI-first value creation roadmap with 30/60/90-day milestones and implementation accountability through partner orchestration.",2026-06-10 00:00:00,2026-06-19 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Package a PE-focused advisory sprint that assesses AI readiness, duplicated spend, governance risk, and EBITDA upside across portfolio companies, then delivers a prioritized AI-first value creation roadmap with 30/60/90-day milestones and implementation accountability through partner orchestration.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-11 00:05:06.604588,2026-06-11 00:05:06.604588,58ef5027-f2da-4e8c-a343-04e7ae5efa40
+18d7ab2b-2799-434a-8fac-5d29a462afd1,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Sustaining AI Value — Content Plan,"Synozur operationalizes AI beyond pilots through structured AI Labs that continuously test, validate, and scale real business use cases into production.; We bridge the gap from training to impact by embedding AI into workflows, governance, and decision-making rhythms that drive sustained adoption.; Our revenue value engineering approach turns AI capabilities into new products, services, and monetization models aligned to market demand.; We help firms evolve from experimentation to execution by aligning AI initiatives directly to measurable business outcomes and growth targets.; Synozur enables continuous AI maturity with repeatable operating models that integrate people, process, and technology—not just tools.; We partner with clients to identify, design, and launch new AI-powered revenue streams that expand market reach and accelerate top-line growth.",2026-06-15 00:00:00,2026-06-26 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Synozur operationalizes AI beyond pilots through structured AI Labs that continuously test, validate, and scale real business use cases into production.; We bridge the gap from training to impact by embedding AI into workflows, governance, and decision-making rhythms that drive sustained adoption.; Our revenue value engineering approach turns AI capabilities into new products, services, and monetization models aligned to market demand.; We help firms evolve from experimentation to execution by aligning AI initiatives directly to measurable business outcomes and growth targets.; Synozur enables continuous AI maturity with repeatable operating models that integrate people, process, and technology—not just tools.; We partner with clients to identify, design, and launch new AI-powered revenue streams that expand market reach and accelerate top-line growth.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-12 15:02:34.911282,2026-06-12 15:02:34.911282,088ba691-0396-4682-bb9d-3911eb05c986
+b62d7a5d-9f59-4e32-8511-cf83e2168d8c,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,2026-06 - Sustaining AI Value — Content Plan,"Synozur operationalizes AI beyond pilots through structured AI Labs that continuously test, validate, and scale real business use cases into production.; We bridge the gap from training to impact by embedding AI into workflows, governance, and decision-making rhythms that drive sustained adoption.; Our revenue value engineering approach turns AI capabilities into new products, services, and monetization models aligned to market demand.; We help firms evolve from experimentation to execution by aligning AI initiatives directly to measurable business outcomes and growth targets.; Synozur enables continuous AI maturity with repeatable operating models that integrate people, process, and technology—not just tools.; We partner with clients to identify, design, and launch new AI-powered revenue streams that expand market reach and accelerate top-line growth.",2026-06-15 00:00:00,2026-06-26 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Synozur operationalizes AI beyond pilots through structured AI Labs that continuously test, validate, and scale real business use cases into production.; We bridge the gap from training to impact by embedding AI into workflows, governance, and decision-making rhythms that drive sustained adoption.; Our revenue value engineering approach turns AI capabilities into new products, services, and monetization models aligned to market demand.; We help firms evolve from experimentation to execution by aligning AI initiatives directly to measurable business outcomes and growth targets.; Synozur enables continuous AI maturity with repeatable operating models that integrate people, process, and technology—not just tools.; We partner with clients to identify, design, and launch new AI-powered revenue streams that expand market reach and accelerate top-line growth.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-12 21:41:15.172574,2026-06-12 21:41:15.172574,6badecf3-3631-4538-b39e-7a80e6090f4c
+ad297763-c582-4967-ab64-959afb2d28ec,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,AI Q2 2026 — Content Plan,,2026-05-24 00:00:00,2026-07-01 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}",,active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-25 20:27:47.897865,2026-06-25 20:27:47.897865,a5e07503-68d3-4299-a7e8-4728521ba107
+3109b567-55f4-4f5b-b0d0-b3d41669a46a,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,LinkedIn Digests,Auto-created calendar for LinkedIn Digest briefs.,,,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}",,active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-25 23:48:49.405511,2026-06-25 23:48:49.405511,
+e2f8a4ab-c963-41b9-8607-11362ecbca0d,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,2026 Summer of Copilot — Content Plan,,,,,,active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-26 16:19:59.962917,2026-06-26 16:19:59.962917,c5dbd366-b09a-4b7e-a3c8-317516e7ab62
+fd0fc29b-7a3e-4260-a333-1c9009bc3d9d,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Marketing Calendar (manual),,,,,,active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-02 19:59:24.367558,2026-07-02 19:59:24.367558,
+23f66731-217e-4710-bd50-b1a06d0295af,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,AI Change Enablement — Content Plan,The Silence Is the Strategy Killer; Say the Quiet Part Out Loud; The First Win Wins Adoption; Write for the Skeptic; The Message Is the Rollout,2026-07-20 00:00:00,2026-09-30 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}",The Silence Is the Strategy Killer; Say the Quiet Part Out Loud; The First Win Wins Adoption; Write for the Skeptic; The Message Is the Rollout,active,609baf10-d7b7-4ad2-850c-bdb4a791eefd,2026-07-15 18:12:30.845768,2026-07-15 18:12:30.845768,99ceedbb-69a4-4860-8d64-fdc357a21fcc
+a4dc5195-c6be-48ad-9154-e130cb355533,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,2026-06 - AI Token Economy — Content Plan,"The expansion of debt financing for hyper Zscaler capital infrastructure as the build out more AI data Centers means revenue pressures will increase on providers in frontier labs.; The pressure to recapture cost means more and more providers, not just anthropic, or moving to token based pricing instead of per User per month.; Enterprise is large and small will need to grapple with fitting variable midyear cost changes into established budgets, with certain impact on both AI and non-AI investment areas.; Increased costs on the buyer side will increase pressure for near term provable financial games for that investment",2026-06-22 00:00:00,2026-07-03 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","The expansion of debt financing for hyper Zscaler capital infrastructure as the build out more AI data Centers means revenue pressures will increase on providers in frontier labs.; The pressure to recapture cost means more and more providers, not just anthropic, or moving to token based pricing instead of per User per month.; Enterprise is large and small will need to grapple with fitting variable midyear cost changes into established budgets, with certain impact on both AI and non-AI investment areas.; Increased costs on the buyer side will increase pressure for near term provable financial games for that investment",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-12 23:14:40.488674,2026-06-12 23:14:40.488674,c89710ae-1bb3-407f-bf9d-65f453aa3877
+5d1b0d8e-f608-45f2-9cd9-690775eefdb3,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,2026-06 - AI Token Economy — Content Plan,"The expansion of debt financing for hyper Zscaler capital infrastructure as the build out more AI data Centers means revenue pressures will increase on providers in frontier labs.; The pressure to recapture cost means more and more providers, not just anthropic, or moving to token based pricing instead of per User per month.; Enterprise is large and small will need to grapple with fitting variable midyear cost changes into established budgets, with certain impact on both AI and non-AI investment areas.; Increased costs on the buyer side will increase pressure for near term provable financial games for that investment",2026-06-22 00:00:00,2026-07-03 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","The expansion of debt financing for hyper Zscaler capital infrastructure as the build out more AI data Centers means revenue pressures will increase on providers in frontier labs.; The pressure to recapture cost means more and more providers, not just anthropic, or moving to token based pricing instead of per User per month.; Enterprise is large and small will need to grapple with fitting variable midyear cost changes into established budgets, with certain impact on both AI and non-AI investment areas.; Increased costs on the buyer side will increase pressure for near term provable financial games for that investment",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-12 23:15:28.470723,2026-06-12 23:15:28.470723,146d6bba-986e-4ede-b3fa-7609c2e30fb3
+289bc762-63ec-408e-97e3-7108fdadf0f7,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,2026-06 Fable — Content Plan,"* **Availability risk is now real:** a flagship AI model can disappear overnight due to regulation, not vendor failure.; * **Architecture beats the model:** organizations that abstract and orchestrate across providers will keep running when any one model goes dark.; * **Governance is the new prerequisite:** the ability to adopt AI now depends on how well you manage risk, not just how fast you deploy.; **Call to action:** Pressure-test your AI strategy now—diversify models, abstract dependencies, and build governance before disruption forces your hand.",2026-06-15 00:00:00,2026-06-19 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","* **Availability risk is now real:** a flagship AI model can disappear overnight due to regulation, not vendor failure.; * **Architecture beats the model:** organizations that abstract and orchestrate across providers will keep running when any one model goes dark.; * **Governance is the new prerequisite:** the ability to adopt AI now depends on how well you manage risk, not just how fast you deploy.; **Call to action:** Pressure-test your AI strategy now—diversify models, abstract dependencies, and build governance before disruption forces your hand.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-15 16:55:46.860423,2026-06-15 16:55:46.860423,caa6e4fd-9c09-4875-8cb2-935392b02578
+321f70a7-c2df-4f96-96a3-e18f157a85a1,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,AI Availability Risk Readiness — Content Plan,"Promote Synozur's executive AI strategy assessment as a way for CEOs and CIOs to pressure-test single-model dependencies, identify continuity risks, and define a vendor-agnostic, governed AI operating model before regulatory disruption interrupts critical workflows.",2026-06-15 00:00:00,2026-06-24 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","Promote Synozur's executive AI strategy assessment as a way for CEOs and CIOs to pressure-test single-model dependencies, identify continuity risks, and define a vendor-agnostic, governed AI operating model before regulatory disruption interrupts critical workflows.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-15 18:44:00.424942,2026-06-15 18:44:00.424942,8a8519f6-326b-4307-a963-733d4fd61e99
+d1b544d2-1592-4035-8bf2-e67aba0181c1,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Copilot Cowork for PE Portfolio Productivity — Content Plan,"1; The $30 seat you dismissed in 2023 is not the product you own today.; 2; In SaaS, new features were included. In AI, new features are pricing decisions.; 3; The line between included and billed is the line between you doing work and AI doing work on your behalf.; 4; Same model, different price: Opus 4.8 is free in Copilot Chat and $25 per heavy Cowork task.; 5; Scheduled automations are the hidden cost driver. Microsoft's estimator has no input for them.; 6; Real Cowork adoption costs 2-3x the official estimate once automations are factored in.; 7; Cowork is the right tool for work that can't be scripted. It's expensive for work that can.; 8; The ROI math for Cowork looks completely different in Manhattan than it does in Manila.; 9; Most organizations are leaving the seat underused while panicking about what Cowork will cost.; 10; Sequence it: understand the seat, govern the meter, educate the users — then let Cowork run.",2026-06-17 00:00:00,2026-07-03 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}","1; The $30 seat you dismissed in 2023 is not the product you own today.; 2; In SaaS, new features were included. In AI, new features are pricing decisions.; 3; The line between included and billed is the line between you doing work and AI doing work on your behalf.; 4; Same model, different price: Opus 4.8 is free in Copilot Chat and $25 per heavy Cowork task.; 5; Scheduled automations are the hidden cost driver. Microsoft's estimator has no input for them.; 6; Real Cowork adoption costs 2-3x the official estimate once automations are factored in.; 7; Cowork is the right tool for work that can't be scripted. It's expensive for work that can.; 8; The ROI math for Cowork looks completely different in Manhattan than it does in Manila.; 9; Most organizations are leaving the seat underused while panicking about what Cowork will cost.; 10; Sequence it: understand the seat, govern the meter, educate the users — then let Cowork run.",active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-17 18:16:24.034421,2026-06-17 18:16:24.034421,9f5bdbb2-7a46-488f-96d8-ef8bcbf97149
+354fd8f0-8d46-4b61-82e3-e5a48c59910e,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,2026-06 TechCon Wrapup — Content Plan,Drive awareness of Synozur research and unfunded potential buyers,2026-06-20 00:00:00,2026-06-28 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}",Drive awareness of Synozur research and unfunded potential buyers,active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-20 21:15:03.597514,2026-06-20 21:15:03.597514,d996628b-bc16-45a7-800b-56caa21c6a57
+e2ebcd9b-e25a-4a32-85e2-e15d1d0f4a9a,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,Polaris 055 — Content Plan,Driving awareness and listenership of Petar Kralev's appearance on Polaris this week.,2026-06-24 00:00:00,2026-07-01 00:00:00,"{""decision"": 25, ""awareness"": 40, ""consideration"": 35}",Driving awareness and listenership of Petar Kralev's appearance on Polaris this week.,active,116500d0-357e-4ace-a7af-7264ed58e22a,2026-06-24 14:55:58.736685,2026-06-24 14:55:58.736685,3b0186c0-e49a-449e-9dab-30e223fa36c3

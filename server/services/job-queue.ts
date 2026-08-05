@@ -1,4 +1,4 @@
-type JobType = "pdf" | "monitor" | "analysis" | "planner" | "scan" | "other";
+type JobType = "pdf" | "crawl" | "monitor" | "analysis" | "planner" | "other";
 type JobStatus = "pending" | "active" | "completed" | "failed" | "timeout";
 
 /** Optional context passed alongside a job for DB persistence and display. */
@@ -131,16 +131,12 @@ const DEFAULT_CONFIG: QueueConfig = {
     monitor: 1,
     analysis: 1,
     planner: 2,
-    // Scans are user-triggered and headless-browser-bound; limit to 2 so they
-    // don't exhaust the crawl pool (shared with website monitoring).
-    scan: 2,
   },
   defaultTimeoutMs: 5 * 60 * 1000,
 };
 
 const PRIORITY = {
   pdf: 10,
-  scan: 6,   // User-triggered — higher than background crawls
   analysis: 5,
   planner: 4,
   crawl: 3,
@@ -360,8 +356,15 @@ export function enqueuePdf<T>(
   return enqueue("pdf", label, work, { priority: PRIORITY.pdf, timeoutMs: timeoutMs ?? 60000, ctx });
 }
 
+export function enqueueCrawl<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
+  // Full headless crawls render every page (~30-40s each incl. launch cost
+  // under load); 5 min guaranteed timeouts on multi-page sites. DB-pool
+  // starvation that motivated the tight limit is solved via pool isolation.
+  return enqueue("crawl", label, work, { priority: PRIORITY.crawl, timeoutMs: timeoutMs ?? 15 * 60 * 1000, ctx });
+}
+
 export function enqueueMonitor<T>(label: string, work: ((signal?: AbortSignal) => Promise<T>) | (() => Promise<T>), timeoutMs?: number, ctx?: JobContext): Promise<T> {
-  return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 10 * 60 * 1000, ctx });
+  return enqueue("monitor", label, work, { priority: PRIORITY.monitor, timeoutMs: timeoutMs ?? 5 * 60 * 1000, ctx });
 }
 
 /**

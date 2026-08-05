@@ -1,0 +1,25 @@
+Your candidate tracker is ready — I've saved **Seattle-Fintech-Dinner-Candidates.xlsx** to your files. It has two tabs: **Seattle Fintech Targets** (16 verified companies, tiered, with named leaders, sources, and a Status column for tracking invites) and **Warm Relationships** (your existing financial-sector ties to activate first).
+
+## The shortlist
+
+**Highest-conviction outreach order:**
+1. **PitchBook** — *top pick.* EVP of Technology & Engineering **Thomas Van Buskirk** is publicly leading a generative-AI + OpenAI Model Context Protocol build-out. Already reasoning about LLM integration economics — a near-perfect seat for this dinner.
+2. **Trupanion** — CTO **Chris Cappelletti** publicly evangelizes agentic AI ("agents working alongside humans"), which is verbatim your topic. (Flag: licensed insurer, so borderline "pure fintech.")
+3. **Possible Finance** — Co-founder/CTO **Tyler Conant**; co-founder **Prasad Mahendra** returned specifically to lead AI. A growth-stage lender wrestling with exactly the build/adopt/cost tradeoffs.
+4. **Avalara** — CTO **Danny Fields**; massive transaction volumes make per-token cost a board-level number.
+5. **Pushpay** (Redmond) — VP Eng **Iain Phillips**; actively shipping AI features.
+6. **Remitly** — Seattle's flagship public fintech, but its top tech seat is mid-transition (CPTO departed June 2026) — confirm the org chart before you invite.
+7. **SAP Concur** (Bellevue) — one of the largest fintech eng footprints locally; approach via the President's office (no current Concur-specific CTO verified).
+
+Tier 2 rounds out the room: **doxo, Coinme, Gravity Payments, Arrived, Lighter Capital, Routable, Upward, Confido Legal,** and the **Center** (now Amex Bellevue) team.
+
+## Activate these first — your warm ties
+- **Hellman & Friedman** — your strongest financial-sector relationship, with an active Claude Cowork engagement ([RE: H&F Mini Hackathon — Meeting Recap & Suggested Upfront Work](context:email?messageId=AAMkADc2NzIwMWU4LTA5MzMtNDFhNS05ZDRjLWQ3NjA0MTE5YTViNgBGAAAAAAA3_y2-8yeVSr16r61eUP-uBwDezV4YgJhoTauHp69aZKU2AAAAAAEaAADezV4YgJhoTauHp69aZKU2AAWcd60wAAA%3D&name=RE%3A%20H%26F%20Mini%20Hackathon%20%E2%80%94%20Meeting%20Recap%20%26%20Suggested%20Upfront%20Work) thread). **Ananya Vasagiri** (technical feasibility) and **Sierra Madden** (organizer) are the contacts; there's also an internal "H&F IT" team worth getting a name for. Caveat: H&F is SF/NY/London, so a Seattle seat means travel.
+- **Florin Rotar** — a connector who can make warm intros into financial-services IT.
+- **Krina Amin (Reuters)** — has an attendee list from a Financial Services AI event you can request.
+
+## Two things to note
+- A few names are aggregator-sourced (Remitly's CTO, Coinme, Trupanion's CIO) — reconfirm before outreach. The tracker flags each one.
+- The research pass ruled out several "obvious" names on verification (Assurance IQ is winding down, Center was acquired, Flyhomes' AI lead left, Zippy isn't actually Seattle) — so the list is clean rather than padded.
+
+Want me to draft the dinner invitation in your voice, or start warm outreach to the H&F contacts and Florin? I can also pull the Reuters attendee list to add more names.

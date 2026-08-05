@@ -119,7 +119,7 @@ async function delay(ms: number): Promise<void> {
 
 let browserInstance: Browser | null = null;
 let activeCrawls = 0;
-const MAX_CONCURRENT_CRAWLS = 2;
+const MAX_CONCURRENT_CRAWLS = 4;
 const crawlWaitQueue: Array<() => void> = [];
 
 // Acquire a headless crawl slot, WAITING (queuing) when at capacity rather than
@@ -128,14 +128,43 @@ const crawlWaitQueue: Array<() => void> = [];
 // app shell, making multi-page crawls both content-poor and nondeterministic
 // (a different subset of pages won the race each run, causing false "change"
 // alerts). Queuing guarantees every page is actually rendered.
-async function acquireCrawlSlot(): Promise<void> {
+// Cap how long a page may wait for a slot. Without a cap, pages belonging to
+// jobs that already timed out stay queued forever, occupy slots when their
+// turn comes, and starve every live job — the queue fills with zombie work and
+// nothing ever completes. On timeout the caller returns null and falls back to
+// HTTP; the coverage-collapse guard downstream protects against shell-only
+// SPA snapshots being treated as real content changes.
+const SLOT_WAIT_TIMEOUT_MS = 90000;
+
+async function acquireCrawlSlot(): Promise<boolean> {
   if (activeCrawls < MAX_CONCURRENT_CRAWLS) {
     activeCrawls++;
-    return;
+    return true;
   }
-  await new Promise<void>((resolve) => crawlWaitQueue.push(resolve));
-  // Slot ownership was handed directly to us by releaseCrawlSlot (activeCrawls
-  // was left incremented on our behalf), so we do not increment again here.
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const waiter = () => {
+      if (settled) {
+        // We already gave up; hand the slot straight to the next waiter (or
+        // free it) so it is not leaked to a dead consumer.
+        releaseCrawlSlot();
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const idx = crawlWaitQueue.indexOf(waiter);
+      if (idx !== -1) crawlWaitQueue.splice(idx, 1);
+      resolve(false);
+    }, SLOT_WAIT_TIMEOUT_MS);
+    crawlWaitQueue.push(waiter);
+  });
+  // Slot ownership is handed directly to us by releaseCrawlSlot (activeCrawls
+  // is left incremented on our behalf), so we do not increment again here.
 }
 
 function releaseCrawlSlot(): void {
@@ -146,6 +175,33 @@ function releaseCrawlSlot(): void {
     activeCrawls--;
   }
 }
+
+// Circuit breaker: in some production environments Chromium cannot launch at
+// all (puppeteer waits 30s for the WS endpoint, then throws). Without a
+// breaker every page burns ~90-120s of launch retries before falling back to
+// HTTP, so multi-page crawls always exceed the job timeout and nothing ever
+// completes. After repeated launch failures we disable headless for a
+// cooldown window and callers skip straight to HTTP.
+let launchFailureCount = 0;
+let headlessDisabledUntil = 0;
+const LAUNCH_FAILURE_THRESHOLD = 2;
+const HEADLESS_COOLDOWN_MS = 10 * 60 * 1000;
+
+function recordLaunchFailure(err: unknown): void {
+  launchFailureCount++;
+  if (launchFailureCount >= LAUNCH_FAILURE_THRESHOLD) {
+    headlessDisabledUntil = Date.now() + HEADLESS_COOLDOWN_MS;
+    console.error(
+      `[Headless Crawler] Browser failed to launch ${launchFailureCount}x — disabling headless for ${HEADLESS_COOLDOWN_MS / 60000} min, falling back to HTTP. Last error: ${(err as any)?.message?.substring(0, 150)}`
+    );
+  }
+}
+
+// Only one launch attempt may be in flight at a time. Two concurrent crawls
+// previously both called puppeteer.launch() when the shared instance was dead,
+// spawning two Chromiums simultaneously — on a loaded production box that
+// doubles startup cost and both launches can miss the WS-endpoint window.
+let launchInFlight: Promise<Browser> | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
@@ -161,29 +217,55 @@ async function getBrowser(): Promise<Browser> {
     browserInstance = null;
   }
 
+  if (launchInFlight) {
+    return launchInFlight;
+  }
+  launchInFlight = launchBrowser().finally(() => {
+    launchInFlight = null;
+  });
+  return launchInFlight;
+}
+
+async function launchBrowser(): Promise<Browser> {
   const executablePath = await findChromiumPath();
   console.log(`[Headless Crawler] Using chromium path: ${executablePath || 'auto-detect'}`);
 
-  browserInstance = await puppeteer.launch({
+  try {
+    browserInstance = await puppeteer.launch({
     headless: true,
     executablePath,
-    protocolTimeout: 30000,
+    // Under production load Chromium can take well over the default 30s to
+    // print its WS endpoint; give it 2 minutes before declaring launch failure.
+    timeout: 120000,
+    protocolTimeout: 60000,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-accelerated-2d-canvas",
+      "--no-first-run",
       "--disable-gpu",
-      "--single-process",
       "--no-zygote",
-      "--window-size=1920,1080",
+      "--window-size=1280,800",
       "--disable-blink-features=AutomationControlled",
       "--disable-infobars",
       "--disable-web-security",
       "--disable-features=IsolateOrigins,site-per-process",
-      "--js-flags=--max-old-space-size=256",
+      "--js-flags=--max-old-space-size=512",
+      "--disable-background-networking",
+      "--disable-default-apps",
+      "--disable-extensions",
+      "--disable-sync",
+      "--metrics-recording-only",
+      "--mute-audio",
     ],
-  });
+    });
+    launchFailureCount = 0;
+  } catch (err) {
+    browserInstance = null;
+    recordLaunchFailure(err);
+    throw err;
+  }
 
   browserInstance.on("disconnected", () => {
     console.log("[Headless Crawler] Browser disconnected, will recreate on next request");
@@ -274,7 +356,16 @@ export async function fetchPageHeadless(
     timeout?: number;
   } = {}
 ): Promise<HeadlessCrawlResult | null> {
-  await acquireCrawlSlot();
+  // Circuit breaker tripped — skip headless entirely so callers fall back to
+  // HTTP immediately instead of queueing behind doomed launch attempts.
+  if (!isHeadlessAvailable()) {
+    return null;
+  }
+  const gotSlot = await acquireCrawlSlot();
+  if (!gotSlot) {
+    console.warn(`[Headless] Gave up waiting ${SLOT_WAIT_TIMEOUT_MS / 1000}s for a crawl slot — ${url} falls back to HTTP`);
+    return null;
+  }
   try {
     return await _fetchPageHeadlessInner(url, options);
   } finally {
@@ -299,18 +390,26 @@ async function _fetchPageHeadlessInner(
   } = options;
 
   let page: Page | null = null;
+  let hardTimeoutHandle: NodeJS.Timeout | undefined;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      // Breaker may have tripped during a previous attempt (or another
+      // concurrent crawl) — stop retrying immediately.
+      if (!isHeadlessAvailable()) return null;
       if (attempt > 0) {
         await delay(1000 + Math.random() * 2000);
       }
 
+      // If no live browser exists yet this attempt also pays the launch cost
+      // (up to 2 min under load), so widen the hard cap accordingly —
+      // otherwise it would abort mid-launch and waste the whole startup.
+      const launchBudget = browserInstance?.connected ? 0 : 130000;
       const hardTimeout = new Promise<null>((resolve) => {
-        setTimeout(() => {
+        hardTimeoutHandle = setTimeout(() => {
           console.warn(`[Headless] Hard timeout reached for ${url} (attempt ${attempt + 1})`);
           resolve(null);
-        }, timeout + 10000);
+        }, timeout + 10000 + launchBudget);
       });
 
       const crawlWork = async (): Promise<HeadlessCrawlResult | null> => {
@@ -321,7 +420,7 @@ async function _fetchPageHeadlessInner(
         page.setDefaultTimeout(timeout);
 
         await page.goto(url, {
-          waitUntil: "networkidle2",
+          waitUntil: "load",
           timeout,
         });
 
@@ -359,6 +458,7 @@ async function _fetchPageHeadlessInner(
       };
 
       const result = await Promise.race([crawlWork(), hardTimeout]);
+      clearTimeout(hardTimeoutHandle);
       if (result) return result;
       
       try { if (page) await (page as Page).close(); } catch {}
@@ -366,6 +466,7 @@ async function _fetchPageHeadlessInner(
       
       if (attempt >= retries) return null;
     } catch (error: any) {
+      clearTimeout(hardTimeoutHandle);
       const isProtocolError = error?.message?.includes("ProtocolError") || 
                                error?.message?.includes("timed out") ||
                                error?.message?.includes("Target closed") ||
@@ -437,7 +538,7 @@ export async function fetchMultiplePagesHeadless(
 }
 
 export function isHeadlessAvailable(): boolean {
-  return true;
+  return Date.now() >= headlessDisabledUntil;
 }
 
 /**

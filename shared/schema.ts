@@ -3314,6 +3314,13 @@ export const generatedEmails = pgTable("generated_emails", {
   conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at"),
   sourceAssetIds: text("source_asset_ids").array(),
+  // A/B test configuration
+  abTestEnabled: boolean("ab_test_enabled").notNull().default(false),
+  abTestSplit: integer("ab_test_split").notNull().default(20), // % of list each variant gets; remainder is holdback
+  abWinnerMetric: text("ab_winner_metric"), // "open_rate" | "click_rate"
+  abEvaluationHours: integer("ab_evaluation_hours").notNull().default(24),
+  abWinnerVariantLabel: text("ab_winner_variant_label"), // "A" | "B" once declared
+  abWinnerDeclaredAt: timestamp("ab_winner_declared_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -3341,18 +3348,17 @@ export type GeneratedEmail = typeof generatedEmails.$inferSelect;
 export type InsertGeneratedEmail = z.infer<typeof insertGeneratedEmailSchema>;
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
 
-// ---------------------------------------------------------------------------
-// Conference Social Promotion
-//
-// Drives coordinated social promotion for a single conference: 1-2 anchor posts
-// for overall presence plus one post per delivered session, each with a matched
-// 1:1 graphic. Conference images live in their own dedicated space (not the main
-// brand library) so they never clutter it, and the whole conference can be
-// archived with one click after the event. The actual posts reuse the existing
-// generatedPosts table (via conferenceId/conferenceSessionId) so they flow
-// through the same scheduling, calendar, and publishing machinery.
-// ---------------------------------------------------------------------------
-
+export const emailCampaignVariants = pgTable("email_campaign_variants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  generatedEmailId: varchar("generated_email_id").notNull().references(() => generatedEmails.id, { onDelete: "cascade" }),
+  tenantDomain: text("tenant_domain").notNull(),
+  variantLabel: text("variant_label").notNull(), // 'B' (only B is stored; A = original email)
+  subject: text("subject").notNull(),
+  htmlBody: text("html_body").notNull().default(""),
+  textBody: text("text_body"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 export const CONFERENCE_IMAGE_SOURCES = ["ai_generated", "template_composite", "uploaded", "logo_composite"] as const;
 export type ConferenceImageSource = (typeof CONFERENCE_IMAGE_SOURCES)[number];
 
@@ -4070,6 +4076,56 @@ export const insertEmailSuppressionSchema = createInsertSchema(emailSuppressions
 export type EmailSuppression = typeof emailSuppressions.$inferSelect;
 export type InsertEmailSuppression = z.infer<typeof insertEmailSuppressionSchema>;
 
+// Email subscription types — tenant-defined categories (e.g. "Newsletter",
+// "Product Updates", "Event Invitations"). Contacts opt out per category.
+// is_transactional marks types that are never suppressed by preferences
+// (e.g. account receipts, security alerts).
+export const emailSubscriptionTypes = pgTable("email_subscription_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isTransactional: boolean("is_transactional").notNull().default(false),
+  // When set, opt-out changes are propagated to HubSpot's communication
+  // preferences API for this subscription type id.
+  hubspotTypeId: text("hubspot_type_id"),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantNameUniq: uniqueIndex("email_subscription_types_tenant_name_uniq").on(table.tenantDomain, table.name),
+}));
+
+export const insertEmailSubscriptionTypeSchema = createInsertSchema(emailSubscriptionTypes).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type EmailSubscriptionType = typeof emailSubscriptionTypes.$inferSelect;
+export type InsertEmailSubscriptionType = z.infer<typeof insertEmailSubscriptionTypeSchema>;
+
+// Per-contact subscription preferences — tracks explicit opt-outs per type.
+// Absent row = opted in by default (opt-out model).
+// optedOutAt IS NULL on an existing row = contact explicitly opted back in.
+export const emailSubscriptionPreferences = pgTable("email_subscription_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  email: text("email").notNull(),
+  subscriptionTypeId: varchar("subscription_type_id").notNull()
+    .references(() => emailSubscriptionTypes.id, { onDelete: "cascade" }),
+  optedOutAt: timestamp("opted_out_at"), // null = opted in; set = opted out
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantEmailTypeUniq: uniqueIndex("email_sub_prefs_tenant_email_type_uniq")
+    .on(table.tenantDomain, table.email, table.subscriptionTypeId),
+}));
+
+export const insertEmailSubscriptionPreferenceSchema = createInsertSchema(emailSubscriptionPreferences).omit({
+  id: true, updatedAt: true,
+});
+export type EmailSubscriptionPreference = typeof emailSubscriptionPreferences.$inferSelect;
+export type InsertEmailSubscriptionPreference = z.infer<typeof insertEmailSubscriptionPreferenceSchema>;
+
 // Shared cross-system HubSpot contact ID cache. Keyed on (tenantDomain, email)
 // with no FK to email_recipients (list-scoped) so both the sales-outreach
 // path and the marketing-email path can upsert freely. Resolution priority:
@@ -4111,6 +4167,8 @@ export const emailSends = pgTable("email_sends", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   generatedEmailId: varchar("generated_email_id").notNull().references(() => generatedEmails.id, { onDelete: "cascade" }),
   listId: varchar("list_id").references(() => emailRecipientLists.id, { onDelete: "set null" }),
+  /** When set, the send targets contacts resolved from this saved segment (instead of a static list). */
+  segmentId: varchar("segment_id").references(() => marketingContactSegments.id, { onDelete: "set null" }),
   testRecipient: text("test_recipient"), // when set, this was a "send to me" test send
   status: text("status").notNull().default("pending"), // pending | queued | sending | sent | failed | partial
   scheduledAt: timestamp("scheduled_at"), // when set, dispatch is deferred to the email-send worker
@@ -4133,6 +4191,14 @@ export const emailSends = pgTable("email_sends", {
   clickCount: integer("click_count").notNull().default(0),
   deliveredCount: integer("delivered_count").notNull().default(0),
   senderIdentityId: varchar("sender_identity_id").references(() => emailSenderIdentities.id, { onDelete: "set null" }),
+  // Empty array = no per-type filtering (falls back to global suppression only).
+  subscriptionTypeIds: text("subscription_type_ids").array().notNull().default(sql`ARRAY[]::text[]`),
+  // A/B test tracking
+  abVariantLabel: text("ab_variant_label"), // "A" | "B" | null for non-A/B sends
+  isAbHoldback: boolean("is_ab_holdback").notNull().default(false), // holdback cohort waiting for winner
+  // Groups all three send rows from one dispatch (A + B + holdback) so winner
+  // evaluation and holdback release are scoped to the correct test run.
+  abTestRunId: text("ab_test_run_id"),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
@@ -4622,7 +4688,7 @@ export interface OutreachTargetingFilter {
 
 export type OutreachGoalType = "meeting" | "event_invite" | "intro" | "nurture";
 export type OutreachChannel = "email" | "linkedin";
-export type OutreachCampaignStatus = "draft" | "active" | "paused" | "completed" | "archived";
+export type OutreachCampaignStatus = "draft" | "active" | "paused" | "completed" | "archived" | "deleted";
 
 // The campaign container — created via the §5.0 interview wizard.
 export const outreachCampaigns = pgTable("outreach_campaigns", {
@@ -4924,3 +4990,241 @@ export const insertOutreachSendLedgerSchema = createInsertSchema(outreachSendLed
 export type OutreachSendLedgerEntry = typeof outreachSendLedger.$inferSelect;
 export type InsertOutreachSendLedgerEntry = z.infer<typeof insertOutreachSendLedgerSchema>;
 
+// ── Marketing Contact Spine ──────────────────────────────────────────────────
+// First-party contact record that spans email recipients, link clicks, social
+// signals, and website events. Serves as the shared spine for segmentation,
+// nurture, scoring, and attribution features.
+
+export const MARKETING_CONTACT_LIFECYCLE_STAGES = [
+  "subscriber",
+  "lead",
+  "mql",
+  "sql",
+  "opportunity",
+  "customer",
+  "evangelist",
+] as const;
+export type MarketingContactLifecycleStage = (typeof MARKETING_CONTACT_LIFECYCLE_STAGES)[number];
+
+export const MARKETING_CONTACT_EVENT_TYPES = [
+  "form_submit",
+  "page_view",
+  "email_sent",
+  "email_open",
+  "email_click",
+  "link_click",
+  "social_engage",
+  "unsubscribe",
+  "lifecycle_stage_changed",
+] as const;
+export type MarketingContactEventType = (typeof MARKETING_CONTACT_EVENT_TYPES)[number];
+
+export const marketingContacts = pgTable(
+  "marketing_contacts",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    email: text("email").notNull(),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    company: text("company"),
+    jobTitle: text("job_title"),
+    // Lifecycle stage: subscriber | lead | mql | sql | opportunity | customer | evangelist
+    lifecycleStage: text("lifecycle_stage").notNull().default("subscriber"),
+    // Lead score — computed by lead-scoring-service on every event ingest
+    score: integer("score").notNull().default(0),
+    // HubSpot contact ID for read-enrichment sync
+    hubspotContactId: text("hubspot_contact_id"),
+    // Source that first created this contact
+    source: text("source").notNull().default("manual"),
+    metadata: jsonb("metadata"),
+    lastEventAt: timestamp("last_event_at"),
+    // Cross-channel opt-out: set true when a contact opts out via any channel
+    // (SendGrid unsubscribe event, HubSpot opt-out, webbase form, etc.).
+    // The email sender checks this flag before every delivery.
+    emailOptOut: boolean("email_opt_out").notNull().default(false),
+    emailOptOutAt: timestamp("email_opt_out_at"),
+    emailOptOutSource: text("email_opt_out_source"), // e.g. 'sendgrid_event' | 'hubspot' | 'ingest_event' | 'backfill'
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantEmailUniq: uniqueIndex("marketing_contacts_tenant_email_uniq").on(
+      table.tenantDomain,
+      table.email,
+    ),
+    tenantDomainIdx: index("marketing_contacts_tenant_domain_idx").on(table.tenantDomain),
+    lifecycleIdx: index("marketing_contacts_lifecycle_idx").on(
+      table.tenantDomain,
+      table.lifecycleStage,
+    ),
+  }),
+);
+
+export const insertMarketingContactSchema = createInsertSchema(marketingContacts).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+export type MarketingContact = typeof marketingContacts.$inferSelect;
+export type InsertMarketingContact = z.infer<typeof insertMarketingContactSchema>;
+
+export const marketingContactEvents = pgTable(
+  "marketing_contact_events",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    contactId: varchar("contact_id")
+      .notNull()
+      .references(() => marketingContacts.id, { onDelete: "cascade" }),
+    tenantDomain: text("tenant_domain").notNull(),
+    // event_type: form_submit | page_view | email_sent | email_open | email_click | link_click | social_engage
+    eventType: text("event_type").notNull(),
+    source: text("source"),
+    occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    contactIdx: index("marketing_contact_events_contact_idx").on(table.contactId),
+    tenantOccurredIdx: index("marketing_contact_events_tenant_occurred_idx").on(
+      table.tenantDomain,
+      table.occurredAt,
+    ),
+    eventTypeIdx: index("marketing_contact_events_type_idx").on(
+      table.tenantDomain,
+      table.eventType,
+    ),
+  }),
+);
+
+export const insertMarketingContactEventSchema = createInsertSchema(marketingContactEvents).omit({
+  createdAt: true,
+});
+export type MarketingContactEvent = typeof marketingContactEvents.$inferSelect;
+export type InsertMarketingContactEvent = z.infer<typeof insertMarketingContactEventSchema>;
+
+/** A weighted scoring rule evaluated against a contact's properties or timeline. */
+export const marketingScoringRules = pgTable(
+  "marketing_scoring_rules",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    name: text("name").notNull(),
+    // 'property' — check a contact field value
+    // 'event'    — count matching timeline events
+    ruleType: text("rule_type").notNull(),
+    // property rule: { field, operator, value? }
+    // event rule:    { eventType, minCount }
+    conditionJson: jsonb("condition_json").notNull().default({}),
+    points: integer("points").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantIdx: index("marketing_scoring_rules_tenant_idx").on(table.tenantDomain),
+  }),
+);
+export const marketingContactsRelations = relations(marketingContacts, ({ many }) => ({
+  events: many(marketingContactEvents),
+}));
+
+export const marketingContactEventsRelations = relations(marketingContactEvents, ({ one }) => ({
+  contact: one(marketingContacts, {
+    fields: [marketingContactEvents.contactId],
+    references: [marketingContacts.id],
+  }),
+}));
+
+export type EmailCampaignVariant = typeof emailCampaignVariants.$inferSelect;
+
+export type MarketingLifecycleThreshold = typeof marketingLifecycleThresholds.$inferSelect;
+
+/**
+ * A segment is a named, saved set of filter rules that resolves to a dynamic
+ * list of marketing_contacts rows at evaluation time. Rules are stored as
+ * JSON so new filter types can be added without schema changes.
+ *
+ * Rule shape (SegmentRule[] in marketing-contact-service.ts):
+ *   { field: "lifecycleStage", op: "eq"|"in", value: string|string[] }
+ *   { field: "source",         op: "eq"|"in", value: string|string[] }
+ *   { field: "company",        op: "contains"|"eq", value: string }
+ *   { field: "domain",         op: "eq"|"in", value: string|string[] }  (email domain)
+ *   { field: "eventType",      op: "seen"|"not_seen", value: string }
+ *   { field: "lastEventAt",    op: "within_days"|"older_than_days", value: number }
+ */
+export const marketingContactSegments = pgTable(
+  "marketing_contact_segments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    /** JSON array of SegmentRule objects */
+    rules: jsonb("rules").notNull().default(sql`'[]'::jsonb`),
+    /** Cached contact count from last evaluation — null until first preview */
+    previewCount: integer("preview_count"),
+    previewedAt: timestamp("previewed_at"),
+    createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantIdx: index("marketing_contact_segments_tenant_idx").on(table.tenantDomain),
+  }),
+);
+
+export type InsertMarketingContactSegment = z.infer<typeof insertMarketingContactSegmentSchema>;
+
+export const insertMarketingContactSegmentSchema = createInsertSchema(marketingContactSegments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  previewCount: true,
+  previewedAt: true,
+});
+
+export type MarketingContactSegment = typeof marketingContactSegments.$inferSelect;
+
+export const insertEmailCampaignVariantSchema = createInsertSchema(emailCampaignVariants).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+
+/** Per-tenant configurable score thresholds that drive lifecycle stage transitions. */
+export const marketingLifecycleThresholds = pgTable(
+  "marketing_lifecycle_thresholds",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    // 'lead' | 'mql' | 'sql' | 'opportunity' | 'customer'
+    stage: text("stage").notNull(),
+    minScore: integer("min_score").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    tenantStageUniq: uniqueIndex("marketing_lifecycle_thresholds_tenant_stage_uniq").on(
+      table.tenantDomain,
+      table.stage,
+    ),
+  }),
+);
+
+export type MarketingScoringRule = typeof marketingScoringRules.$inferSelect;
+
+export const insertMarketingLifecycleThresholdSchema = createInsertSchema(marketingLifecycleThresholds).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMarketingScoringRuleSchema = createInsertSchema(marketingScoringRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMarketingScoringRule = z.infer<typeof insertMarketingScoringRuleSchema>;
+
+export type InsertMarketingLifecycleThreshold = z.infer<typeof insertMarketingLifecycleThresholdSchema>;
+
+export type InsertEmailCampaignVariant = z.infer<typeof insertEmailCampaignVariantSchema>;

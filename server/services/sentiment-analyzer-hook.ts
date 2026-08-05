@@ -40,6 +40,7 @@ export async function analyzeAndStore(act: Activity): Promise<boolean> {
   const result = await analyzeArtifact(text, {
     competitorName: act.competitorName,
     artifactType: act.type,
+    tenantDomain: act.tenantDomain || undefined,
   });
   // analyzeArtifact only ever returns null in pathological cases; short or
   // non-English text comes back as a skipped result that we still persist

@@ -1,11 +1,30 @@
+import { useState } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Send, Plus, ArrowRight, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
+import { Send, Plus, ArrowRight, AlertTriangle, CheckCircle2, Settings, MoreHorizontal, Archive, Trash2 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/lib/userContext";
 
 interface OutreachCampaign {
@@ -17,6 +36,7 @@ interface OutreachCampaign {
   channels: string[] | null;
   eventDate: string | null;
   updatedAt: string;
+  createdBy: string;
 }
 
 interface ReadinessItem {
@@ -51,7 +71,11 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
 /** Sales outreach campaign list + readiness banner + entry to the wizard. */
 export default function OutreachCampaignsPage() {
   const { user } = useUser();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
+
+  const [deleteTarget, setDeleteTarget] = useState<OutreachCampaign | null>(null);
 
   const { data: campaigns = [], isLoading } = useQuery<OutreachCampaign[]>({
     queryKey: ["/api/sales-outreach/campaigns"],
@@ -68,6 +92,50 @@ export default function OutreachCampaignsPage() {
       const r = await fetch("/api/sales-outreach/readiness", { credentials: "include" });
       if (!r.ok) return null as any;
       return r.json();
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      const res = await fetch(`/api/sales-outreach/campaigns/${campaignId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archived" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to archive campaign");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns"] });
+      toast({ title: "Campaign archived" });
+    },
+    onError: (err: any) => toast({ title: "Couldn't archive campaign", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      const res = await fetch(`/api/sales-outreach/campaigns/${campaignId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete campaign");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns"] });
+      setDeleteTarget(null);
+      toast({ title: "Campaign deleted" });
+    },
+    onError: (err: any) => {
+      setDeleteTarget(null);
+      toast({ title: "Couldn't delete campaign", description: err.message, variant: "destructive" });
     },
   });
 
@@ -148,39 +216,99 @@ export default function OutreachCampaignsPage() {
           </Card>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {campaigns.map((c) => (
-              <Card key={c.id} className="flex flex-col" data-testid={`campaign-${c.id}`}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <Badge variant="outline" className="text-[11px]">{GOAL_LABELS[c.goalType] ?? c.goalType}</Badge>
-                    <Badge variant={STATUS_VARIANT[c.status] ?? "secondary"} className="text-[11px] capitalize">{c.status}</Badge>
-                  </div>
-                  <CardTitle className="text-base mt-2">{c.name}</CardTitle>
-                </CardHeader>
-                <CardContent className="mt-auto space-y-3">
-                  {c.salesGoal && <p className="text-sm text-muted-foreground line-clamp-2">{c.salesGoal}</p>}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {(c.channels ?? []).map((ch) => (
-                      <Badge key={ch} variant="secondary" className="text-[10px] capitalize">{ch}</Badge>
-                    ))}
-                    {c.eventDate && (
-                      <span className="text-[11px] text-muted-foreground">event {new Date(c.eventDate).toLocaleDateString()}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-muted-foreground">
-                      Updated {formatDistanceToNow(new Date(c.updatedAt), { addSuffix: true })}
-                    </span>
-                    <Button variant="ghost" size="sm" asChild data-testid={`open-campaign-${c.id}`}>
-                      <Link href={`/app/sales/outreach/${c.id}`}>Open <ArrowRight className="w-3.5 h-3.5 ml-1" /></Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {campaigns.map((c) => {
+              const canEdit = isAdmin || c.createdBy === user?.id;
+              return (
+                <Card key={c.id} className="flex flex-col" data-testid={`campaign-${c.id}`}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[11px]">{GOAL_LABELS[c.goalType] ?? c.goalType}</Badge>
+                        <Badge variant={STATUS_VARIANT[c.status] ?? "secondary"} className="text-[11px] capitalize">{c.status}</Badge>
+                      </div>
+                      {canEdit && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
+                              data-testid={`campaign-menu-${c.id}`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                              <span className="sr-only">Campaign actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => archiveMutation.mutate(c.id)}
+                              data-testid={`campaign-archive-${c.id}`}
+                            >
+                              <Archive className="w-4 h-4 mr-2" />
+                              Archive
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(c)}
+                              data-testid={`campaign-delete-${c.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                    <CardTitle className="text-base mt-2">{c.name}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="mt-auto space-y-3">
+                    {c.salesGoal && <p className="text-sm text-muted-foreground line-clamp-2">{c.salesGoal}</p>}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(c.channels ?? []).map((ch) => (
+                        <Badge key={ch} variant="secondary" className="text-[10px] capitalize">{ch}</Badge>
+                      ))}
+                      {c.eventDate && (
+                        <span className="text-[11px] text-muted-foreground">event {new Date(c.eventDate).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-muted-foreground">
+                        Updated {formatDistanceToNow(new Date(c.updatedAt), { addSuffix: true })}
+                      </span>
+                      <Button variant="ghost" size="sm" asChild data-testid={`open-campaign-${c.id}`}>
+                        <Link href={`/app/sales/outreach/${c.id}`}>Open <ArrowRight className="w-3.5 h-3.5 ml-1" /></Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{deleteTarget?.name}</strong> will be permanently removed from the list. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              data-testid="confirm-delete-campaign"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

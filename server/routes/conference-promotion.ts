@@ -11,7 +11,7 @@
 
 import type { Express } from "express";
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, ne, notInArray, count } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, count } from "drizzle-orm";
 import { db } from "../db";
 import {
   conferences,
@@ -34,6 +34,7 @@ import { enqueue } from "../services/job-queue";
 import {
   generateConferencePostsAsync,
   renderConferenceImage,
+  ensureConferenceCampaign,
 } from "../services/conference-promotion-service";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
@@ -149,7 +150,30 @@ export function registerConferencePromotionRoutes(app: Express) {
           eq(conferences.marketId, ctx.marketId),
           inArray(conferences.status, ["active", "archived"]),
         );
-    const rows = await db.select().from(conferences).where(where).orderBy(desc(conferences.createdAt));
+    const rows = await db
+      .select({
+        id: conferences.id,
+        name: conferences.name,
+        description: conferences.description,
+        location: conferences.location,
+        website: conferences.website,
+        eventHashtag: conferences.eventHashtag,
+        discountStatement: conferences.discountStatement,
+        startDate: conferences.startDate,
+        endDate: conferences.endDate,
+        promoStartDate: conferences.promoStartDate,
+        promoEndDate: conferences.promoEndDate,
+        postsPerDay: conferences.postsPerDay,
+        status: conferences.status,
+        archivedAt: conferences.archivedAt,
+        createdAt: conferences.createdAt,
+        campaignId: conferences.campaignId,
+        campaignName: campaigns.name,
+      })
+      .from(conferences)
+      .leftJoin(campaigns, eq(campaigns.id, conferences.campaignId))
+      .where(where)
+      .orderBy(desc(conferences.createdAt));
     res.json(rows);
   });
 
@@ -209,7 +233,16 @@ export function registerConferencePromotionRoutes(app: Express) {
         createdBy: ctx.userId,
       })
       .returning();
-    res.status(201).json(row);
+
+    // Auto-create a linked event campaign so the conference is immediately
+    // visible in the campaign list even before posts are generated.
+    // Skip when the caller explicitly linked an existing campaign above.
+    if (!row.campaignId) {
+      const campaignId = await ensureConferenceCampaign(row, ctx.userId);
+      res.status(201).json({ ...row, campaignId });
+    } else {
+      res.status(201).json(row);
+    }
   });
 
   app.patch("/api/conferences/:id", async (req, res) => {
@@ -701,9 +734,66 @@ export function registerConferencePromotionRoutes(app: Express) {
     const rows = await db
       .select()
       .from(generatedPosts)
-      .where(and(eq(generatedPosts.conferenceId, conf.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)))
+      .where(and(
+        eq(generatedPosts.conferenceId, conf.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        ne(generatedPosts.status, "deleted"),
+      ))
       .orderBy(generatedPosts.scheduledDate);
     res.json(rows);
+  });
+
+  // Bulk approve / mark-CSV-only for conference posts so they flow through
+  // the Marketing Publish Worker (which requires status="approved") or are
+  // explicitly reserved for CSV export (deliveryMode="csv").
+  app.post("/api/conferences/:id/posts/approve", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
+      if (!conf) return res.status(404).json({ error: "Conference not found" });
+
+      // action: "approve" → status=approved, deliveryMode=null (eligible for auto-publish)
+      //         "csv_only" → deliveryMode="csv" (excluded from worker)
+      //         "unapprove" → status=draft, deliveryMode=null
+      const action: string = req.body?.action ?? "approve";
+      const platform: string | undefined = req.body?.platform; // filter by platform when set
+      const postIds: string[] | undefined = Array.isArray(req.body?.postIds) ? req.body.postIds : undefined;
+
+      // "unreject" and "reject" need to touch rejected rows too; other actions skip them.
+      const statusGuard = (action === "unreject" || action === "reject")
+        ? notInArray(generatedPosts.status, ["deleted", "posted"])
+        : notInArray(generatedPosts.status, ["deleted", "rejected", "posted"]);
+
+      const where: any[] = [
+        eq(generatedPosts.conferenceId, conf.id),
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        statusGuard,
+      ];
+      if (platform) where.push(eq(generatedPosts.platform, platform));
+      if (postIds?.length) where.push(inArray(generatedPosts.id, postIds));
+
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (action === "approve") {
+        updates.status = "approved";
+        updates.deliveryMode = null;
+      } else if (action === "csv_only") {
+        updates.deliveryMode = "csv";
+      } else if (action === "reject") {
+        updates.status = "rejected";
+        updates.deliveryMode = null;
+      } else {
+        // unapprove / unreject → back to draft
+        updates.status = "draft";
+        updates.deliveryMode = null;
+      }
+
+      await db.update(generatedPosts).set(updates).where(and(...where));
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[conference-posts:approve]", err);
+      res.status(500).json({ error: err.message || "Failed to update posts" });
+    }
   });
 
   // Export generated conference posts as CSV, reusing the same scheduler

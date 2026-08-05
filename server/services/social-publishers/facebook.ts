@@ -32,6 +32,20 @@ import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-cred
 const AUTH_HOST = "https://www.facebook.com";
 const GRAPH_HOST = "https://graph.facebook.com";
 const API_VERSION = "v19.0";
+
+/**
+ * Facebook Graph API error codes that indicate an expired or invalid token.
+ *   190  — Invalid OAuth access token (most common expiry code)
+ *   102  — Session key invalid or no longer valid
+ *   104  — Incorrect signature
+ * Subcode 463 (session expired) and 467 (token invalid) also nest under 190.
+ * We treat any of these as an auth failure so the reauth banner fires.
+ */
+function isFbAuthError(parsed: any): boolean {
+  const code = parsed?.error?.code;
+  return code === 190 || code === 102 || code === 104;
+}
+
 const DEFAULT_SCOPE = [
   "pages_show_list",
   "pages_read_engagement",
@@ -215,6 +229,15 @@ export class FacebookPublisher implements SocialPublisher {
     );
     if (!pageTokenResp.ok) {
       const txt = await pageTokenResp.text().catch(() => "");
+      let parsedPt: any;
+      try { parsedPt = JSON.parse(txt); } catch {}
+      if (isFbAuthError(parsedPt) || pageTokenResp.status === 401) {
+        return {
+          success: false,
+          errorCode: "token_expired",
+          errorMessage: "Facebook access token has expired or been revoked — reconnect the account.",
+        };
+      }
       return {
         success: false,
         errorCode: `http_${pageTokenResp.status}`,
@@ -250,6 +273,14 @@ export class FacebookPublisher implements SocialPublisher {
       const errText = await resp.text().catch(() => "");
       let parsed: any;
       try { parsed = JSON.parse(errText); } catch {}
+      if (isFbAuthError(parsed) || resp.status === 401) {
+        return {
+          success: false,
+          errorCode: "token_expired",
+          errorMessage: "Facebook access token has expired or been revoked — reconnect the account.",
+          responsePayload: parsed ?? errText,
+        };
+      }
       return {
         success: false,
         errorCode: parsed?.error?.code ? String(parsed.error.code) : `http_${resp.status}`,

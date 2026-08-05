@@ -1,6 +1,7 @@
 import { storage, type ContextFilter } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Activity, Competitor, CompanyProfile, IntelligenceBriefing } from "@shared/schema";
+import { logAiUsage } from "./ai-usage-logger";
 import { fetchCompetitorNews, buildNewsSummary, type NewsArticle } from "./news-service";
 import { buildCompetitorDocumentContextForCompetitors } from "./competitor-document-context";
 
@@ -247,7 +248,7 @@ export async function generateBriefing(
     ? `\n${competitorDocCtx.context.slice(0, 10000)}\n`
     : "";
 
-  const periodLabel = periodDays === 7 
+  const periodLabel = (periodDays === 7 || periodDays === 8)
     ? "Weekly" 
     : periodDays === 14 
       ? "Bi-Weekly" 
@@ -343,6 +344,7 @@ Rules:
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
+    void logAiUsage({ tenantDomain, marketId }, "generate_briefing", "anthropic", "claude-sonnet-4-5", response.usage);
 
     const textBlock = response.content.find(block => block.type === "text");
     let raw = textBlock?.text || "";
@@ -698,7 +700,7 @@ export async function generateBriefingData(
     ? `\n${competitorDocCtx.context.slice(0, 10000)}\n`
     : "";
 
-  const periodLabel = periodDays === 7 
+  const periodLabel = (periodDays === 7 || periodDays === 8)
     ? "Weekly" 
     : periodDays === 14 
       ? "Bi-Weekly" 
@@ -795,6 +797,7 @@ Rules:
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
+    void logAiUsage({ tenantDomain, marketId }, "generate_briefing_data", "anthropic", "claude-sonnet-4-5", response.usage);
 
     const textBlock = response.content.find(block => block.type === "text");
     let raw = textBlock?.text || "";

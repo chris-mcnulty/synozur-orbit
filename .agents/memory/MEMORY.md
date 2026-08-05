@@ -36,7 +36,7 @@
 - [Interview Plan step expand legs](interview-plan-expand-legs.md) — Plan step = 2 non-idempotent calls (expand-plan docs + expand-social real generatedPosts); track per-leg success client-side or retries duplicate briefs; surface failedConceptIds.
 - [Post generation context injection](post-generation-context.md) — generatePostsAsync must inject campaignBriefs (direct eq(contentBriefs.campaignId)) + briefsContext before foundingSignals or posts drift generic from actionItem bleed.
 - [Apollo person_titles must be atomic](apollo-title-normalization.md) — ICP persona.role is a combined sentence; normalizePersonTitles() splits it; AUM segments must not map to headcount ranges.
-- [Synozur Website Codebase](synozur-website-codebase.md) — website MCP target is Replit project "Synozur-Baseline"; GitHub: github.com/chris-mcnulty/Synozur-WebBase.
+- [Synozur Website Codebase](synozur-website-codebase.md) — website MCP target is Replit project "Synozur-Baseline"; GitHub repo "Synozur-WebBase" under the owner's account.
 - [DB pool isolation](db-pool-isolation.md) — hot crawl/monitor work + its job telemetry must use crawlDb, never primary db, or it starves time-sensitive scheduled-post publishing.
 - [Pipeline board brief↔post dedup](pipeline-brief-post-dedup.md) — board hides a brief only if it's a native-social format (content IS the post) AND a post references it via sourceBriefId; long-form briefs never collapsed.
 - [Media upload URL must be absolute](media-upload-absolute-url.md) — upload-media endpoint returns absolute URL (deployment domain + /public-objects/...); Instagram publisher also absolutizes relative paths; /public-objects/ route is auth-free.
@@ -44,7 +44,12 @@
 - [Own-product signals in briefings](own-product-signals-in-briefing.md) — sourceType product+baseline are OWN (situational only), never competitor; crawler "% change" ≠ strategy; reset must purge product rows + regenerate briefing.
 - [Website monitor false abandonment](website-monitor-coverage-collapse.md) — false "abandoned AI" alerts = SPA crawl coverage collapse; fix = sitemap.xml discovery + headless queue-don't-reject semaphore + isCoverageCollapse guard; every skip branch must stamp lastWebsiteMonitor.
 - [Marketing single-item deep-links](marketing-deep-links.md) — all "land on the exact item" links route through itemDeepLinkHref (client/src/lib/marketing-deep-links.ts); target pages honor ?brief=/?emailId=/?post= to scroll+highlight/auto-open.
+- [Headless crawler under prod load](headless-launch-breaker.md) — prod launch failures = CPU starvation, not a broken browser; single-flight launch + 120s budget + breaker as last resort; HTTP fallback is unacceptable as primary.
+- [Crawl auto-pause storm recovery](crawl-auto-pause-storm.md) — infra failure storms auto-pause the whole portfolio (6-fail rule); Global Admin Resume All is the fix, check exclude_from_crawl first.
 - [Marketing calendar deep-link to undated posts](marketing-calendar-deeplink-undated.md) — undated ?post= targets live individually in the backlog query (not the rolled-up grid); highlight them in the rail, never drill an "unscheduled" batch.
 - [Drizzle correlated subquery counts](drizzle-correlated-subquery.md) — sql`` correlated count subqueries silently return 0; use leftJoin+groupBy instead and verify aggregates against direct SQL.
 - [Observatory workbenches](observatory-workbenches.md) — six modules on one table; pen-test findings wrap shared obs_findings; readiness weights/bands/blockers are a product contract; VPAT disclaimer mandatory.
 - [E2E API auth verification](e2e-api-auth-verification.md) — preview is login-gated; verify via temp bcrypt password on e2e-test user + curl session + X-Active-Tenant-Id header; dev AI provider 404s (env, not code).
+- [Manual crawl endpoints queued](manual-crawl-queued.md) — refresh/crawl HTTP routes must enqueue + return 202; inline crawls caused proxy-timeout on-screen errors (July 2026 incident).
+- [Crawl slot semaphore starvation](crawl-slot-starvation.md) — waiting semaphore for browser slots must cap waits (90s→HTTP fallback) or timed-out jobs' zombie pages starve all crawls to 0%.
+- [No-AI-slop integration](no-ai-slop-integration.md) — Task #518 plan + full rollback path; rules may be too aggressive on human-written words; prompt-layer and sharpen endpoint are independently reversible.

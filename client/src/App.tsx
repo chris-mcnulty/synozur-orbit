@@ -75,9 +75,11 @@ import SocialAccountsPage from "@/pages/app/marketing/social-accounts";
 import ComposerPage from "@/pages/app/marketing/composer";
 import CalendarPage from "@/pages/app/marketing/calendar";
 import SendsPage from "@/pages/app/marketing/sends";
+import SubscriptionTypesPage from "@/pages/app/marketing/subscription-types";
 import QueuePage from "@/pages/app/marketing/queue";
 import BrowserExtensionPage from "@/pages/app/marketing/browser-extension";
 import PersonasPage from "@/pages/app/marketing/personas";
+import ContactsPage from "@/pages/app/marketing/contacts";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
 import IntelligenceBriefingPage from "@/pages/app/intelligence-briefing";
@@ -97,6 +99,7 @@ import SettingsIntegrationsPage from "@/pages/app/settings-integrations";
 import OAuthClientsAdminPage from "@/pages/app/admin/oauth-clients";
 import GlobalPlatformCredentialsPage from "@/pages/app/admin/platform-credentials";
 import DeveloperPortalPage from "@/pages/app/developer";
+import LeadScoringPage from "@/pages/app/marketing/lead-scoring";
 
 function GlobalAdminOnly({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser();
@@ -196,6 +199,7 @@ function Router() {
       <Route path="/app/marketing/messaging-framework" component={MessagingFrameworkPage} />
       <Route path="/app/marketing/social-posts"><Redirect to="/app/marketing/campaigns" /></Route>
       <Route path="/app/marketing/email-newsletters" component={EmailNewslettersPage} />
+      <Route path="/app/marketing/subscription-types">{() => <PageFeatureGate featureKey="directEmailDelivery" label="Email Subscriptions" description="Manage subscription types and recipient preferences. Upgrade to unlock this feature."><SubscriptionTypesPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/editorial-calendar" component={EditorialCalendarPage} />
       <Route path="/app/marketing/marketing-calendar">{() => <PageFeatureGate featureKey="editorialCalendar" label="Content Calendar" description="One calendar for all your social posts, emails, and content. Upgrade to unlock this feature."><MarketingCalendarPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/performance" component={MarketingPerformancePage} />
@@ -214,6 +218,8 @@ function Router() {
       <Route path="/app/marketing/sends" component={SendsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
       <Route path="/app/marketing/personas">{() => <PageFeatureGate featureKey="personaBuilder" label="Persona & ICP Builder" description="Define buyer personas and inject audience context. Upgrade to unlock this feature."><PersonasPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/contacts">{() => <PageFeatureGate featureKey="marketingContacts" label="Marketing Contacts" description="First-party contact database with lifecycle stages and activity timeline. Upgrade to unlock this feature."><ContactsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/lead-scoring">{() => <PageFeatureGate featureKey="marketingContacts" label="Lead Scoring" description="Rule-based lead scoring with lifecycle stage transitions. Upgrade to unlock this feature."><LeadScoringPage /></PageFeatureGate>}</Route>
       {/* Marketing Projects (formerly "Marketing Planner" at /app/marketing-planner). */}
       <Route path="/app/marketing/projects" component={MarketingPlannerPage} />
       <Route path="/app/marketing/projects/:id" component={MarketingPlanDetail} />

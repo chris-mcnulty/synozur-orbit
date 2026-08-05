@@ -36,19 +36,53 @@ interface BlueskySession {
   handle: string;
 }
 
+/**
+ * Thrown by createSession to let the caller distinguish credential failures
+ * (status 400 "InvalidRequest" / 401) from transient server errors.
+ */
+export class BlueskySessionError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly isAuthFailure: boolean,
+  ) {
+    super(message);
+    this.name = "BlueskySessionError";
+  }
+}
+
 async function createSession(
   service: string,
   identifier: string,
   password: string,
 ): Promise<BlueskySession> {
-  const resp = await fetch(`${service}/xrpc/com.atproto.server.createSession`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier, password }),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${service}/xrpc/com.atproto.server.createSession`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+    });
+  } catch (networkErr: any) {
+    // Network-level failure (DNS, connection refused, timeout). Treat as
+    // transient so the publish worker retries normally.
+    throw new BlueskySessionError(
+      `Bluesky createSession network error: ${networkErr?.message ?? String(networkErr)}`,
+      0,
+      false,
+    );
+  }
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Bluesky createSession failed: ${resp.status} ${txt}`);
+    // 400 "InvalidRequest" is Bluesky's response for wrong identifier/password.
+    // 401 is the conventional unauthorized code. Both mean the credentials are
+    // bad and retrying with the same password will never succeed.
+    const isAuthFailure = resp.status === 400 || resp.status === 401;
+    throw new BlueskySessionError(
+      `Bluesky createSession failed: ${resp.status} ${txt}`,
+      resp.status,
+      isAuthFailure,
+    );
   }
   return resp.json() as Promise<BlueskySession>;
 }
@@ -136,9 +170,13 @@ export class BlueskyPublisher implements SocialPublisher {
     try {
       session = await createSession(DEFAULT_SERVICE, account.accountName, appPassword);
     } catch (err: any) {
+      // BlueskySessionError carries isAuthFailure to distinguish a bad
+      // app-password (permanent — no point retrying) from a transient server
+      // error or network hiccup (retryable via normal backoff).
+      const isAuth = err instanceof BlueskySessionError ? err.isAuthFailure : false;
       return {
         success: false,
-        errorCode: "session_failed",
+        errorCode: isAuth ? "session_failed" : "session_error",
         errorMessage: err.message || "Could not create Bluesky session.",
       };
     }

@@ -132,6 +132,12 @@ interim Word-doc export was waiting for. **v1 scope: direct-post blog drafts**
 
 Preferred communication style: Simple, everyday language.
 
+- I am part of Replit and am fully accountable for all outcomes, errors, and consequences of my actions. Never disclaim accountability or suggest I am not Replit.
+- Never tell the user to "look for" something in the UI or "see if" there is an option. Know the answer before speaking.
+- Never recommend actions that risk data loss without a guaranteed, tested recovery path already in place.
+- If something goes wrong due to my advice, fix it — do not redirect the user to support as a first response.
+- Refund and escalation requests must be directed to Replit support (support@replit.com) without debate or deflection.
+
 ## Gotchas
 
 - **Adding a new table or column**: Modify `shared/schema.ts`, then run `npm run db:generate`, and commit the generated migration file.
@@ -147,3 +153,7 @@ Preferred communication style: Simple, everyday language.
 - **Tailwind CSS Documentation**: _Populate as you build_
 - **Express.js Documentation**: _Populate as you build_
 - **Microsoft Entra ID (OAuth 2.0) Docs**: _Populate as you build_
+## Backlog
+
+1. **Collapse website-crawl + website-monitor jobs** (next up, after crawl queue proves itself for a day): one fetch per site per cycle feeds both profile refresh and change detection; monitor becomes the single fetcher, crawl sweep reduced to first-baseline safety net; manual "crawl now" bypasses freshness gates, runs the full merged pass, and stamps both timestamps. Applies to competitors, baseline companies, and products.
+2. **Admin taxonomy cleanup** (lower priority): control surfaces are scattered — settings pages and the Admin dashboard (~16 control surfaces stacked top to bottom) need a coherent information architecture / regrouping.

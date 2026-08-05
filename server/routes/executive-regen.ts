@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
+import { storeArtifact } from "../services/artifact-storage-helper";
 import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSourceDataTimestamp, guardFeature, guardAnalysisLimit, guardManualAction } from "./helpers";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -674,6 +675,19 @@ Make this practical and ready for use by ${isB2C ? "marketing, brand, and social
       const docBuffer = await buildBrandedDocx(title, recommendation.content || "");
 
       const filename = `${recommendation.type}_${new Date().toISOString().split("T")[0]}.docx`;
+      // Retain in SPE (silent fallback to object storage).
+      try {
+        await storeArtifact({
+          tenantDomain,
+          buffer: docBuffer,
+          filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          kind: "docx",
+          createdByUserId: user.id,
+        });
+      } catch (e: any) {
+        console.error("[executive-regen download-docx] store failed:", e?.message);
+      }
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(docBuffer);

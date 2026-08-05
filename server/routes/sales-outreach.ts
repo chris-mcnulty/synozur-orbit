@@ -15,7 +15,7 @@ import {
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
-import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getRequestContext } from "../context";
 import { storage } from "../storage";
@@ -33,6 +33,7 @@ import {
 } from "../services/discovery-service";
 import type { DiscoveryCandidate } from "../services/discovery-provider-core";
 import { composeTouch, loadComplianceContext } from "../services/outreach-composer-service";
+import { sharpenContent } from "../services/copywriter-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
@@ -193,10 +194,19 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
+      // Allow an explicit status filter (e.g. ?status=archived) — otherwise hide
+      // archived and soft-deleted campaigns from the default list.
+      const statusFilter = typeof req.query.status === "string" ? req.query.status : null;
+      const whereClause = statusFilter
+        ? and(eq(outreachCampaigns.tenantDomain, ctx.tenantDomain), eq(outreachCampaigns.status, statusFilter))
+        : and(
+            eq(outreachCampaigns.tenantDomain, ctx.tenantDomain),
+            notInArray(outreachCampaigns.status, ["archived", "deleted"]),
+          );
       const rows = await db
         .select()
         .from(outreachCampaigns)
-        .where(eq(outreachCampaigns.tenantDomain, ctx.tenantDomain))
+        .where(whereClause)
         .orderBy(desc(outreachCampaigns.updatedAt));
       res.json(rows);
     } catch (err: any) {
@@ -226,6 +236,7 @@ export function registerSalesOutreachRoutes(app: Express) {
     conferenceId: z.string().nullable().optional(),
     targetPersonaIds: z.array(z.string()).nullable().optional(),
     channels: z.array(z.enum(["email", "linkedin"])).nullable().optional(),
+    status: z.enum(["draft", "active", "paused", "completed", "archived", "deleted"]).optional(),
     targetingFilter: z.object({
       geographies: z.array(z.string()).optional(),
       industries: z.array(z.string()).optional(),
@@ -266,6 +277,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (body.channels !== undefined) {
         update.channels = body.channels && body.channels.length > 0 ? body.channels : null;
       }
+      if (body.status !== undefined) update.status = body.status;
       if (body.targetingFilter !== undefined) {
         update.targetingFilter = body.targetingFilter;
       }
@@ -279,6 +291,30 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach-campaigns:patch]", err);
       res.status(500).json({ error: err.message || "Failed to update campaign" });
+    }
+  });
+
+  // Soft-delete a campaign (sets status = 'deleted'). Only the creator or an admin.
+  app.delete("/api/sales-outreach/campaigns/:id", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
+      if (!isAdmin && campaign.createdBy !== ctx.userId) {
+        return res.status(403).json({ error: "Only the campaign owner or an admin can delete this campaign." });
+      }
+
+      await db
+        .update(outreachCampaigns)
+        .set({ status: "deleted", updatedAt: new Date() })
+        .where(eq(outreachCampaigns.id, campaign.id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[sales-outreach-campaigns:delete]", err);
+      res.status(500).json({ error: err.message || "Failed to delete campaign" });
     }
   });
 
@@ -457,7 +493,8 @@ export function registerSalesOutreachRoutes(app: Express) {
           industry: c.industry ?? null,
           segment: c.segment ?? null,
           sourceUrl: safeImportUrl(c.sourceUrl),
-          source: c.source === "salesnav" ? "salesnav" : "web",
+          source: c.source === "salesnav" ? "salesnav" : c.source === "apollo" ? "apollo" : "web",
+          confidence: c.confidence === "verified" ? "verified" : c.confidence === "reconfirm" ? "reconfirm" : null,
         }));
       if (candidates.length === 0) {
         return res.status(400).json({ error: "No valid candidates to import" });
@@ -676,6 +713,46 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach:touch-edit]", err);
       res.status(500).json({ error: err.message || "Failed to update draft" });
+    }
+  });
+
+  // Sharpen a touch draft — remove AI-slop patterns (minimum effective edit).
+  // Accepts the current edited body+subject from the client (may differ from DB).
+  // Returns { body, subject, changelog } without auto-saving.
+  app.post("/api/sales-outreach/touches/:id/sharpen", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [touch] = await db.select().from(outreachTouches).where(eq(outreachTouches.id, req.params.id));
+      if (!touch || touch.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Touch not found" });
+      }
+
+      const body = typeof req.body?.body === "string" ? req.body.body.trim() : (touch.body ?? "").trim();
+      const subject = typeof req.body?.subject === "string" ? req.body.subject.trim() : touch.subject ?? null;
+      if (!body) return res.status(409).json({ error: "This touch has no content to sharpen." });
+
+      const result = await sharpenContent({
+        tenantDomain: ctx.tenantDomain,
+        content: body,
+        subject,
+      });
+
+      if (!result.content.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable result. Please try again." });
+      }
+
+      res.json({
+        body: result.content,
+        subject: result.subject ?? subject,
+        changelog: result.changelog,
+        usage: result.usage,
+        model: result.model,
+      });
+    } catch (err: any) {
+      console.error("[outreach sharpen]", err);
+      res.status(500).json({ error: err.message || "Failed to sharpen draft" });
     }
   });
 

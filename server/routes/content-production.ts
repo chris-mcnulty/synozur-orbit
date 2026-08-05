@@ -9,7 +9,7 @@ import { guardFeature } from "./helpers";
 import { optimizeContent } from "../services/seo-aeo-service";
 import { repurposeAsset, repurposeToLongForm, repurposeMultiFormat } from "../services/repurpose-service";
 import type { RepurposeSelection } from "../services/repurpose-service";
-import { rewriteLongFormContent } from "../services/copywriter-service";
+import { rewriteLongFormContent, sharpenContent } from "../services/copywriter-service";
 import {
   isLongformRepurposeFormat,
   longformFormatToAssetType,
@@ -153,6 +153,37 @@ export function registerContentProductionRoutes(app: Express) {
     } catch (err: any) {
       console.error("[content rewrite]", err);
       res.status(500).json({ error: err.message || "Failed to rewrite content" });
+    }
+  });
+
+  // Sharpen a content asset's body by removing AI-slop patterns (minimum
+  // effective edit, preserves voice). Returns the cleaned draft + changelog.
+  // Does NOT auto-save — the client decides whether to accept the changes.
+  app.post("/api/content-assets/:id/sharpen", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "editorialCalendar"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [asset] = await db
+        .select()
+        .from(contentAssets)
+        .where(and(eq(contentAssets.id, req.params.id), eq(contentAssets.tenantDomain, ctx.tenantDomain), assetMarketScope(ctx)));
+      if (!asset) return res.status(404).json({ error: "Content asset not found" });
+      if (!asset.content?.trim()) return res.status(409).json({ error: "This asset has no content to sharpen." });
+
+      const result = await sharpenContent({
+        tenantDomain: ctx.tenantDomain,
+        content: asset.content,
+      });
+
+      if (!result.content.trim()) {
+        return res.status(502).json({ error: "The AI did not return a usable result. Please try again." });
+      }
+
+      res.json({ content: result.content, changelog: result.changelog, usage: result.usage, model: result.model });
+    } catch (err: any) {
+      console.error("[content sharpen]", err);
+      res.status(500).json({ error: err.message || "Failed to sharpen content" });
     }
   });
 

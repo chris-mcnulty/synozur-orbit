@@ -87,6 +87,10 @@ async function validateSelfServePriceId(priceId: string): Promise<{
 }
 
 async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
+  if (!(await isStripeConfigured())) {
+    res.status(400).send("Billing not configured");
+    return;
+  }
   const sig = req.headers["stripe-signature"] as string | undefined;
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!sig || !secret) {
@@ -175,6 +179,9 @@ export function registerBillingRoutes(app: Express): void {
 
   // Invoice history + payment method summary (read-only). Domain-Admin only.
   app.get("/api/billing/invoices", async (req, res) => {
+    if (!(await isStripeConfigured())) {
+      return res.status(503).json({ error: "Billing not configured" });
+    }
     const ctx = await requireDomainAdmin(req, res);
     if (!ctx) return;
     const { tenant } = ctx;
@@ -227,6 +234,9 @@ export function registerBillingRoutes(app: Express): void {
 
   // Create Checkout Session — Pro tier only, server-validated allowlist
   app.post("/api/billing/checkout-session", async (req, res) => {
+    if (!(await isStripeConfigured())) {
+      return res.status(503).json({ error: "Billing not configured" });
+    }
     const ctx = await requireDomainAdmin(req, res);
     if (!ctx) return;
     const { user, tenant } = ctx;
@@ -294,6 +304,9 @@ export function registerBillingRoutes(app: Express): void {
 
   // Create Customer Portal Session — payment method, invoices, cancel, seat changes
   app.post("/api/billing/portal-session", async (req, res) => {
+    if (!(await isStripeConfigured())) {
+      return res.status(503).json({ error: "Billing not configured" });
+    }
     const ctx = await requireDomainAdmin(req, res);
     if (!ctx) return;
     const { user, tenant } = ctx;
@@ -321,6 +334,9 @@ export function registerBillingRoutes(app: Express): void {
 
   // Update subscription seat quantity (proration enabled). Domain-Admin only.
   app.post("/api/billing/update-seats", async (req, res) => {
+    if (!(await isStripeConfigured())) {
+      return res.status(503).json({ error: "Billing not configured" });
+    }
     const ctx = await requireDomainAdmin(req, res);
     if (!ctx) return;
     const { tenant } = ctx;
@@ -352,6 +368,9 @@ export function registerBillingRoutes(app: Express): void {
 
   // Public listing of available self-serve plans (Pro tier only)
   app.get("/api/billing/plans", async (_req, res) => {
+    if (!(await isStripeConfigured())) {
+      return res.status(503).json({ error: "Billing not configured" });
+    }
     try {
       const stripe = await getUncachableStripeClient();
       const prices = await stripe.prices.list({

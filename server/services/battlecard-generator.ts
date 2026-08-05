@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "../storage";
 import type { Competitor } from "@shared/schema";
+import { logAiUsage } from "./ai-usage-logger";
 
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
@@ -73,6 +74,7 @@ Be specific and substantive — use real details from the competitor analysis wh
       max_tokens: 3000,
       messages: [{ role: "user", content: prompt }],
     });
+    void logAiUsage({ tenantDomain, marketId, userId }, "generate_battlecard", "anthropic", "claude-sonnet-4-5", message.usage);
 
     const content = message.content[0];
     if (content.type !== "text") {

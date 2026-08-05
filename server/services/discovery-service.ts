@@ -32,11 +32,13 @@ import {
 } from "./salesnav-discovery-provider";
 import {
   searchApollo,
+  searchApolloCompaniesFirst,
   isApolloAvailable,
   apolloReason,
   ApolloDiscoveryError,
   type ApolloAppliedFilters,
 } from "./apollo-discovery-provider";
+import { expandCriteria, type IntentExpansionDetail } from "./discovery-intent-expansion";
 
 /** A discovered candidate with its computed ICP fit (preview, not persisted). */
 export interface ScoredDiscoveryCandidate {
@@ -68,6 +70,18 @@ export interface DiscoverResult {
   apolloDiagnostics?: ApolloAppliedFilters;
   /** Set when Apollo expanded seed companies into a broader similar-company list. */
   expansionSummary?: { seedCompanies: string[]; expandedCount: number };
+  /**
+   * Set when the strict Apollo query returned 0 results and a progressively
+   * broader retry produced the candidates. Human-readable tier description.
+   */
+  relaxationApplied?: string;
+  /** What the AI/static intent-expansion pass added to the targeting before searching. */
+  intentExpansion?: IntentExpansionDetail;
+  /**
+   * Companies-first (event campaigns): the account cluster of fitting
+   * organizations that seeded the people lookup.
+   */
+  accountCluster?: string[];
 }
 
 export interface DiscoveryBackendStatus {
@@ -122,12 +136,25 @@ export async function discoverProspects(
   campaignId: string,
   opts: { backend?: DiscoveryBackendId; limit?: number } = {},
 ): Promise<DiscoverResult> {
-  const { campaign, criteria } = await loadCampaignContext(tenantDomain, campaignId);
+  const { campaign, criteria: rawCriteria } = await loadCampaignContext(tenantDomain, campaignId);
   const limit = normalizeLimit(opts.limit);
+
+  // Intent expansion: interpret the targeting (metro suburbs, adjacent
+  // industries, title variants) BEFORE searching so niche/local asks don't
+  // collapse to zero on literal keyword matching. Skipped when the campaign
+  // targets specific named accounts — those searches are already precise.
+  const namedAccounts = campaign.targetingFilter?.namedAccounts ?? undefined;
+  let criteria = rawCriteria;
+  let intentExpansion: IntentExpansionDetail | undefined;
+  if (!namedAccounts?.length) {
+    const expansion = await expandCriteria(tenantDomain, rawCriteria, campaign.salesGoal);
+    criteria = expansion.criteria;
+    intentExpansion = expansion.detail.method === "none" ? undefined : expansion.detail;
+  }
 
   const input: DiscoverySearchInput = {
     criteria,
-    namedAccounts: campaign.targetingFilter?.namedAccounts ?? undefined,
+    namedAccounts,
     goal: campaign.salesGoal,
     limit,
   };
@@ -151,10 +178,14 @@ export async function discoverProspects(
   let fallbackReason: string | undefined;
   let apolloDiagnostics: ApolloAppliedFilters | undefined;
   let expansionSummary: DiscoverResult["expansionSummary"] | undefined;
+  let relaxationApplied: string | undefined;
+  let accountCluster: string[] | undefined;
 
   if (backend === "salesnav") {
     try {
-      found = await searchSalesNavigator(tenantDomain, input);
+      const salesNavResult = await searchSalesNavigator(tenantDomain, input);
+      found = salesNavResult.candidates;
+      droppedCount = salesNavResult.droppedCount;
     } catch (err) {
       if (err instanceof SalesNavDiscoveryError) {
         // Fall back to Apollo or web rather than failing the request.
@@ -169,7 +200,31 @@ export async function discoverProspects(
     try {
       const apolloResult = await searchApollo(tenantDomain, input);
       found = apolloResult.candidates;
+      droppedCount = apolloResult.droppedCount;
       expansionSummary = apolloResult.expansionSummary;
+      relaxationApplied = apolloResult.relaxationApplied;
+
+      // Companies-first pass for event campaigns: when the people-search
+      // yields little, find fitting organizations in the target geography and
+      // industry first, then pull the senior decision-makers at each one —
+      // the way a human fills an event room. Merged with any people results.
+      const isEventCampaign = campaign.goalType === "event_invite";
+      if (isEventCampaign && !namedAccounts?.length && found.length < 5) {
+        const cf = await searchApolloCompaniesFirst(input);
+        if (cf.candidates.length > 0) {
+          const seen = new Set(found.map((c) => `${c.name.toLowerCase()}|${(c.companyName ?? "").toLowerCase()}`));
+          for (const c of cf.candidates) {
+            const key = `${c.name.toLowerCase()}|${(c.companyName ?? "").toLowerCase()}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              found.push(c);
+            }
+          }
+          accountCluster = cf.accountCluster;
+        }
+        droppedCount += cf.droppedCount;
+      }
+
       // When Apollo returns 0 results, automatically retry with web discovery
       // so the user sees something useful rather than a blank list. Capture
       // the applied filters so the UI can explain which fields were too narrow.
@@ -177,12 +232,21 @@ export async function discoverProspects(
         console.log("[discovery] Apollo returned 0 results — falling back to web discovery");
         apolloDiagnostics = apolloResult.appliedFilters;
         fallbackReason =
-          "Apollo returned no matches for these filters — showing web discovery results instead.";
+          "Apollo returned no matches for these filters — showing broadened web research results instead.";
         backend = "web";
+        // Web fallback researches broadly instead of mirroring the filters
+        // that already failed.
+        input.broaden = true;
       }
     } catch (err) {
-      if (err instanceof ApolloDiscoveryError && err.code === "not_available") {
+      if (err instanceof ApolloDiscoveryError) {
+        // Any Apollo error (not_available, api_error, 422 "Value too long", etc.)
+        // falls back to web rather than surfacing a 500 to the user.
+        console.warn(`[discovery] Apollo error (${err.code}) — falling back to web:`, err.message);
+        apolloDiagnostics = undefined; // no filters to show since the call never succeeded
+        fallbackReason = `Apollo search failed (${err.message}) — showing web discovery results instead.`;
         backend = "web";
+        input.broaden = true;
       } else {
         throw err;
       }
@@ -224,7 +288,7 @@ export async function discoverProspects(
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 
-  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics, expansionSummary };
+  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics, expansionSummary, relaxationApplied, intentExpansion, accountCluster };
 }
 
 /**
@@ -276,6 +340,7 @@ export async function importDiscoveredProspects(
       industry: c.industry ?? undefined,
       segment: c.segment ?? undefined,
       sources: c.sourceUrl ? [c.sourceUrl] : undefined,
+      discoveryConfidence: c.confidence ?? undefined,
     },
     ownerUserId: ctx.ownerUserId,
     status: "new" as const,

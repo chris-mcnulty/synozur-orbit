@@ -36,7 +36,7 @@ function isMemberSocialEnabled(): boolean {
  * Returns the new access token on success, or null on failure.
  * Also persists the refreshed credentials back to the socialAccounts row.
  */
-async function refreshLinkedInToken(
+export async function refreshLinkedInToken(
   accountId: string,
   encryptedRefreshToken: string,
   tenantDomain: string,
@@ -106,6 +106,8 @@ async function refreshLinkedInToken(
         ? encryptSecret(tok.refresh_token)
         : encryptedRefreshToken,
       tokenExpiresAt: newExpiresAt,
+      // Clear any pending reauth flag — token is healthy again.
+      lastPublishError: null,
       updatedAt: new Date(),
     })
     .where(eq(socialAccounts.id, accountId));
@@ -124,13 +126,14 @@ async function refreshLinkedInToken(
  * When the stored access token is expired, attempts a refresh using the stored
  * refresh token and the global LinkedIn OAuth credentials before falling back.
  */
-async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<string | null> {
+export async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<string | null> {
   const [account] = await db
     .select({
       id: socialAccounts.id,
       encryptedAccessToken: socialAccounts.encryptedAccessToken,
       encryptedRefreshToken: socialAccounts.encryptedRefreshToken,
       tokenExpiresAt: socialAccounts.tokenExpiresAt,
+      lastPublishError: socialAccounts.lastPublishError,
     })
     .from(socialAccounts)
     .where(
@@ -161,6 +164,19 @@ async function getTenantLinkedInAccessToken(tenantDomain: string): Promise<strin
       console.warn(
         `[LinkedIn API] No refresh token stored for tenant ${tenantDomain} — ` +
         `falling back gracefully.`,
+      );
+    }
+
+    // Both access token and refresh token are exhausted (or absent).
+    // Mark the account so the UI can surface a reconnect prompt.
+    if (account.lastPublishError !== "needs_reauth") {
+      await db
+        .update(socialAccounts)
+        .set({ lastPublishError: "needs_reauth", updatedAt: new Date() })
+        .where(eq(socialAccounts.id, account.id));
+      console.warn(
+        `[LinkedIn API] Marked socialAccount ${account.id} as needs_reauth ` +
+        `for tenant ${tenantDomain}.`,
       );
     }
 

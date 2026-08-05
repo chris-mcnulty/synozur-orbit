@@ -6,7 +6,7 @@ description: Where the Synozur Insights website (www) code lives — Replit proj
 The website that Orbit publishes blog drafts to via the MCP integration is called **Synozur-Baseline** on Replit.
 
 - **Replit project**: Synozur-Baseline
-- **GitHub**: https://github.com/chris-mcnulty/Synozur-WebBase
+- **GitHub**: repo named "Synozur-WebBase" (under the project owner's account)
 
 **Why:** Useful when debugging MCP tool behaviour, checking what `create_draft_post` / `update_draft_post` actually do, or understanding why pushes produce unexpected results (e.g. blank body in rich-text editor). Go to the source rather than guessing.
 

@@ -292,6 +292,20 @@ export class TwitterPublisher implements SocialPublisher {
       const errText = await resp.text().catch(() => "");
       let parsed: any;
       try { parsed = JSON.parse(errText); } catch {}
+      // 401 Unauthorized means the token has been revoked (even if not yet
+      // locally expired). Normalize to token_expired so AUTH_ERROR_CODES
+      // fires the needs_reauth sentinel in the publish worker.
+      if (resp.status === 401) {
+        return {
+          success: false,
+          errorCode: "token_expired",
+          errorMessage: "X / Twitter access token has been revoked — reconnect the account.",
+          responsePayload: parsed ?? errText,
+          refreshedAccessToken,
+          refreshedRefreshToken,
+          refreshedTokenExpiresAt,
+        };
+      }
       return {
         success: false,
         errorCode: parsed?.type ? String(parsed.type).split("/").pop() : `http_${resp.status}`,

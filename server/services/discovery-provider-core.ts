@@ -32,6 +32,13 @@ export interface DiscoveryCandidate {
   sourceUrl?: string | null;
   /** Which backend surfaced this candidate. */
   source: DiscoveryBackendId;
+  /**
+   * How confident the source is (web discovery only): "verified" when the
+   * title/company was confirmed on a current authoritative source, "reconfirm"
+   * when it came from an aggregator or possibly-stale page and should be
+   * re-checked before outreach.
+   */
+  confidence?: "verified" | "reconfirm" | null;
 }
 
 /** The inputs a discovery search needs, flattened from a campaign. */
@@ -43,6 +50,12 @@ export interface DiscoverySearchInput {
   goal?: string | null;
   /** Max candidates to return (the model is told to stop here). */
   limit: number;
+  /**
+   * Broadened research mode: instructs web discovery to widen beyond the
+   * literal filters (metro suburbs, adjacent industries, title variants) —
+   * used when a strict database search already came up empty.
+   */
+  broaden?: boolean;
 }
 
 const MAX_LIMIT = 50;
@@ -66,7 +79,7 @@ function bulletList(label: string, items?: string[]): string | null {
  * Pure string assembly so it is unit-testable.
  */
 export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
-  const { criteria, namedAccounts, goal, limit } = input;
+  const { criteria, namedAccounts, goal, limit, broaden } = input;
 
   const targeting = [
     bulletList("Target roles / titles", criteria.roles),
@@ -89,7 +102,90 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
     "",
     "Every candidate MUST have a full name (first name AND last name). If you can only find a first name for someone — for example because a source only lists a first name — skip that person entirely and do not include them in the results.",
     "",
-    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null}. If you find no one, return [].',
+    broaden
+      ? [
+          "IMPORTANT — a strict database search with these exact filters already returned zero results, so interpret the intent broadly rather than literally:",
+          "- Treat each city as its whole metro area (include surrounding suburbs and nearby business hubs).",
+          "- Include adjacent industries that share the same buyers and problems (e.g. fintech also means banks, credit unions, insurers, wealth managers).",
+          "- Accept title variants for the same seat (e.g. CTO also means CIO, EVP Technology, Head of Engineering).",
+          "- Research iteratively: try company leadership pages, local business journals, conference speaker lists, industry association rosters, and recent press.",
+          "",
+        ].join("\n")
+      : "",
+    'For each candidate set "confidence": "verified" when the title and company were confirmed on a current authoritative source (the company\'s own site, a recent press release, or an official event page), or "reconfirm" when it came from an aggregator, directory, or possibly-outdated page.',
+    "",
+    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null, "confidence": "verified"|"reconfirm"}. If you find no one, return [].',
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Stage-1 of two-stage agentic discovery: find fitting companies.
+ *
+ * Returns a prompt that asks the model to produce a JSON array of company
+ * names (strings only). The resulting list seeds Stage 2 (people lookup).
+ */
+export function buildCompanyResearchPrompt(input: DiscoverySearchInput): string {
+  const { criteria, namedAccounts, goal, limit } = input;
+  const companyCount = Math.min(limit + 5, 20); // slight over-fetch
+
+  const targeting = [
+    bulletList("Industries / sectors", criteria.industries),
+    bulletList("Geographies (treat each as its metro area — include suburbs)", criteria.geographies),
+    bulletList("Company size / segment", criteria.segments),
+    bulletList("Must include these named accounts", namedAccounts),
+    bulletList("Hard exclusions", criteria.disqualifiers),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return [
+    goal ? `Campaign goal: ${goal}` : "",
+    `Find ${companyCount} real, currently-operating companies in this market that would be worth reaching out to for the campaign above.`,
+    "",
+    targeting || "(No specific filters — use the campaign goal to infer suitable companies.)",
+    "",
+    "Use web search to ground every company: search local business journals, industry directories, conference sponsor lists, chamber-of-commerce rosters, LinkedIn company search, and any sector-specific registries. Prefer companies that are headquartered or have a significant presence in the stated geography.",
+    "Be broad: include banks, credit unions, insurers, and wealth-management firms if the industry is fintech or financial services. Include surrounding metro cities, not just the exact city named.",
+    "",
+    "Respond with ONLY a JSON array of company name strings, no prose, no fences. Example: [\"Acme Corp\", \"Beta Financial\", \"Gamma Health\"]",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Stage-2 of two-stage agentic discovery: find decision-makers at each company.
+ *
+ * Given a list of companies from Stage 1, asks the model to look up the senior
+ * decision-maker(s) matching the ICP roles at each company and verify from
+ * authoritative sources.
+ */
+export function buildPeopleLookupPrompt(
+  input: DiscoverySearchInput,
+  companies: string[],
+): string {
+  const { criteria, goal, limit } = input;
+
+  return [
+    goal ? `Campaign goal: ${goal}` : "",
+    `For each of the following ${companies.length} companies, find the current senior decision-maker who matches the target roles below. Verify each person from an authoritative source (the company's own team/leadership page, a recent press release, a conference speaker list, or an official event page — NOT from an aggregator or directory).`,
+    "",
+    bulletList("Target roles / titles (accept variants — CTO also means CIO, VP Engineering, Head of Technology, etc.)", criteria.roles),
+    "",
+    "Companies to research:",
+    companies.map((c, i) => `  ${i + 1}. ${c}`).join("\n"),
+    "",
+    "Rules:",
+    "- One person per company (the most senior match). Skip the company entirely if you cannot verify a current person from a live authoritative source.",
+    "- Full name required (first AND last). Skip first-name-only results.",
+    "- Only include email or LinkedIn URL if you actually found it on a source — leave null otherwise.",
+    "- Set confidence: 'verified' when confirmed on the company's own site, a recent press release, or official event page; 'reconfirm' when from an aggregator, directory, or possibly-outdated page.",
+    "",
+    `Return at most ${limit} candidates total.`,
+    "",
+    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null, "confidence": "verified"|"reconfirm"}. If you find no one for a company, skip it.',
   ]
     .filter(Boolean)
     .join("\n");
@@ -122,7 +218,7 @@ function extractJsonArray(text: string): string | null {
 }
 
 /** Corporate-entity suffixes that indicate a company name, not a person. */
-const COMPANY_SUFFIXES = /\b(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|gmbh|plc|llp|l\.p\.|s\.a\.?|b\.v\.?|pty\.?|ag)\b/i;
+export const COMPANY_SUFFIXES = /\b(inc\.?|llc\.?|ltd\.?|corp\.?|co\.?|gmbh|plc|llp|l\.p\.|s\.a\.?|b\.v\.?|pty\.?|ag)\b/i;
 
 /**
  * Common job-title tokens. A name consisting entirely of these words is a role
@@ -146,8 +242,10 @@ const JOB_TITLE_TOKENS = new Set([
 /**
  * Return true if `name` looks like a company name, role label, all-caps
  * placeholder, or other non-person string. Real full names are unaffected.
+ *
+ * Exported so Apollo and other non-web backends can apply the same gate.
  */
-function isBadName(name: string): boolean {
+export function isBadName(name: string): boolean {
   // All-caps (2+ words, e.g. "ACME CORP", "VP SALES") — real names use title case
   if (name === name.toUpperCase() && /[A-Z]{2}/.test(name)) return true;
 
@@ -235,6 +333,7 @@ export function parseDiscoveryCandidates(
       segment: asStringOrNull(r.segment),
       sourceUrl: safeHttpUrl(r.sourceUrl),
       source,
+      confidence: r.confidence === "verified" ? "verified" : r.confidence === "reconfirm" ? "reconfirm" : null,
     });
     if (out.length >= limit) break;
   }

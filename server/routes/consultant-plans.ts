@@ -757,6 +757,70 @@ export function registerConsultantPlansRoutes(app: Express) {
     }
   });
 
+  // Bulk resume: reset ALL crawl-failure state at once (Global Admin only) —
+  // clears auto-pause (excludeFromCrawl), flags, AND partial failure counters.
+  // Recovery tool for infrastructure-outage storms where every site tripped
+  // the consecutive-failure auto-pause even though the sites themselves were
+  // fine. Also dismisses the stale crawl_health recommendations those flags
+  // created.
+  app.post("/api/admin/flagged-crawls/resume-all", async (req, res) => {
+    try {
+      if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.session.userId);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (user.role !== "Global Admin") return res.status(403).json({ error: "Access denied - Global Admin only" });
+
+      const { competitors: competitorsTable, products: productsTable } = await import("@shared/schema");
+      const { or, isNotNull, gt } = await import("drizzle-orm");
+
+      const pausedOrFlagged = (t: typeof competitorsTable | typeof productsTable) =>
+        or(
+          eq(t.excludeFromCrawl, true),
+          isNotNull(t.crawlFlaggedAt),
+          gt(t.consecutiveCrawlFailures, 0),
+        );
+
+      const resetValues = { excludeFromCrawl: false, crawlFlaggedAt: null, consecutiveCrawlFailures: 0 };
+      const resumedCompetitors = await db.update(competitorsTable)
+        .set(resetValues)
+        .where(pausedOrFlagged(competitorsTable))
+        .returning({ id: competitorsTable.id });
+      const resumedProducts = await db.update(productsTable)
+        .set({ ...resetValues, updatedAt: new Date() })
+        .where(pausedOrFlagged(productsTable))
+        .returning({ id: productsTable.id });
+
+      // Dismiss the stale crawl-failure recommendations those flags generated,
+      // so the recovery doesn't leave outdated incident noise behind.
+      const { recommendations, inArray } = { ...(await import("@shared/schema")), ...(await import("drizzle-orm")) };
+      const competitorIds = resumedCompetitors.map(r => r.id);
+      const productIds = resumedProducts.map(r => r.id);
+      if (competitorIds.length > 0) {
+        await db.update(recommendations)
+          .set({ status: "dismissed", dismissedAt: new Date(), dismissedReason: "already_done" })
+          .where(and(
+            eq(recommendations.area, "crawl_health"),
+            eq(recommendations.status, "pending"),
+            inArray(recommendations.competitorId, competitorIds),
+          ));
+      }
+      if (productIds.length > 0) {
+        await db.update(recommendations)
+          .set({ status: "dismissed", dismissedAt: new Date(), dismissedReason: "already_done" })
+          .where(and(
+            eq(recommendations.area, "crawl_health"),
+            eq(recommendations.status, "pending"),
+            inArray(recommendations.productId, productIds),
+          ));
+      }
+
+      console.log(`[CrawlHealth] Bulk resume by ${user.email}: ${resumedCompetitors.length} competitors, ${resumedProducts.length} products re-enabled`);
+      res.json({ resumedCompetitors: resumedCompetitors.length, resumedProducts: resumedProducts.length });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/admin/ai-usage/stats", async (req, res) => {
     try {
       if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
@@ -765,6 +829,9 @@ export function registerConsultantPlansRoutes(app: Express) {
 
       const days = parseInt(req.query.days as string) || 30;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const tenantFilter = typeof req.query.tenantDomain === "string" && req.query.tenantDomain
+        ? req.query.tenantDomain
+        : null;
 
       const usageRows = await db.execute(sql`
         SELECT 
@@ -782,6 +849,7 @@ export function registerConsultantPlansRoutes(app: Express) {
           AVG(duration_ms) as avg_duration_ms
         FROM ai_usage
         WHERE created_at >= ${since}
+          ${tenantFilter ? sql`AND tenant_domain = ${tenantFilter}` : sql``}
         GROUP BY provider, model, operation, DATE(created_at)
         ORDER BY DATE(created_at) DESC
       `);
@@ -789,11 +857,14 @@ export function registerConsultantPlansRoutes(app: Express) {
       const totals = await db.execute(sql`
         SELECT 
           COUNT(*) as total_calls,
+          SUM(input_tokens) as total_input_tokens,
+          SUM(output_tokens) as total_output_tokens,
           SUM(total_tokens) as total_tokens,
           SUM(CAST(estimated_cost AS DECIMAL)) as total_cost,
           SUM(CASE WHEN success = false THEN 1 ELSE 0 END) as total_errors
         FROM ai_usage
         WHERE created_at >= ${since}
+          ${tenantFilter ? sql`AND tenant_domain = ${tenantFilter}` : sql``}
       `);
 
       const byProvider = await db.execute(sql`
@@ -804,6 +875,7 @@ export function registerConsultantPlansRoutes(app: Express) {
           SUM(CAST(estimated_cost AS DECIMAL)) as cost
         FROM ai_usage
         WHERE created_at >= ${since}
+          ${tenantFilter ? sql`AND tenant_domain = ${tenantFilter}` : sql``}
         GROUP BY provider
       `);
 
@@ -811,13 +883,16 @@ export function registerConsultantPlansRoutes(app: Express) {
         SELECT 
           operation,
           COUNT(*) as calls,
+          SUM(input_tokens) as total_input_tokens,
+          SUM(output_tokens) as total_output_tokens,
           SUM(total_tokens) as tokens,
           SUM(CAST(estimated_cost AS DECIMAL)) as cost,
           AVG(duration_ms) as avg_duration_ms
         FROM ai_usage
         WHERE created_at >= ${since}
+          ${tenantFilter ? sql`AND tenant_domain = ${tenantFilter}` : sql``}
         GROUP BY operation
-        ORDER BY calls DESC
+        ORDER BY cost DESC NULLS LAST
       `);
 
       const byModel = await db.execute(sql`
@@ -829,6 +904,7 @@ export function registerConsultantPlansRoutes(app: Express) {
           SUM(CAST(estimated_cost AS DECIMAL)) as cost
         FROM ai_usage
         WHERE created_at >= ${since}
+          ${tenantFilter ? sql`AND tenant_domain = ${tenantFilter}` : sql``}
         GROUP BY model, provider
         ORDER BY calls DESC
       `);
@@ -841,18 +917,29 @@ export function registerConsultantPlansRoutes(app: Express) {
           SUM(CAST(estimated_cost AS DECIMAL)) as cost
         FROM ai_usage
         WHERE created_at >= ${since}
+          ${tenantFilter ? sql`AND tenant_domain = ${tenantFilter}` : sql``}
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at) ASC
       `);
 
+      // Return distinct tenant domains for the filter dropdown
+      const tenantList = await db.execute(sql`
+        SELECT DISTINCT tenant_domain
+        FROM ai_usage
+        WHERE tenant_domain IS NOT NULL
+        ORDER BY tenant_domain ASC
+      `);
+
       res.json({
         period: { days, since: since.toISOString() },
-        totals: totals.rows[0] || { total_calls: 0, total_tokens: 0, total_cost: 0, total_errors: 0 },
+        tenantDomain: tenantFilter,
+        totals: totals.rows[0] || { total_calls: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, total_cost: 0, total_errors: 0 },
         byProvider: byProvider.rows,
         byFeature: byFeature.rows,
         byModel: byModel.rows,
         dailyTrend: dailyTrend.rows,
         detailed: usageRows.rows,
+        tenants: tenantList.rows.map((r: any) => r.tenant_domain as string),
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

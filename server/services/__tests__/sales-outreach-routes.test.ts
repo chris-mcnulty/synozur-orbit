@@ -732,6 +732,83 @@ describe("sales-outreach routes", () => {
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: expect.stringMatching(/no valid candidates/i) });
     });
+
+    it("preserves apollo source and verified confidence through the sanitizer", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      vi.mocked(importDiscoveredProspects).mockResolvedValue({
+        imported: [{ id: "p-1", name: "Alice Chen", status: "new" }],
+        skipped: 0,
+      } as any);
+
+      await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/discover/import")
+        .send({
+          candidates: [
+            {
+              name: "Alice Chen",
+              title: "CFO",
+              companyName: "Apex Capital",
+              email: "alice@apex.com",
+              source: "apollo",
+              confidence: "verified",
+            },
+          ],
+        });
+
+      const [, , sanitized] = vi.mocked(importDiscoveredProspects).mock.calls[0];
+      expect(sanitized[0]).toMatchObject({ source: "apollo", confidence: "verified" });
+    });
+
+    it("preserves web source and reconfirm confidence through the sanitizer", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      vi.mocked(importDiscoveredProspects).mockResolvedValue({
+        imported: [{ id: "p-2", name: "Bob Ng", status: "new" }],
+        skipped: 0,
+      } as any);
+
+      await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/discover/import")
+        .send({
+          candidates: [
+            {
+              name: "Bob Ng",
+              title: "Partner",
+              companyName: "Beta Fund",
+              linkedinUrl: "https://linkedin.com/in/bobng",
+              source: "web",
+              confidence: "reconfirm",
+            },
+          ],
+        });
+
+      const [, , sanitized] = vi.mocked(importDiscoveredProspects).mock.calls[0];
+      expect(sanitized[0]).toMatchObject({ source: "web", confidence: "reconfirm" });
+    });
+
+    it("defaults unknown source to web and unknown confidence to null", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      vi.mocked(importDiscoveredProspects).mockResolvedValue({
+        imported: [{ id: "p-3", name: "Carol Li", status: "new" }],
+        skipped: 0,
+      } as any);
+
+      await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/discover/import")
+        .send({
+          candidates: [
+            {
+              name: "Carol Li",
+              title: "VP Sales",
+              companyName: "Gamma Inc",
+              source: "csv",       // unknown source → should become "web"
+              confidence: "maybe", // unknown confidence → should become null
+            },
+          ],
+        });
+
+      const [, , sanitized] = vi.mocked(importDiscoveredProspects).mock.calls[0];
+      expect(sanitized[0]).toMatchObject({ source: "web", confidence: null });
+    });
   });
 
   // ── POST /api/sales-outreach/prospects/:id/enrich ───────────────────────────

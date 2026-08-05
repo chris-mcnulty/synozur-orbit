@@ -1,0 +1,2 @@
+id,name,description,logo_url,contact_email,redirect_uris,allowed_scopes,client_secret_hash,status,created_by,created_at,updated_at
+a79076b4-8c3b-4c3d-b26d-79f8a4dd8afe,Galaxy,Official Galaxy partner portal — discovery and read-only sync of competitive intelligence.,,partners@galaxy.example.com,{https://galaxy.example.com/oauth/callback},"{read:battlecards,read:briefings,read:personas,read:roadmap,read:content-library,read:brand-library,read:campaigns,read:reports,read:posts}",,active,,2026-05-03 13:24:57.716728,2026-05-03 13:24:57.716728

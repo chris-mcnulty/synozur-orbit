@@ -23,7 +23,7 @@
 import sharp from "sharp";
 import * as path from "path";
 import { randomUUID } from "crypto";
-import { eq, and, inArray, ne } from "drizzle-orm";
+import { eq, and, inArray, ne, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   conferences,
@@ -38,6 +38,7 @@ import {
   markets,
   brandAssets,
   tenantFonts,
+  campaigns,
   type Conference,
   type ConferenceSession,
   type ConferenceImage,
@@ -1452,6 +1453,69 @@ function parseCopyVariants(text: string, expected: number): string[] {
   return parseVariants(cleaned, expected);
 }
 
+// ─── campaign wiring ──────────────────────────────────────────────────────────
+
+/**
+ * Ensure every conference has a linked "event" campaign shell.
+ *
+ * Idempotent: if `conf.campaignId` is already set the function returns it
+ * immediately without touching the DB.  Otherwise it:
+ *   1. Inserts a new campaign (type = "event", status = "active").
+ *   2. Writes its id back to `conferences.campaignId`.
+ *   3. Stamps any existing posts for this conference that still have
+ *      `campaignId = null` so they roll up into the new campaign.
+ *
+ * Returns the (possibly pre-existing) campaign id.
+ */
+export async function ensureConferenceCampaign(
+  conf: {
+    id: string;
+    tenantDomain: string;
+    marketId: string | null;
+    name: string;
+    startDate: Date | null;
+    campaignId: string | null;
+  },
+  createdByUserId: string,
+): Promise<string> {
+  if (conf.campaignId) return conf.campaignId;
+
+  const [campaign] = await db
+    .insert(campaigns)
+    .values({
+      tenantDomain: conf.tenantDomain,
+      marketId: conf.marketId ?? undefined,
+      name: conf.name,
+      status: "active",
+      campaignType: "event",
+      startDate: conf.startDate ?? undefined,
+      createdBy: createdByUserId,
+    })
+    .returning();
+
+  const now = new Date();
+  await db
+    .update(conferences)
+    .set({ campaignId: campaign.id, updatedAt: now })
+    .where(eq(conferences.id, conf.id));
+
+  // Backfill any posts already generated for this conference that have no campaign.
+  await db
+    .update(generatedPosts)
+    .set({ campaignId: campaign.id })
+    .where(
+      and(
+        eq(generatedPosts.conferenceId, conf.id),
+        isNull(generatedPosts.campaignId),
+      ),
+    );
+
+  console.log(
+    `[Conference] Created event campaign ${campaign.id} for conference ${conf.id} (${conf.name})`,
+  );
+  return campaign.id;
+}
+
 // ─── orchestration ────────────────────────────────────────────────────────────
 
 export interface GenerateConferencePostsOptions {
@@ -1500,11 +1564,18 @@ async function runGeneration(
 ): Promise<void> {
   reportProgress?.({ phase: "Loading conference", percent: 5 });
 
-  const [conf] = await db
+  let [conf] = await db
     .select()
     .from(conferences)
     .where(and(eq(conferences.id, conferenceId), eq(conferences.tenantDomain, tenantDomain)));
   if (!conf) throw new Error("Conference not found");
+
+  // Ensure an event campaign exists before we write posts, so every post gets
+  // campaignId stamped at insert time rather than requiring a later backfill.
+  if (!conf.campaignId) {
+    const campaignId = await ensureConferenceCampaign(conf, options.ownerUserId);
+    conf = { ...conf, campaignId };
+  }
 
   const sessions = await db
     .select()
@@ -1790,11 +1861,14 @@ async function runGeneration(
       moment.kind === "anchor"
         ? moment.img
         : sessionImageBySession.get(moment.session.id);
-    const variantGroup = randomUUID();
 
     for (const account of accounts) {
       const variants = await getVariants(momentIdx, account);
       if (variants.length === 0) continue;
+      // Each (slot × account) is its own post; give it a unique variantGroup so
+      // the review UI shows one card per platform rather than collapsing all
+      // platforms for a slot into a single group.
+      const variantGroup = randomUUID();
 
       // Cycle: appearance 0→v0, 1→v1, 2→v2, 3→v0, …
       const content = variants[appearance % variants.length];

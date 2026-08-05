@@ -2,6 +2,7 @@ import { storage } from "../storage";
 import Anthropic from "@anthropic-ai/sdk";
 import crypto from "crypto";
 import { calculateScores } from "./scoring-service";
+import { logAiUsage } from "./ai-usage-logger";
 
 interface SummaryData {
   companySnapshot: string;
@@ -266,6 +267,7 @@ Response format (raw JSON only, absolutely no markdown):
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }]
     });
+    void logAiUsage({ tenantDomain, marketId }, "generate_executive_summary", "anthropic", "claude-sonnet-4-5", response.usage);
     
     console.log("[ExecutiveSummary] API response received, usage:", response.usage);
 

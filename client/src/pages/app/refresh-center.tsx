@@ -464,6 +464,70 @@ export default function RefreshCenter() {
           </ActionCostTooltip>
         </div>
 
+        {isGlobalAdmin && queueStatus && (
+          <Card data-testid="queue-status-card">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  {queueStatus.active > 0 || queueStatus.pending > 0 ? (
+                    <Loader2 className={cn("w-4 h-4", queueStatus.active > 0 && "animate-spin")} />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  )}
+                  Job Queue
+                  {queueStatus.paused && <Badge variant="destructive" className="ml-2">Paused</Badge>}
+                  {queueStatus.active === 0 && queueStatus.pending === 0 && (
+                    <Badge variant="outline" className="ml-2 text-green-500 border-green-500/40" data-testid="badge-queue-empty">
+                      Empty — all work drained
+                    </Badge>
+                  )}
+                </CardTitle>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1" data-testid="text-queue-active">
+                    <div className={cn("w-2 h-2 rounded-full", queueStatus.active > 0 ? "bg-blue-500 animate-pulse" : "bg-muted-foreground/30")} />
+                    {queueStatus.active} active
+                  </span>
+                  <span className="flex items-center gap-1 text-muted-foreground" data-testid="text-queue-pending">
+                    <Clock className="w-3 h-3" />
+                    {queueStatus.pending} waiting
+                  </span>
+                </div>
+              </div>
+            </CardHeader>
+            {(queueStatus.activeJobs?.length > 0 || queueStatus.pendingJobs?.length > 0) && (
+              <CardContent className="pt-0">
+                <div className="space-y-1.5">
+                  {queueStatus.activeJobs?.map((job: any) => (
+                    <div key={job.id} className="flex items-center justify-between text-sm py-1 px-2 bg-blue-500/5 rounded" data-testid={`queue-job-active-${job.id}`}>
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                        <Badge variant="outline" className="text-xs">{job.type}</Badge>
+                        <span className="text-muted-foreground truncate max-w-[300px]">{job.label}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{job.runningSec}s</span>
+                    </div>
+                  ))}
+                  {queueStatus.pendingJobs?.slice(0, 5).map((job: any) => (
+                    <div key={job.id} className="flex items-center justify-between text-sm py-1 px-2 rounded" data-testid={`queue-job-pending-${job.id}`}>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3 h-3 text-muted-foreground" />
+                        <Badge variant="secondary" className="text-xs">{job.type}</Badge>
+                        <span className="text-muted-foreground truncate max-w-[300px]">{job.label}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">waiting {job.waitingSec}s</span>
+                    </div>
+                  ))}
+                  {queueStatus.pendingJobs?.length > 5 && (
+                    <div className="text-xs text-muted-foreground text-center py-1">
+                      +{queueStatus.pendingJobs.length - 5} more queued
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card 
             className={cn(
@@ -598,61 +662,6 @@ export default function RefreshCenter() {
             </CardContent>
           </Card>
         </div>
-
-        {isGlobalAdmin && queueStatus && (queueStatus.active > 0 || queueStatus.pending > 0) && (
-          <Card data-testid="queue-status-card">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Loader2 className={cn("w-4 h-4", queueStatus.active > 0 && "animate-spin")} />
-                  Job Queue
-                  {queueStatus.paused && <Badge variant="destructive" className="ml-2">Paused</Badge>}
-                </CardTitle>
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                    {queueStatus.active} active
-                  </span>
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Clock className="w-3 h-3" />
-                    {queueStatus.pending} queued
-                  </span>
-                </div>
-              </div>
-            </CardHeader>
-            {(queueStatus.activeJobs?.length > 0 || queueStatus.pendingJobs?.length > 0) && (
-              <CardContent className="pt-0">
-                <div className="space-y-1.5">
-                  {queueStatus.activeJobs?.map((job: any) => (
-                    <div key={job.id} className="flex items-center justify-between text-sm py-1 px-2 bg-blue-500/5 rounded" data-testid={`queue-job-active-${job.id}`}>
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
-                        <Badge variant="outline" className="text-xs">{job.type}</Badge>
-                        <span className="text-muted-foreground truncate max-w-[300px]">{job.label}</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">{job.runningSec}s</span>
-                    </div>
-                  ))}
-                  {queueStatus.pendingJobs?.slice(0, 5).map((job: any) => (
-                    <div key={job.id} className="flex items-center justify-between text-sm py-1 px-2 rounded" data-testid={`queue-job-pending-${job.id}`}>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3 h-3 text-muted-foreground" />
-                        <Badge variant="secondary" className="text-xs">{job.type}</Badge>
-                        <span className="text-muted-foreground truncate max-w-[300px]">{job.label}</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">waiting {job.waitingSec}s</span>
-                    </div>
-                  ))}
-                  {queueStatus.pendingJobs?.length > 5 && (
-                    <div className="text-xs text-muted-foreground text-center py-1">
-                      +{queueStatus.pendingJobs.length - 5} more queued
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            )}
-          </Card>
-        )}
 
         <Card data-testid="card-artifact-freshness">
           <CardHeader>

@@ -1,0 +1,2 @@
+id,tenant_domain,market_id,target_kind,target_id,field_path,range_start,range_end,selected_text,thread_id,created_by_user_id,resolved_at,resolved_by_user_id,created_at
+3eaf3fe6-cf0d-48c8-ae8b-bc29bc2b8e54,synozur.com,137db123-4906-4e61-af99-f0d23d86a622,messaging_framework,912ef43d-4e41-4382-9ae8-fec4fa26ac39,,,,,92ae3088-0163-4a95-b9f9-2cada750d367,116500d0-357e-4ace-a7af-7264ed58e22a,,,2026-06-09 22:26:39.635089

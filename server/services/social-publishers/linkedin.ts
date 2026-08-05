@@ -520,6 +520,17 @@ export class LinkedInPublisher implements SocialPublisher {
       try {
         parsed = JSON.parse(errText);
       } catch {}
+      // 401 Unauthorized means the stored token has been revoked even if it
+      // hasn't reached its local expiry timestamp. Normalize to token_expired
+      // so AUTH_ERROR_CODES fires the needs_reauth sentinel in the publish worker.
+      if (resp.status === 401) {
+        return {
+          success: false,
+          errorCode: "token_expired",
+          errorMessage: "LinkedIn access token has been revoked — reconnect the account.",
+          responsePayload: parsed ?? errText,
+        };
+      }
       return {
         success: false,
         errorCode: parsed?.serviceErrorCode

@@ -1,0 +1,2 @@
+id,tenant_domain,endpoint,encrypted_api_key,default_author_id,enabled,created_by,created_at,updated_at,last_used_at,last_error
+c9a848ab-d05f-4c1e-ab93-5ea8dcc6199f,synozur.com,https://www.synozur.com/api/mcp,v1:hATaWCLN4H1StTVC:T4utPUN5u/izGdtbPYw7bQ==:MZPZij1squUMIWHwfkWR7QhJKXE4cX3OjoVqIxmQHwUIZvDVmenl3zAIiPg=,,t,116500d0-357e-4ace-a7af-7264ed58e22a,2026-07-02 19:46:35.136923,2026-07-06 05:39:24.083,2026-07-06 05:39:24.083,

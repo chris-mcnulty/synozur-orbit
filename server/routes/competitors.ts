@@ -9,8 +9,11 @@ import { fromError } from "zod-validation-error";
 import { analyzeCompetitorWebsite, generateGapAnalysis, generateRecommendations, aiCompanyResearch, type CompetitorAnalysis, type LinkedInContext } from "../ai-service";
 import { buildCompetitorDocumentContextForCompetitors, mergeGroundingContext } from "../services/competitor-document-context";
 import Anthropic from "@anthropic-ai/sdk";
+import { monitorCompetitorSocialMedia, monitorAllCompetitorsForTenant } from "../services/social-monitoring";
+import { monitorCompetitorWebsite, monitorCompanyProfileWebsite, monitorProductWebsite, monitorAllCompetitorsForTenant as monitorAllWebsitesForTenant } from "../services/website-monitoring";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "../services/web-crawler";
 import { captureVisualAssets } from "../services/visual-capture";
-import { enqueueMonitor } from "../services/job-queue";
+import { enqueueCrawl } from "../services/job-queue";
 import { testBlogUrl, monitorBlogForCompetitor, monitorBlogForCompanyProfile } from "../services/rss-service";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
 import { logAiUsage } from "./helpers";
@@ -478,7 +481,7 @@ export function registerCompetitorRoutes(app: Express) {
       // instead of waiting for the next hourly sweep. Fire-and-forget; does not
       // consume manual crawl quota.
       const competitorSnapshot = { ...competitor, organizationId: org.id };
-      enqueueMonitor(`crawl:initial:${competitor.name}`, async () => {
+      enqueueCrawl(`crawl:initial:${competitor.name}`, async () => {
         console.log(`[Initial Crawl] Starting crawl for new competitor: ${competitor.name} (${normalizedUrl})`);
         let crawlResult;
         try {
@@ -550,6 +553,854 @@ export function registerCompetitorRoutes(app: Express) {
       }).catch(err => console.error(`[Initial Crawl] Enqueue failed for ${competitor.name}:`, (err as Error).message));
 
       res.json(competitor);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/competitors/:id/crawl", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Get analysis type from request body (default to 'full' for backward compatibility)
+      const analysisType = req.body?.analysisType || "full";
+      
+      // Validate analysis type
+      if (!["quick", "full", "full_with_change"].includes(analysisType)) {
+        return res.status(400).json({ error: "Invalid analysis type. Must be 'quick', 'full', or 'full_with_change'" });
+      }
+
+      if (analysisType === "full_with_change") {
+        if (!await guardFeature(req, res, "websiteMonitoring")) return;
+      }
+
+      if (!await guardManualAction(req, res, "manualCrawl")) return;
+
+      // Queue the crawl so slow or bot-blocked sites can't hang the HTTP
+      // request (which previously caused proxy timeouts / on-screen errors).
+      enqueueCrawl(
+        `crawl:manual:${competitor.name}`,
+        async (signal) => {
+      // Quick analysis: crawl only, no change detection or AI
+      if (analysisType === "quick") {
+        const crawlResult = await crawlCompetitorWebsite(competitor.url, { signal });
+
+        if (crawlResult.pages.length === 0) {
+          await storage.incrementCompetitorCrawlFailures(competitor.id).catch(() => {});
+          console.log(`[Manual Crawl] No pages crawled for ${competitor.name} - website could not be crawled`);
+          return { success: false, message: "Website could not be crawled" };
+        }
+
+        captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+          if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+            await storage.updateCompetitor(competitor.id, {
+              faviconUrl: visualAssets.faviconUrl,
+              screenshotUrl: visualAssets.screenshotUrl,
+            });
+            if (competitor.organizationId) {
+              await storage.updateOrganization(competitor.organizationId, {
+                faviconUrl: visualAssets.faviconUrl || undefined,
+                screenshotUrl: visualAssets.screenshotUrl || undefined,
+              }).catch(() => {});
+            }
+          }
+        }).catch(err => console.error("Visual capture failed:", err));
+
+        const now = new Date();
+        const lastCrawl = now.toISOString();
+        const socialUpdates: any = {};
+
+        if (crawlResult.socialLinks.linkedIn && !competitor.linkedInUrl) socialUpdates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+        if (crawlResult.socialLinks.instagram && !competitor.instagramUrl) socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
+        if (crawlResult.socialLinks.twitter && !competitor.twitterUrl) socialUpdates.twitterUrl = crawlResult.socialLinks.twitter;
+        if (crawlResult.socialLinks.facebook && !competitor.facebookUrl) socialUpdates.facebookUrl = crawlResult.socialLinks.facebook;
+
+        if (crawlResult.blogSnapshot) {
+          socialUpdates.blogSnapshot = { ...crawlResult.blogSnapshot, capturedAt: now.toISOString() };
+        }
+
+        socialUpdates.crawlData = buildCrawlData(crawlResult);
+        socialUpdates.lastFullCrawl = now;
+        socialUpdates.lastWebsiteMonitor = now;
+        socialUpdates.previousWebsiteContent = getCombinedContent(crawlResult).substring(0, 100000);
+
+        await storage.updateCompetitor(competitor.id, socialUpdates);
+        await storage.updateCompetitorLastCrawl(competitor.id, lastCrawl);
+
+        if (competitor.organizationId) {
+          await storage.updateOrganization(competitor.organizationId, {
+            crawlData: socialUpdates.crawlData,
+            lastFullCrawl: socialUpdates.lastFullCrawl,
+            lastCrawl,
+            lastWebsiteMonitor: socialUpdates.lastWebsiteMonitor,
+            previousWebsiteContent: socialUpdates.previousWebsiteContent,
+            ...(socialUpdates.linkedInUrl && { linkedInUrl: socialUpdates.linkedInUrl }),
+            ...(socialUpdates.instagramUrl && { instagramUrl: socialUpdates.instagramUrl }),
+            ...(socialUpdates.blogSnapshot && { blogSnapshot: socialUpdates.blogSnapshot }),
+          }).catch(err => console.error("[Org Update] Failed to sync crawl to org:", err.message));
+        }
+
+        await storage.createActivity({
+          type: "crawl",
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          description: `Quick refresh: crawled ${crawlResult.pages.length} pages (${crawlResult.totalWordCount.toLocaleString()} words)`,
+          date: lastCrawl,
+          impact: "Low",
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+        });
+
+        return {
+          success: true,
+          lastCrawl,
+          analysisType: "quick",
+          message: "Quick refresh completed - webpage data updated",
+          pagesCrawled: crawlResult.pages.length,
+          totalWordCount: crawlResult.totalWordCount,
+        };
+      }
+
+      // Full / full_with_change: merged monitor pass — one fetch performs
+      // change detection + profile AI refresh (bypasses all freshness gates).
+      captureVisualAssets(competitor.url, competitor.id).then(async (visualAssets) => {
+        if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+          await storage.updateCompetitor(competitor.id, {
+            faviconUrl: visualAssets.faviconUrl,
+            screenshotUrl: visualAssets.screenshotUrl,
+          });
+          if (competitor.organizationId) {
+            await storage.updateOrganization(competitor.organizationId, {
+              faviconUrl: visualAssets.faviconUrl || undefined,
+              screenshotUrl: visualAssets.screenshotUrl || undefined,
+            }).catch(() => {});
+          }
+        }
+      }).catch(err => console.error("Visual capture failed:", err));
+
+      const monitorResult = await monitorCompetitorWebsite(
+        competitor.id,
+        ctx.userId,
+        ctx.tenantDomain,
+        signal,
+        { profileRefreshIntervalMs: 0 }, // bypass freshness gate — manual always refreshes
+      );
+
+      const lastCrawl = new Date().toISOString();
+      await storage.updateCompetitorLastCrawl(competitor.id, lastCrawl).catch(() => {});
+
+      if (monitorResult.status === "no_content") {
+        return {
+          success: false,
+          analysisType,
+          message: monitorResult.message || "Website could not be crawled",
+        };
+      }
+
+      // For full_with_change, also trigger social media monitoring
+      let socialMonitoringResult = null;
+      if (analysisType === "full_with_change") {
+        if (competitor.linkedInUrl || competitor.instagramUrl) {
+          try {
+            socialMonitoringResult = await monitorCompetitorSocialMedia(competitor.id, ctx.userId, ctx.tenantDomain);
+          } catch (socialError) {
+            console.error("Social monitoring failed:", socialError);
+            socialMonitoringResult = { error: "Social monitoring unavailable" };
+          }
+        }
+      }
+
+      return {
+        success: true,
+        lastCrawl,
+        analysisType,
+        pagesCrawled: monitorResult.pagesMonitored,
+        changeScore: monitorResult.changeScore,
+        hasChanges: monitorResult.hasChanges,
+        socialMonitoring: socialMonitoringResult,
+      };
+        },
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: competitor.id, targetName: competitor.name },
+      ).catch((err) =>
+        console.error(`[Manual Crawl] Queued crawl failed for ${competitor.name}:`, (err as Error).message)
+      );
+
+      res.status(202).json({
+        success: true,
+        queued: true,
+        analysisType,
+        message: `Crawl queued for ${competitor.name}. Data will refresh when it completes.`,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Save manual AI research for a competitor (when crawl fails)
+  app.post("/api/competitors/:id/manual-research", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+      
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { researchContent } = req.body;
+      if (!researchContent || researchContent.trim().length < 100) {
+        return res.status(400).json({ error: "Research content is required (minimum 100 characters)" });
+      }
+
+      // Parse the manual research content into structured data
+      const analysisData = parseManualResearch(researchContent, competitor.name);
+      
+      // Mark as manual source to protect from crawl overwrites
+      analysisData.source = "manual";
+      analysisData.manualResearchDate = new Date().toISOString();
+
+      await storage.updateCompetitorAnalysis(competitor.id, analysisData);
+      
+      // Also update the competitor record with company profile fields if extracted
+      if (analysisData.companyProfile) {
+        const profileUpdates: any = {};
+        if (analysisData.companyProfile.headquarters) {
+          profileUpdates.headquarters = analysisData.companyProfile.headquarters;
+        }
+        if (analysisData.companyProfile.founded) {
+          profileUpdates.founded = analysisData.companyProfile.founded;
+        }
+        if (analysisData.companyProfile.revenue) {
+          profileUpdates.revenue = analysisData.companyProfile.revenue;
+        }
+        if (analysisData.companyProfile.fundingRaised) {
+          profileUpdates.fundingRaised = analysisData.companyProfile.fundingRaised;
+        }
+        if (Object.keys(profileUpdates).length > 0) {
+          await storage.updateCompetitor(competitor.id, profileUpdates);
+        }
+      }
+      
+      // Create activity entry
+      await storage.createActivity({
+        type: "manual_research",
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        description: `Manual AI research saved: ${analysisData.summary?.substring(0, 100) || "Company intelligence gathered via external AI assistant"}...`,
+        date: new Date().toLocaleString(),
+        impact: "Medium",
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+
+      // Capture visual assets (screenshot/favicon) if not already captured
+      if (!competitor.screenshotUrl && competitor.url) {
+        try {
+          console.log(`[Manual Research] Capturing visual assets for ${competitor.name}...`);
+          const visualAssets = await captureVisualAssets(competitor.url, competitor.id);
+          if (visualAssets.faviconUrl || visualAssets.screenshotUrl) {
+            await storage.updateCompetitor(competitor.id, {
+              faviconUrl: visualAssets.faviconUrl || competitor.faviconUrl,
+              screenshotUrl: visualAssets.screenshotUrl,
+            });
+            console.log(`[Manual Research] Visual assets captured: favicon=${!!visualAssets.faviconUrl}, screenshot=${!!visualAssets.screenshotUrl}`);
+          }
+        } catch (visualError) {
+          console.error(`[Manual Research] Failed to capture visual assets:`, visualError);
+          // Non-blocking - continue even if visual capture fails
+        }
+      }
+
+      res.json({ success: true, analysisData });
+    } catch (error: any) {
+      console.error("Manual research save error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/competitors/:id/ai-research", async (req, res) => {
+    try {
+      const ctx = await getRequestContext(req);
+      const competitor = await storage.getCompetitor(req.params.id);
+
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { preview } = req.query;
+      if (!preview) {
+        if (!await guardManualAction(req, res, "aiResearch")) return;
+      }
+      const research = await aiCompanyResearch(competitor.name, competitor.url);
+
+      const fieldsToPopulate: Record<string, string | null> = {};
+      if (!competitor.headquarters && research.headquarters) fieldsToPopulate.headquarters = research.headquarters;
+      if (!competitor.founded && research.foundedYear) fieldsToPopulate.founded = research.foundedYear;
+      if (!competitor.employeeCount && research.employeeCount) fieldsToPopulate.employeeCount = research.employeeCount;
+      if (!competitor.revenue && research.revenueRange) fieldsToPopulate.revenue = research.revenueRange;
+      if (!competitor.fundingRaised && research.fundingRaised) fieldsToPopulate.fundingRaised = research.fundingRaised;
+      if (!competitor.industry && research.industry) fieldsToPopulate.industry = research.industry;
+      if (!competitor.linkedInUrl && research.linkedInUrl) fieldsToPopulate.linkedInUrl = research.linkedInUrl;
+      if (!competitor.blogUrl && research.blogUrl) fieldsToPopulate.blogUrl = research.blogUrl;
+
+      if (preview === "true") {
+        return res.json({ preview: true, research, fieldsToPopulate });
+      }
+
+      if (Object.keys(fieldsToPopulate).length > 0) {
+        await storage.updateCompetitor(competitor.id, fieldsToPopulate);
+      }
+
+      // Backfill the global directory entry (organization) with directory fields.
+      if (competitor.organizationId) {
+        try {
+          const org = await storage.getOrganization(competitor.organizationId);
+          if (org) {
+            const orgUpdates: Record<string, string> = {};
+            if (!org.description && research.description) orgUpdates.description = research.description;
+            if (!org.category && research.category) orgUpdates.category = research.category;
+            if (!org.sicCode && research.sicCode) orgUpdates.sicCode = research.sicCode;
+            if (!org.industry && research.industry) orgUpdates.industry = research.industry;
+            if (Object.keys(orgUpdates).length > 0) {
+              await storage.updateOrganization(org.id, orgUpdates);
+            }
+          }
+        } catch (err) {
+          console.error("[Directory] AI research backfill failed:", err);
+        }
+      }
+
+      await storage.createActivity({
+        type: "ai_research",
+        competitorId: competitor.id,
+        competitorName: competitor.name,
+        description: `AI Company Research completed: ${Object.keys(fieldsToPopulate).length} fields enriched`,
+        date: new Date().toLocaleString(),
+        impact: "Medium",
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+      });
+
+      res.json({ success: true, fieldsPopulated: Object.keys(fieldsToPopulate), research });
+    } catch (error: any) {
+      console.error("AI research error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== SOCIAL MEDIA MONITORING (PREMIUM) ====================
+
+  // Monitor social media for a single competitor (on-demand)
+  app.post("/api/competitors/:id/monitor-social", async (req, res) => {
+    if (!await guardFeature(req, res, "socialMonitoring")) return;
+    if (!await guardManualAction(req, res, "linkedinRefresh")) return;
+    try {
+      const ctx = await getRequestContext(req);
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!competitor.linkedInUrl && !competitor.instagramUrl) {
+        return res.status(400).json({ error: "No social media URLs configured for this competitor" });
+      }
+
+      const results = await monitorCompetitorSocialMedia(req.params.id, ctx.userId, ctx.tenantDomain);
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Monitor all competitors' social media for tenant (scheduled/bulk)
+  app.post("/api/social-monitoring/run", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Global Admin" && user.role !== "Domain Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      const results = await monitorAllCompetitorsForTenant(tenantDomain);
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error.message.includes("premium feature")) {
+        return res.status(403).json({ error: error.message, upgradeRequired: true });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get social monitoring settings for tenant
+  app.get("/api/social-monitoring/settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      res.json({
+        plan: tenant.plan,
+        monitoringFrequency: tenant.monitoringFrequency || "weekly",
+        socialMonitoringEnabled: tenant.plan !== "free",
+        isPremium: tenant.plan !== "free",
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update social monitoring settings (admin only)
+  app.patch("/api/social-monitoring/settings", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Global Admin" && user.role !== "Domain Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      const featureCheck = await checkFeatureAccessAsync(tenant.plan, "socialMonitoring");
+      if (!featureCheck.allowed) {
+        return res.status(403).json({ error: featureCheck.reason, upgradeRequired: true, requiredPlan: featureCheck.requiredPlan });
+      }
+
+      const { monitoringFrequency } = req.body;
+      if (monitoringFrequency && !["weekly", "daily", "disabled"].includes(monitoringFrequency)) {
+        return res.status(400).json({ error: "Invalid monitoring frequency" });
+      }
+
+      const updated = await storage.updateTenant(tenant.id, {
+        monitoringFrequency: monitoringFrequency || tenant.monitoringFrequency,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== WEBSITE CHANGE MONITORING (PREMIUM) ====================
+
+  // Monitor website for a single competitor (on-demand)
+  app.post("/api/competitors/:id/monitor-website", async (req, res) => {
+    if (!await guardFeature(req, res, "websiteMonitoring")) return;
+    if (!await guardManualAction(req, res, "manualWebsiteMonitor")) return;
+    try {
+      const ctx = await getRequestContext(req);
+
+      const competitor = await storage.getCompetitor(req.params.id);
+      if (!competitor) {
+        return res.status(404).json({ error: "Competitor not found" });
+      }
+
+      // Validate competitor belongs to current context
+      if (!validateResourceContext(competitor, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const result = await monitorCompetitorWebsite(req.params.id, ctx.userId, ctx.tenantDomain);
+      res.json({ success: true, result });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Monitor all competitors' websites for tenant (scheduled/bulk)
+  app.post("/api/website-monitoring/run", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.role !== "Global Admin" && user.role !== "Domain Admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const tenantDomain = user.email.split("@")[1];
+      
+      const results = await monitorAllWebsitesForTenant(tenantDomain);
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error.message.includes("premium feature")) {
+        return res.status(403).json({ error: error.message, upgradeRequired: true });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Batch monitor: Company profile + all market competitors
+  app.post("/api/company-profile/:id/monitor-all", async (req, res) => {
+    if (!await guardFeature(req, res, "websiteMonitoring")) return;
+    try {
+      const ctx = await getRequestContext(req);
+
+      const profile = await storage.getCompanyProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      if (!validateResourceContext(profile, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!await guardManualAction(req, res, "manualWebsiteMonitor")) return;
+
+      const results: { type: string; name: string; success: boolean; error?: string }[] = [];
+
+      // Monitor baseline company profile
+      try {
+        await monitorCompanyProfileWebsite(
+          profile.id,
+          ctx.userId,
+          ctx.tenantDomain,
+          profile.marketId || undefined
+        );
+        results.push({ type: "baseline", name: profile.companyName, success: true });
+      } catch (error: any) {
+        results.push({ type: "baseline", name: profile.companyName, success: false, error: error.message });
+      }
+
+      // Get all competitors in the same market context
+      const competitors = await storage.getCompetitorsByContext({
+        tenantId: ctx.tenantId,
+        tenantDomain: ctx.tenantDomain,
+        marketId: profile.marketId || ctx.marketId,
+      });
+
+      for (const competitor of competitors) {
+        try {
+          await monitorCompetitorWebsite(competitor.id, ctx.userId, ctx.tenantDomain);
+          results.push({ type: "competitor", name: competitor.name, success: true });
+        } catch (error: any) {
+          results.push({ type: "competitor", name: competitor.name, success: false, error: error.message });
+        }
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      res.json({ 
+        success: true, 
+        message: `Monitored ${successCount} of ${results.length} targets`,
+        successCount,
+        failCount,
+        results 
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Simple baseline refresh: Crawl company profile website and LinkedIn.
+  // Registered on both /refresh and /crawl — several client surfaces call
+  // /crawl, which previously didn't exist and silently 404ed.
+  app.post(["/api/company-profile/:id/refresh", "/api/company-profile/:id/crawl"], async (req, res) => {
+    console.log(`[Baseline Refresh] Endpoint called for profile ID: ${req.params.id}`);
+    try {
+      const ctx = await getRequestContext(req);
+      console.log(`[Baseline Refresh] Context obtained for user: ${ctx.userId}, tenant: ${ctx.tenantId}`);
+      const profileId = req.params.id;
+      const profile = await storage.getCompanyProfile(profileId);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      if (!validateResourceContext(profile, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!await guardManualAction(req, res, "manualCrawl")) return;
+
+      // Queue the refresh so slow or bot-blocked sites can't hang the HTTP
+      // request (which previously caused proxy timeouts / on-screen errors).
+      enqueueCrawl(
+        `crawl:manual:baseline:${profile.companyName}`,
+        async (signal) => {
+      const results: any = { website: null, linkedin: null, blog: null, errors: [] };
+
+      console.log(`[Baseline Refresh] Starting refresh for ${profile.companyName} (${profile.id})`);
+      console.log(`[Baseline Refresh] URLs: website=${profile.websiteUrl}, linkedin=${profile.linkedInUrl}, blog=${profile.blogUrl}`);
+
+      // Website: merged monitor pass — one fetch performs change detection
+      // and profile AI refresh (bypasses all freshness gates).
+      if (profile.websiteUrl) {
+        try {
+          console.log(`[Baseline Refresh] Starting merged monitor pass for ${profile.websiteUrl}`);
+          const monitorResult = await monitorCompanyProfileWebsite(
+            profile.id,
+            ctx.userId,
+            ctx.tenantDomain,
+            ctx.marketId,
+            { profileRefreshIntervalMs: 0 }, // bypass freshness gate — manual always refreshes
+          );
+          results.website = {
+            success: monitorResult.status !== "error",
+            pages: monitorResult.pagesMonitored,
+            changeScore: monitorResult.changeScore,
+            hasChanges: monitorResult.hasChanges,
+            message: monitorResult.message,
+          };
+          console.log(`[Baseline Refresh] Monitor pass: status=${monitorResult.status}, pages=${monitorResult.pagesMonitored}`);
+        } catch (websiteError: any) {
+          console.error(`[Baseline Refresh] Monitor pass failed:`, websiteError.message);
+          results.website = { success: false, error: websiteError.message };
+          results.errors.push(`Website: ${websiteError.message}`);
+        }
+      }
+      
+      // Refresh LinkedIn - using company profile social monitoring
+      if (profile.linkedInUrl) {
+        try {
+          console.log(`[Baseline Refresh] Fetching LinkedIn data for ${profile.linkedInUrl}`);
+          const { monitorCompanyProfileSocialMedia } = await import("../services/social-monitoring");
+          await monitorCompanyProfileSocialMedia(profile.id, ctx.userId, ctx.tenantDomain, ctx.marketId);
+          
+          // Verify data was saved
+          const updatedProfile = await storage.getCompanyProfile(profile.id);
+          const linkedInData = updatedProfile?.linkedInEngagement as any;
+          console.log(`[Baseline Refresh] LinkedIn result: followers=${linkedInData?.followers || 'none'}, posts=${linkedInData?.posts || 'none'}`);
+          results.linkedin = { 
+            success: !!linkedInData?.followers, 
+            followers: linkedInData?.followers || 0,
+            posts: linkedInData?.posts || 0,
+          };
+        } catch (linkedInError: any) {
+          console.error(`[Baseline Refresh] LinkedIn error:`, linkedInError.message);
+          results.linkedin = { success: false, error: linkedInError.message };
+          results.errors.push(`LinkedIn: ${linkedInError.message}`);
+        }
+      } else {
+        console.log(`[Baseline Refresh] No LinkedIn URL configured`);
+      }
+      
+      console.log(`[Baseline Refresh] Completed for ${profile.companyName}:`, JSON.stringify(results));
+      return { success: true, results };
+        },
+        undefined,
+        { tenantDomain: ctx.tenantDomain, targetId: profile.id, targetName: profile.companyName },
+      ).catch((err) =>
+        console.error(`[Baseline Refresh] Queued refresh failed for ${profile.companyName}:`, (err as Error).message)
+      );
+
+      res.status(202).json({
+        success: true,
+        queued: true,
+        message: `Baseline refresh queued for ${profile.companyName}. Data will refresh when it completes.`,
+      });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Social-only refresh: Just LinkedIn/blog without website crawl (faster)
+  app.post("/api/company-profile/:id/refresh-social", async (req, res) => {
+    console.log(`[Social Refresh] Endpoint called for profile ID: ${req.params.id}`);
+    try {
+      const ctx = await getRequestContext(req);
+      const profileId = req.params.id;
+      const profile = await storage.getCompanyProfile(profileId);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "Company profile not found" });
+      }
+
+      if (!validateResourceContext(profile, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      if (!await guardManualAction(req, res, "linkedinRefresh")) return;
+      
+      const results: any = { linkedin: null, errors: [] };
+      
+      console.log(`[Social Refresh] Starting social refresh for ${profile.companyName}`);
+      
+      // Refresh LinkedIn only
+      if (profile.linkedInUrl) {
+        try {
+          console.log(`[Social Refresh] Fetching LinkedIn data for ${profile.linkedInUrl}`);
+          const { monitorCompanyProfileSocialMedia } = await import("../services/social-monitoring");
+          await monitorCompanyProfileSocialMedia(profile.id, ctx.userId, ctx.tenantDomain, ctx.marketId);
+          
+          const updatedProfile = await storage.getCompanyProfile(profile.id);
+          const linkedInData = updatedProfile?.linkedInEngagement as any;
+          console.log(`[Social Refresh] LinkedIn result: followers=${linkedInData?.followers || 'none'}, posts=${linkedInData?.posts || 'none'}`);
+          results.linkedin = { 
+            success: !!linkedInData?.followers, 
+            followers: linkedInData?.followers || 0,
+            posts: linkedInData?.posts || 0,
+          };
+        } catch (linkedInError: any) {
+          console.error(`[Social Refresh] LinkedIn error:`, linkedInError.message);
+          results.linkedin = { success: false, error: linkedInError.message };
+          results.errors.push(`LinkedIn: ${linkedInError.message}`);
+        }
+      } else {
+        console.log(`[Social Refresh] No LinkedIn URL configured`);
+        results.linkedin = { success: false, error: "No LinkedIn URL configured" };
+      }
+      
+      console.log(`[Social Refresh] Completed for ${profile.companyName}:`, JSON.stringify(results));
+      res.json({ success: true, results });
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Batch monitor: All competitor products in a project
+  app.post("/api/projects/:id/monitor-all", async (req, res) => {
+    if (!await guardFeature(req, res, "websiteMonitoring")) return;
+    try {
+      const ctx = await getRequestContext(req);
+
+      const project = await storage.getClientProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!validateResourceContext(project, ctx)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const projectProducts = await storage.getProjectProducts(project.id);
+      const results: { type: string; name: string; success: boolean; error?: string }[] = [];
+
+      for (const pp of projectProducts) {
+        const product = pp.product;
+        if (!product?.url) continue;
+
+        // Check if this is a competitor product (has competitorId)
+        if (product.competitorId) {
+          try {
+            await monitorCompetitorWebsite(product.competitorId, ctx.userId, ctx.tenantDomain);
+            results.push({ type: pp.role, name: product.name, success: true });
+          } catch (error: any) {
+            results.push({ type: pp.role, name: product.name, success: false, error: error.message });
+          }
+        } else if (product.companyProfileId) {
+          // Baseline product - monitor the company profile
+          try {
+            await monitorCompanyProfileWebsite(
+              product.companyProfileId,
+              ctx.userId,
+              ctx.tenantDomain,
+              project.marketId || undefined
+            );
+            results.push({ type: pp.role, name: product.name, success: true });
+          } catch (error: any) {
+            results.push({ type: pp.role, name: product.name, success: false, error: error.message });
+          }
+        } else {
+          // Standalone product - monitor directly by product URL
+          try {
+            await monitorProductWebsite(
+              product.id,
+              ctx.userId,
+              ctx.tenantDomain,
+              project.marketId || undefined
+            );
+            results.push({ type: pp.role, name: product.name, success: true });
+          } catch (error: any) {
+            results.push({ type: pp.role, name: product.name, success: false, error: error.message });
+          }
+        }
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      res.json({ 
+        success: true, 
+        message: `Monitored ${successCount} of ${results.length} products`,
+        successCount,
+        failCount,
+        results 
+      });
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -632,9 +1483,14 @@ export function registerCompetitorRoutes(app: Express) {
 
           // Full mode: Re-crawl and analyze
           // Full with change mode: Also include social/blog monitoring
-          // full_with_change: social/website monitoring removed from Orbit
           if (analysisType === "full_with_change") {
-            console.log(`[Analysis] Skipping social/website monitoring for ${competitor.name} (feature removed)`);
+            // Trigger social and blog monitoring for this competitor
+            try {
+              await monitorCompetitorSocialMedia(competitor.id);
+              await monitorCompetitorWebsite(competitor.id);
+            } catch (monitorError) {
+              console.error(`Monitoring failed for ${competitor.name}:`, monitorError);
+            }
           }
 
           // Crawl website fresh

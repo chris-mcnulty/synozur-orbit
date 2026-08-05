@@ -21,20 +21,25 @@
 import { createHmac, createVerify, randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { db } from "../db";
-import { and, eq, inArray, lte, isNotNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray, lte, isNotNull, notInArray, sql } from "drizzle-orm";
 import {
   generatedEmails,
+  emailCampaignVariants,
   emailRecipientLists,
   emailRecipients,
   emailSends,
   emailSendRecipients,
   emailSuppressions,
   emailSenderIdentities,
+  emailSubscriptionTypes,
+  emailSubscriptionPreferences,
   marketingAuditLog,
+  marketingContacts,
   prospects,
   type GeneratedEmail,
   type EmailSend,
 } from "@shared/schema";
+import { resolveTokens, resolveTokensForEmail } from "./email-ab-test";
 import { wrapOutboundLinksInText } from "./marketing-links-helpers";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
@@ -347,18 +352,33 @@ async function wrapEmailLinks(opts: {
 
 export interface DispatchSendOptions {
   tenantDomain: string;
+
   marketId: string | null;
+
   email: GeneratedEmail;
   /** Either listId+null testRecipient, or testRecipient set for one-off "send to me". */
+
   listId?: string | null;
+  /**
+   * When set, the send targets all contacts that match the saved segment's
+   * rules at delivery time (instead of a static recipient list). The segment
+   * is resolved to individual email addresses immediately before delivery so
+   * suppressions and subscription preferences still apply.
+   */
+  segmentId?: string | null;
   testRecipient?: string | null;
+
   createdBy: string;
+
   baseUrl: string;
   /** When set in the future, queue the send for the worker rather than dispatching now. */
+
   scheduledAt?: Date | null;
   /** Per-send open-tracking pixel toggle. Defaults to true. */
+
   trackOpens?: boolean;
   /** Per-send click-tracking toggle. Defaults to true. */
+
   trackClicks?: boolean;
   /**
    * When true, recipients who are active outreach prospects (prospect status
@@ -366,12 +386,28 @@ export interface DispatchSendOptions {
    * with suppressionReason = 'active_prospect'. Persisted on the send row so
    * the worker honours the choice made at schedule time.
    */
+
   excludeActiveProspects?: boolean;
   /**
    * ID of the email_sender_identities row to use as the `from` address.
    * When null/undefined the SendGrid connector's configured from_email is used.
    */
+
   senderIdentityId?: string | null;
+  /**
+   * Subscription type IDs this send belongs to. At delivery time, recipients
+   * who have opted out of any non-transactional type in this list are filtered.
+   */
+
+  subscriptionTypeIds?: string[];
+
+  abVariantLabel?: string | null;
+  /**
+   * When true this send is the A/B holdback cohort (position ≥ 2×split).
+   * Set by the worker when replaying a holdback send row after winner declaration.
+   */
+
+  isAbHoldback?: boolean;
 }
 
 export interface SuppressedRecipient {
@@ -390,33 +426,205 @@ export interface DispatchSendResult {
   queued?: boolean;
 }
 
+/** Shared values used when inserting a new email_sends row. */
+function baseSendValues(opts: DispatchSendOptions & { listId: string; queueAt: Date }) {
+  return {
+    tenantDomain: opts.tenantDomain,
+    marketId: opts.marketId,
+    generatedEmailId: opts.email.id,
+    listId: opts.listId,
+    testRecipient: null as null,
+    status: "queued" as const,
+    scheduledAt: opts.queueAt,
+    trackOpens: opts.trackOpens !== false,
+    trackClicks: opts.trackClicks !== false,
+    excludeActiveProspects: opts.excludeActiveProspects === true,
+    senderIdentityId: opts.senderIdentityId ?? null,
+    subscriptionTypeIds: opts.subscriptionTypeIds ?? [],
+    recipientCount: 0,
+    sentCount: 0,
+    failedCount: 0,
+    bounceCount: 0,
+    unsubscribeCount: 0,
+    spamCount: 0,
+    errorMessage: null as null,
+    startedAt: null as null,
+    completedAt: null as null,
+    createdBy: opts.createdBy,
+  };
+}
 /**
  * Top-level dispatch entry point. If `scheduledAt` is in the future the
  * send is persisted as `queued` and returned immediately; the
  * `tickEmailSendWorker()` will pick it up. Otherwise the send is delivered
  * inline (test-recipient sends always go inline).
+ *
+ * When the email has A/B testing enabled and a B variant exists, three send
+ * rows are created: one for each cohort (A, B) and one holdback. The A/B
+ * worker will flip the holdback row to "queued" after the evaluation window.
  */
 export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<DispatchSendResult> {
-  const { tenantDomain, marketId, email, listId, testRecipient, createdBy, baseUrl, scheduledAt } = opts;
+  const { tenantDomain, marketId, email, listId, segmentId, testRecipient, createdBy, baseUrl, scheduledAt } = opts;
 
-  // All list sends are queued for the worker — this gives us per-tick rate
-  // shaping, retry safety, and avoids holding the request open while we
+  // All list/segment sends are queued for the worker — this gives us per-tick
+  // rate shaping, retry safety, and avoids holding the request open while we
   // loop over thousands of recipients. Test recipients (single-message
   // preview sends) deliver inline so reviewers see the result immediately.
   if (testRecipient) {
     return deliverEmailSend(opts);
   }
-  if (!listId) {
-    throw Object.assign(new Error("listId is required for list sends"), { status: 400 });
+  if (!listId && !segmentId) {
+    throw Object.assign(new Error("listId or segmentId is required for list sends"), { status: 400 });
   }
   const queueAt = scheduledAt && scheduledAt.getTime() > Date.now() + 1000
     ? scheduledAt
     : new Date(); // immediate: worker picks it up on next tick
+
+  // ── A/B test dispatch ─────────────────────────────────────────────────────
+  if (email.abTestEnabled) {
+    const [bVariant] = await db.select().from(emailCampaignVariants)
+      .where(and(
+        eq(emailCampaignVariants.generatedEmailId, email.id),
+        eq(emailCampaignVariants.variantLabel, "B"),
+      ));
+    if (bVariant) {
+      const optsWithQueue = { ...opts, listId, queueAt };
+      // Each dispatch gets a unique run ID so winner evaluation, holdback
+      // release, and results are scoped to this test run rather than all
+      // historical sends for the email.
+      const abTestRunId = crypto.randomUUID();
+
+      // Atomically reset any prior winner so the evaluator doesn't pick up
+      // stale results from a previous run.
+      await db.update(generatedEmails).set({
+        abWinnerVariantLabel: null,
+        abWinnerDeclaredAt: null,
+        updatedAt: new Date(),
+      }).where(eq(generatedEmails.id, email.id));
+
+      // A variant send
+      const [sendA] = await db.insert(emailSends).values({
+        ...baseSendValues(optsWithQueue),
+        abVariantLabel: "A",
+        isAbHoldback: false,
+        abTestRunId,
+      }).returning();
+      // B variant send
+      const [sendB] = await db.insert(emailSends).values({
+        ...baseSendValues(optsWithQueue),
+        abVariantLabel: "B",
+        isAbHoldback: false,
+        abTestRunId,
+      }).returning();
+      // Holdback — status "ab_holdback" prevents the worker from picking it up
+      const [sendHoldback] = await db.insert(emailSends).values({
+        ...baseSendValues(optsWithQueue),
+        status: "ab_holdback" as any,
+        scheduledAt: null,
+        abVariantLabel: null,
+        isAbHoldback: true,
+        abTestRunId,
+      }).returning();
+      // ── Snapshot cohort membership at dispatch ─────────────────────────────
+      // Build the full recipient list and apply suppressions ONCE so A, B, and
+      // holdback cohorts are derived from the same base set.  Persisting them
+      // as 'pre_assigned' email_send_recipients rows guarantees exclusive,
+      // immutable membership even if the list or suppressions change before the
+      // delayed B/holdback deliveries are processed.
+      if (listId) {
+        const listRows = await db.select({ email: emailRecipients.email, name: emailRecipients.name })
+          .from(emailRecipients)
+          .where(and(
+            eq(emailRecipients.listId, listId),
+            eq(emailRecipients.tenantDomain, tenantDomain),
+            eq(emailRecipients.status, "active"),
+          ))
+          .limit(MAX_RECIPIENTS_PER_SEND);
+
+        let deliverable = listRows.map(r => ({ email: r.email.trim().toLowerCase(), name: r.name ?? null }));
+
+        if (deliverable.length > 0) {
+          const suppressed = await db.select({ email: emailSuppressions.email })
+            .from(emailSuppressions)
+            .where(and(
+              eq(emailSuppressions.tenantDomain, tenantDomain),
+              inArray(emailSuppressions.email, deliverable.map(r => r.email)),
+            ));
+          const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.email]));
+          let hubspotOptedOut = new Set<string>();
+          try {
+            const consent = await pullSubscriptionStatus(tenantDomain, deliverable.map(r => r.email));
+            hubspotOptedOut = consent.optedOut;
+          } catch { /* best-effort */ }
+          const supMap = reconcileSuppression({
+            candidateEmails: deliverable.map(r => r.email),
+            locallySuppressed: localSuppressed,
+            hubspotOptedOut,
+          });
+          deliverable = deliverable.filter(r => !supMap.has(r.email));
+        }
+
+        const split = Math.max(1, Math.min(49, email.abTestSplit ?? 20));
+        deliverable.sort((a, b) => a.email.localeCompare(b.email));
+        const n = deliverable.length;
+        const cutA = Math.floor(n * split / 100);
+        const cutB = Math.floor(n * 2 * split / 100);
+        const cohortA = deliverable.slice(0, cutA);
+        const cohortB = deliverable.slice(cutA, cutB);
+        const cohortHoldback = deliverable.slice(cutB);
+
+        const writePreAssigned = async (sendId: string, cohort: typeof cohortA) => {
+          if (cohort.length > 0) {
+            await db.insert(emailSendRecipients).values(
+              cohort.map(r => ({
+                sendId,
+                tenantDomain,
+                email: r.email,
+                name: r.name,
+                // Placeholder token — delivery time generates a fresh one and
+                // deletes these rows first, avoiding any token mismatch.
+                unsubscribeToken: makeUnsubscribeToken(sendId, r.email),
+                status: "pre_assigned" as any,
+              })),
+            );
+          }
+          await db.update(emailSends).set({ recipientCount: cohort.length }).where(eq(emailSends.id, sendId));
+        };
+        await Promise.all([
+          writePreAssigned(sendA.id, cohortA),
+          writePreAssigned(sendB.id, cohortB),
+          writePreAssigned(sendHoldback.id, cohortHoldback),
+        ]);
+      }
+
+      await db.insert(marketingAuditLog).values({
+        tenantDomain,
+        marketId,
+        userId: createdBy,
+        action: "email_ab_test_queued",
+        entityType: "email_send",
+        entityId: sendA.id,
+        status: "ok",
+        message: `A/B test queued — split ${email.abTestSplit}% each, ${email.abEvaluationHours}h evaluation, metric: ${email.abWinnerMetric ?? "open_rate"}`,
+        details: { sendIdA: sendA.id, sendIdB: sendB.id, sendIdHoldback: sendHoldback.id, listId },
+      });
+      return {
+        send: sendA,
+        totalRecipients: 0,
+        sentCount: 0,
+        failedCount: 0,
+        queued: true,
+      };
+    }
+  }
+
+  // ── Standard single-variant send ─────────────────────────────────────────
   const [send] = await db.insert(emailSends).values({
     tenantDomain,
     marketId,
     generatedEmailId: email.id,
-    listId,
+    listId: listId ?? null,
+    segmentId: segmentId ?? null,
     testRecipient: null,
     status: "queued",
     scheduledAt: queueAt,
@@ -424,6 +632,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     trackClicks: opts.trackClicks !== false,
     excludeActiveProspects: opts.excludeActiveProspects === true,
     senderIdentityId: opts.senderIdentityId ?? null,
+    subscriptionTypeIds: opts.subscriptionTypeIds ?? [],
     recipientCount: 0,
     sentCount: 0,
     failedCount: 0,
@@ -444,7 +653,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
     entityId: send.id,
     status: "ok",
     message: scheduledAt ? `Scheduled for ${scheduledAt.toISOString()}` : "Queued for immediate delivery",
-    details: { listId, scheduledAt: queueAt.toISOString(), generatedEmailId: email.id },
+    details: { listId, segmentId, scheduledAt: queueAt.toISOString(), generatedEmailId: email.id },
   });
   return { send, totalRecipients: 0, sentCount: 0, failedCount: 0, queued: true };
 }
@@ -478,74 +687,166 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     );
   }
 
-  // Build recipient set.
+  // A/B variant identity — needed early for both pre-assigned check and delivery.
+  const abVariantLabel = opts.abVariantLabel ?? null;
+  const isAbHoldback = opts.isAbHoldback ?? false;
+
+  // ── Pre-assigned cohort check (A/B sends snapshot at dispatch) ────────────
+  // dispatchEmailSend writes email_send_recipients rows with status='pre_assigned'
+  // for each cohort when the A/B test is first queued.  Using these rows locks
+  // in the exact population at dispatch time so suppression changes between the
+  // delayed A, B, and holdback deliveries cannot cause overlap or omission.
+  // Build recipient set.  Declared early so the pre-assigned block can push
+  // into it before the normal list-load path runs.
   const recipients: Array<{ email: string; name: string | null }> = [];
-  if (testRecipient) {
-    recipients.push({ email: testRecipient.trim().toLowerCase(), name: null });
-  } else if (listId) {
-    const rows = await db.select().from(emailRecipients)
+  let usePreAssigned = false;
+
+  // ── Pre-assigned cohort check (A/B sends snapshot at dispatch) ────────────
+  // dispatchEmailSend writes email_send_recipients rows with status='pre_assigned'
+  // for each cohort when the A/B test is first queued.  Using these rows locks
+  // in the exact population at dispatch time so suppression changes between the
+  // delayed A, B, and holdback deliveries cannot cause overlap or omission.
+  if (!testRecipient && email.abTestEnabled && existingSendId && (abVariantLabel !== null || isAbHoldback)) {
+    const preRows = await db
+      .select({ email: emailSendRecipients.email, name: emailSendRecipients.name })
+      .from(emailSendRecipients)
       .where(and(
-        eq(emailRecipients.listId, listId),
-        eq(emailRecipients.tenantDomain, tenantDomain),
-        eq(emailRecipients.status, "active"),
-      ))
-      .limit(MAX_RECIPIENTS_PER_SEND);
-    for (const r of rows) {
-      recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
-    }
-    // Filter against suppression list + HubSpot consent (HubSpot opt-out wins).
-    if (recipients.length > 0) {
-      const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
-        .from(emailSuppressions)
+        eq(emailSendRecipients.sendId, existingSendId),
+        sql`${emailSendRecipients.status} = 'pre_assigned'`,
+      ));
+    if (preRows.length > 0) {
+      // Delete the placeholder rows — fresh tokens will be generated below.
+      await db.delete(emailSendRecipients)
         .where(and(
-          eq(emailSuppressions.tenantDomain, tenantDomain),
-          inArray(emailSuppressions.email, recipients.map(r => r.email)),
+          eq(emailSendRecipients.sendId, existingSendId),
+          sql`${emailSendRecipients.status} = 'pre_assigned'`,
         ));
-      const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
-      // Pull HubSpot opt-out state and reconcile so contacts who unsubscribed
-      // in HubSpot are excluded even if Orbit never recorded it. Best-effort:
-      // no connection / missing scopes / failure ⇒ local suppression only.
-      let hubspotOptedOut = new Set<string>();
+      recipients.push(...preRows.map(r => ({ email: r.email, name: r.name ?? null })));
+      usePreAssigned = true;
+    }
+  }
+
+  // Load from list when not using a pre-assigned cohort.
+  if (!usePreAssigned) {
+    if (testRecipient) {
+      recipients.push({ email: testRecipient.trim().toLowerCase(), name: null });
+    } else if (listId) {
+      const rows = await db.select().from(emailRecipients)
+        .where(and(
+          eq(emailRecipients.listId, listId),
+          eq(emailRecipients.tenantDomain, tenantDomain),
+          eq(emailRecipients.status, "active"),
+        ))
+        .limit(MAX_RECIPIENTS_PER_SEND);
+      for (const r of rows) {
+        recipients.push({ email: r.email.trim().toLowerCase(), name: r.name ?? null });
+      }
+    }
+  } else if (opts.segmentId) {
+    // Resolve the saved segment to a dynamic contact list at delivery time.
+    const { resolveSegmentContacts } = await import("./marketing-contact-service");
+    const { contacts } = await resolveSegmentContacts(opts.segmentId, tenantDomain, MAX_RECIPIENTS_PER_SEND);
+    for (const c of contacts) {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || null;
+      recipients.push({ email: c.email.trim().toLowerCase(), name });
+    }
+  }
+
+  // ── Global + per-type suppression ────────────────────────────────────────
+  // Skipped for pre-assigned A/B cohorts — suppression was already applied
+  // at dispatch time and cohort membership is immutable.
+  if (!usePreAssigned && recipients.length > 0) {
+    // Global suppression + HubSpot consent reconciliation.
+    const suppressed = await db.select({ email: emailSuppressions.email, reason: emailSuppressions.reason })
+      .from(emailSuppressions)
+      .where(and(
+        eq(emailSuppressions.tenantDomain, tenantDomain),
+        inArray(emailSuppressions.email, recipients.map(r => r.email)),
+      ));
+    const localSuppressed = new Map(suppressed.map(s => [s.email.toLowerCase(), s.reason]));
+
+    // Pull HubSpot opt-out state and reconcile. Best-effort: failure falls
+    // back to local suppression only.
+    let hubspotOptedOut = new Set<string>();
+    if (!testRecipient) {
+      // Skip the HubSpot round-trip for single-address test sends to keep
+      // preview latency low; local suppression is sufficient for tests.
       try {
         const consent = await pullSubscriptionStatus(tenantDomain, recipients.map(r => r.email));
         hubspotOptedOut = consent.optedOut;
-      } catch { /* best-effort: fall back to local suppression */ }
-      const supMap = reconcileSuppression({
-        candidateEmails: recipients.map(r => r.email),
-        locallySuppressed: localSuppressed,
-        hubspotOptedOut,
-      });
-      for (let i = recipients.length - 1; i >= 0; i--) {
-        const reason = supMap.get(recipients[i].email);
-        if (reason) {
-          suppressedFromSend.push({ email: recipients[i].email, reason });
-          recipients.splice(i, 1);
-        }
-      }
+      } catch { /* best-effort */ }
+    }
 
-      // Prospect suppression — applied AFTER standard suppression so we only
-      // check emails that would otherwise be delivered. Active prospects have
-      // a status that is NOT 'replied' (cadence concluded) or 'dormant'
-      // (sequence exhausted / disqualified).
-      if (opts.excludeActiveProspects && recipients.length > 0) {
-        const candidateEmails = recipients.map(r => r.email);
-        const activeProspectRows = await db
-          .select({ email: prospects.email })
-          .from(prospects)
+    const supMap = reconcileSuppression({
+      candidateEmails: recipients.map(r => r.email),
+      locallySuppressed: localSuppressed,
+      hubspotOptedOut,
+    });
+    for (let i = recipients.length - 1; i >= 0; i--) {
+      const reason = supMap.get(recipients[i].email);
+      if (reason) {
+        suppressedFromSend.push({ email: recipients[i].email, reason });
+        recipients.splice(i, 1);
+      }
+    }
+
+    // Per-subscription-type suppression: filter recipients who have opted out
+    // of any of the non-transactional types tagged on this send.
+    const typeIds = opts.subscriptionTypeIds ?? [];
+    if (typeIds.length > 0 && recipients.length > 0) {
+      const typeRows = await db.select({
+        id: emailSubscriptionTypes.id,
+        isTransactional: emailSubscriptionTypes.isTransactional,
+      }).from(emailSubscriptionTypes)
+        .where(and(
+          eq(emailSubscriptionTypes.tenantDomain, tenantDomain),
+          inArray(emailSubscriptionTypes.id, typeIds),
+        ));
+      const nonTransactionalIds = typeRows
+        .filter(t => !t.isTransactional)
+        .map(t => t.id);
+
+      if (nonTransactionalIds.length > 0) {
+        const optedOutRows = await db
+          .selectDistinct({ email: emailSubscriptionPreferences.email })
+          .from(emailSubscriptionPreferences)
           .where(and(
-            eq(prospects.tenantDomain, tenantDomain),
-            inArray(prospects.email, candidateEmails),
-            notInArray(prospects.status, ["replied", "dormant"]),
+            eq(emailSubscriptionPreferences.tenantDomain, tenantDomain),
+            inArray(emailSubscriptionPreferences.email, recipients.map(r => r.email)),
+            inArray(emailSubscriptionPreferences.subscriptionTypeId, nonTransactionalIds),
+            sql`${emailSubscriptionPreferences.optedOutAt} IS NOT NULL`,
           ));
-        const activeProspectEmails = new Set(
-          activeProspectRows.map(p => (p.email ?? "").trim().toLowerCase()).filter(Boolean),
-        );
-        if (activeProspectEmails.size > 0) {
+        const optedOutEmails = new Set(optedOutRows.map(r => r.email.toLowerCase()));
+        if (optedOutEmails.size > 0) {
           for (let i = recipients.length - 1; i >= 0; i--) {
-            if (activeProspectEmails.has(recipients[i].email)) {
-              suppressedFromSend.push({ email: recipients[i].email, reason: "active_prospect" });
+            if (optedOutEmails.has(recipients[i].email)) {
+              suppressedFromSend.push({ email: recipients[i].email, reason: "subscription_opt_out" });
               recipients.splice(i, 1);
             }
+          }
+        }
+      }
+    }
+
+    // Prospect suppression — list sends only, applied AFTER global suppression.
+    if (!testRecipient && opts.excludeActiveProspects && recipients.length > 0) {
+      const candidateEmails = recipients.map(r => r.email);
+      const activeProspectRows = await db
+        .select({ email: prospects.email })
+        .from(prospects)
+        .where(and(
+          eq(prospects.tenantDomain, tenantDomain),
+          inArray(prospects.email, candidateEmails),
+          notInArray(prospects.status, ["replied", "dormant"]),
+        ));
+      const activeProspectEmails = new Set(
+        activeProspectRows.map(p => (p.email ?? "").trim().toLowerCase()).filter(Boolean),
+      );
+      if (activeProspectEmails.size > 0) {
+        for (let i = recipients.length - 1; i >= 0; i--) {
+          if (activeProspectEmails.has(recipients[i].email)) {
+            suppressedFromSend.push({ email: recipients[i].email, reason: "active_prospect" });
+            recipients.splice(i, 1);
           }
         }
       }
@@ -587,10 +888,12 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       marketId,
       generatedEmailId: email.id,
       listId: testRecipient ? null : (listId ?? null),
+      segmentId: testRecipient ? null : (opts.segmentId ?? null),
       testRecipient: testRecipient ?? null,
       status: "sending",
       trackOpens,
       trackClicks,
+      subscriptionTypeIds: opts.subscriptionTypeIds ?? [],
       recipientCount: recipients.length,
       sentCount: 0,
       failedCount: 0,
@@ -636,7 +939,62 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       sentCount: 0,
       completedAt: new Date(),
     }).where(eq(emailSends.id, send.id));
-    return { sentCount: 0, failedCount: 0 };
+    return { send, totalRecipients: 0, sentCount: 0, failedCount: 0 };
+  }
+
+  // ── A/B cohort filtering ─────────────────────────────────────────────────
+  // Skipped for pre-assigned sends (cohort was fixed at dispatch time).
+  // For fallback non-pre-assigned sends, slice deterministically by email.
+  if (!usePreAssigned && !testRecipient && email.abTestEnabled && (abVariantLabel || isAbHoldback)) {
+    const split = Math.max(1, Math.min(49, email.abTestSplit ?? 20));
+    recipients.sort((a, b) => a.email.localeCompare(b.email));
+    const n = recipients.length;
+    const cutA = Math.floor(n * split / 100);
+    const cutB = Math.floor(n * 2 * split / 100);
+    let slice: typeof recipients;
+    // Holdback always gets positions ≥ 2×split regardless of winner label.
+    if (isAbHoldback)          slice = recipients.slice(cutB);
+    else if (abVariantLabel === "A") slice = recipients.slice(0, cutA);
+    else                       slice = recipients.slice(cutA, cutB); // B
+    recipients.splice(0, recipients.length, ...slice);
+  }
+
+  // ── Determine effective subject / body (load B variant if needed) ────────
+  // For holdback rows the AB worker writes the winner label into abVariantLabel
+  // before re-queuing, so we can use that to pick the winning template.
+  let effectiveSubject = email.subject;
+  let effectiveHtmlBody = email.htmlBody;
+  let effectiveTextBody = email.textBody ?? null;
+
+  // Template selection is driven solely by abVariantLabel on the send row.
+  // For the holdback, the evaluator writes the winning label into abVariantLabel
+  // before re-queuing, making this fully run-scoped and independent of the
+  // mutable email-level abWinnerVariantLabel field.
+  const useVariantB = abVariantLabel === "B";
+  if (useVariantB) {
+    const [bVariant] = await db.select().from(emailCampaignVariants)
+      .where(and(
+        eq(emailCampaignVariants.generatedEmailId, email.id),
+        eq(emailCampaignVariants.variantLabel, "B"),
+      ));
+    if (bVariant) {
+      effectiveSubject = bVariant.subject;
+      // A blank B body means subject-only test — fall back to A's body so
+      // variant B recipients receive the campaign content unchanged.
+      effectiveHtmlBody = bVariant.htmlBody?.trim() ? bVariant.htmlBody : email.htmlBody;
+      effectiveTextBody = bVariant.textBody?.trim() ? bVariant.textBody : (email.textBody ?? null);
+    }
+  }
+
+  // ── Correct recipientCount to reflect actual cohort size ─────────────────
+  // Only needed for non-pre-assigned sends (pre-assigned counts were set at
+  // dispatch); for sliced non-pre-assigned sends the count was set to the full
+  // deliverable list before slicing and needs adjustment here.
+  if (!usePreAssigned && existingSendId && (abVariantLabel || isAbHoldback) && !testRecipient) {
+    await db.update(emailSends)
+      .set({ recipientCount: recipients.length })
+      .where(eq(emailSends.id, send.id));
+    send = { ...send, recipientCount: recipients.length };
   }
 
   // Pre-create per-recipient rows with unsubscribe tokens.
@@ -657,8 +1015,8 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
 
   // Wrap outbound links once per send (not per recipient) so we don't
   // multiply slug rows by N recipients.
-  const baseHtml = email.htmlBody || "";
-  const baseText = email.textBody || "";
+  const baseHtml = effectiveHtmlBody || "";
+  const baseText = effectiveTextBody || "";
   let wrappedHtml = baseHtml;
   let wrappedText = baseText;
   if (marketId) {
@@ -704,21 +1062,37 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     const base = baseUrl.replace(/\/$/, "");
     const unsubUrl = `${base}/u/${r.token}`;
     const prefsUrl = `${base}/p/${r.token}`;
+
+    // Per-recipient personalization: resolve {{token|fallback}} placeholders
+    // against the matching marketing_contacts row (best-effort, no throw).
+    let personalizedSubject = effectiveSubject;
+    let personalizedHtml = wrappedHtml;
+    let personalizedText = wrappedText;
+    try {
+      personalizedSubject = await resolveTokensForEmail(effectiveSubject, tenantDomain, r.email);
+      personalizedHtml = wrappedHtml
+        ? await resolveTokensForEmail(wrappedHtml, tenantDomain, r.email)
+        : wrappedHtml;
+      personalizedText = wrappedText
+        ? await resolveTokensForEmail(wrappedText, tenantDomain, r.email)
+        : wrappedText;
+    } catch { /* best-effort: fall back to unresolved template */ }
+
     // Only wrap in a responsive document if there is actual HTML content.
     // If htmlBody is empty (plain-text email) don't produce an HTML part at
     // all — let the email client fall back to the text part instead of
     // showing a document that contains only the unsubscribe footer.
-    const htmlWithFooter = wrappedHtml ? injectFooter(wrappedHtml, unsubUrl, prefsUrl) : null;
+    const htmlWithFooter = personalizedHtml ? injectFooter(personalizedHtml, unsubUrl, prefsUrl) : null;
     const html = htmlWithFooter ? wrapResponsiveDocument(htmlWithFooter) : undefined;
-    const text = wrappedText
-      ? injectTextFooter(wrappedText, unsubUrl, prefsUrl)
+    const text = personalizedText
+      ? injectTextFooter(personalizedText, unsubUrl, prefsUrl)
       : `Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
     try {
       const [resp] = await sgMail.send({
         to: r.email,
         from: fromField,
         ...(replyToField ? { replyTo: replyToField } : {}),
-        subject: email.subject,
+        subject: personalizedSubject,
         text,
         ...(html ? { html } : {}),
         headers: {
@@ -814,7 +1188,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
           const t = await pushSentEventsForSend({
             tenantDomain,
             sendId: send.id,
-            subject: email.subject,
+            subject: effectiveSubject,
             campaign: email.label ?? email.campaignId ?? null,
           });
           if (t.pushed > 0 || t.errors > 0) {
@@ -914,6 +1288,8 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           marketId: row.send.marketId ?? null,
           email: row.email,
           listId: row.send.listId ?? null,
+          // Recover the segment audience target persisted at queue time.
+          segmentId: (row.send as any).segmentId ?? null,
           testRecipient: null,
           createdBy: row.send.createdBy,
           baseUrl: opts.baseUrl,
@@ -926,6 +1302,11 @@ export async function tickEmailSendWorker(opts: { baseUrl: string }): Promise<{ 
           excludeActiveProspects: row.send.excludeActiveProspects,
           // Preserve the sender identity captured at schedule time.
           senderIdentityId: row.send.senderIdentityId ?? null,
+          subscriptionTypeIds: row.send.subscriptionTypeIds ?? [],
+          // A/B test: pass the variant label and holdback flag so deliverEmailSend
+          // can apply the correct cohort filtering and variant content.
+          abVariantLabel: row.send.abVariantLabel ?? null,
+          isAbHoldback: row.send.isAbHoldback ?? false,
         }, row.send.id);
         sent += result.sentCount;
         failed += result.failedCount;

@@ -31,6 +31,20 @@ import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-cred
 const AUTH_HOST = "https://www.facebook.com";
 const GRAPH_HOST = "https://graph.facebook.com";
 const API_VERSION = "v19.0";
+
+/**
+ * Facebook/Instagram Graph API error codes that indicate an expired or invalid
+ * token. These codes are returned even through the Instagram publishing
+ * endpoints because the underlying auth layer is the same Meta OAuth stack.
+ *   190 — Invalid OAuth access token (most common expiry code)
+ *   102 — Session key invalid or no longer valid
+ *   104 — Incorrect signature
+ */
+function isFbAuthError(parsed: any): boolean {
+  const code = parsed?.error?.code;
+  return code === 190 || code === 102 || code === 104;
+}
+
 const DEFAULT_SCOPE = [
   "pages_show_list",
   "pages_read_engagement",
@@ -261,6 +275,14 @@ export class InstagramPublisher implements SocialPublisher {
       const errText = await containerResp.text().catch(() => "");
       let parsed: any;
       try { parsed = JSON.parse(errText); } catch {}
+      if (isFbAuthError(parsed) || containerResp.status === 401) {
+        return {
+          success: false,
+          errorCode: "token_expired",
+          errorMessage: "Instagram (Facebook) access token has expired or been revoked — reconnect the account.",
+          responsePayload: parsed ?? errText,
+        };
+      }
       return {
         success: false,
         errorCode: parsed?.error?.code ? String(parsed.error.code) : `http_${containerResp.status}`,
@@ -290,6 +312,14 @@ export class InstagramPublisher implements SocialPublisher {
       const errText = await publishResp.text().catch(() => "");
       let parsed: any;
       try { parsed = JSON.parse(errText); } catch {}
+      if (isFbAuthError(parsed) || publishResp.status === 401) {
+        return {
+          success: false,
+          errorCode: "token_expired",
+          errorMessage: "Instagram (Facebook) access token has expired or been revoked — reconnect the account.",
+          responsePayload: parsed ?? errText,
+        };
+      }
       return {
         success: false,
         errorCode: parsed?.error?.code ? String(parsed.error.code) : `http_${publishResp.status}`,

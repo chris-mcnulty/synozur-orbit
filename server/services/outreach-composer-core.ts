@@ -13,13 +13,19 @@ import {
   type LinkedInFormat,
   type OutreachIntent,
 } from "@shared/linkedin-outreach";
+import { BANNED_WORDS, STRUCTURAL_ANTI_PATTERNS } from "./copywriter-service";
 
 export const COMPOSER_SYSTEM_PROMPT =
   `You write 1:1 B2B sales outreach in the sender's real voice. Short, direct, ` +
   `human. Lead with the person and the ask; land on one concrete next step. No ` +
-  `hype, no AI clichés ("circle back", "touch base", "leverage", "I hope this ` +
-  `finds you well"), no urgency theater. Reference only facts you're given. The ` +
-  `draft must be ready for a human to review and send — not a template.`;
+  `hype, no urgency theater. Reference only facts you're given. The draft must ` +
+  `be ready for a human to review and send — not a template.\n\n` +
+  `Banned words and phrases — never use: ${BANNED_WORDS}; also "I hope this finds you well".\n\n` +
+  STRUCTURAL_ANTI_PATTERNS + "\n\n" +
+  `Additional patterns that kill 1:1 credibility — never write:\n` +
+  `- Fake-strong verb openers: "Excited to share", "Thrilled to connect", "Wanted to reach out"\n` +
+  `- Throat-clearing openers: "I wanted to take a moment", "I was hoping we could", "I'm reaching out because"\n` +
+  `- Generic benefit claims: "help you save time/money/resources", "drive results", "boost performance" without specifics`;
 
 export interface ComposeResource {
   label?: string | null;

@@ -133,12 +133,17 @@ function resolveSubscriptionId(conn: { defaultSubscriptionId?: string | null }):
  *   email link and can't be programmatically changed) — treated as success
  *   for our purposes (they're already opted out).
  */
-export async function pushUnsubscribe(tenantDomain: string, email: string): Promise<ConsentWriteResult> {
+export async function pushUnsubscribe(
+  tenantDomain: string,
+  email: string,
+  /** When provided, uses this specific HubSpot subscription ID instead of the tenant default. */
+  subscriptionIdOverride?: string | null,
+): Promise<ConsentWriteResult> {
   try {
     if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
-    const subscriptionId = resolveSubscriptionId(conn);
+    const subscriptionId = subscriptionIdOverride?.trim() || resolveSubscriptionId(conn);
     if (!subscriptionId) return "skipped";
 
     const { accessToken } = await getTenantAccessToken(tenantDomain);
@@ -164,12 +169,17 @@ export async function pushUnsubscribe(tenantDomain: string, email: string): Prom
  * which case this returns "blocked" and the next pre-send consent pull will
  * keep them suppressed — HubSpot stays authoritative.
  */
-export async function pushSubscribe(tenantDomain: string, email: string): Promise<ConsentWriteResult> {
+export async function pushSubscribe(
+  tenantDomain: string,
+  email: string,
+  /** When provided, uses this specific HubSpot subscription ID instead of the tenant default. */
+  subscriptionIdOverride?: string | null,
+): Promise<ConsentWriteResult> {
   try {
     if (!(await isHubspotEmailSyncEnabled(tenantDomain))) return "skipped";
     const conn = await storage.getHubspotConnection(tenantDomain);
     if (!conn || !hasHubspotEmailScopes(conn)) return "skipped";
-    const subscriptionId = resolveSubscriptionId(conn);
+    const subscriptionId = subscriptionIdOverride?.trim() || resolveSubscriptionId(conn);
     if (!subscriptionId) return "skipped";
 
     const { accessToken } = await getTenantAccessToken(tenantDomain);
