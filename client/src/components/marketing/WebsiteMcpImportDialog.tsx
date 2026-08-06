@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, AlertTriangle, FileText, CalendarDays, Mic, LayoutTemplate, BookOpen, Film, Wrench, Briefcase } from "lucide-react";
+import { Loader2, AlertTriangle, AlertCircle, FileText, CalendarDays, Mic, LayoutTemplate, BookOpen, Film, Wrench, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -180,6 +180,7 @@ export default function WebsiteMcpImportDialog({
   onImported: () => void;
 }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [kind, setKind] = useState<ContentKind | null>(null);
 
   const [selectedPostIds,    setSelectedPostIds]    = useState<Set<string>>(new Set());
@@ -201,6 +202,16 @@ export default function WebsiteMcpImportDialog({
     }
   }, [open]);
 
+  const { data: websiteStatus } = useQuery<{ connected: boolean; lastError?: string | null; lastUsedAt?: string | null }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+    enabled: open,
+    staleTime: 30_000,
+  });
+
   const { data: candidates, isLoading, error } = useQuery<Candidates>({
     queryKey: ["/api/mcp-website/candidates", kind],
     queryFn: async () => {
@@ -211,6 +222,15 @@ export default function WebsiteMcpImportDialog({
     enabled: open && kind !== null,
     staleTime: 60_000,
   });
+
+  // After the candidates query settles (success or error), invalidate the status
+  // query so the lastError banner reflects the MCP call that just ran rather than
+  // a stale cached value from before the dialog was opened.
+  useEffect(() => {
+    if (kind !== null && !isLoading) {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/website/status"] });
+    }
+  }, [kind, isLoading]);
 
   const importMutation = useMutation({
     mutationFn: async () => {
@@ -418,13 +438,38 @@ export default function WebsiteMcpImportDialog({
         {/* ── Error ───────────────────────────────────────────────────────── */}
         {kind !== null && error && (
           <>
-            <div className="mx-6 my-4 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-              {(error as Error).message}
+            <div className="mx-6 my-4 space-y-3">
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                {(error as Error).message}
+              </div>
+              {/* If the server recorded a lastError on the connection, surface it
+                  so admins know whether this is an auth, network, or tool error. */}
+              {websiteStatus?.lastError && websiteStatus.lastError !== (error as Error).message && (
+                <div className="rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <p className="font-medium mb-0.5">Connection error recorded</p>
+                    <p className="break-all">{websiteStatus.lastError}</p>
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter className="px-6 py-4 border-t">
               <Button variant="outline" size="sm" onClick={goBack}>← Back</Button>
             </DialogFooter>
           </>
+        )}
+
+        {/* ── Stored connection error (shown when load succeeds but lastError is set) ── */}
+        {kind !== null && !isLoading && !error && candidates && websiteStatus?.lastError && (
+          <div className="mx-6 mt-3 rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div>
+              <p className="font-medium mb-0.5">Recent connection error</p>
+              <p className="break-all">{websiteStatus.lastError}</p>
+              <p className="text-amber-600/70 dark:text-amber-500/70 mt-1">Some items may be missing. Go to Settings → Integrations to check the website connection.</p>
+            </div>
+          </div>
         )}
 
         {/* ── Step 2: candidate list ──────────────────────────────────────── */}

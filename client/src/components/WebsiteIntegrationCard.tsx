@@ -14,7 +14,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Globe, Loader2, CheckCircle2, AlertCircle, Plug } from "lucide-react";
+import { Globe, Loader2, CheckCircle2, AlertCircle, Plug, Clock } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
 const DEFAULT_ENDPOINT = "https://synozur-baseline.replit.app/api/mcp";
@@ -136,6 +137,24 @@ export function WebsiteIntegrationCard() {
         ) : (
           <>
             <div className="text-sm text-muted-foreground break-all">{status?.endpoint}</div>
+            {/* Last-used timestamp — always shown when connected */}
+            {status?.lastUsedAt && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="w-3 h-3 shrink-0" />
+                Last used {formatDistanceToNow(new Date(status.lastUsedAt), { addSuffix: true })}
+              </p>
+            )}
+            {/* Error banner — shown when the most recent MCP call failed */}
+            {status?.lastError && (
+              <div className="rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="space-y-0.5">
+                  <p className="font-medium">Last call failed</p>
+                  <p className="text-amber-700 dark:text-amber-400 break-all">{status.lastError}</p>
+                  <p className="text-amber-600/70 dark:text-amber-500/70 mt-1">This clears automatically on the next successful call. If the error persists, rotate the MCP key.</p>
+                </div>
+              </div>
+            )}
             <div>
               <Label className="text-xs text-muted-foreground">Default author for new drafts</Label>
               <Select
@@ -149,9 +168,6 @@ export function WebsiteIntegrationCard() {
                 </SelectContent>
               </Select>
             </div>
-            {status?.lastError && (
-              <p className="text-xs text-destructive flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Last error: {status.lastError}</p>
-            )}
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => { setEndpoint(status?.endpoint ?? DEFAULT_ENDPOINT); setEditing(true); }} data-testid="button-website-edit">Rotate key</Button>
               <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => disconnect.mutate()} disabled={disconnect.isPending} data-testid="button-website-disconnect">Disconnect</Button>
