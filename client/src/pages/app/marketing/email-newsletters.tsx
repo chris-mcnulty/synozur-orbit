@@ -78,6 +78,8 @@ interface SavedEmail {
   coachingTips?: string[];
   sourceAssetIds?: string[] | null;
   scheduledAt?: string | null;
+  sections?: { caseStudyAssetId?: string | null; eventIds?: string[]; blogAssetIds?: string[]; eventsCalendarUrl?: string | null } | null;
+  sectionsHtml?: string | null;
   createdAt: string;
   // A/B test config
   abTestEnabled?: boolean;
@@ -2359,6 +2361,29 @@ export default function EmailNewslettersPage() {
                     <Copy className="w-3.5 h-3.5" />
                     {viewingEmail?.platform === "hubspot-marketing" ? "Copy HTML" : "Copy Text"}
                   </Button>
+                  {viewingEmail?.platform === "hubspot-marketing" && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="gap-1.5 text-xs"
+                      onClick={async () => {
+                        if (!viewingEmail) return;
+                        try {
+                          const r = await fetch(`/api/email/saved/${viewingEmail.id}/export-html`, { credentials: "include" });
+                          if (!r.ok) throw new Error("Export failed");
+                          const { html } = await r.json();
+                          await navigator.clipboard.writeText(html);
+                          toast({ title: "Copied", description: "Responsive HTML (with sections + mobile styles) copied — paste into HubSpot's HTML module" });
+                        } catch {
+                          toast({ title: "Copy failed", description: "Could not build the responsive export", variant: "destructive" });
+                        }
+                      }}
+                      data-testid="button-copy-responsive-html"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy for HubSpot (responsive)
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -2451,9 +2476,9 @@ export default function EmailNewslettersPage() {
                 })()}
                 {viewingEmail.platform === "hubspot-marketing" ? (
                   <div
-                    className="border rounded bg-card text-card-foreground text-sm overflow-y-auto"
+                    className="border rounded bg-white text-black text-sm overflow-y-auto"
                     style={{ maxHeight: "65vh" }}
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingEmail.htmlBody) }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`${viewingEmail.htmlBody}${viewingEmail.sectionsHtml || ""}`) }}
                     data-testid="view-email-html"
                   />
                 ) : (
@@ -2461,12 +2486,166 @@ export default function EmailNewslettersPage() {
                     {viewingEmail.textBody || viewingEmail.htmlBody}
                   </pre>
                 )}
+                {viewingEmail.platform === "hubspot-marketing" && (
+                  <EmailSectionsPanel
+                    email={viewingEmail}
+                    onSaved={(updated) => {
+                      setViewingEmail(updated);
+                      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+                    }}
+                  />
+                )}
               </div>
             )}
           </DialogContent>
         </Dialog>
       </div>
     </AppLayout>
+  );
+}
+
+/**
+ * Structured sections editor: case study card, upcoming events, recent blog
+ * updates. Selections are rendered server-side into deterministic responsive
+ * HTML appended after the main message on send/export.
+ */
+function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (updated: SavedEmail) => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [caseStudyAssetId, setCaseStudyAssetId] = useState<string>(email.sections?.caseStudyAssetId || "none");
+  const [eventIds, setEventIds] = useState<string[]>(email.sections?.eventIds || []);
+  const [blogIds, setBlogIds] = useState<string[]>(email.sections?.blogAssetIds || []);
+  const [eventsCalendarUrl, setEventsCalendarUrl] = useState<string>(email.sections?.eventsCalendarUrl || "");
+  const seededRef = useRef(false);
+
+  const { data: options } = useQuery<{
+    events: Array<{ id: string; name: string; location?: string | null; website?: string | null; startDate?: string | null; endDate?: string | null }>;
+    recentAssets: Array<{ id: string; title: string; url?: string | null; assetType: string; assetDate?: string | null; leadImageUrl?: string | null }>;
+  }>({ queryKey: ["/api/email/section-options"], enabled: open });
+
+  // First-open defaults when nothing saved yet: pre-check all upcoming events
+  // and the last 8 posts, skipping podcast-type assets (rarely promoted).
+  useEffect(() => {
+    if (!options || seededRef.current || email.sections) return;
+    seededRef.current = true;
+    setEventIds(options.events.map(e => e.id));
+    setBlogIds(
+      options.recentAssets
+        .filter(a => !/podcast/i.test(a.assetType))
+        .slice(0, 8)
+        .map(a => a.id)
+    );
+  }, [options, email.sections]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/email/saved/${email.id}/sections`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          caseStudyAssetId: caseStudyAssetId === "none" ? null : caseStudyAssetId,
+          eventIds,
+          blogAssetIds: blogIds,
+          eventsCalendarUrl: eventsCalendarUrl.trim() || null,
+        }),
+      });
+      if (!r.ok) throw new Error("Save failed");
+      return r.json() as Promise<SavedEmail>;
+    },
+    onSuccess: (updated) => {
+      toast({ title: "Sections saved", description: "The sections will be appended after the main message on send and export." });
+      onSaved(updated);
+    },
+    onError: () => toast({ title: "Error", description: "Could not save sections", variant: "destructive" }),
+  });
+
+  const fmtEventDate = (s?: string | null, e?: string | null) => {
+    if (!s) return "";
+    const sd = new Date(s);
+    const ed = e ? new Date(e) : null;
+    if (!ed || ed.toDateString() === sd.toDateString()) return format(sd, "MMM d, yyyy");
+    return `${format(sd, "MMM d")}–${format(ed, sd.getMonth() === ed.getMonth() ? "d, yyyy" : "MMM d, yyyy")}`;
+  };
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border rounded-md">
+      <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium" data-testid="button-toggle-sections">
+        <span className="flex items-center gap-2">
+          Email sections
+          {email.sectionsHtml && <Badge variant="outline" className="text-[10px]">configured</Badge>}
+        </span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="px-3 pb-3 space-y-4">
+        <p className="text-xs text-muted-foreground">
+          Case study, upcoming events, and recent updates are rendered with a responsive layout
+          (side-by-side on desktop, stacked on mobile) and appended after the main message.
+        </p>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Case study</Label>
+          <Select value={caseStudyAssetId} onValueChange={setCaseStudyAssetId}>
+            <SelectTrigger className="h-8 text-xs" data-testid="select-section-case-study">
+              <SelectValue placeholder="No case study" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No case study</SelectItem>
+              {(options?.recentAssets ?? []).map(a => (
+                <SelectItem key={a.id} value={a.id}>{a.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Upcoming events (next 6 months)</Label>
+            <div className="max-h-44 overflow-y-auto space-y-1 border rounded p-2">
+              {(options?.events ?? []).length === 0 && <p className="text-xs text-muted-foreground">No upcoming events found.</p>}
+              {(options?.events ?? []).map(ev => (
+                <label key={ev.id} className="flex items-start gap-2 text-xs cursor-pointer" data-testid={`checkbox-section-event-${ev.id}`}>
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={eventIds.includes(ev.id)}
+                    onCheckedChange={(c) => setEventIds(prev => c ? [...prev, ev.id] : prev.filter(x => x !== ev.id))}
+                  />
+                  <span><span className="font-medium">{ev.name}</span>{" "}
+                    <span className="text-muted-foreground">{fmtEventDate(ev.startDate, ev.endDate)}{ev.location ? ` · ${ev.location}` : ""}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <Input
+              className="h-7 text-xs"
+              placeholder="Events Calendar URL (optional)"
+              value={eventsCalendarUrl}
+              onChange={(e) => setEventsCalendarUrl(e.target.value)}
+              data-testid="input-events-calendar-url"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Recent updates (blog posts)</Label>
+            <div className="max-h-56 overflow-y-auto space-y-1 border rounded p-2">
+              {(options?.recentAssets ?? []).map(a => (
+                <label key={a.id} className="flex items-start gap-2 text-xs cursor-pointer" data-testid={`checkbox-section-blog-${a.id}`}>
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={blogIds.includes(a.id)}
+                    onCheckedChange={(c) => setBlogIds(prev => c ? [...prev, a.id] : prev.filter(x => x !== a.id))}
+                  />
+                  <span className="min-w-0">{a.title} <span className="text-muted-foreground capitalize">({a.assetType.replace(/_/g, " ")})</span></span>
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">Tip: leave podcast episodes and transactional notices unchecked.</p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="button-save-sections">
+            {saveMutation.isPending ? "Saving..." : "Save sections"}
+          </Button>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

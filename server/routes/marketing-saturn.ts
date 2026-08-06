@@ -21,6 +21,8 @@ import { parsePaginationParams, buildPaginatedEnvelope, toContainsPattern } from
 import { randomUUID } from "crypto";
 import {
   contentAssets,
+  conferences,
+  tenants,
   contentAssetCategories,
   contentAssetProductTags,
   contentAssetSolutionAreas,
@@ -93,6 +95,8 @@ import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
+import { enforceMinimumFontSize, wrapResponsiveDocument } from "../services/email-campaign-sender";
+import { renderEmailSections, appendSectionsToBody, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -3984,6 +3988,11 @@ Structure your response using these exact delimiters:
       if (!hasOuterWrapper) {
         emailBody = `<table width="560" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:560px;margin:0 auto;table-layout:fixed;overflow:hidden"><tr><td>${emailBody}</td></tr></table>`;
       }
+
+      // Mobile readability: bump any inline font-size under 15px up to 16px.
+      // Inline styles defeat media queries, and the HubSpot paste path has no
+      // media queries at all, so the floor must live in the fragment itself.
+      emailBody = enforceMinimumFontSize(emailBody);
     }
 
     const coachingTipsMap: Record<string, string[]> = {
@@ -4139,6 +4148,174 @@ Structure your response using these exact delimiters:
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
     res.json(row);
+  });
+
+  // ── Email sections (case study / upcoming events / recent updates) ──────
+
+  // Options for the section pickers: upcoming events (next 6 months) and
+  // recent content assets (candidate blog posts + case studies).
+  app.get("/api/email/section-options", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    const ctx = await getRequestContext(req);
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 183 * 24 * 3600 * 1000); // ~6 months
+    const [events, recentAssets] = await Promise.all([
+      db.select({
+        id: conferences.id,
+        name: conferences.name,
+        location: conferences.location,
+        website: conferences.website,
+        startDate: conferences.startDate,
+        endDate: conferences.endDate,
+      }).from(conferences)
+        .where(and(
+          eq(conferences.tenantDomain, ctx.tenantDomain),
+          or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
+          isNotNull(conferences.startDate),
+          sql`${conferences.startDate} >= ${now}`,
+          sql`${conferences.startDate} <= ${horizon}`,
+        ))
+        .orderBy(conferences.startDate),
+      db.select({
+        id: contentAssets.id,
+        title: contentAssets.title,
+        url: contentAssets.url,
+        assetType: contentAssets.assetType,
+        assetDate: contentAssets.assetDate,
+        leadImageUrl: contentAssets.leadImageUrl,
+        websitePostSlug: contentAssets.websitePostSlug,
+      }).from(contentAssets)
+        .where(and(
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+          eq(contentAssets.status, "active"),
+        ))
+        .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
+        .limit(30),
+    ]);
+    res.json({ events, recentAssets });
+  });
+
+  // Save section selections and render the deterministic sections HTML.
+  app.put("/api/email/saved/:id/sections", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    const ctx = await getRequestContext(req);
+    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl } = req.body as {
+      caseStudyAssetId?: string | null;
+      eventIds?: string[];
+      blogAssetIds?: string[];
+      eventsCalendarUrl?: string | null;
+    };
+
+    const [email] = await db.select().from(generatedEmails)
+      .where(and(
+        eq(generatedEmails.id, req.params.id),
+        eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
+      ));
+    if (!email) return res.status(404).json({ error: "Not found" });
+
+    const wantedEventIds = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
+    const wantedBlogIds = Array.isArray(blogAssetIds) ? blogAssetIds.filter(Boolean) : [];
+
+    // Load selected rows (tenant-scoped).
+    const [caseStudyRows, eventRows, blogRows] = await Promise.all([
+      caseStudyAssetId
+        ? db.select().from(contentAssets).where(and(
+            eq(contentAssets.id, caseStudyAssetId),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+          )).limit(1)
+        : Promise.resolve([] as any[]),
+      wantedEventIds.length
+        ? db.select().from(conferences).where(and(
+            inArray(conferences.id, wantedEventIds),
+            eq(conferences.tenantDomain, ctx.tenantDomain),
+            or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
+          )).orderBy(conferences.startDate)
+        : Promise.resolve([] as any[]),
+      wantedBlogIds.length
+        ? db.select().from(contentAssets).where(and(
+            inArray(contentAssets.id, wantedBlogIds),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+          ))
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const fmtDate = (d: Date | null) => d
+      ? new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+      : "";
+    const fmtRange = (s: Date | null, e: Date | null) => {
+      if (!s) return "";
+      if (!e || new Date(e).toDateString() === new Date(s).toDateString()) return fmtDate(s);
+      const sd = new Date(s), ed = new Date(e);
+      if (sd.getMonth() === ed.getMonth() && sd.getFullYear() === ed.getFullYear()) {
+        return `${sd.toLocaleDateString("en-US", { month: "long", day: "numeric" })}-${ed.getDate()}, ${ed.getFullYear()}`;
+      }
+      return `${fmtDate(s)} – ${fmtDate(e)}`;
+    };
+
+    // Keep the order the client sent for blog posts.
+    const blogById = new Map(blogRows.map((r: any) => [r.id, r]));
+    const posts: SectionPost[] = wantedBlogIds
+      .map(id => blogById.get(id))
+      .filter(Boolean)
+      .map((r: any) => ({ title: r.title, url: r.url || null }));
+
+    const eventsData: SectionEvent[] = eventRows.map((ev: any) => ({
+      name: ev.name,
+      dateLabel: fmtRange(ev.startDate, ev.endDate),
+      location: ev.location || null,
+      website: ev.website || null,
+    }));
+
+    const cs = caseStudyRows[0] as any | undefined;
+    const [tenantRow] = await db.select({ primaryColor: tenants.primaryColor })
+      .from(tenants).where(eq(tenants.domain, ctx.tenantDomain)).limit(1);
+
+    const sectionsHtml = renderEmailSections({
+      caseStudy: cs ? {
+        title: cs.title,
+        blurb: cs.aiSummary || cs.description || cs.overview || "",
+        url: cs.url || null,
+        imageUrl: cs.leadImageUrl || null,
+      } : null,
+      events: eventsData,
+      posts,
+      eventsCalendarUrl: eventsCalendarUrl || null,
+      brandPrimary: tenantRow?.primaryColor || undefined,
+    });
+
+    const sections = {
+      caseStudyAssetId: caseStudyAssetId || null,
+      eventIds: wantedEventIds,
+      blogAssetIds: wantedBlogIds,
+      ...(eventsCalendarUrl ? { eventsCalendarUrl } : {}),
+    };
+
+    const [row] = await db.update(generatedEmails)
+      .set({ sections: sections as any, sectionsHtml: sectionsHtml || null, updatedAt: new Date() })
+      .where(eq(generatedEmails.id, email.id))
+      .returning();
+    res.json(row);
+  });
+
+  // Full responsive export (for HubSpot paste): main body + sections wrapped
+  // in the same responsive document Orbit uses for its own sends.
+  app.get("/api/email/saved/:id/export-html", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    const ctx = await getRequestContext(req);
+    const [email] = await db.select().from(generatedEmails)
+      .where(and(
+        eq(generatedEmails.id, req.params.id),
+        eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
+      ));
+    if (!email) return res.status(404).json({ error: "Not found" });
+    let body = appendSectionsToBody(email.htmlBody || "", email.sectionsHtml);
+    body = enforceMinimumFontSize(body);
+    res.json({ html: wrapResponsiveDocument(body), fragment: body });
   });
 
   app.delete("/api/email/saved/:id", async (req, res) => {

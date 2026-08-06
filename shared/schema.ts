@@ -3314,6 +3314,16 @@ export const generatedEmails = pgTable("generated_emails", {
   conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at"),
   sourceAssetIds: text("source_asset_ids").array(),
+  // Structured optional sections rendered server-side after the main message:
+  // case study card, upcoming events, recent blog updates. `sections` stores
+  // the user's selections; `sectionsHtml` is the deterministic rendered HTML
+  // appended to htmlBody at send/export time.
+  sections: jsonb("sections").$type<{
+    caseStudyAssetId?: string | null;
+    eventIds?: string[];
+    blogAssetIds?: string[];
+  }>(),
+  sectionsHtml: text("sections_html"),
   // A/B test configuration
   abTestEnabled: boolean("ab_test_enabled").notNull().default(false),
   abTestSplit: integer("ab_test_split").notNull().default(20), // % of list each variant gets; remainder is holdback

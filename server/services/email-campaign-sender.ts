@@ -40,6 +40,7 @@ import {
   type EmailSend,
 } from "@shared/schema";
 import { resolveTokens, resolveTokensForEmail } from "./email-ab-test";
+import { appendSectionsToBody } from "./email-sections-renderer";
 import { wrapOutboundLinksInText } from "./marketing-links-helpers";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
@@ -224,7 +225,20 @@ function injectFooter(html: string, unsubUrl: string, prefsUrl: string): string 
  *    the screen edge-to-edge.
  *  - Heading font sizes step down one tier to stay readable.
  */
-function wrapResponsiveDocument(html: string): string {
+/**
+ * Bump inline font sizes below 15px up to 16px so body copy is readable on
+ * mobile without pinch-zoom. Applies to AI-generated fragments whose inline
+ * styles otherwise defeat the responsive wrapper's media queries (and the
+ * HubSpot paste path, which has no media queries at all).
+ */
+export function enforceMinimumFontSize(html: string, minPx = 16): string {
+  return html.replace(/font-size:\s*(\d+)px/gi, (m, size) => {
+    const n = parseInt(size, 10);
+    return n > 0 && n < 15 ? `font-size:${minPx}px` : m;
+  });
+}
+
+export function wrapResponsiveDocument(html: string): string {
   // Already a full document — just ensure a viewport meta tag is present.
   if (/<!DOCTYPE/i.test(html)) {
     if (!/<meta[^>]*viewport/i.test(html)) {
@@ -1056,6 +1070,14 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       effectiveHtmlBody = bVariant.htmlBody?.trim() ? bVariant.htmlBody : email.htmlBody;
       effectiveTextBody = bVariant.textBody?.trim() ? bVariant.textBody : (email.textBody ?? null);
     }
+  }
+
+  // Append the deterministic sections block (case study / events / recent
+  // updates), if configured, after the main message — and enforce a readable
+  // minimum font size across the whole body for mobile clients.
+  if (effectiveHtmlBody) {
+    effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, (email as any).sectionsHtml);
+    effectiveHtmlBody = enforceMinimumFontSize(effectiveHtmlBody);
   }
 
   // ── Correct recipientCount to reflect actual cohort size ─────────────────
