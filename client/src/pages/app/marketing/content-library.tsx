@@ -263,7 +263,8 @@ export default function ContentLibraryPage() {
     enabled: isAllowed,
   });
 
-  interface BrandAsset { id: string; name: string; fileUrl: string | null; url: string | null; fileType: string | null; }
+  interface BrandAsset { id: string; name: string; fileUrl: string | null; url: string | null; fileType: string | null; categoryId?: string | null; }
+  interface BrandAssetCategory { id: string; name: string; }
   const { data: brandAssets = [] } = useQuery<BrandAsset[]>({
     queryKey: ["/api/brand-assets"],
     queryFn: async () => {
@@ -272,9 +273,21 @@ export default function ContentLibraryPage() {
     },
     enabled: isAllowed && showBrandImagePicker,
   });
+  const { data: brandAssetCategories = [] } = useQuery<BrandAssetCategory[]>({
+    queryKey: ["/api/brand-asset-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-asset-categories", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && showBrandImagePicker,
+  });
+  const [brandPickerCategory, setBrandPickerCategory] = useState<string>("all");
   const brandImages = brandAssets.filter(ba => {
     const url = ba.fileUrl || ba.url || "";
-    return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || ba.fileType?.startsWith("image/");
+    const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || !!ba.fileType?.startsWith("image/");
+    if (!isImage) return false;
+    if (brandPickerCategory !== "all" && ba.categoryId !== brandPickerCategory) return false;
+    return true;
   });
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -1981,7 +1994,7 @@ export default function ContentLibraryPage() {
         />
 
         {/* Edit Asset Dialog */}
-        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) { setDetailAsset(null); setShowBrandImagePicker(false); } }}>
+        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) { setDetailAsset(null); setShowBrandImagePicker(false); setBrandPickerCategory("all"); } }}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             {detailAsset && (
               <>
@@ -2042,7 +2055,36 @@ export default function ContentLibraryPage() {
                     </div>
                     {showBrandImagePicker && (
                       <div className="border rounded-lg p-3 mt-2 bg-muted/30 space-y-2">
-                        <Label className="text-xs text-muted-foreground">Select an image from Visual/Brand Assets</Label>
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-muted-foreground">Select an image from Visual/Brand Assets</Label>
+                          {brandAssetCategories.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground">{brandImages.length} image{brandImages.length !== 1 ? "s" : ""}</span>
+                          )}
+                        </div>
+                        {/* Category filter pills */}
+                        {brandAssetCategories.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setBrandPickerCategory("all")}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${brandPickerCategory === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                              data-testid="pill-brand-picker-all"
+                            >
+                              All
+                            </button>
+                            {brandAssetCategories.map(cat => (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => setBrandPickerCategory(brandPickerCategory === cat.id ? "all" : cat.id)}
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${brandPickerCategory === cat.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                                data-testid={`pill-brand-picker-${cat.id}`}
+                              >
+                                {cat.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         {brandImages.length > 0 ? (
                           <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
                             {brandImages.map(ba => {
@@ -2067,7 +2109,9 @@ export default function ContentLibraryPage() {
                             })}
                           </div>
                         ) : (
-                          <p className="text-xs text-muted-foreground">No images found in Visual/Brand Assets.</p>
+                          <p className="text-xs text-muted-foreground">
+                            {brandPickerCategory !== "all" ? "No images in this category." : "No images found in Visual/Brand Assets."}
+                          </p>
                         )}
                       </div>
                     )}
