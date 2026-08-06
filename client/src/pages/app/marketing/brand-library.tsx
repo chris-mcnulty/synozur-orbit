@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import BrandAssetBulkUploadDialog from "@/components/marketing/BrandAssetBulkUploadDialog";
 import { OptimizedThumbnail } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -137,6 +138,7 @@ export default function BrandLibraryPage() {
   const [statusTab, setStatusTab] = useState<string>("active");
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const importFileRef = useRef<HTMLInputElement>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -828,6 +830,9 @@ export default function BrandLibraryPage() {
               </Button>
               <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-brand-categories">
                 <Settings className="w-4 h-4 mr-1" /> Categories
+              </Button>
+              <Button variant="outline" onClick={() => setBulkUploadOpen(true)} data-testid="button-bulk-upload-brand">
+                <Upload className="w-4 h-4 mr-1" /> Upload Files
               </Button>
               <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
                 <DialogTrigger asChild>
@@ -1551,6 +1556,12 @@ export default function BrandLibraryPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <BrandAssetBulkUploadDialog
+        open={bulkUploadOpen}
+        onOpenChange={setBulkUploadOpen}
+        categories={categories}
+      />
     </AppLayout>
   );
 }
