@@ -919,6 +919,211 @@ export function registerSaturnMarketingRoutes(app: Express) {
     res.json({ added, updated, skipped, total: posts.length });
   });
 
+  // ── Selective MCP import — candidates + import ────────────────────────────
+  // These endpoints power the "Import from website" dialog in the Content
+  // Library. Unlike the bulk import above, they let users cherry-pick which
+  // posts/events to bring in and choose the asset type (blog_post vs
+  // case_study) per item.
+
+  app.get("/api/mcp-website/candidates", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const conn = await websiteMcp.getWebsiteConnection(ctx.tenantDomain);
+    if (!conn || !conn.enabled) {
+      return res.status(400).json({ error: "Website integration is not connected. Configure it in Settings → Integrations." });
+    }
+    const siteUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "");
+
+    const normalizeUrl = (u: string) => {
+      try {
+        const p = new URL(u.toLowerCase());
+        return p.origin + p.pathname.replace(/\/+$/, "");
+      } catch { return u.toLowerCase().replace(/\/+$/, ""); }
+    };
+
+    // Fetch website content and existing Orbit records in parallel.
+    const [posts, events, existingAssets, existingConferences] = await Promise.all([
+      websiteMcp.searchPublishedPosts(ctx.tenantDomain).catch(() => [] as websiteMcp.WebsitePostSummary[]),
+      websiteMcp.listEvents(ctx.tenantDomain, 200).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
+      db.select({
+        id: contentAssets.id,
+        url: contentAssets.url,
+        websitePostId: contentAssets.websitePostId,
+        assetType: contentAssets.assetType,
+      }).from(contentAssets).where(and(
+        eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        eq(contentAssets.marketId, ctx.marketId),
+      )),
+      db.select({
+        id: conferences.id,
+        name: conferences.name,
+        startDate: conferences.startDate,
+      }).from(conferences).where(and(
+        eq(conferences.tenantDomain, ctx.tenantDomain),
+        or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
+      )),
+    ]);
+
+    const byPostId = new Map(existingAssets.filter(a => a.websitePostId).map(a => [a.websitePostId!, a]));
+    const byUrl    = new Map(existingAssets.filter(a => a.url).map(a => [normalizeUrl(a.url!), a]));
+    const confByKey = new Map(existingConferences.map(c => [c.name.trim().toLowerCase(), c]));
+
+    const annotatedPosts = posts.map(post => {
+      const postUrl = `${siteUrl}/insights/${post.slug}`;
+      const existing = byPostId.get(post.id) ?? byUrl.get(normalizeUrl(postUrl));
+      return {
+        mcpId: post.id,
+        title: post.title,
+        slug: post.slug,
+        publishedAt: post.publishedAt ?? null,
+        excerpt: post.excerpt ?? null,
+        leadImageUrl: post.leadImageUrl ?? null,
+        url: postUrl,
+        existing: !!existing,
+        existingId: existing?.id ?? null,
+        existingAssetType: existing?.assetType ?? null,
+      };
+    });
+
+    const annotatedEvents = events.map(ev => {
+      const existing = confByKey.get(ev.name.trim().toLowerCase());
+      return {
+        mcpId: ev.id,
+        name: ev.name,
+        startDate: ev.startDate ?? null,
+        endDate: ev.endDate ?? null,
+        location: ev.location ?? null,
+        url: ev.url ?? null,
+        description: ev.description ?? null,
+        existing: !!existing,
+        existingConferenceId: existing?.id ?? null,
+      };
+    });
+
+    res.json({ posts: annotatedPosts, events: annotatedEvents, siteUrl });
+  });
+
+  app.post("/api/mcp-website/import", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const conn = await websiteMcp.getWebsiteConnection(ctx.tenantDomain);
+    if (!conn || !conn.enabled) {
+      return res.status(400).json({ error: "Website integration is not connected." });
+    }
+    const siteUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "");
+
+    const { posts: postsToImport = [], events: eventsToImport = [] } = req.body as {
+      posts: Array<{
+        mcpId: string;
+        assetType: string;
+        title: string;
+        slug: string;
+        excerpt?: string;
+        publishedAt?: string;
+        leadImageUrl?: string;
+        existingId?: string | null;
+      }>;
+      events: Array<{
+        mcpId: string;
+        name: string;
+        startDate?: string;
+        endDate?: string;
+        location?: string;
+        url?: string;
+        description?: string;
+        existingConferenceId?: string | null;
+      }>;
+    };
+
+    let postsAdded = 0, postsUpdated = 0, eventsAdded = 0, eventsUpdated = 0;
+
+    for (const post of postsToImport) {
+      const postUrl = `${siteUrl}/insights/${post.slug}`;
+      const assetDate = post.publishedAt ? new Date(post.publishedAt) : null;
+      const safeType = (post.assetType === "case_study" ? "case_study" : "blog_post") as ContentAssetType;
+
+      if (post.existingId) {
+        await db.update(contentAssets).set({
+          title: post.title,
+          ...(post.excerpt ? { description: post.excerpt } : {}),
+          ...(post.leadImageUrl ? { leadImageUrl: post.leadImageUrl } : {}),
+          ...(assetDate ? { assetDate } : {}),
+          assetType: safeType,
+          websitePostId: post.mcpId,
+          websitePostSlug: post.slug,
+          websitePostStatus: "published",
+          url: postUrl,
+        }).where(and(
+          eq(contentAssets.id, post.existingId),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        ));
+        postsUpdated++;
+      } else {
+        await db.insert(contentAssets).values({
+          id: randomUUID(),
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          title: post.title,
+          description: post.excerpt ?? null,
+          url: postUrl,
+          assetType: safeType,
+          leadImageUrl: post.leadImageUrl ?? null,
+          extractionStatus: "none",
+          websitePostId: post.mcpId,
+          websitePostSlug: post.slug,
+          websitePostStatus: "published",
+          assetDate,
+          status: "active",
+          createdBy: ctx.userId,
+        } as any);
+        postsAdded++;
+      }
+    }
+
+    for (const ev of eventsToImport) {
+      const startDate = ev.startDate ? new Date(ev.startDate) : null;
+      const endDate   = ev.endDate   ? new Date(ev.endDate)   : null;
+
+      if (ev.existingConferenceId) {
+        await db.update(conferences).set({
+          name: ev.name,
+          ...(ev.location    ? { location: ev.location }       : {}),
+          ...(ev.url         ? { website: ev.url }             : {}),
+          ...(startDate      ? { startDate }                   : {}),
+          ...(endDate        ? { endDate }                     : {}),
+          ...(ev.description ? { description: ev.description } : {}),
+          updatedAt: new Date(),
+        }).where(and(
+          eq(conferences.id, ev.existingConferenceId),
+          eq(conferences.tenantDomain, ctx.tenantDomain),
+        ));
+        eventsUpdated++;
+      } else {
+        await db.insert(conferences).values({
+          id: randomUUID(),
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          name: ev.name,
+          description: ev.description ?? null,
+          location: ev.location ?? null,
+          website: ev.url ?? null,
+          startDate,
+          endDate,
+          postsPerDay: 2,
+          anchorPostCount: 2,
+          variantsPerPost: 3,
+          includeSaturday: false,
+          includeSunday: false,
+          status: "active",
+          createdBy: ctx.userId,
+        } as any);
+        eventsAdded++;
+      }
+    }
+
+    res.json({ postsAdded, postsUpdated, eventsAdded, eventsUpdated });
+  });
+
   app.post("/api/content-assets/generate-summaries", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     if (!await guardManualAction(req, res, "aiResearch")) return;

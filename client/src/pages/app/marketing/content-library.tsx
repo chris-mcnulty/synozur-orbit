@@ -36,6 +36,7 @@ import { exportContentAssetsToCSV, parseCSV } from "@/lib/csv-export";
 import { ContentTableSkeleton, ContentCardGridSkeleton } from "@/components/ui/skeletons";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
 import { WebsitePublishDialog } from "@/components/marketing/WebsitePublishDialog";
+import WebsiteMcpImportDialog from "@/components/marketing/WebsiteMcpImportDialog";
 import { itemDeepLinkHref } from "@/lib/marketing-deep-links";
 
 interface ContentAsset {
@@ -275,27 +276,7 @@ export default function ContentLibraryPage() {
     return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || ba.fileType?.startsWith("image/");
   });
 
-  const [isSyncingWebsite, setIsSyncingWebsite] = useState(false);
-  const syncFromWebsite = async () => {
-    setIsSyncingWebsite(true);
-    try {
-      const r = await fetch("/api/content-assets/import-from-website", {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || "Sync failed");
-      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
-      toast({
-        title: "Website sync complete",
-        description: `${data.added} added · ${data.updated} updated · ${data.total} posts found`,
-      });
-    } catch (err: any) {
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
-    } finally {
-      setIsSyncingWebsite(false);
-    }
-  };
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const { data: suggestions = [] } = useQuery<any[]>({
     queryKey: ["/api/suggested-content-assets"],
@@ -1141,13 +1122,10 @@ export default function ContentLibraryPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={syncFromWebsite}
-                  disabled={isSyncingWebsite}
-                  data-testid="button-sync-from-website"
+                  onClick={() => setImportDialogOpen(true)}
+                  data-testid="button-import-from-website"
                 >
-                  {isSyncingWebsite
-                    ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Syncing…</>
-                    : <><Globe className="w-4 h-4 mr-1" /> Sync from website</>}
+                  <Globe className="w-4 h-4 mr-1" /> Import from website
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-content">
@@ -2428,6 +2406,14 @@ export default function ContentLibraryPage() {
         </Dialog>
 
         <WebsitePublishDialog asset={detailAsset} open={websitePublishOpen} onOpenChange={setWebsitePublishOpen} />
+        <WebsiteMcpImportDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          onImported={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/conferences"] });
+          }}
+        />
 
         {/* Manage Categories Dialog */}
         <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>
