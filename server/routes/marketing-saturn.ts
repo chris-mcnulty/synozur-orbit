@@ -4821,11 +4821,12 @@ Structure your response using these exact delimiters:
   app.put("/api/email/saved/:id/sections", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl } = req.body as {
+    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, generalInfo } = req.body as {
       caseStudyAssetId?: string | null;
       eventIds?: string[];
       blogAssetIds?: string[];
       eventsCalendarUrl?: string | null;
+      generalInfo?: { senderSignoff?: string | null; senderName?: string | null; senderTitle?: string | null; aboutTitle?: string | null; aboutText?: string | null; aboutImageUrl?: string | null } | null;
     };
 
     const [email] = await db.select().from(generatedEmails)
@@ -4907,6 +4908,7 @@ Structure your response using these exact delimiters:
       events: eventsData,
       posts,
       eventsCalendarUrl: eventsCalendarUrl || null,
+      generalInfo: generalInfo || null,
       brandPrimary: tenantRow?.primaryColor || undefined,
     });
 
@@ -4915,6 +4917,7 @@ Structure your response using these exact delimiters:
       eventIds: wantedEventIds,
       blogAssetIds: wantedBlogIds,
       ...(eventsCalendarUrl ? { eventsCalendarUrl } : {}),
+      ...(generalInfo ? { generalInfo } : {}),
     };
 
     const [row] = await db.update(generatedEmails)

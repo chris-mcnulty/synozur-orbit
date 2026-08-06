@@ -78,7 +78,20 @@ interface SavedEmail {
   coachingTips?: string[];
   sourceAssetIds?: string[] | null;
   scheduledAt?: string | null;
-  sections?: { caseStudyAssetId?: string | null; eventIds?: string[]; blogAssetIds?: string[]; eventsCalendarUrl?: string | null } | null;
+  sections?: {
+    caseStudyAssetId?: string | null;
+    eventIds?: string[];
+    blogAssetIds?: string[];
+    eventsCalendarUrl?: string | null;
+    generalInfo?: {
+      senderSignoff?: string | null;
+      senderName?: string | null;
+      senderTitle?: string | null;
+      aboutTitle?: string | null;
+      aboutText?: string | null;
+      aboutImageUrl?: string | null;
+    } | null;
+  } | null;
   sectionsHtml?: string | null;
   createdAt: string;
   // A/B test config
@@ -2534,14 +2547,22 @@ export default function EmailNewslettersPage() {
  */
 function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (updated: SavedEmail) => void }) {
   const { toast } = useToast();
-  // Start expanded so users see it immediately — especially after the
-  // auto-open-in-edit flow triggered on first save.
   const [open, setOpen] = useState(!email.sections);
   const [caseStudyAssetId, setCaseStudyAssetId] = useState<string>(email.sections?.caseStudyAssetId || "none");
   const [eventIds, setEventIds] = useState<string[]>(email.sections?.eventIds || []);
   const [blogIds, setBlogIds] = useState<string[]>(email.sections?.blogAssetIds || []);
   const [eventsCalendarUrl, setEventsCalendarUrl] = useState<string>(email.sections?.eventsCalendarUrl || "");
+  // General information (rendered below the three content sections)
+  const savedGI = email.sections?.generalInfo;
+  const [giSignoff, setGiSignoff] = useState<string>(savedGI?.senderSignoff ?? "Best,");
+  const [giName, setGiName] = useState<string>(savedGI?.senderName ?? "");
+  const [giTitle, setGiTitle] = useState<string>(savedGI?.senderTitle ?? "");
+  const [giAboutTitle, setGiAboutTitle] = useState<string>(savedGI?.aboutTitle ?? "");
+  const [giAboutText, setGiAboutText] = useState<string>(savedGI?.aboutText ?? "");
+  const [giAboutImage, setGiAboutImage] = useState<string>(savedGI?.aboutImageUrl ?? "");
+  const [showGiImagePicker, setShowGiImagePicker] = useState(false);
   const seededRef = useRef(false);
+  const giSeededRef = useRef(!!savedGI);
 
   const { data: options } = useQuery<{
     events: Array<{ id: string; name: string; location?: string | null; website?: string | null; startDate?: string | null; endDate?: string | null }>;
@@ -2549,14 +2570,55 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
     blogPosts: Array<{ id: string; title: string; url?: string | null; assetType: string; assetDate?: string | null; leadImageUrl?: string | null }>;
   }>({ queryKey: ["/api/email/section-options"], enabled: open });
 
-  // First-open defaults when nothing saved yet: pre-check all upcoming events
-  // and all url-backed blog posts.
+  const { data: senderIdentities = [] } = useQuery<Array<{ id: string; name: string; email: string; isDefault: boolean }>>({
+    queryKey: ["/api/email-sender-identities"],
+    enabled: open,
+  });
+
+  // Brand assets for the About image picker
+  const { data: giBA = [] } = useQuery<Array<{ id: string; name: string; fileUrl: string | null; url: string | null; fileType: string | null }>>({
+    queryKey: ["/api/brand-assets"],
+    enabled: open && showGiImagePicker,
+  });
+  const GI_IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+  const giImages = giBA.filter(ba => {
+    const url = ba.fileUrl || ba.url || "";
+    const ft = (ba.fileType ?? "").toLowerCase();
+    const urlExt = (() => {
+      const path = url.split("?")[0];
+      const seg = path.split("/").find(s => /\.[a-z]{2,5}($|\/)/i.test(s)) ?? "";
+      return seg.split(".").pop()?.toLowerCase() ?? "";
+    })();
+    return ft.startsWith("image/") || ft === "image" || GI_IMAGE_EXTS.has(ft) || GI_IMAGE_EXTS.has(urlExt);
+  });
+
+  // First-open defaults: pre-check all upcoming events + url-backed posts
   useEffect(() => {
     if (!options || seededRef.current || email.sections) return;
     seededRef.current = true;
     setEventIds(options.events.map(e => e.id));
     setBlogIds(options.blogPosts.map(p => p.id));
   }, [options, email.sections]);
+
+  // Pre-populate general info from default sender identity when first opened
+  useEffect(() => {
+    if (giSeededRef.current || !senderIdentities.length || giName) return;
+    const def = senderIdentities.find(s => s.isDefault) ?? senderIdentities[0];
+    if (def) { setGiName(def.name); giSeededRef.current = true; }
+  }, [senderIdentities, giName]);
+
+  const buildGeneralInfo = () => {
+    const hasAny = giSignoff.trim() || giName.trim() || giTitle.trim() || giAboutTitle.trim() || giAboutText.trim() || giAboutImage.trim();
+    if (!hasAny) return null;
+    return {
+      senderSignoff: giSignoff.trim() || null,
+      senderName: giName.trim() || null,
+      senderTitle: giTitle.trim() || null,
+      aboutTitle: giAboutTitle.trim() || null,
+      aboutText: giAboutText.trim() || null,
+      aboutImageUrl: giAboutImage.trim() || null,
+    };
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -2569,6 +2631,7 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
           eventIds,
           blogAssetIds: blogIds,
           eventsCalendarUrl: eventsCalendarUrl.trim() || null,
+          generalInfo: buildGeneralInfo(),
         }),
       });
       if (!r.ok) throw new Error("Save failed");
@@ -2601,10 +2664,13 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
       <CollapsibleContent className="px-3 pb-3 space-y-4">
         <p className="text-xs text-muted-foreground">
           Case study, upcoming events, and recent updates are rendered with a responsive layout
-          (side-by-side on desktop, stacked on mobile) and appended after the main message.
+          and appended after the main message. General information (sign-off + About block)
+          appears last, below the three content sections.
         </p>
+
+        {/* ── 1. Case study ─────────────────────────────────────────── */}
         <div className="space-y-1.5">
-          <Label className="text-xs">Case study</Label>
+          <Label className="text-xs font-semibold">1 · Case study</Label>
           {options && (options.caseStudies ?? []).length === 0 ? (
             <p className="text-xs text-muted-foreground border rounded p-2">
               No case studies found in your digital asset library. Add one in{" "}
@@ -2626,9 +2692,11 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             </Select>
           )}
         </div>
+
+        {/* ── 2 & 3. Events + Blog posts ───────────────────────────── */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label className="text-xs">Upcoming events</Label>
+            <Label className="text-xs font-semibold">2 · Upcoming events</Label>
             <div className="max-h-44 overflow-y-auto space-y-1 border rounded p-2">
               {(options?.events ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -2667,7 +2735,7 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Recent blog posts</Label>
+            <Label className="text-xs font-semibold">3 · Recent blog posts</Label>
             <div className="max-h-56 overflow-y-auto space-y-1 border rounded p-2">
               {options && (options.blogPosts ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -2691,6 +2759,68 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             </p>
           </div>
         </div>
+
+        {/* ── 4. General information (sign-off + About) ────────────── */}
+        <div className="space-y-3 border-t pt-3">
+          <div>
+            <Label className="text-xs font-semibold">4 · General information</Label>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Rendered below the three sections above. Pre-filled from your default sender identity — edit as needed per email.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">Greeting</Label>
+              <Input className="h-7 text-xs" placeholder="Best," value={giSignoff} onChange={e => setGiSignoff(e.target.value)} data-testid="input-gi-signoff" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">Sender name</Label>
+              <Input className="h-7 text-xs" placeholder="Chris McNulty" value={giName} onChange={e => setGiName(e.target.value)} data-testid="input-gi-name" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">Title / role</Label>
+              <Input className="h-7 text-xs" placeholder="CTO, Synozur" value={giTitle} onChange={e => setGiTitle(e.target.value)} data-testid="input-gi-title" />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">About section heading</Label>
+              <Input className="h-7 text-xs" placeholder="About Synozur" value={giAboutTitle} onChange={e => setGiAboutTitle(e.target.value)} data-testid="input-gi-about-title" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground">About image</Label>
+              <div className="flex gap-1.5">
+                <Input className="h-7 text-xs flex-1 min-w-0" placeholder="Paste image URL or pick below…" value={giAboutImage} onChange={e => setGiAboutImage(e.target.value)} data-testid="input-gi-about-image" />
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 shrink-0" onClick={() => setShowGiImagePicker(v => !v)}>
+                  <Library className="w-3 h-3" />
+                </Button>
+              </div>
+              {showGiImagePicker && (
+                <div className="border rounded p-2 space-y-1.5 bg-muted/30 mt-1">
+                  {giImages.length === 0
+                    ? <p className="text-xs text-muted-foreground">No images in Visual/Brand Assets.</p>
+                    : <div className="grid grid-cols-4 gap-1.5 max-h-32 overflow-y-auto">
+                        {giImages.map(ba => {
+                          const imgUrl = ba.fileUrl || ba.url || "";
+                          return (
+                            <button key={ba.id} type="button" className="relative rounded border overflow-hidden aspect-square hover:ring-2 ring-primary transition-all bg-card"
+                              onClick={() => { setGiAboutImage(imgUrl); setShowGiImagePicker(false); }}>
+                              <img src={imgUrl} alt={ba.name} className="w-full h-full object-cover" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                  }
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">About description</Label>
+            <Textarea className="text-xs min-h-[72px] resize-none" placeholder="Short company description that appears below the About heading…" value={giAboutText} onChange={e => setGiAboutText(e.target.value)} data-testid="input-gi-about-text" />
+          </div>
+        </div>
+
         <div className="flex justify-end">
           <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="button-save-sections">
             {saveMutation.isPending ? "Saving..." : "Save sections"}

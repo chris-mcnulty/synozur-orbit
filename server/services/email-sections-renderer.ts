@@ -20,6 +20,15 @@ import { db } from "../db";
 import { conferences, contentAssets, tenants } from "@shared/schema";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 
+export interface SectionGeneralInfo {
+  senderSignoff?: string | null;   // e.g. "Best,"
+  senderName?: string | null;      // e.g. "Chris McNulty"
+  senderTitle?: string | null;     // e.g. "CTO, Synozur"
+  aboutTitle?: string | null;      // e.g. "About Synozur"
+  aboutText?: string | null;
+  aboutImageUrl?: string | null;
+}
+
 export interface SectionCaseStudy {
   title: string;
   blurb: string;        // 2-4 sentence summary; plain text (will be escaped)
@@ -45,6 +54,7 @@ export interface RenderSectionsInput {
   events?: SectionEvent[];
   posts?: SectionPost[];
   eventsCalendarUrl?: string | null;
+  generalInfo?: SectionGeneralInfo | null;
   brandPrimary?: string;   // link/heading accent
 }
 
@@ -173,12 +183,61 @@ export function appendSectionsToBody(body: string, sectionsHtml: string | null |
   return `${body}\n${sectionsHtml}`;
 }
 
+/** General info block: sign-off + About company. Rendered last, below the content sections. */
+function renderGeneralInfo(g: SectionGeneralInfo): string {
+  const hasSignoff = g.senderName || g.senderTitle;
+  const hasAbout = g.aboutTitle || g.aboutText;
+  if (!hasSignoff && !hasAbout) return "";
+
+  const signoffHtml = hasSignoff ? `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;">
+  <tr><td style="padding:24px 16px 8px 16px;">
+    ${g.senderSignoff ? `<p style="margin:0 0 6px 0;${BODY_TEXT}">${esc(g.senderSignoff)}</p>` : ""}
+    ${g.senderName ? `<p style="margin:0 0 2px 0;${BODY_TEXT}font-weight:bold;">${esc(g.senderName)}</p>` : ""}
+    ${g.senderTitle ? `<p style="margin:0;${BODY_TEXT}color:#555555;">${esc(g.senderTitle)}</p>` : ""}
+  </td></tr>
+</table>` : "";
+
+  if (!hasAbout) return signoffHtml;
+
+  const img = g.aboutImageUrl
+    ? `<div style="display:inline-block;width:100%;max-width:220px;vertical-align:top;">
+        <img src="${esc(g.aboutImageUrl)}" alt="${esc(g.aboutTitle ?? "")}" width="220" style="width:100%;max-width:220px;height:auto;display:block;border-radius:6px;border:0;">
+      </div><!--
+      -->`
+    : "";
+  const textMax = g.aboutImageUrl ? 300 : 560;
+  const msoOpen = g.aboutImageUrl
+    ? `<!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"><tr><td width="220" valign="top"><![endif]-->`
+    : "";
+  const msoMid = g.aboutImageUrl ? `<!--[if mso]></td><td width="20">&nbsp;</td><td width="300" valign="top"><![endif]-->` : "";
+  const msoClose = g.aboutImageUrl ? `<!--[if mso]></td></tr></table><![endif]-->` : "";
+
+  const aboutHtml = `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;">
+  <tr><td style="padding:${hasSignoff ? "0" : "24px"} 16px 24px 16px;border-top:1px solid #e5e5e5;">
+    <div style="padding-top:24px;font-size:0;text-align:left;">
+      ${msoOpen}${img}${msoMid}<div style="display:inline-block;width:100%;max-width:${textMax}px;vertical-align:top;">
+        <div style="${BODY_TEXT}${g.aboutImageUrl ? "padding:8px 0 0 0;" : ""}">
+          ${g.aboutTitle ? `<p style="margin:0 0 10px 0;${BODY_TEXT}font-weight:bold;">${esc(g.aboutTitle)}</p>` : ""}
+          ${g.aboutText ? `<p style="margin:0;${BODY_TEXT}">${esc(g.aboutText)}</p>` : ""}
+        </div>
+      </div>${msoClose}
+    </div>
+  </td></tr>
+</table>`;
+
+  return signoffHtml + aboutHtml;
+}
+
 export function renderEmailSections(input: RenderSectionsInput): string {
   const brand = input.brandPrimary || "#7C3AED";
   const parts: string[] = [];
   if (input.caseStudy) parts.push(renderCaseStudy(input.caseStudy, brand));
   const twoCol = renderTwoColumn(input.events ?? [], input.posts ?? [], input.eventsCalendarUrl, brand);
   if (twoCol) parts.push(twoCol);
+  const genInfo = renderGeneralInfo(input.generalInfo ?? {});
+  if (genInfo) parts.push(genInfo);
   if (!parts.length) return "";
   return `\n<!-- orbit:sections:start -->\n${parts.join("\n")}\n<!-- orbit:sections:end -->\n`;
 }
@@ -189,6 +248,7 @@ export interface SectionsConfig {
   eventIds?: string[];
   blogAssetIds?: string[];
   eventsCalendarUrl?: string | null;
+  generalInfo?: SectionGeneralInfo | null;
 }
 
 /**
@@ -206,7 +266,7 @@ export async function reRenderSectionsHtml(
 ): Promise<string | null> {
   if (!sections) return null;
 
-  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl } = sections;
+  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, generalInfo } = sections;
   const wantedEventIds = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
   const wantedBlogIds = Array.isArray(blogAssetIds) ? blogAssetIds.filter(Boolean) : [];
 
@@ -287,6 +347,7 @@ export async function reRenderSectionsHtml(
     events: eventsData,
     posts,
     eventsCalendarUrl: eventsCalendarUrl || null,
+    generalInfo: generalInfo || null,
     brandPrimary: tenantRows[0]?.primaryColor || undefined,
   });
 
