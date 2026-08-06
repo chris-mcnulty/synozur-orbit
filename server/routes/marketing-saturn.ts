@@ -965,16 +965,30 @@ export function registerSaturnMarketingRoutes(app: Express) {
     };
 
     // kind param lets the dialog fetch only what it needs, cutting MCP round-trips.
-    // Values: posts | events | episodes | landing_pages | all (default)
+    // Post sub-types (blog_posts, case_studies, whitepapers, videos, workshops)
+    // all call search_posts but filter results by the `kind` field returned by the website.
+    // Values: blog_posts | case_studies | whitepapers | videos | workshops |
+    //         events | episodes | landing_pages | all (legacy: both | posts)
     const kindParam = (req.query.kind as string | undefined) ?? "all";
-    const wantPosts   = kindParam === "posts"   || kindParam === "all";
-    const wantEvents  = kindParam === "events"  || kindParam === "all";
-    const wantEpisodes = kindParam === "episodes" || kindParam === "all";
+
+    // Which website `kind` value corresponds to each picker card.
+    const POST_KIND_FILTER: Record<string, string> = {
+      blog_posts:   "post",
+      case_studies: "case_study",
+      whitepapers:  "whitepaper",
+      videos:       "video",
+      workshops:    "workshop",
+    };
+    const isPostSubtype = kindParam in POST_KIND_FILTER;
+    const postKindFilter = POST_KIND_FILTER[kindParam] ?? null; // null = no filter (fetch all)
+
+    const wantEvents   = kindParam === "events"        || kindParam === "all";
+    const wantEpisodes = kindParam === "episodes"      || kindParam === "all";
     const wantLanding  = kindParam === "landing_pages" || kindParam === "all";
-    // "both" is the legacy value before episodes/landing_pages were added
+    // Legacy values + "all" still fetch posts
     const wantBoth = kindParam === "both";
-    const effectivePosts   = wantPosts   || wantBoth;
-    const effectiveEvents  = wantEvents  || wantBoth;
+    const effectivePosts  = isPostSubtype || kindParam === "posts" || kindParam === "all" || wantBoth;
+    const effectiveEvents = wantEvents || wantBoth;
 
     // Fetch website content and existing Orbit records in parallel.
     const [posts, events, episodes, landingPages, existingAssets, existingConferences] = await Promise.all([
@@ -1017,7 +1031,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const byUrl    = new Map(existingAssets.filter(a => a.url).map(a => [normalizeUrl(a.url!), a]));
     const confByKey = new Map(existingConferences.map(c => [c.name.trim().toLowerCase(), c]));
 
-    const annotatedPosts = posts.map(post => {
+    // Filter posts to the requested sub-type when a specific kind was chosen.
+    // postKindFilter === null means "all posts" (legacy / all mode).
+    const filteredPosts = postKindFilter
+      ? posts.filter(p => (p.kind ?? "post") === postKindFilter)
+      : posts;
+
+    const annotatedPosts = filteredPosts.map(post => {
       // Prefer the explicit `url` the website returns; fall back to the conventional path.
       const postUrl = (post as any).url || `${siteUrl}/insights/${post.slug}`;
       const existing = byPostId.get(post.id) ?? byUrl.get(normalizeUrl(postUrl));
@@ -1027,7 +1047,6 @@ export function registerSaturnMarketingRoutes(app: Express) {
         slug: post.slug,
         publishedAt: post.publishedAt ?? null,
         excerpt: post.excerpt ?? null,
-        // Website returns heroImageUrl (spec); fallback to ogImageUrl if absent.
         heroImageUrl: post.heroImageUrl ?? post.ogImageUrl ?? null,
         url: postUrl,
         suggestedAssetType: kindToAssetType(post.kind),

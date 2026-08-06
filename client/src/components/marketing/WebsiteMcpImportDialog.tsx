@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, AlertTriangle, FileText, CalendarDays, Mic, LayoutTemplate } from "lucide-react";
+import { Loader2, AlertTriangle, FileText, CalendarDays, Mic, LayoutTemplate, BookOpen, Film, Wrench, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ContentKind = "posts" | "events" | "episodes" | "landing_pages";
+type ContentKind = "blog_posts" | "case_studies" | "whitepapers" | "videos" | "workshops" | "events" | "episodes" | "landing_pages";
 
 export interface PostCandidate {
   mcpId: string;
@@ -114,10 +114,14 @@ function StatusBadge({ existing }: { existing: boolean }) {
 // ── Kind picker ───────────────────────────────────────────────────────────────
 
 const KIND_OPTIONS: { value: ContentKind; label: string; description: string; icon: React.ElementType }[] = [
-  { value: "posts",         label: "Content",       description: "Blog posts, case studies, whitepapers, videos, workshops",  icon: FileText },
-  { value: "events",        label: "Events",        description: "Upcoming conferences, webinars, and workshops",              icon: CalendarDays },
-  { value: "episodes",      label: "Podcast",       description: "Polaris podcast episodes",                                  icon: Mic },
-  { value: "landing_pages", label: "Landing Pages", description: "Campaign and pillar landing pages",                         icon: LayoutTemplate },
+  { value: "blog_posts",    label: "Blog Posts",    description: "Published insights and articles",           icon: FileText },
+  { value: "case_studies",  label: "Case Studies",  description: "Customer success and outcome stories",      icon: Briefcase },
+  { value: "whitepapers",   label: "Whitepapers",   description: "Research papers and in-depth guides",       icon: BookOpen },
+  { value: "videos",        label: "Videos",        description: "Video content and recordings",              icon: Film },
+  { value: "workshops",     label: "Workshops",     description: "Interactive sessions and how-to content",   icon: Wrench },
+  { value: "events",        label: "Events",        description: "Upcoming conferences and webinars",         icon: CalendarDays },
+  { value: "episodes",      label: "Podcast",       description: "Polaris podcast episodes",                  icon: Mic },
+  { value: "landing_pages", label: "Landing Pages", description: "Campaign and pillar landing pages",         icon: LayoutTemplate },
 ];
 
 function KindPicker({ onPick }: { onPick: (k: ContentKind) => void }) {
@@ -182,7 +186,6 @@ export default function WebsiteMcpImportDialog({
   const [selectedEventIds,   setSelectedEventIds]   = useState<Set<string>>(new Set());
   const [selectedEpisodeIds, setSelectedEpisodeIds] = useState<Set<string>>(new Set());
   const [selectedLandingIds, setSelectedLandingIds] = useState<Set<string>>(new Set());
-  const [postTypes,          setPostTypes]          = useState<Map<string, string>>(new Map());
   const [confirmingUpdates,  setConfirmingUpdates]  = useState(false);
 
   useEffect(() => {
@@ -192,7 +195,6 @@ export default function WebsiteMcpImportDialog({
       setSelectedEventIds(new Set());
       setSelectedEpisodeIds(new Set());
       setSelectedLandingIds(new Set());
-      setPostTypes(new Map());
       setConfirmingUpdates(false);
     }
   }, [open]);
@@ -210,11 +212,13 @@ export default function WebsiteMcpImportDialog({
 
   const importMutation = useMutation({
     mutationFn: async () => {
+      // assetType: the server already filtered posts to the chosen kind and set
+      // suggestedAssetType accordingly — no per-row override needed.
       const posts = (candidates?.posts ?? [])
         .filter(p => selectedPostIds.has(p.mcpId))
         .map(p => ({
           mcpId: p.mcpId,
-          assetType: postTypes.get(p.mcpId) ?? p.existingAssetType ?? p.suggestedAssetType ?? "blog_post",
+          assetType: p.existingAssetType ?? p.suggestedAssetType ?? "blog_post",
           title: p.title,
           slug: p.slug,
           excerpt: p.excerpt,
@@ -383,11 +387,11 @@ export default function WebsiteMcpImportDialog({
         {/* ── Step 2: candidate list ──────────────────────────────────────── */}
         {candidates && (
           <>
-            {/* ── Posts ─────────────────────────────────────────────────── */}
-            {kind === "posts" && (
+            {/* ── Posts (blog posts / case studies / whitepapers / videos / workshops) */}
+            {(kind === "blog_posts" || kind === "case_studies" || kind === "whitepapers" || kind === "videos" || kind === "workshops") && (
               <div className="flex-1 overflow-y-auto px-6 pb-2">
                 {posts.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">No content found on the connected website.</p>
+                  <p className="py-8 text-center text-sm text-muted-foreground">No {kindLabel.toLowerCase()} found on the connected website.</p>
                 ) : (
                   <>
                     <SelectAllRow
@@ -398,7 +402,6 @@ export default function WebsiteMcpImportDialog({
                     <div className="space-y-0.5">
                       {posts.map(post => {
                         const checked = selectedPostIds.has(post.mcpId);
-                        const currentType = postTypes.get(post.mcpId) ?? post.existingAssetType ?? post.suggestedAssetType ?? "blog_post";
                         return (
                           <div key={post.mcpId} className={`flex items-start gap-3 rounded px-2 py-2 hover:bg-muted/40 transition-colors ${checked ? "bg-muted/20" : ""}`}>
                             <Checkbox checked={checked} onCheckedChange={c => {
@@ -412,17 +415,6 @@ export default function WebsiteMcpImportDialog({
                               </div>
                               {post.publishedAt && <p className="text-xs text-muted-foreground">{fmtDate(post.publishedAt)}</p>}
                             </div>
-                            <Select value={currentType} onValueChange={v => setPostTypes(prev => { const n = new Map(prev); n.set(post.mcpId, v); return n; })}>
-                              <SelectTrigger className="h-7 text-xs w-36 shrink-0"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="blog_post">Blog Post</SelectItem>
-                                <SelectItem value="case_study">Case Study</SelectItem>
-                                <SelectItem value="whitepaper">Whitepaper</SelectItem>
-                                <SelectItem value="video">Video</SelectItem>
-                                <SelectItem value="workshop">Workshop</SelectItem>
-                                <SelectItem value="other">Other</SelectItem>
-                              </SelectContent>
-                            </Select>
                           </div>
                         );
                       })}
