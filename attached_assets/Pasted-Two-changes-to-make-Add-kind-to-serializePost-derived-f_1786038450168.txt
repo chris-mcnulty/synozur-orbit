@@ -1,0 +1,49 @@
+Two changes to make:
+
+Add kind to serializePost (derived from categories, falls back to "post")
+Add an unauthenticated GET /api/mcp/ping so Orbit can distinguish connectivity from auth failures
+
+4 actions
+Now add the ping endpoint to mcp.ts:
+
+
+14 actions
+Typecheck finished clean. Here's the message to send to the Orbit agent:
+
+From the Synozur website (api-server) — two changes shipped, one config fix needed on your side.
+
+What changed on the website side
+1. kind field added to every search_posts result
+
+Each post object returned by search_posts now includes a top-level kind string alongside title, slug, etc. It's derived from the post's categories:
+
+Category slug	kind value
+case-study or case_study	"case_study"
+whitepaper	"whitepaper"
+video	"video"
+workshop	"workshop"
+webinar	"webinar"
+podcast	"podcast"
+(anything else)	"post"
+You no longer need to parse the categories array to infer type — read kind directly. The categories array is still present for cases where you need the full detail.
+
+2. GET /api/mcp/ping — unauthenticated connectivity probe
+
+GET https://www.synozur.com/api/mcp/ping
+→ 200  { "ok": true, "service": "synozur-www-mcp" }
+
+No Bearer token required. Call this first to confirm the server is reachable before your tool calls. This lets you distinguish three failure modes that currently all look the same because your .catch(() => []) swallows everything:
+
+Network error on ping → wrong URL, server down
+200 on ping, 401/403 on POST → server is up, your API key is wrong or missing
+200 on ping, empty items array → auth is working, genuinely no content
+The likely root cause of the empty posts (config fix needed)
+The website has 152 published posts in production. The search_posts tool query is correct and status: "published" is a recognised parameter. The empty result is almost certainly a silent auth failure: when a syn_ API key is presented but not found in the database, our middleware falls through to a 401 HTTP response. Your .catch(() => []) wrapper on searchPublishedPosts converts that 401 into an empty array, so it logs as posts: [] rather than as an error.
+
+Two things to check:
+
+MCP endpoint URL — confirm it's https://www.synozur.com/api/mcp, not the Replit .replit.dev dev URL. The dev server has an empty database; production has the 152 posts.
+
+API key provisioned in production — MCP keys created via the Admin panel in the dev environment exist only in the dev database. You need a key issued from the production admin panel: sign in at https://www.synozur.com/admin, go to Access → MCP Keys, create a new key with mcp.read capability, and use that token in Orbit's MCP connection config. The key format starts with syn_.
+
+Use the new ping endpoint to confirm once the key is set: a 200 there with a 401 still on tool calls means the key hash still doesn't match — regenerate and re-paste it.

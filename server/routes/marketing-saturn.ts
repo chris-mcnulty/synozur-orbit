@@ -943,7 +943,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
     // Fetch website content and existing Orbit records in parallel.
     const [posts, events, existingAssets, existingConferences] = await Promise.all([
-      websiteMcp.searchPosts(ctx.tenantDomain, undefined, 200).catch(() => [] as websiteMcp.WebsitePostSummary[]),
+      websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[]),
       websiteMcp.listEvents(ctx.tenantDomain, 200).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
       db.select({
         id: contentAssets.id,

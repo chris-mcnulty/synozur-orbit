@@ -228,11 +228,11 @@ export const searchPosts = (tenant: string, query?: string, pageSize = 30) =>
     pageSize,
   });
 
-/** Fetch all published posts for import into the content library (up to 200). */
+/** Fetch all published posts for import into the content library (up to 50 — website MCP max). */
 export const searchPublishedPosts = (tenant: string) =>
   callWebsiteTool<WebsitePostSummary[]>(tenant, "search_posts", {
     status: "published",
-    pageSize: 200,
+    pageSize: 50,
   });
 
 // ─── Events / conferences ────────────────────────────────────────────────────
