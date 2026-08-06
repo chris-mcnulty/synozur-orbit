@@ -29,6 +29,7 @@ import {
   Send,
   Upload,
   Plus,
+  Library,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EmailListSkeleton } from "@/components/ui/skeletons";
