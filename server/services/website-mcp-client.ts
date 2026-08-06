@@ -315,21 +315,32 @@ export interface WebsitePostSummary {
   readingTimeMin?: number;
 }
 
+/** Normalise a website MCP list payload to a bare array.
+ *  Paginated tools (search_posts, list_episodes, list_landing_pages) return
+ *  `{ items, page, pageSize, total }` — NOT a flat array (verified against the
+ *  website codebase, artifacts/api-server/src/mcp/tools/*.ts). Casting the
+ *  object to an array made downstream .map/.filter fail or produce nothing. */
+function unwrapItems<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && typeof payload === "object" && Array.isArray((payload as any).items)) {
+    return (payload as any).items as T[];
+  }
+  throw new Error(`Website MCP returned an unexpected list shape: ${JSON.stringify(payload)?.slice(0, 200)}`);
+}
+
 /** Search published/draft posts on the tenant's website via MCP. */
-export const searchPosts = (tenant: string, query?: string, pageSize = 30) =>
-  callWebsiteTool<WebsitePostSummary[]>(tenant, "search_posts", {
+export const searchPosts = async (tenant: string, query?: string, pageSize = 30) =>
+  unwrapItems<WebsitePostSummary>(await callWebsiteTool(tenant, "search_posts", {
     ...(query ? { query } : {}),
     pageSize,
-  });
+  }));
 
-/** Fetch posts for import into the content library (up to 50 — website MCP max).
- *  We intentionally omit `status: "published"` because older website plugin builds
- *  don't support that parameter and may hang or return unrecognised SSE frames when
- *  it is present.  The website's search_posts tool returns published posts by default. */
-export const searchPublishedPosts = (tenant: string) =>
-  callWebsiteTool<WebsitePostSummary[]>(tenant, "search_posts", {
+/** Fetch published posts for import into the content library (up to 50 — website MCP max).
+ *  search_posts defaults to published-only server-side, so no status filter needed. */
+export const searchPublishedPosts = async (tenant: string) =>
+  unwrapItems<WebsitePostSummary>(await callWebsiteTool(tenant, "search_posts", {
     pageSize: 50,
-  });
+  }));
 
 // ─── Events / conferences ────────────────────────────────────────────────────
 
@@ -391,7 +402,9 @@ export interface WebsiteLandingPageSummary {
  * Throws on transport/auth errors so callers can surface a real error message.
  */
 export async function listEvents(tenant: string, limit = 50): Promise<WebsiteEventSummary[]> {
-  const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { limit });
+  // upcoming defaults to TRUE server-side, so we must pass false explicitly to
+  // get the full event history for the import picker (verified in website code).
+  const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming: false, limit });
   // Normalise: spec says field may be `name` or `title` — ensure `name` is always populated.
   return raw.map(ev => ({ ...ev, name: ev.name ?? ev.title ?? "Unnamed event" }));
 }
@@ -402,7 +415,7 @@ export async function listEvents(tenant: string, limit = 50): Promise<WebsiteEve
  */
 export async function listEpisodes(tenant: string, limit = 50): Promise<WebsiteEpisodeSummary[]> {
   try {
-    return await callWebsiteTool<WebsiteEpisodeSummary[]>(tenant, "list_episodes", { limit });
+    return unwrapItems<WebsiteEpisodeSummary>(await callWebsiteTool(tenant, "list_episodes", { pageSize: Math.min(limit, 50) }));
   } catch {
     return [];
   }
@@ -414,7 +427,7 @@ export async function listEpisodes(tenant: string, limit = 50): Promise<WebsiteE
  */
 export async function listLandingPages(tenant: string, limit = 50): Promise<WebsiteLandingPageSummary[]> {
   try {
-    return await callWebsiteTool<WebsiteLandingPageSummary[]>(tenant, "list_landing_pages", { limit });
+    return unwrapItems<WebsiteLandingPageSummary>(await callWebsiteTool(tenant, "list_landing_pages", { pageSize: Math.min(limit, 50) }));
   } catch {
     return [];
   }
