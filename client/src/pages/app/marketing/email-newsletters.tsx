@@ -2534,7 +2534,9 @@ export default function EmailNewslettersPage() {
  */
 function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (updated: SavedEmail) => void }) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  // Start expanded so users see it immediately — especially after the
+  // auto-open-in-edit flow triggered on first save.
+  const [open, setOpen] = useState(!email.sections);
   const [caseStudyAssetId, setCaseStudyAssetId] = useState<string>(email.sections?.caseStudyAssetId || "none");
   const [eventIds, setEventIds] = useState<string[]>(email.sections?.eventIds || []);
   const [blogIds, setBlogIds] = useState<string[]>(email.sections?.blogAssetIds || []);
@@ -2543,21 +2545,17 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
 
   const { data: options } = useQuery<{
     events: Array<{ id: string; name: string; location?: string | null; website?: string | null; startDate?: string | null; endDate?: string | null }>;
-    recentAssets: Array<{ id: string; title: string; url?: string | null; assetType: string; assetDate?: string | null; leadImageUrl?: string | null }>;
+    caseStudies: Array<{ id: string; title: string; url?: string | null; assetType: string; assetDate?: string | null; leadImageUrl?: string | null; aiSummary?: string | null }>;
+    blogPosts: Array<{ id: string; title: string; url?: string | null; assetType: string; assetDate?: string | null; leadImageUrl?: string | null }>;
   }>({ queryKey: ["/api/email/section-options"], enabled: open });
 
   // First-open defaults when nothing saved yet: pre-check all upcoming events
-  // and the last 8 posts, skipping podcast-type assets (rarely promoted).
+  // and all url-backed blog posts.
   useEffect(() => {
     if (!options || seededRef.current || email.sections) return;
     seededRef.current = true;
     setEventIds(options.events.map(e => e.id));
-    setBlogIds(
-      options.recentAssets
-        .filter(a => !/podcast/i.test(a.assetType))
-        .slice(0, 8)
-        .map(a => a.id)
-    );
+    setBlogIds(options.blogPosts.map(p => p.id));
   }, [options, email.sections]);
 
   const saveMutation = useMutation({
@@ -2607,23 +2605,36 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
         </p>
         <div className="space-y-1.5">
           <Label className="text-xs">Case study</Label>
-          <Select value={caseStudyAssetId} onValueChange={setCaseStudyAssetId}>
-            <SelectTrigger className="h-8 text-xs" data-testid="select-section-case-study">
-              <SelectValue placeholder="No case study" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No case study</SelectItem>
-              {(options?.recentAssets ?? []).map(a => (
-                <SelectItem key={a.id} value={a.id}>{a.title}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {options && (options.caseStudies ?? []).length === 0 ? (
+            <p className="text-xs text-muted-foreground border rounded p-2">
+              No case studies found in your digital asset library. Add one in{" "}
+              <span className="font-medium">Marketing → Content Library</span> with type "Case Study".
+            </p>
+          ) : (
+            <Select value={caseStudyAssetId} onValueChange={setCaseStudyAssetId}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-section-case-study">
+                <SelectValue placeholder="No case study" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No case study</SelectItem>
+                {(options?.caseStudies ?? []).map(a => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.title}{!a.url ? " (no URL)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label className="text-xs">Upcoming events (next 6 months)</Label>
             <div className="max-h-44 overflow-y-auto space-y-1 border rounded p-2">
-              {(options?.events ?? []).length === 0 && <p className="text-xs text-muted-foreground">No upcoming events found.</p>}
+              {(options?.events ?? []).length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No upcoming events found. Add them in <span className="font-medium">Marketing → Events</span>.
+                </p>
+              )}
               {(options?.events ?? []).map(ev => (
                 <label key={ev.id} className="flex items-start gap-2 text-xs cursor-pointer" data-testid={`checkbox-section-event-${ev.id}`}>
                   <Checkbox
@@ -2631,8 +2642,11 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
                     checked={eventIds.includes(ev.id)}
                     onCheckedChange={(c) => setEventIds(prev => c ? [...prev, ev.id] : prev.filter(x => x !== ev.id))}
                   />
-                  <span><span className="font-medium">{ev.name}</span>{" "}
-                    <span className="text-muted-foreground">{fmtEventDate(ev.startDate, ev.endDate)}{ev.location ? ` · ${ev.location}` : ""}</span>
+                  <span>
+                    <span className="font-medium">{ev.name}</span>{" "}
+                    <span className="text-muted-foreground">
+                      {fmtEventDate(ev.startDate, ev.endDate)}{ev.location ? ` · ${ev.location}` : ""}
+                    </span>
                   </span>
                 </label>
               ))}
@@ -2646,20 +2660,28 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Recent updates (blog posts)</Label>
+            <Label className="text-xs">Recent blog posts</Label>
             <div className="max-h-56 overflow-y-auto space-y-1 border rounded p-2">
-              {(options?.recentAssets ?? []).map(a => (
+              {options && (options.blogPosts ?? []).length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No blog posts with a URL found. Register posts in{" "}
+                  <span className="font-medium">Marketing → Content Library</span> with type "Blog Post" and a live URL.
+                </p>
+              )}
+              {(options?.blogPosts ?? []).map(a => (
                 <label key={a.id} className="flex items-start gap-2 text-xs cursor-pointer" data-testid={`checkbox-section-blog-${a.id}`}>
                   <Checkbox
                     className="mt-0.5"
                     checked={blogIds.includes(a.id)}
                     onCheckedChange={(c) => setBlogIds(prev => c ? [...prev, a.id] : prev.filter(x => x !== a.id))}
                   />
-                  <span className="min-w-0">{a.title} <span className="text-muted-foreground capitalize">({a.assetType.replace(/_/g, " ")})</span></span>
+                  <span className="min-w-0 truncate">{a.title}</span>
                 </label>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground">Tip: leave podcast episodes and transactional notices unchecked.</p>
+            <p className="text-[11px] text-muted-foreground">
+              Only blog posts registered in the Content Library with a live URL appear here.
+            </p>
           </div>
         </div>
         <div className="flex justify-end">

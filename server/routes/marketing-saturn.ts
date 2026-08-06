@@ -4152,14 +4152,24 @@ Structure your response using these exact delimiters:
 
   // ── Email sections (case study / upcoming events / recent updates) ──────
 
-  // Options for the section pickers: upcoming events (next 6 months) and
-  // recent content assets (candidate blog posts + case studies).
+  // Options for the section pickers.
+  // - events: upcoming conferences next 6 months (from the Conferences/Events module)
+  // - caseStudies: all case_study-typed digital assets (url optional; blurb renders even without a link)
+  // - blogPosts: blog_post digital assets that have a live URL (url-backed only — a post without a
+  //   URL can't be linked in the email, so it's not useful here)
   app.get("/api/email/section-options", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
     const now = new Date();
     const horizon = new Date(now.getTime() + 183 * 24 * 3600 * 1000); // ~6 months
-    const [events, recentAssets] = await Promise.all([
+
+    const assetBaseWhere = and(
+      eq(contentAssets.tenantDomain, ctx.tenantDomain),
+      eq(contentAssets.marketId, ctx.marketId),
+      eq(contentAssets.status, "active"),
+    );
+
+    const [events, caseStudies, blogPosts] = await Promise.all([
       db.select({
         id: conferences.id,
         name: conferences.name,
@@ -4176,6 +4186,10 @@ Structure your response using these exact delimiters:
           sql`${conferences.startDate} <= ${horizon}`,
         ))
         .orderBy(conferences.startDate),
+
+      // Case studies: all registered digital assets of type case_study.
+      // URL is optional — the section renders the title + blurb regardless,
+      // and only shows a "Read more" link when url is present.
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
@@ -4183,17 +4197,32 @@ Structure your response using these exact delimiters:
         assetType: contentAssets.assetType,
         assetDate: contentAssets.assetDate,
         leadImageUrl: contentAssets.leadImageUrl,
-        websitePostSlug: contentAssets.websitePostSlug,
+        aiSummary: contentAssets.aiSummary,
+      }).from(contentAssets)
+        .where(and(assetBaseWhere, eq(contentAssets.assetType, "case_study")))
+        .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
+        .limit(20),
+
+      // Blog posts: only url-backed entries from the digital asset library.
+      // A post without a URL can't be linked in the email, so it's excluded.
+      db.select({
+        id: contentAssets.id,
+        title: contentAssets.title,
+        url: contentAssets.url,
+        assetType: contentAssets.assetType,
+        assetDate: contentAssets.assetDate,
+        leadImageUrl: contentAssets.leadImageUrl,
       }).from(contentAssets)
         .where(and(
-          eq(contentAssets.tenantDomain, ctx.tenantDomain),
-          eq(contentAssets.marketId, ctx.marketId),
-          eq(contentAssets.status, "active"),
+          assetBaseWhere,
+          eq(contentAssets.assetType, "blog_post"),
+          isNotNull(contentAssets.url),
         ))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
         .limit(30),
     ]);
-    res.json({ events, recentAssets });
+
+    res.json({ events, caseStudies, blogPosts });
   });
 
   // Save section selections and render the deterministic sections HTML.
