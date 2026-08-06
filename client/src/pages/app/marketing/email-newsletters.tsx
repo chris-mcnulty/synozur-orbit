@@ -543,9 +543,9 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ["/api/content-asset-categories"],
+    queryKey: ["/api/content-categories"],
     queryFn: async () => {
-      const r = await fetch("/api/content-asset-categories", { credentials: "include" });
+      const r = await fetch("/api/content-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,
