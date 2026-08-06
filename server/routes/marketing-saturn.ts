@@ -934,6 +934,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
     const siteUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "");
 
+    // Ping the unauthenticated probe first so we can distinguish three failure
+    // modes that all previously looked the same due to .catch(() => []):
+    //   ping fails     → wrong URL or server down
+    //   ping ok + 401  → server up, API key invalid
+    //   ping ok + []   → auth works, genuinely no content
+    const ping = await websiteMcp.pingMcpServer(ctx.tenantDomain);
+    if (!ping.ok) {
+      return res.status(400).json({ error: ping.message });
+    }
+
     const normalizeUrl = (u: string) => {
       try {
         const p = new URL(u.toLowerCase());
@@ -941,10 +951,23 @@ export function registerSaturnMarketingRoutes(app: Express) {
       } catch { return u.toLowerCase().replace(/\/+$/, ""); }
     };
 
+    // Map website `kind` → Orbit ContentAssetType.
+    const kindToAssetType = (kind?: string): string => {
+      switch (kind) {
+        case "case_study":  return "case_study";
+        case "whitepaper":  return "whitepaper";
+        case "video":       return "video";
+        case "workshop":    return "workshop";
+        case "webinar":
+        case "podcast":     return "other";
+        default:            return "blog_post";
+      }
+    };
+
     // Fetch website content and existing Orbit records in parallel.
     const [posts, events, existingAssets, existingConferences] = await Promise.all([
       websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[]),
-      websiteMcp.listEvents(ctx.tenantDomain, 200).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
+      websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
       db.select({
         id: contentAssets.id,
         url: contentAssets.url,
@@ -979,6 +1002,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
         excerpt: post.excerpt ?? null,
         leadImageUrl: post.leadImageUrl ?? null,
         url: postUrl,
+        // suggestedAssetType: derived from the website's `kind` field; if the
+        // post already exists in Orbit, the existing type wins in the dialog.
+        suggestedAssetType: kindToAssetType(post.kind),
         existing: !!existing,
         existingId: existing?.id ?? null,
         existingAssetType: existing?.assetType ?? null,

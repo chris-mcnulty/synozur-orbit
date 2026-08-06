@@ -211,6 +211,28 @@ export const getMedia = (tenant: string, id: string) =>
 export const pingWebsite = (tenant: string) =>
   callWebsiteTool(tenant, "search_posts", { pageSize: 1 });
 
+/**
+ * Unauthenticated connectivity probe — GET <endpoint>/ping.
+ * Returns true if the server responds 200, false on any network/non-2xx
+ * error, or throws with a descriptive message on auth failure (401/403).
+ */
+export async function pingMcpServer(tenantDomain: string): Promise<{ ok: boolean; authFailed: boolean; message: string }> {
+  const conn = await getWebsiteConnection(tenantDomain);
+  if (!conn || !conn.enabled) return { ok: false, authFailed: false, message: "Not connected" };
+  const pingUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "") + "/api/mcp/ping";
+  try {
+    const res = await fetch(pingUrl, { method: "GET", signal: AbortSignal.timeout(8000) });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, authFailed: true, message: `Server is reachable but returned HTTP ${res.status} — API key is invalid or missing. Generate a new key from the website admin panel (Settings → Access → MCP Keys).` };
+    }
+    return res.ok
+      ? { ok: true, authFailed: false, message: "ok" }
+      : { ok: false, authFailed: false, message: `Ping returned HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, authFailed: false, message: `Cannot reach website server: ${err?.message ?? "network error"}` };
+  }
+}
+
 export interface WebsitePostSummary {
   id: string;
   title: string;
@@ -219,6 +241,10 @@ export interface WebsitePostSummary {
   publishedAt?: string;
   excerpt?: string;
   leadImageUrl?: string;
+  /** Content kind derived from categories on the website side.
+   *  Values: "post" | "case_study" | "whitepaper" | "video" | "workshop" | "webinar" | "podcast"
+   *  Falls back to "post" when the website build predates this field. */
+  kind?: string;
 }
 
 /** Search published/draft posts on the tenant's website via MCP. */

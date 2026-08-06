@@ -22,6 +22,7 @@ export interface PostCandidate {
   excerpt?: string;
   leadImageUrl?: string;
   url: string;
+  suggestedAssetType?: string;  // derived from website `kind` field
   existing: boolean;
   existingId?: string;
   existingAssetType?: string;
@@ -278,9 +279,11 @@ export default function WebsiteMcpImportDialog({
                   <div className="space-y-0.5">
                     {posts.map(post => {
                       const checked = selectedPostIds.has(post.mcpId);
+                      // Priority: user override → existing Orbit type → website kind → blog_post
                       const currentType: string =
                         postTypes.get(post.mcpId) ??
                         post.existingAssetType ??
+                        post.suggestedAssetType ??
                         "blog_post";
                       return (
                         <div
