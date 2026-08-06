@@ -40,7 +40,7 @@ import {
   type EmailSend,
 } from "@shared/schema";
 import { resolveTokens, resolveTokensForEmail } from "./email-ab-test";
-import { appendSectionsToBody } from "./email-sections-renderer";
+import { appendSectionsToBody, reRenderSectionsHtml } from "./email-sections-renderer";
 import { wrapOutboundLinksInText } from "./marketing-links-helpers";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
@@ -1075,8 +1075,26 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   // Append the deterministic sections block (case study / events / recent
   // updates), if configured, after the main message — and enforce a readable
   // minimum font size across the whole body for mobile clients.
+  //
+  // Re-render from the stored selection config so any changes to event dates,
+  // blog post titles, or archived items are reflected in the live send rather
+  // than carrying the stale snapshot saved at "Save sections" time.
+  // Falls back to the stored sectionsHtml when no config is present.
   if (effectiveHtmlBody) {
-    effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, (email as any).sectionsHtml);
+    let sectionsHtml: string | null = (email as any).sectionsHtml ?? null;
+    const sectionsConfig = (email as any).sections;
+    if (sectionsConfig && marketId) {
+      try {
+        const rendered = await reRenderSectionsHtml(sectionsConfig, {
+          tenantDomain,
+          marketId,
+        });
+        if (rendered !== null) sectionsHtml = rendered;
+      } catch (err) {
+        console.warn("[Email Sender] sections re-render failed; using stored HTML:", err);
+      }
+    }
+    effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, sectionsHtml);
     effectiveHtmlBody = enforceMinimumFontSize(effectiveHtmlBody);
   }
 

@@ -16,6 +16,10 @@
  * All body text is 16px minimum for mobile readability.
  */
 
+import { db } from "../db";
+import { conferences, contentAssets, tenants } from "@shared/schema";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
+
 export interface SectionCaseStudy {
   title: string;
   blurb: string;        // 2-4 sentence summary; plain text (will be escaped)
@@ -172,4 +176,114 @@ export function renderEmailSections(input: RenderSectionsInput): string {
   if (twoCol) parts.push(twoCol);
   if (!parts.length) return "";
   return `\n<!-- orbit:sections:start -->\n${parts.join("\n")}\n<!-- orbit:sections:end -->\n`;
+}
+
+/** Shape of the JSONB `sections` column on generated_emails. */
+export interface SectionsConfig {
+  caseStudyAssetId?: string | null;
+  eventIds?: string[];
+  blogAssetIds?: string[];
+  eventsCalendarUrl?: string | null;
+}
+
+/**
+ * Re-render sections HTML from the stored selection config at send/export time
+ * so changes to event dates, blog post titles, or archived/deleted items are
+ * reflected in the outbound email rather than carrying the stale snapshot that
+ * was saved when the user clicked "Save sections".
+ *
+ * Archived or deleted items are silently dropped from the rendered output.
+ * Returns null when there is no config or the config produces no visible content.
+ */
+export async function reRenderSectionsHtml(
+  sections: SectionsConfig | null | undefined,
+  context: { tenantDomain: string; marketId: string },
+): Promise<string | null> {
+  if (!sections) return null;
+
+  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl } = sections;
+  const wantedEventIds = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
+  const wantedBlogIds = Array.isArray(blogAssetIds) ? blogAssetIds.filter(Boolean) : [];
+
+  if (!caseStudyAssetId && !wantedEventIds.length && !wantedBlogIds.length) return null;
+
+  const [caseStudyRows, eventRows, blogRows, tenantRows] = await Promise.all([
+    caseStudyAssetId
+      ? db.select().from(contentAssets)
+          .where(and(
+            eq(contentAssets.id, caseStudyAssetId),
+            eq(contentAssets.tenantDomain, context.tenantDomain),
+            eq(contentAssets.marketId, context.marketId),
+            eq(contentAssets.status, "active"),
+          ))
+          .limit(1)
+      : Promise.resolve([] as any[]),
+    wantedEventIds.length
+      ? db.select().from(conferences)
+          .where(and(
+            inArray(conferences.id, wantedEventIds),
+            eq(conferences.tenantDomain, context.tenantDomain),
+            or(eq(conferences.marketId, context.marketId), isNull(conferences.marketId)),
+          ))
+          .orderBy(conferences.startDate)
+      : Promise.resolve([] as any[]),
+    wantedBlogIds.length
+      ? db.select().from(contentAssets)
+          .where(and(
+            inArray(contentAssets.id, wantedBlogIds),
+            eq(contentAssets.tenantDomain, context.tenantDomain),
+            eq(contentAssets.marketId, context.marketId),
+            eq(contentAssets.status, "active"),
+          ))
+      : Promise.resolve([] as any[]),
+    db.select({ primaryColor: tenants.primaryColor })
+      .from(tenants)
+      .where(eq(tenants.domain, context.tenantDomain))
+      .limit(1),
+  ]);
+
+  const fmtDate = (d: Date | null) =>
+    d ? new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
+  const fmtRange = (s: Date | null, e: Date | null) => {
+    if (!s) return "";
+    if (!e || new Date(e).toDateString() === new Date(s).toDateString()) return fmtDate(s);
+    const sd = new Date(s), ed = new Date(e);
+    if (sd.getMonth() === ed.getMonth() && sd.getFullYear() === ed.getFullYear()) {
+      return `${sd.toLocaleDateString("en-US", { month: "long", day: "numeric" })}-${ed.getDate()}, ${ed.getFullYear()}`;
+    }
+    return `${fmtDate(s)} – ${fmtDate(e)}`;
+  };
+
+  // Preserve the client-specified order for blog posts; silently skip items
+  // that were archived or deleted since the config was saved.
+  const blogById = new Map((blogRows as any[]).map((r: any) => [r.id, r]));
+  const posts: SectionPost[] = wantedBlogIds
+    .map((id: string) => blogById.get(id))
+    .filter(Boolean)
+    .map((r: any) => ({ title: r.title, url: r.url || null }));
+
+  const eventsData: SectionEvent[] = (eventRows as any[]).map((ev: any) => ({
+    name: ev.name,
+    dateLabel: fmtRange(ev.startDate, ev.endDate),
+    location: ev.location || null,
+    website: ev.website || null,
+  }));
+
+  const cs = (caseStudyRows as any[])[0];
+  const html = renderEmailSections({
+    caseStudy: cs
+      ? {
+          title: cs.title,
+          blurb: cs.aiSummary || cs.description || cs.overview || "",
+          url: cs.url || null,
+          imageUrl: cs.leadImageUrl || null,
+        }
+      : null,
+    events: eventsData,
+    posts,
+    eventsCalendarUrl: eventsCalendarUrl || null,
+    brandPrimary: tenantRows[0]?.primaryColor || undefined,
+  });
+
+  return html || null;
 }

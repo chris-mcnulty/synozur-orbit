@@ -96,7 +96,7 @@ import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
 import { enforceMinimumFontSize, wrapResponsiveDocument } from "../services/email-campaign-sender";
-import { renderEmailSections, appendSectionsToBody, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
+import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -4313,7 +4313,22 @@ Structure your response using these exact delimiters:
         eq(generatedEmails.marketId, ctx.marketId),
       ));
     if (!email) return res.status(404).json({ error: "Not found" });
-    let body = appendSectionsToBody(email.htmlBody || "", email.sectionsHtml);
+    // Re-render sections from the stored selection config so stale snapshots
+    // (outdated event dates, retitled/archived blog posts) never reach the export.
+    // Falls back to the stored sectionsHtml when no config is present.
+    let freshSectionsHtml: string | null = email.sectionsHtml ?? null;
+    if (email.sections) {
+      try {
+        const rendered = await reRenderSectionsHtml(email.sections as any, {
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+        });
+        if (rendered !== null) freshSectionsHtml = rendered;
+      } catch (err) {
+        console.warn("[export-html] sections re-render failed; using stored HTML:", err);
+      }
+    }
+    let body = appendSectionsToBody(email.htmlBody || "", freshSectionsHtml);
     body = enforceMinimumFontSize(body);
     res.json({ html: wrapResponsiveDocument(body), fragment: body });
   });
