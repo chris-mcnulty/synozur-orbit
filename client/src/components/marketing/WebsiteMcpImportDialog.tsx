@@ -187,6 +187,7 @@ export default function WebsiteMcpImportDialog({
   const [selectedEpisodeIds, setSelectedEpisodeIds] = useState<Set<string>>(new Set());
   const [selectedLandingIds, setSelectedLandingIds] = useState<Set<string>>(new Set());
   const [confirmingUpdates,  setConfirmingUpdates]  = useState(false);
+  const [upcomingOnly,       setUpcomingOnly]       = useState(true);
 
   useEffect(() => {
     if (open) {
@@ -196,6 +197,7 @@ export default function WebsiteMcpImportDialog({
       setSelectedEpisodeIds(new Set());
       setSelectedLandingIds(new Set());
       setConfirmingUpdates(false);
+      setUpcomingOnly(true);
     }
   }, [open]);
 
@@ -300,7 +302,29 @@ export default function WebsiteMcpImportDialog({
   const episodes    = candidates?.episodes    ?? [];
   const landingPages = candidates?.landingPages ?? [];
 
+  // Client-side upcoming filter: startDate >= start of today, or no startDate (show in "All" only).
+  //
+  // Date-only strings like "2026-08-10" must be parsed as LOCAL calendar dates, not UTC.
+  // `new Date("YYYY-MM-DD")` is midnight UTC, which falls before local midnight west of UTC,
+  // causing today's events to be excluded. We detect the date-only pattern and construct a
+  // local Date directly; datetime strings (which contain timezone context) are parsed normally.
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  function parseEventDate(s: string): Date {
+    const m = s.match(DATE_ONLY_RE);
+    if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+    return new Date(s);
+  }
+  const visibleEvents = upcomingOnly
+    ? events.filter(e => {
+        if (!e.startDate) return false;
+        try { return parseEventDate(e.startDate) >= todayStart; } catch { return false; }
+      })
+    : events;
+
   const selPosts    = posts.filter(p  => selectedPostIds.has(p.mcpId));
+  // selEvents counts ALL selected events (across both filter views) so the duplicate
+  // confirmation always sees hidden selections too.
   const selEvents   = events.filter(e => selectedEventIds.has(e.mcpId));
   const selEps      = episodes.filter(ep => selectedEpisodeIds.has(ep.mcpId));
   const selLanding  = landingPages.filter(lp => selectedLandingIds.has(lp.mcpId));
@@ -312,10 +336,14 @@ export default function WebsiteMcpImportDialog({
   const totalDuplicates = dupPosts + dupEvents + dupEps + dupLanding;
   const totalSelected   = selectedPostIds.size + selectedEventIds.size + selectedEpisodeIds.size + selectedLandingIds.size;
 
+  // How many of the currently visible events are selected (for SelectAllRow display)
+  const visibleSelEventCount = visibleEvents.filter(e => selectedEventIds.has(e.mcpId)).length;
+
   // ── Select-all toggles ─────────────────────────────────────────────────────
 
   const allPosts   = posts.length   > 0 && posts.every(p  => selectedPostIds.has(p.mcpId));
-  const allEvents  = events.length  > 0 && events.every(e => selectedEventIds.has(e.mcpId));
+  // allEvents reflects only visible rows so the checkbox matches what the user sees
+  const allEvents  = visibleEvents.length > 0 && visibleEvents.every(e => selectedEventIds.has(e.mcpId));
   const allEps     = episodes.length > 0 && episodes.every(ep => selectedEpisodeIds.has(ep.mcpId));
   const allLanding = landingPages.length > 0 && landingPages.every(lp => selectedLandingIds.has(lp.mcpId));
 
@@ -323,6 +351,21 @@ export default function WebsiteMcpImportDialog({
     setConfirmingUpdates(false);
     setFn(all ? new Set() : new Set(items));
   };
+
+  // Events select-all only adds/removes visible IDs — hidden selections (from the
+  // other view) are left untouched so the import payload stays consistent.
+  function toggleVisibleEvents() {
+    setConfirmingUpdates(false);
+    setSelectedEventIds(prev => {
+      const next = new Set(prev);
+      if (allEvents) {
+        visibleEvents.forEach(e => next.delete(e.mcpId));
+      } else {
+        visibleEvents.forEach(e => next.add(e.mcpId));
+      }
+      return next;
+    });
+  }
 
   function handleImport() {
     if (totalDuplicates > 0 && !confirmingUpdates) { setConfirmingUpdates(true); return; }
@@ -427,17 +470,39 @@ export default function WebsiteMcpImportDialog({
             {/* ── Events ────────────────────────────────────────────────── */}
             {kind === "events" && (
               <div className="flex-1 overflow-y-auto px-6 pb-2">
-                {events.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">No upcoming events found on the connected website.</p>
+                {/* Upcoming / All toggle */}
+                <div className="flex items-center gap-1 pt-2 pb-3">
+                  <button
+                    onClick={() => { setUpcomingOnly(true); setConfirmingUpdates(false); }}
+                    className={`text-xs px-3 py-1 rounded-full border transition-colors ${upcomingOnly ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                  >
+                    Upcoming only
+                  </button>
+                  <button
+                    onClick={() => { setUpcomingOnly(false); setConfirmingUpdates(false); }}
+                    className={`text-xs px-3 py-1 rounded-full border transition-colors ${!upcomingOnly ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                  >
+                    All events
+                  </button>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {visibleEvents.length} of {events.length}
+                  </span>
+                </div>
+                {visibleEvents.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    {upcomingOnly && events.length > 0
+                      ? <>No upcoming events found. Switch to <strong>All events</strong> to see past events.</>
+                      : "No events found on the connected website."}
+                  </p>
                 ) : (
                   <>
                     <SelectAllRow
-                      all={allEvents} total={events.length} selected={selectedEventIds.size}
+                      all={allEvents} total={visibleEvents.length} selected={visibleSelEventCount}
                       id="sa-events"
-                      onToggle={() => toggle(selectedEventIds, setSelectedEventIds, allEvents, events.map(e => e.mcpId))}
+                      onToggle={toggleVisibleEvents}
                     />
                     <div className="space-y-0.5">
-                      {events.map(ev => {
+                      {visibleEvents.map(ev => {
                         const checked = selectedEventIds.has(ev.mcpId);
                         return (
                           <div key={ev.mcpId} className={`flex items-start gap-3 rounded px-2 py-2 hover:bg-muted/40 transition-colors ${checked ? "bg-muted/20" : ""}`}>
