@@ -275,15 +275,6 @@ export default function ContentLibraryPage() {
     return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || ba.fileType?.startsWith("image/");
   });
 
-  const { data: websiteStatus } = useQuery<{ connected: boolean; siteUrl?: string }>({
-    queryKey: ["/api/integrations/website/status"],
-    queryFn: async () => {
-      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
-      return r.ok ? r.json() : { connected: false };
-    },
-    enabled: isAllowed,
-  });
-
   const [isSyncingWebsite, setIsSyncingWebsite] = useState(false);
   const syncFromWebsite = async () => {
     setIsSyncingWebsite(true);
@@ -1146,7 +1137,7 @@ export default function ContentLibraryPage() {
                 onChange={handleImportCSV}
                 data-testid="input-import-csv-content"
               />
-              {websiteStatus?.connected && (
+              {websiteConnected && (
                 <Button
                   variant="outline"
                   size="sm"
