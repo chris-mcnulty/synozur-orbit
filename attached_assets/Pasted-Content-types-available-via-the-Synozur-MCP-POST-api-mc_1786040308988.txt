@@ -1,0 +1,69 @@
+Content types available via the Synozur MCP (POST /api/mcp)
+1. Posts / Insights — search_posts, get_post
+The single posts table covers several logical content types, distinguished by category slug. The new kind field on each result maps them automatically:
+
+Category slug on the post	kind returned
+case-study or case_study	case_study
+whitepaper	whitepaper
+video	video
+workshop	workshop
+webinar	webinar
+podcast	podcast
+(none of the above)	post
+Filters available: query (full-text), categorySlug, tagSlug, status (draft / scheduled / published / archived). Default (no status arg) returns published + publishedAt ≤ now.
+
+Each result includes: id, slug, kind, title, subtitle, excerpt, heroImageUrl, ogImageUrl, author, status, publishedAt, readingTimeMin, featured, seoTitle, seoDescription, categories[], tags[].
+
+2. Events — list_events, list_past_events, get_event
+Upcoming and past events as separate tools. list_events accepts either { upcoming, limit } (Orbit-style) or { page, pageSize }.
+
+Each result includes: id, slug, name/title, teaser, description, startDate, endDate, location, timezone, eventType, registrationStatus, url, registrationUrl, status, featured, imageUrl.
+
+get_event additionally returns the full sessions[] schedule and speakers[] roster.
+
+3. Podcast Episodes — list_episodes, get_episode
+Polaris podcast series only. Always returns published episodes, most recent first.
+
+Each result includes: id, slug, episodeNumber, title, guestName, summary, durationSeconds, audioUrl, artworkUrl, appleUrl, spotifyUrl, featured, publishedAt.
+
+get_episode adds serviceId, solutionId, linkedPost, and optionally transcriptHtml (pass includeTranscript: true).
+
+4. Landing Pages — list_landing_pages
+Campaign/pillar-specific pages, published only.
+
+Each result includes: id, slug, title, subtitle, description, pillar, tags[], seoTitle, seoDescription, publishedAt, featuredRank.
+
+5. Taxonomy — list_categories, list_tags, list_authors
+Supporting lookup tools. Use list_categories to get the live category slugs before calling search_posts with categorySlug. Use list_authors to get valid author IDs for draft creation.
+
+6. Media Library — list_media_categories, list_media, get_media
+Images and documents. list_media accepts query (alt text / filename search) and categoryId (UUID from list_media_categories).
+
+Each result includes: id, publicUrl, storageKey, altText, mime, width, height, byteSize, originalName, categoryId.
+
+get_media additionally returns an optimizedUrl (1200 px wide WebP, ready to embed).
+
+7. Write tools (mcp.write capability required)
+upload_image — upload base64-encoded image to the media library; returns publicUrl and optimizedUrl
+create_draft_post — create a draft Insights post; requires a valid authorId from list_authors
+Quick reference: tool → what it serves
+Tool	Content type	Auth required
+search_posts	Posts, case studies, whitepapers, videos, workshops, webinars	mcp.read
+get_post	Single post (any kind) with full body	mcp.read
+list_events	Upcoming events	mcp.read
+list_past_events	Past events	mcp.read
+get_event	Single event with sessions + speakers	mcp.read
+list_episodes	Polaris podcast episodes	mcp.read
+get_episode	Single episode with transcript	mcp.read
+list_landing_pages	Campaign landing pages	mcp.read
+list_categories	Post category taxonomy	mcp.read
+list_tags	Post tag taxonomy	mcp.read
+list_authors	Author directory	mcp.read
+list_media_categories	Media library categories	mcp.read
+list_media	Media library (images, docs)	mcp.read
+get_media	Single media asset	mcp.read
+upload_image	Upload to media library	mcp.write
+create_draft_post	Create draft post	mcp.write
+GET /api/mcp/ping	Connectivity probe	None
+
+Worked for 56 seconds

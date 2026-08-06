@@ -964,23 +964,33 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
     };
 
-    // kind param lets the dialog fetch only what it needs (posts | events | both).
-    // Skipping the unused MCP call cuts response time roughly in half when the
-    // website MCP server is slow.
-    const kindParam = (req.query.kind as string | undefined) ?? "both";
-    const wantPosts  = kindParam === "posts"  || kindParam === "both";
-    const wantEvents = kindParam === "events" || kindParam === "both";
+    // kind param lets the dialog fetch only what it needs, cutting MCP round-trips.
+    // Values: posts | events | episodes | landing_pages | all (default)
+    const kindParam = (req.query.kind as string | undefined) ?? "all";
+    const wantPosts   = kindParam === "posts"   || kindParam === "all";
+    const wantEvents  = kindParam === "events"  || kindParam === "all";
+    const wantEpisodes = kindParam === "episodes" || kindParam === "all";
+    const wantLanding  = kindParam === "landing_pages" || kindParam === "all";
+    // "both" is the legacy value before episodes/landing_pages were added
+    const wantBoth = kindParam === "both";
+    const effectivePosts   = wantPosts   || wantBoth;
+    const effectiveEvents  = wantEvents  || wantBoth;
 
     // Fetch website content and existing Orbit records in parallel.
-    // Only call the MCP tool the user actually asked for.
-    const [posts, events, existingAssets, existingConferences] = await Promise.all([
-      wantPosts
+    const [posts, events, episodes, landingPages, existingAssets, existingConferences] = await Promise.all([
+      effectivePosts
         ? websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[])
         : Promise.resolve([] as websiteMcp.WebsitePostSummary[]),
-      wantEvents
+      effectiveEvents
         ? websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[])
         : Promise.resolve([] as websiteMcp.WebsiteEventSummary[]),
-      wantPosts
+      wantEpisodes
+        ? websiteMcp.listEpisodes(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEpisodeSummary[])
+        : Promise.resolve([] as websiteMcp.WebsiteEpisodeSummary[]),
+      wantLanding
+        ? websiteMcp.listLandingPages(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteLandingPageSummary[])
+        : Promise.resolve([] as websiteMcp.WebsiteLandingPageSummary[]),
+      (effectivePosts || wantEpisodes || wantLanding)
         ? db.select({
             id: contentAssets.id,
             url: contentAssets.url,
@@ -991,7 +1001,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
             eq(contentAssets.marketId, ctx.marketId),
           ))
         : Promise.resolve([] as { id: string; url: string | null; websitePostId: string | null; assetType: string }[]),
-      wantEvents
+      effectiveEvents
         ? db.select({
             id: conferences.id,
             name: conferences.name,
@@ -1008,7 +1018,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const confByKey = new Map(existingConferences.map(c => [c.name.trim().toLowerCase(), c]));
 
     const annotatedPosts = posts.map(post => {
-      const postUrl = `${siteUrl}/insights/${post.slug}`;
+      // Prefer the explicit `url` the website returns; fall back to the conventional path.
+      const postUrl = (post as any).url || `${siteUrl}/insights/${post.slug}`;
       const existing = byPostId.get(post.id) ?? byUrl.get(normalizeUrl(postUrl));
       return {
         mcpId: post.id,
@@ -1016,10 +1027,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
         slug: post.slug,
         publishedAt: post.publishedAt ?? null,
         excerpt: post.excerpt ?? null,
-        leadImageUrl: post.leadImageUrl ?? null,
+        // Website returns heroImageUrl (spec); fallback to ogImageUrl if absent.
+        heroImageUrl: post.heroImageUrl ?? post.ogImageUrl ?? null,
         url: postUrl,
-        // suggestedAssetType: derived from the website's `kind` field; if the
-        // post already exists in Orbit, the existing type wins in the dialog.
         suggestedAssetType: kindToAssetType(post.kind),
         existing: !!existing,
         existingId: existing?.id ?? null,
@@ -1028,21 +1038,62 @@ export function registerSaturnMarketingRoutes(app: Express) {
     });
 
     const annotatedEvents = events.map(ev => {
-      const existing = confByKey.get(ev.name.trim().toLowerCase());
+      // Spec says the field may be `name` or `title` — listEvents normalises to `name` already.
+      const evName = ev.name ?? ev.title ?? "Unnamed event";
+      const existing = confByKey.get(evName.trim().toLowerCase());
       return {
         mcpId: ev.id,
-        name: ev.name,
+        name: evName,
         startDate: ev.startDate ?? null,
         endDate: ev.endDate ?? null,
         location: ev.location ?? null,
+        eventType: ev.eventType ?? null,
         url: ev.url ?? null,
-        description: ev.description ?? null,
+        registrationUrl: ev.registrationUrl ?? null,
+        description: ev.teaser ?? ev.description ?? null,
+        imageUrl: ev.imageUrl ?? null,
         existing: !!existing,
         existingConferenceId: existing?.id ?? null,
       };
     });
 
-    res.json({ posts: annotatedPosts, events: annotatedEvents, siteUrl });
+    const annotatedEpisodes = episodes.map(ep => {
+      const existing = byPostId.get(ep.id) ?? null;
+      return {
+        mcpId: ep.id,
+        title: ep.title,
+        slug: ep.slug,
+        episodeNumber: ep.episodeNumber ?? null,
+        guestName: ep.guestName ?? null,
+        summary: ep.summary ?? null,
+        publishedAt: ep.publishedAt ?? null,
+        artworkUrl: ep.artworkUrl ?? null,
+        audioUrl: ep.audioUrl ?? null,
+        existing: !!existing,
+        existingId: existing?.id ?? null,
+        existingAssetType: existing?.assetType ?? null,
+      };
+    });
+
+    const annotatedLandingPages = landingPages.map(lp => {
+      const lpUrl = `${siteUrl}/${lp.slug}`;
+      const existing = byUrl.get(normalizeUrl(lpUrl));
+      return {
+        mcpId: lp.id,
+        title: lp.title,
+        slug: lp.slug,
+        subtitle: lp.subtitle ?? null,
+        description: lp.description ?? null,
+        pillar: lp.pillar ?? null,
+        publishedAt: lp.publishedAt ?? null,
+        url: lpUrl,
+        existing: !!existing,
+        existingId: existing?.id ?? null,
+        existingAssetType: existing?.assetType ?? null,
+      };
+    });
+
+    res.json({ posts: annotatedPosts, events: annotatedEvents, episodes: annotatedEpisodes, landingPages: annotatedLandingPages, siteUrl });
   });
 
   app.post("/api/mcp-website/import", async (req, res) => {
@@ -1054,7 +1105,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
     const siteUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "");
 
-    const { posts: postsToImport = [], events: eventsToImport = [] } = req.body as {
+    const {
+      posts: postsToImport = [],
+      events: eventsToImport = [],
+      episodes: episodesToImport = [],
+      landingPages: landingPagesToImport = [],
+    } = req.body as {
       posts: Array<{
         mcpId: string;
         assetType: string;
@@ -1062,7 +1118,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
         slug: string;
         excerpt?: string;
         publishedAt?: string;
-        leadImageUrl?: string;
+        heroImageUrl?: string;
         existingId?: string | null;
       }>;
       events: Array<{
@@ -1075,22 +1131,45 @@ export function registerSaturnMarketingRoutes(app: Express) {
         description?: string;
         existingConferenceId?: string | null;
       }>;
+      episodes: Array<{
+        mcpId: string;
+        title: string;
+        slug: string;
+        summary?: string;
+        publishedAt?: string;
+        artworkUrl?: string;
+        existingId?: string | null;
+      }>;
+      landingPages: Array<{
+        mcpId: string;
+        title: string;
+        slug: string;
+        description?: string;
+        publishedAt?: string;
+        url?: string;
+        existingId?: string | null;
+      }>;
     };
 
     let postsAdded = 0, postsUpdated = 0, eventsAdded = 0, eventsUpdated = 0;
 
+    // Validate asset type against the known list; fall back to blog_post.
+    const VALID_ASSET_TYPES = new Set(["blog_post","case_study","whitepaper","video","workshop","webinar","podcast_outline","other","landing_page","press_release","ebook","linkedin_digest","video_script"]);
+    const safeAssetType = (raw: string): ContentAssetType =>
+      (VALID_ASSET_TYPES.has(raw) ? raw : "blog_post") as ContentAssetType;
+
     for (const post of postsToImport) {
       const postUrl = `${siteUrl}/insights/${post.slug}`;
       const assetDate = post.publishedAt ? new Date(post.publishedAt) : null;
-      const safeType = (post.assetType === "case_study" ? "case_study" : "blog_post") as ContentAssetType;
+      const assetType = safeAssetType(post.assetType);
 
       if (post.existingId) {
         await db.update(contentAssets).set({
           title: post.title,
           ...(post.excerpt ? { description: post.excerpt } : {}),
-          ...(post.leadImageUrl ? { leadImageUrl: post.leadImageUrl } : {}),
+          ...(post.heroImageUrl ? { leadImageUrl: post.heroImageUrl } : {}),
           ...(assetDate ? { assetDate } : {}),
-          assetType: safeType,
+          assetType,
           websitePostId: post.mcpId,
           websitePostSlug: post.slug,
           websitePostStatus: "published",
@@ -1108,8 +1187,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
           title: post.title,
           description: post.excerpt ?? null,
           url: postUrl,
-          assetType: safeType,
-          leadImageUrl: post.leadImageUrl ?? null,
+          assetType,
+          leadImageUrl: post.heroImageUrl ?? null,
           extractionStatus: "none",
           websitePostId: post.mcpId,
           websitePostSlug: post.slug,
@@ -1163,7 +1242,87 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
     }
 
-    res.json({ postsAdded, postsUpdated, eventsAdded, eventsUpdated });
+    // ── Episodes → content library (assetType "other" — podcast episode)
+    let episodesAdded = 0, episodesUpdated = 0;
+    for (const ep of episodesToImport) {
+      const epUrl = `${siteUrl}/podcast/${ep.slug}`;
+      const assetDate = ep.publishedAt ? new Date(ep.publishedAt) : null;
+      if (ep.existingId) {
+        await db.update(contentAssets).set({
+          title: ep.title,
+          ...(ep.summary ? { description: ep.summary } : {}),
+          ...(ep.artworkUrl ? { leadImageUrl: ep.artworkUrl } : {}),
+          ...(assetDate ? { assetDate } : {}),
+          websitePostId: ep.mcpId,
+          websitePostSlug: ep.slug,
+          url: epUrl,
+        }).where(and(
+          eq(contentAssets.id, ep.existingId),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        ));
+        episodesUpdated++;
+      } else {
+        await db.insert(contentAssets).values({
+          id: randomUUID(),
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          title: ep.title,
+          description: ep.summary ?? null,
+          url: epUrl,
+          assetType: "other" as ContentAssetType,
+          leadImageUrl: ep.artworkUrl ?? null,
+          extractionStatus: "none",
+          websitePostId: ep.mcpId,
+          websitePostSlug: ep.slug,
+          websitePostStatus: "published",
+          assetDate,
+          status: "active",
+          createdBy: ctx.userId,
+        } as any);
+        episodesAdded++;
+      }
+    }
+
+    // ── Landing pages → content library (assetType "landing_page")
+    let landingAdded = 0, landingUpdated = 0;
+    for (const lp of landingPagesToImport) {
+      const lpUrl = lp.url ?? `${siteUrl}/${lp.slug}`;
+      const assetDate = lp.publishedAt ? new Date(lp.publishedAt) : null;
+      if (lp.existingId) {
+        await db.update(contentAssets).set({
+          title: lp.title,
+          ...(lp.description ? { description: lp.description } : {}),
+          ...(assetDate ? { assetDate } : {}),
+          websitePostId: lp.mcpId,
+          websitePostSlug: lp.slug,
+          url: lpUrl,
+        }).where(and(
+          eq(contentAssets.id, lp.existingId),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+        ));
+        landingUpdated++;
+      } else {
+        await db.insert(contentAssets).values({
+          id: randomUUID(),
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          title: lp.title,
+          description: lp.description ?? null,
+          url: lpUrl,
+          assetType: "landing_page" as ContentAssetType,
+          extractionStatus: "none",
+          websitePostId: lp.mcpId,
+          websitePostSlug: lp.slug,
+          websitePostStatus: "published",
+          assetDate,
+          status: "active",
+          createdBy: ctx.userId,
+        } as any);
+        landingAdded++;
+      }
+    }
+
+    res.json({ postsAdded, postsUpdated, eventsAdded, eventsUpdated, episodesAdded, episodesUpdated, landingAdded, landingUpdated });
   });
 
   app.post("/api/content-assets/generate-summaries", async (req, res) => {

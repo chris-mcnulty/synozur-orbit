@@ -88,6 +88,7 @@ export async function callWebsiteTool<T = any>(
         method: "tools/call",
         params: { name: tool, arguments: args },
       }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -240,11 +241,16 @@ export interface WebsitePostSummary {
   status: string;
   publishedAt?: string;
   excerpt?: string;
-  leadImageUrl?: string;
+  /** Website returns heroImageUrl (not leadImageUrl). */
+  heroImageUrl?: string;
+  ogImageUrl?: string;
   /** Content kind derived from categories on the website side.
    *  Values: "post" | "case_study" | "whitepaper" | "video" | "workshop" | "webinar" | "podcast"
    *  Falls back to "post" when the website build predates this field. */
   kind?: string;
+  subtitle?: string;
+  author?: string;
+  readingTimeMin?: number;
 }
 
 /** Search published/draft posts on the tenant's website via MCP. */
@@ -265,24 +271,88 @@ export const searchPublishedPosts = (tenant: string) =>
 
 export interface WebsiteEventSummary {
   id: string;
-  name: string;
+  /** Website may return either `name` or `title` — normalised server-side. */
+  name?: string;
+  title?: string;
+  slug?: string;
   startDate?: string;   // ISO date or date-time string
   endDate?: string;
   location?: string;
+  timezone?: string;
+  eventType?: string;
+  registrationStatus?: string;
   url?: string;
+  registrationUrl?: string;
+  teaser?: string;
   description?: string;
+  imageUrl?: string;
+}
+
+export interface WebsiteEpisodeSummary {
+  id: string;
+  slug: string;
+  episodeNumber?: number;
+  title: string;
+  guestName?: string;
+  summary?: string;
+  durationSeconds?: number;
+  audioUrl?: string;
+  artworkUrl?: string;
+  appleUrl?: string;
+  spotifyUrl?: string;
+  featured?: boolean;
+  publishedAt?: string;
+}
+
+export interface WebsiteLandingPageSummary {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  pillar?: string;
+  tags?: string[];
+  seoTitle?: string;
+  seoDescription?: string;
+  publishedAt?: string;
+  featuredRank?: number;
 }
 
 /**
  * List upcoming events from the website MCP server.
- * Returns [] gracefully if the tool is not available on the connected site
- * (avoids hard-failing the email section-options endpoint).
+ * Returns [] gracefully if the tool is not available on the connected site.
+ * Normalises the `name` vs `title` ambiguity from the spec.
  */
 export async function listEvents(tenant: string, limit = 50): Promise<WebsiteEventSummary[]> {
   try {
-    return await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming: true, limit });
+    const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming: true, limit });
+    // Normalise: spec says field may be `name` or `title` — ensure `name` is always populated.
+    return raw.map(ev => ({ ...ev, name: ev.name ?? ev.title ?? "Unnamed event" }));
   } catch {
-    // Tool not yet available on this site build — degrade silently.
+    return [];
+  }
+}
+
+/**
+ * List published podcast episodes (Polaris series) from the website MCP.
+ * Returns [] gracefully if the tool is absent on this build.
+ */
+export async function listEpisodes(tenant: string, limit = 50): Promise<WebsiteEpisodeSummary[]> {
+  try {
+    return await callWebsiteTool<WebsiteEpisodeSummary[]>(tenant, "list_episodes", { limit });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * List published landing pages from the website MCP.
+ * Returns [] gracefully if the tool is absent on this build.
+ */
+export async function listLandingPages(tenant: string, limit = 50): Promise<WebsiteLandingPageSummary[]> {
+  try {
+    return await callWebsiteTool<WebsiteLandingPageSummary[]>(tenant, "list_landing_pages", { limit });
+  } catch {
     return [];
   }
 }
