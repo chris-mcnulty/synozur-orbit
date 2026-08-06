@@ -27,6 +27,7 @@ import type {
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
 import { getPlatformCredentials, isLinkedInDirectPublishEnabled } from "../platform-credentials-service";
+import { GraphClient } from "../sharepoint-graph-client.js";
 import { isLinkedInMcpConfigured } from "../linkedin-provider";
 import { callLinkedInTool, extractText } from "../linkedin-mcp-client";
 
@@ -576,21 +577,45 @@ export class LinkedInPublisher implements SocialPublisher {
     imageUrl: string,
   ): Promise<string | null> {
     try {
-      // Resolve relative URLs — server-side fetch needs an absolute base.
-      // Rewrite /public-objects/ URLs on any host to localhost — same-server
-      // self-requests through the public domain are unreliable in production.
-      const absoluteUrl = (() => {
-        if (imageUrl.startsWith("/")) {
-          return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
-        }
+      // Resolve image to bytes. Three cases in priority order:
+      //   a) SharePoint/SPE URL — requires authenticated Graph API access;
+      //      plain fetch() returns 403 even though the file exists.
+      //   b) /public-objects/ URL — rewrite to localhost to avoid unreliable
+      //      self-requests through the public domain in production.
+      //   c) Everything else — fetch as-is.
+      let imageBytes: Buffer | null = null;
+      let imageMime = "image/jpeg";
+
+      if (/sharepoint\.com\/contentstorage\//i.test(imageUrl)) {
         try {
-          const parsed = new URL(imageUrl);
-          if (parsed.pathname.startsWith("/public-objects/")) {
-            return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
+          const { buffer, mimeType } = await new GraphClient().downloadFileBySharePointUrl(imageUrl);
+          imageBytes = buffer;
+          imageMime = mimeType;
+        } catch (speErr: any) {
+          console.warn("[LinkedIn] SPE image download failed:", speErr.message);
+          return null;
+        }
+      } else {
+        const absoluteUrl = (() => {
+          if (imageUrl.startsWith("/")) {
+            return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
           }
-        } catch { /* not a valid URL — fall through */ }
-        return imageUrl;
-      })();
+          try {
+            const parsed = new URL(imageUrl);
+            if (parsed.pathname.startsWith("/public-objects/")) {
+              return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
+            }
+          } catch { /* not a valid URL — fall through */ }
+          return imageUrl;
+        })();
+        const imgResp = await fetch(absoluteUrl);
+        if (!imgResp.ok) {
+          console.warn("[LinkedIn] Failed to fetch image:", absoluteUrl, imgResp.status);
+          return null;
+        }
+        imageBytes = Buffer.from(await imgResp.arrayBuffer());
+        imageMime = imgResp.headers.get("content-type") ?? "image/jpeg";
+      }
 
       // 1. Initialize upload via the current LinkedIn Images API.
       const initResp = await fetch(`${API_HOST}/v2/images?action=initializeUpload`, {
@@ -618,21 +643,14 @@ export class LinkedInPublisher implements SocialPublisher {
         return null;
       }
 
-      // 2. Download the image.
-      const imgResp = await fetch(absoluteUrl);
-      if (!imgResp.ok) {
-        console.warn("[LinkedIn] Failed to fetch image:", absoluteUrl, imgResp.status);
-        return null;
-      }
-      const imageBuffer = await imgResp.arrayBuffer();
-
       // 3. Upload binary to LinkedIn.
       //    Pre-signed upload URLs MUST NOT receive an Authorization header —
       //    adding one causes a 403 / signature mismatch.
+      if (!imageBytes) return null;
       const uploadResp = await fetch(uploadUrl, {
         method: "PUT",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: imageBuffer,
+        headers: { "Content-Type": imageMime },
+        body: imageBytes,
       });
       if (!uploadResp.ok) {
         const errText = await uploadResp.text().catch(() => "");

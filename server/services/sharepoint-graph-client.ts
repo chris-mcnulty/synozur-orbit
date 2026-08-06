@@ -459,6 +459,46 @@ export class GraphClient {
     };
   }
 
+  /**
+   * Download a file from SharePoint using its public-facing SharePoint URL.
+   * SPE content storage URLs require authenticated Graph API access — a plain
+   * fetch() will get a 403. This method parses the containerId and file path
+   * out of the URL, fetches the item metadata (which includes a temporary
+   * pre-signed `@microsoft.graph.downloadUrl`), then downloads the bytes.
+   *
+   * Accepted URL format:
+   *   https://<tenant>.sharepoint.com/contentstorage/CSP_<containerId>/Document Library/<filePath>
+   */
+  async downloadFileBySharePointUrl(url: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    // Parse containerId and file path from the SPE URL.
+    const match = url.match(/\/contentstorage\/CSP_([^/]+)\/Document(?:%20| )Library\/(.*)/i);
+    if (!match) {
+      throw new Error(`[SPE GraphClient] Cannot parse SharePoint URL: ${url}`);
+    }
+    const containerId = match[1];
+    const filePath = decodeURIComponent(match[2]);
+
+    const driveId = await this.getContainerDriveId(containerId);
+    const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+    const item = await this.withRetry(() =>
+      this.request<DriveItemWithMetadata>(
+        `${this.driveEndpoint(driveId)}/root:/${encodedPath}`
+      )
+    );
+
+    const downloadUrl = item["@microsoft.graph.downloadUrl"];
+    if (!downloadUrl) {
+      throw new Error(`[SPE GraphClient] No download URL for SharePoint file: ${url}`);
+    }
+
+    const r = await fetch(downloadUrl);
+    if (!r.ok) {
+      throw new Error(`[SPE GraphClient] Download failed ${r.status} for: ${url}`);
+    }
+    const buffer = Buffer.from(await r.arrayBuffer());
+    return { buffer, mimeType: item.file?.mimeType ?? "image/jpeg" };
+  }
+
   async deleteFile(containerId: string, itemId: string): Promise<void> {
     const driveId = await this.getContainerDriveId(containerId);
     await this.withRetry(() =>

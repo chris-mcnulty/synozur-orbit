@@ -1526,6 +1526,7 @@ export default function CampaignDetailPage() {
   const [minutesBetweenPosts, setMinutesBetweenPosts] = useState("180");
   const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>([]);
   const [scheduleArchiveLeftover, setScheduleArchiveLeftover] = useState(false);
+  const [scheduleSkipScheduled, setScheduleSkipScheduled] = useState(true);
 
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [createPostContent, setCreatePostContent] = useState("");
@@ -1566,7 +1567,14 @@ export default function CampaignDetailPage() {
       const platformSet = new Set(platforms);
       // Only the chosen platforms get distributed; everything else is left as-is
       // (and optionally archived afterward as "leftovers").
-      const activePosts = posts.filter(p => p.status !== "deleted" && p.status !== "rejected" && platformSet.has(p.platform));
+      // When scheduleSkipScheduled is true, skip posts that already have a date
+      // so that scheduling one platform doesn't overwrite another's dates.
+      const activePosts = posts.filter(p =>
+        p.status !== "deleted" &&
+        p.status !== "rejected" &&
+        platformSet.has(p.platform) &&
+        (!scheduleSkipScheduled || !p.scheduledDate)
+      );
       if (activePosts.length === 0) throw new Error("No active posts to schedule for the selected platforms");
 
       const [hours, minutes] = time.split(":").map(Number);
@@ -6458,6 +6466,13 @@ export default function CampaignDetailPage() {
                 : "Saturdays skipped"}
               . Change this in Edit Campaign.
             </p>
+            <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="checkbox-skip-scheduled">
+              <Checkbox
+                checked={scheduleSkipScheduled}
+                onCheckedChange={(c) => setScheduleSkipScheduled(!!c)}
+              />
+              Skip posts that already have a date (recommended — protects other platforms)
+            </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="checkbox-archive-leftover">
               <Checkbox
                 checked={scheduleArchiveLeftover}
@@ -6467,7 +6482,12 @@ export default function CampaignDetailPage() {
             </label>
             <div className="text-sm text-muted-foreground" data-testid="text-schedule-preview">
               {(() => {
-                const active = posts.filter(p => p.status !== "deleted" && p.status !== "rejected" && schedulePlatforms.includes(p.platform)).length;
+                const active = posts.filter(p =>
+                  p.status !== "deleted" &&
+                  p.status !== "rejected" &&
+                  schedulePlatforms.includes(p.platform) &&
+                  (!scheduleSkipScheduled || !p.scheduledDate)
+                ).length;
                 const interval = parseInt(daysBetweenPosts);
                 const perDay = parseInt(postsPerDay);
                 const previewDays = campaign?.numberOfDays ?? (campaign?.startDate && campaign?.endDate ? Math.max(1, Math.round((new Date(campaign.endDate).getTime() - new Date(campaign.startDate).getTime()) / 86400000) + 1) : null);

@@ -323,6 +323,16 @@ export default function CalendarPage() {
               Social-only execution view — schedule, reschedule, retry, and add branded graphics for social posts.
             </p>
             <CalendarViewSwitcher className="mt-3" />
+            <div className="flex items-center gap-3 flex-wrap mt-2 text-[11px] text-muted-foreground">
+              <span className="font-medium">Key:</span>
+              {(["linkedin","twitter","instagram","facebook","bluesky"] as const).map(p => (
+                <span key={p} className={`px-1.5 py-0.5 rounded border capitalize ${PLATFORM_COLORS[p]}`}>{p}</span>
+              ))}
+              <span className="ml-2 font-medium">Status dot:</span>
+              {([["Draft","bg-gray-400"],["Approved","bg-blue-500"],["Published","bg-green-500"],["Failed","bg-red-500"],["Exported","bg-purple-500"]] as const).map(([label,cls]) => (
+                <span key={label} className="flex items-center gap-1"><span className={`w-2 h-2 rounded-full shrink-0 ${cls}`}/>{label}</span>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {campaignOptions.length > 0 && (

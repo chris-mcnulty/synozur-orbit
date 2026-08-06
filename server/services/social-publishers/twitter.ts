@@ -23,6 +23,7 @@ import type {
 } from "./index";
 import { decryptSecret } from "../../utils/encryption";
 import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-credentials-service";
+import { GraphClient } from "../sharepoint-graph-client.js";
 
 const AUTH_HOST = "https://twitter.com";
 const API_HOST = "https://api.twitter.com";
@@ -347,34 +348,47 @@ export class TwitterPublisher implements SocialPublisher {
    */
   private async uploadMedia(accessToken: string, imageUrl: string): Promise<string | null> {
     try {
-      // Resolve to a server-local URL wherever possible.
-      // Relative paths get localhost prepended (existing behaviour).
-      // Absolute /public-objects/ URLs on any host are also rewritten to
-      // localhost — this avoids an unreliable round-trip through the public
-      // domain (self-request) which can fail in production even though the
-      // file exists.  External image URLs (e.g. article lead images) are kept
-      // as-is because the server genuinely can't proxy them.
-      const absoluteUrl = (() => {
-        if (imageUrl.startsWith("/")) {
-          return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
-        }
-        try {
-          const parsed = new URL(imageUrl);
-          if (parsed.pathname.startsWith("/public-objects/")) {
-            return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
-          }
-        } catch { /* not a valid URL — fall through */ }
-        return imageUrl;
-      })();
-
       // 1. Download the image bytes.
-      const imgResp = await fetch(absoluteUrl);
-      if (!imgResp.ok) {
-        console.warn("[Twitter] Failed to fetch image for upload:", absoluteUrl, imgResp.status);
-        return null;
+      // Three cases in priority order:
+      //   a) SharePoint/SPE URL — requires authenticated Graph API access;
+      //      plain fetch() returns 403 even though the file exists.
+      //   b) /public-objects/ URL — rewrite to localhost to avoid unreliable
+      //      self-requests through the public domain in production.
+      //   c) Everything else (external article images etc.) — fetch as-is.
+      let imageBuffer: Buffer;
+      let contentType: string;
+
+      if (/sharepoint\.com\/contentstorage\//i.test(imageUrl)) {
+        try {
+          const { buffer, mimeType } = await new GraphClient().downloadFileBySharePointUrl(imageUrl);
+          imageBuffer = buffer;
+          contentType = mimeType;
+        } catch (speErr: any) {
+          console.warn("[Twitter] SPE image download failed:", speErr.message);
+          return null;
+        }
+      } else {
+        const absoluteUrl = (() => {
+          if (imageUrl.startsWith("/")) {
+            return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
+          }
+          try {
+            const parsed = new URL(imageUrl);
+            if (parsed.pathname.startsWith("/public-objects/")) {
+              return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
+            }
+          } catch { /* not a valid URL — fall through */ }
+          return imageUrl;
+        })();
+
+        const imgResp = await fetch(absoluteUrl);
+        if (!imgResp.ok) {
+          console.warn("[Twitter] Failed to fetch image for upload:", absoluteUrl, imgResp.status);
+          return null;
+        }
+        imageBuffer = Buffer.from(await imgResp.arrayBuffer());
+        contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
       }
-      const imageBuffer = Buffer.from(await imgResp.arrayBuffer());
-      const contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
 
       // 2. Upload to X via multipart/form-data.
       const form = new FormData();
