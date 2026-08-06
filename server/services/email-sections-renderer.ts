@@ -117,8 +117,12 @@ function renderTwoColumn(
     .map(p => `<li style="margin:0 0 10px 0;${BODY_TEXT}">${p.url ? link(p.url, p.title, brand) : esc(p.title)}</li>`)
     .join("\n");
 
+  // 280 px each = 560 px total, which fits inside the ~568 px inner width of the
+  // 600 px outer table with 16 px side padding.  Using 290 px (= 580 px total)
+  // caused the columns to wrap in Gmail and other clients that honour max-width.
+  // The MSO ghost-table cells below use the same 280 px value.
   const eventsCol = events.length
-    ? `<div style="display:inline-block;width:100%;max-width:290px;vertical-align:top;">
+    ? `<div style="display:inline-block;width:100%;max-width:280px;vertical-align:top;">
         <div style="padding:0 12px 24px 0;">
           <h2 style="${H2}">Upcoming Events</h2>
           <ul style="margin:0;padding:0 0 0 20px;">${eventItems}</ul>
@@ -127,7 +131,7 @@ function renderTwoColumn(
       </div>`
     : "";
   const postsCol = posts.length
-    ? `<div style="display:inline-block;width:100%;max-width:290px;vertical-align:top;">
+    ? `<div style="display:inline-block;width:100%;max-width:280px;vertical-align:top;">
         <div style="padding:0 0 24px 0;">
           <h2 style="${H2}">Recent Updates</h2>
           <ul style="margin:0;padding:0 0 0 20px;">${postItems}</ul>

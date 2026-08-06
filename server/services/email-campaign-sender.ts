@@ -226,15 +226,19 @@ function injectFooter(html: string, unsubUrl: string, prefsUrl: string): string 
  *  - Heading font sizes step down one tier to stay readable.
  */
 /**
- * Bump inline font sizes below 15px up to 16px so body copy is readable on
- * mobile without pinch-zoom. Applies to AI-generated fragments whose inline
- * styles otherwise defeat the responsive wrapper's media queries (and the
- * HubSpot paste path, which has no media queries at all).
+ * Bump inline font sizes below minPx (default 16) up to minPx so body copy is
+ * readable on mobile without pinch-zoom. Applies to AI-generated fragments
+ * whose inline styles otherwise defeat the responsive wrapper's media queries
+ * (and the HubSpot paste path, which has no media queries at all).
+ *
+ * Previously the guard was `n < 15`, which let 15 px slip through against a
+ * stated 16 px floor. Fixed to `n < minPx` so the threshold and the
+ * replacement value are always consistent.
  */
 export function enforceMinimumFontSize(html: string, minPx = 16): string {
   return html.replace(/font-size:\s*(\d+)px/gi, (m, size) => {
     const n = parseInt(size, 10);
-    return n > 0 && n < 15 ? `font-size:${minPx}px` : m;
+    return n > 0 && n < minPx ? `font-size:${minPx}px` : m;
   });
 }
 
