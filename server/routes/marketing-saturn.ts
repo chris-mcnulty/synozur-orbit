@@ -981,8 +981,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
       videos:       k => k === "video",
       workshops:    k => k === "workshop",
     };
-    const isPostSubtype = kindParam in POST_KIND_MATCH;
-    const postKindMatch = POST_KIND_MATCH[kindParam] ?? null; // null = no filter (fetch all)
+    const isPostSubtype = Object.prototype.hasOwnProperty.call(POST_KIND_MATCH, kindParam);
+    const postKindMatch = isPostSubtype ? POST_KIND_MATCH[kindParam] : null; // null = no filter (fetch all)
 
     const wantEvents   = kindParam === "events"        || kindParam === "all";
     const wantEpisodes = kindParam === "episodes"      || kindParam === "all";
@@ -997,7 +997,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
     // let errors propagate — the caller already passed a ping check so a failure here is
     // actionable (wrong tool, auth issue, etc.) and must surface to the user.
     // For legacy "all" / "both" modes we still swallow the error so events/episodes can load.
-    const [posts, events, episodes, landingPages, existingAssets, existingConferences] = await Promise.all([
+    let posts: websiteMcp.WebsitePostSummary[], events: websiteMcp.WebsiteEventSummary[],
+        episodes: websiteMcp.WebsiteEpisodeSummary[], landingPages: websiteMcp.WebsiteLandingPageSummary[],
+        existingAssets: { id: string; url: string | null; websitePostId: string | null; assetType: string }[],
+        existingConferences: { id: string; name: string; startDate: unknown }[];
+    try {
+      [posts, events, episodes, landingPages, existingAssets, existingConferences] = await Promise.all([
       effectivePosts
         ? (isPostSubtype
             ? websiteMcp.searchPublishedPosts(ctx.tenantDomain)
@@ -1037,7 +1042,13 @@ export function registerSaturnMarketingRoutes(app: Express) {
             or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
           ))
         : Promise.resolve([] as { id: string; name: string; startDate: string | null }[]),
-    ]);
+      ]);
+    } catch (err: any) {
+      // Surface MCP failures as a structured 502 instead of an unhandled
+      // rejection / generic HTML 500 the client can't parse.
+      console.error("[mcp-website/candidates]", err);
+      return res.status(502).json({ error: `Could not fetch content from the website: ${err?.message ?? "unknown error"}` });
+    }
 
     const byPostId = new Map(existingAssets.filter(a => a.websitePostId).map(a => [a.websitePostId!, a]));
     const byUrl    = new Map(existingAssets.filter(a => a.url).map(a => [normalizeUrl(a.url!), a]));
