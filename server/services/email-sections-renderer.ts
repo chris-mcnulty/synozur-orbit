@@ -90,7 +90,8 @@ function renderCaseStudy(cs: SectionCaseStudy, brand: string): string {
         <div style="${BODY_TEXT}${cs.imageUrl ? "padding:8px 0 0 0;" : ""}">
           <p style="margin:0 0 10px 0;${BODY_TEXT}font-weight:bold;">${titleHtml}</p>
           <p style="margin:0 0 10px 0;${BODY_TEXT}">${esc(cs.blurb)}</p>
-          ${cs.quote ? `<p style="margin:0;${BODY_TEXT}font-style:italic;color:#555555;">${esc(cs.quote)}</p>` : ""}
+          ${cs.quote ? `<p style="margin:0 0 10px 0;${BODY_TEXT}font-style:italic;color:#555555;">${esc(cs.quote)}</p>` : ""}
+          ${cs.url ? `<p style="margin:0;${BODY_TEXT}"><a href="${esc(cs.url)}" target="_blank" style="color:${brand};text-decoration:underline;font-weight:bold;">Read the full case study &rarr;</a></p>` : ""}
         </div>
       </div>${msoClose}
     </div>

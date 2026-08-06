@@ -4953,7 +4953,15 @@ Structure your response using these exact delimiters:
     }
     let body = appendSectionsToBody(email.htmlBody || "", freshSectionsHtml);
     body = enforceMinimumFontSize(body);
-    res.json({ html: wrapResponsiveDocument(body), fragment: body });
+    // HubSpot's HTML module rejects <html>/<head>/<body>, <style> blocks, and
+    // even the tags inside MSO conditional comments (it flags a "missing </td>").
+    // hubspotFragment is the paste-safe variant: bare fragment, inline styles
+    // only, conditionals stripped.
+    const hubspotFragment = body
+      .replace(/<!--\[if [^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .trim();
+    res.json({ html: wrapResponsiveDocument(body), fragment: body, hubspotFragment });
   });
 
   app.delete("/api/email/saved/:id", async (req, res) => {

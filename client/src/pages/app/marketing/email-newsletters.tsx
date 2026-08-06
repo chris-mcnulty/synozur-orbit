@@ -2394,9 +2394,9 @@ export default function EmailNewslettersPage() {
                         try {
                           const r = await fetch(`/api/email/saved/${viewingEmail.id}/export-html`, { credentials: "include" });
                           if (!r.ok) throw new Error("Export failed");
-                          const { html } = await r.json();
-                          await navigator.clipboard.writeText(html);
-                          toast({ title: "Copied", description: "Responsive HTML (with sections + mobile styles) copied — paste into HubSpot's HTML module" });
+                          const { html, hubspotFragment } = await r.json();
+                          await navigator.clipboard.writeText(hubspotFragment || html);
+                          toast({ title: "Copied", description: "HubSpot-safe HTML (sections included, inline styles only) copied — paste into HubSpot's HTML module" });
                         } catch {
                           toast({ title: "Copy failed", description: "Could not build the responsive export", variant: "destructive" });
                         }
