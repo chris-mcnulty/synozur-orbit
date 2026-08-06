@@ -97,6 +97,7 @@ import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
 import { enforceMinimumFontSize, wrapResponsiveDocument } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
+import * as websiteMcp from "../services/website-mcp-client";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -830,6 +831,92 @@ export function registerSaturnMarketingRoutes(app: Express) {
       console.error("[Saturn] Content extraction error:", err.message);
       res.status(422).json({ error: `Could not extract content: ${err.message}` });
     }
+  });
+
+  // ── Import published posts from the website MCP ──────────────────────────
+  // Pulls all published posts via the website MCP connection, then upserts them
+  // as blog_post content assets. Matches by websitePostId first, then by
+  // normalised URL, so re-running is safe and idempotent.
+  app.post("/api/content-assets/import-from-website", async (req, res) => {
+    if (!await guardFeature(req, res, "contentLibrary")) return;
+    const ctx = await getRequestContext(req);
+    const conn = await websiteMcp.getWebsiteConnection(ctx.tenantDomain);
+    if (!conn || !conn.enabled) {
+      return res.status(400).json({ error: "Website integration is not connected. Configure it in Settings → Integrations." });
+    }
+    const siteUrl = conn.endpoint.replace(/\/api\/mcp\/?$/, "");
+    const normalizeUrl = (u: string) => {
+      try {
+        const parsed = new URL(u.toLowerCase());
+        return parsed.origin + parsed.pathname.replace(/\/+$/, "");
+      } catch { return u.toLowerCase().replace(/\/+$/, ""); }
+    };
+
+    let posts: websiteMcp.WebsitePostSummary[];
+    try {
+      posts = await websiteMcp.searchPublishedPosts(ctx.tenantDomain);
+    } catch (err: any) {
+      return res.status(502).json({ error: `Could not reach website: ${err.message}` });
+    }
+
+    // Fetch existing assets once so we can match without per-row queries.
+    const existing = await db.select({
+      id: contentAssets.id,
+      url: contentAssets.url,
+      websitePostId: contentAssets.websitePostId,
+      websitePostSlug: contentAssets.websitePostSlug,
+    }).from(contentAssets).where(and(
+      eq(contentAssets.tenantDomain, ctx.tenantDomain),
+      eq(contentAssets.marketId, ctx.marketId),
+    ));
+    const byPostId = new Map(existing.filter(a => a.websitePostId).map(a => [a.websitePostId!, a.id]));
+    const byUrl    = new Map(existing.filter(a => a.url).map(a => [normalizeUrl(a.url!), a.id]));
+
+    let added = 0, updated = 0, skipped = 0;
+    for (const post of posts) {
+      // Construct the canonical blog post URL from the site + slug.
+      // The Synozur website publishes blog posts under /insights/<slug>.
+      const postUrl = `${siteUrl}/insights/${post.slug}`;
+      const normUrl = normalizeUrl(postUrl);
+      const assetDate = post.publishedAt ? new Date(post.publishedAt) : null;
+
+      const existingId = byPostId.get(post.id) ?? byUrl.get(normUrl);
+      if (existingId) {
+        // Update title / excerpt / leadImage if they've changed.
+        await db.update(contentAssets).set({
+          title: post.title,
+          ...(post.excerpt ? { description: post.excerpt } : {}),
+          ...(post.leadImageUrl ? { leadImageUrl: post.leadImageUrl } : {}),
+          ...(assetDate ? { assetDate } : {}),
+          websitePostId: post.id,
+          websitePostSlug: post.slug,
+          websitePostStatus: post.status,
+          url: postUrl,
+        }).where(eq(contentAssets.id, existingId));
+        updated++;
+      } else {
+        await db.insert(contentAssets).values({
+          id: randomUUID(),
+          tenantDomain: ctx.tenantDomain,
+          marketId: ctx.marketId,
+          title: post.title,
+          description: post.excerpt ?? null,
+          url: postUrl,
+          assetType: "blog_post",
+          leadImageUrl: post.leadImageUrl ?? null,
+          extractionStatus: "none",
+          websitePostId: post.id,
+          websitePostSlug: post.slug,
+          websitePostStatus: post.status,
+          assetDate,
+          status: "active",
+          createdBy: ctx.userId,
+        } as any);
+        added++;
+      }
+    }
+    if (posts.length === 0) skipped = 0; // nothing to skip — all posts processed
+    res.json({ added, updated, skipped, total: posts.length });
   });
 
   app.post("/api/content-assets/generate-summaries", async (req, res) => {
@@ -4153,15 +4240,18 @@ Structure your response using these exact delimiters:
   // ── Email sections (case study / upcoming events / recent updates) ──────
 
   // Options for the section pickers.
-  // - events: upcoming conferences next 6 months (from the Conferences/Events module)
-  // - caseStudies: all case_study-typed digital assets (url optional; blurb renders even without a link)
-  // - blogPosts: blog_post digital assets that have a live URL (url-backed only — a post without a
-  //   URL can't be linked in the email, so it's not useful here)
+  // - events: upcoming conferences (Orbit Events module) merged with events from
+  //   the website MCP server (if connected). The website carries the full
+  //   multi-month-ahead calendar; Orbit's Events module typically only has entries
+  //   within ~30 days of an event's social launch window. Both sources are merged
+  //   and deduplicated by name+date so the picker always shows the complete picture.
+  // - caseStudies: all case_study-typed digital assets (url optional)
+  // - blogPosts: blog_post digital assets with a live URL
   app.get("/api/email/section-options", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
     const now = new Date();
-    const horizon = new Date(now.getTime() + 183 * 24 * 3600 * 1000); // ~6 months
+    const horizon = new Date(now.getTime() + 365 * 24 * 3600 * 1000); // 12 months — website may list further out
 
     const assetBaseWhere = and(
       eq(contentAssets.tenantDomain, ctx.tenantDomain),
@@ -4169,7 +4259,7 @@ Structure your response using these exact delimiters:
       eq(contentAssets.status, "active"),
     );
 
-    const [events, caseStudies, blogPosts] = await Promise.all([
+    const [orbitEvents, caseStudies, blogPosts, mcpEvents] = await Promise.all([
       db.select({
         id: conferences.id,
         name: conferences.name,
@@ -4220,7 +4310,46 @@ Structure your response using these exact delimiters:
         ))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
         .limit(30),
+
+      // Website MCP events — gracefully returns [] when not connected or the
+      // list_events tool isn't available on the connected site build yet.
+      websiteMcp.listEvents(ctx.tenantDomain, 100).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
     ]);
+
+    // Merge orbit events + MCP events, deduplicated by normalised name+date key.
+    // Orbit entries take precedence (they already have a local conference record
+    // the social team can link campaigns to).
+    const normKey = (name: string, date?: string | Date | null) => {
+      const d = date ? new Date(date).toISOString().slice(0, 10) : "";
+      return `${name.trim().toLowerCase()}|${d}`;
+    };
+    const seenKeys = new Set(orbitEvents.map(e => normKey(e.name, e.startDate)));
+
+    const mcpOnlyEvents = mcpEvents
+      .filter(e => {
+        if (!e.startDate) return false;
+        const start = new Date(e.startDate);
+        if (start < now || start > horizon) return false;
+        return !seenKeys.has(normKey(e.name, e.startDate));
+      })
+      .map(e => ({
+        id: `mcp_${e.id}`,
+        name: e.name,
+        location: e.location ?? null,
+        website: e.url ?? null,
+        startDate: e.startDate ?? null,
+        endDate: e.endDate ?? null,
+        source: "website" as const,
+      }));
+
+    const events = [
+      ...orbitEvents.map(e => ({ ...e, source: "orbit" as const })),
+      ...mcpOnlyEvents,
+    ].sort((a, b) => {
+      const da = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+      const db2 = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+      return da - db2;
+    });
 
     res.json({ events, caseStudies, blogPosts });
   });

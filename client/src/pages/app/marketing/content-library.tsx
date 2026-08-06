@@ -275,6 +275,37 @@ export default function ContentLibraryPage() {
     return /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || ba.fileType?.startsWith("image/");
   });
 
+  const { data: websiteStatus } = useQuery<{ connected: boolean; siteUrl?: string }>({
+    queryKey: ["/api/integrations/website/status"],
+    queryFn: async () => {
+      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
+      return r.ok ? r.json() : { connected: false };
+    },
+    enabled: isAllowed,
+  });
+
+  const [isSyncingWebsite, setIsSyncingWebsite] = useState(false);
+  const syncFromWebsite = async () => {
+    setIsSyncingWebsite(true);
+    try {
+      const r = await fetch("/api/content-assets/import-from-website", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Sync failed");
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      toast({
+        title: "Website sync complete",
+        description: `${data.added} added · ${data.updated} updated · ${data.total} posts found`,
+      });
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSyncingWebsite(false);
+    }
+  };
+
   const { data: suggestions = [] } = useQuery<any[]>({
     queryKey: ["/api/suggested-content-assets"],
     queryFn: async () => {
@@ -1115,6 +1146,19 @@ export default function ContentLibraryPage() {
                 onChange={handleImportCSV}
                 data-testid="input-import-csv-content"
               />
+              {websiteStatus?.connected && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={syncFromWebsite}
+                  disabled={isSyncingWebsite}
+                  data-testid="button-sync-from-website"
+                >
+                  {isSyncingWebsite
+                    ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Syncing…</>
+                    : <><Globe className="w-4 h-4 mr-1" /> Sync from website</>}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-content">
                 <Upload className="w-4 h-4 mr-1" /> Import CSV
               </Button>

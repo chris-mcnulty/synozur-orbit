@@ -218,6 +218,7 @@ export interface WebsitePostSummary {
   status: string;
   publishedAt?: string;
   excerpt?: string;
+  leadImageUrl?: string;
 }
 
 /** Search published/draft posts on the tenant's website via MCP. */
@@ -226,6 +227,39 @@ export const searchPosts = (tenant: string, query?: string, pageSize = 30) =>
     ...(query ? { query } : {}),
     pageSize,
   });
+
+/** Fetch all published posts for import into the content library (up to 200). */
+export const searchPublishedPosts = (tenant: string) =>
+  callWebsiteTool<WebsitePostSummary[]>(tenant, "search_posts", {
+    status: "published",
+    pageSize: 200,
+  });
+
+// ─── Events / conferences ────────────────────────────────────────────────────
+
+export interface WebsiteEventSummary {
+  id: string;
+  name: string;
+  startDate?: string;   // ISO date or date-time string
+  endDate?: string;
+  location?: string;
+  url?: string;
+  description?: string;
+}
+
+/**
+ * List upcoming events from the website MCP server.
+ * Returns [] gracefully if the tool is not available on the connected site
+ * (avoids hard-failing the email section-options endpoint).
+ */
+export async function listEvents(tenant: string, limit = 50): Promise<WebsiteEventSummary[]> {
+  try {
+    return await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming: true, limit });
+  } catch {
+    // Tool not yet available on this site build — degrade silently.
+    return [];
+  }
+}
 
 /** Reject non-HTTPS and localhost / private / link-local hosts so a server-side
  *  image fetch can't be turned into an SSRF probe of the internal network. */

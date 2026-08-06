@@ -2628,14 +2628,17 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label className="text-xs">Upcoming events (next 6 months)</Label>
+            <Label className="text-xs">Upcoming events</Label>
             <div className="max-h-44 overflow-y-auto space-y-1 border rounded p-2">
               {(options?.events ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No upcoming events found. Add them in <span className="font-medium">Marketing → Events</span>.
+                  No upcoming events found. Add them in{" "}
+                  <span className="font-medium">Marketing → Events</span>, or connect your
+                  website in <span className="font-medium">Settings → Integrations</span> to
+                  pull events from the site calendar automatically.
                 </p>
               )}
-              {(options?.events ?? []).map(ev => (
+              {(options?.events ?? []).map((ev: any) => (
                 <label key={ev.id} className="flex items-start gap-2 text-xs cursor-pointer" data-testid={`checkbox-section-event-${ev.id}`}>
                   <Checkbox
                     className="mt-0.5"
@@ -2643,7 +2646,11 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
                     onCheckedChange={(c) => setEventIds(prev => c ? [...prev, ev.id] : prev.filter(x => x !== ev.id))}
                   />
                   <span>
-                    <span className="font-medium">{ev.name}</span>{" "}
+                    <span className="font-medium">{ev.name}</span>
+                    {ev.source === "website" && (
+                      <span className="ml-1 text-[10px] text-muted-foreground/70 border rounded px-1">site</span>
+                    )}
+                    {" "}
                     <span className="text-muted-foreground">
                       {fmtEventDate(ev.startDate, ev.endDate)}{ev.location ? ` · ${ev.location}` : ""}
                     </span>
