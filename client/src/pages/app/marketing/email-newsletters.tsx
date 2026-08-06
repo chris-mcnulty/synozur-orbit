@@ -123,6 +123,22 @@ interface PreviewEmail {
   coachingTips?: string[];
 }
 
+/**
+ * Fetch the server-rendered export for a saved email — the body with the
+ * configured sections (case study, events, blog posts, About) re-rendered and
+ * appended. Copy/Wix export must use this instead of the raw htmlBody, which
+ * never contains sections. Returns null when the fetch fails.
+ */
+async function fetchSavedEmailExport(id: string): Promise<{ html: string; fragment: string; hubspotFragment: string } | null> {
+  try {
+    const r = await fetch(`/api/email/saved/${id}/export-html`, { credentials: "include" });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 function buildWixHtml(htmlBody: string, subject: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1420,16 +1436,20 @@ export default function EmailNewslettersPage() {
                         variant="ghost"
                         size="sm"
                         title={email.platform === "hubspot-marketing" ? "Copy HTML" : "Copy email body"}
-                        onClick={e => {
+                        onClick={async e => {
                           e.stopPropagation();
-                          const content = email.platform === "hubspot-marketing"
+                          let content = email.platform === "hubspot-marketing"
                             ? email.htmlBody
                             : (email.textBody || email.htmlBody);
+                          if (email.platform === "hubspot-marketing") {
+                            const exported = await fetchSavedEmailExport(email.id);
+                            if (exported) content = exported.hubspotFragment || exported.fragment;
+                          }
                           navigator.clipboard.writeText(content);
                           toast({
                             title: "Copied",
                             description: email.platform === "hubspot-marketing"
-                              ? "HTML copied to clipboard"
+                              ? "HTML (sections included) copied to clipboard"
                               : "Email body copied to clipboard",
                           });
                         }}
@@ -1442,9 +1462,11 @@ export default function EmailNewslettersPage() {
                           variant="ghost"
                           size="sm"
                           title="Wix Export — download HTML for Wix embed"
-                          onClick={e => {
+                          onClick={async e => {
                             e.stopPropagation();
-                            const wixHtml = buildWixHtml(email.htmlBody, email.subject);
+                            const exported = await fetchSavedEmailExport(email.id);
+                            const body = exported?.fragment || email.htmlBody;
+                            const wixHtml = buildWixHtml(body, email.subject);
                             const filename = `${email.subject.replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/, "").toLowerCase()}-wix.html`;
                             downloadHtmlFile(wixHtml, filename);
                             toast({ title: "Wix Export downloaded", description: "Paste the HTML into a Wix HTML embed widget" });
@@ -2380,11 +2402,15 @@ export default function EmailNewslettersPage() {
                     variant="secondary"
                     size="sm"
                     className="gap-1.5 text-xs"
-                    onClick={() => {
+                    onClick={async () => {
                       if (!viewingEmail) return;
-                      const content = viewingEmail.platform === "hubspot-marketing"
+                      let content = viewingEmail.platform === "hubspot-marketing"
                         ? viewingEmail.htmlBody
                         : (viewingEmail.textBody || viewingEmail.htmlBody);
+                      if (viewingEmail.platform === "hubspot-marketing") {
+                        const exported = await fetchSavedEmailExport(viewingEmail.id);
+                        if (exported) content = exported.hubspotFragment || exported.fragment;
+                      }
                       navigator.clipboard.writeText(content);
                       toast({
                         title: "Copied",

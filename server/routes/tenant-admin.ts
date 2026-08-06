@@ -1122,6 +1122,13 @@ export function registerTenantAdminRoutes(app: Express) {
       if (faviconUrl !== undefined) {
         updateData.faviconUrl = faviconUrl || null;
       }
+      // CAN-SPAM physical mailing address for marketing email footers.
+      const { mailingAddress } = req.body;
+      if (mailingAddress !== undefined) {
+        updateData.mailingAddress = typeof mailingAddress === "string" && mailingAddress.trim()
+          ? mailingAddress.trim().slice(0, 500)
+          : null;
+      }
       if (primaryColor && hexColorRegex.test(primaryColor)) {
         updateData.primaryColor = primaryColor;
       }

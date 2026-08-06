@@ -187,10 +187,17 @@ export async function wrapOutboundLinksInText(
   }
 
   let rewritten = text;
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const { original, replacement } of replacements) {
-    // Use split/join to replace ALL occurrences of the URL — safer than regex
-    // because the URL itself may contain regex-special characters.
-    rewritten = rewritten.split(original).join(replacement);
+    // Replace ALL occurrences of the URL — EXCEPT when it is an image source
+    // (src="..."). Rewriting an <img src> to a /r/ redirect breaks the image
+    // in email clients (this is how a logo once rendered as a redirect page).
+    rewritten = rewritten.replace(
+      // Case-insensitive, whitespace-tolerant `src =` prefix (URL itself stays
+      // case-sensitive, so no `i` flag on the whole pattern).
+      new RegExp(`([sS][rR][cC]\\s*=\\s*["']?)?${escapeRe(original)}`, "g"),
+      (full, srcPrefix) => (srcPrefix ? full : replacement),
+    );
   }
 
   return { text: rewritten, createdSlugs };

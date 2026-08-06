@@ -359,6 +359,7 @@ export default function Settings() {
   const [brandingSecondary, setBrandingSecondary] = useState("");
   const [brandingAccent, setBrandingAccent] = useState("");
   const [brandingNeutral, setBrandingNeutral] = useState("");
+  const [mailingAddress, setMailingAddress] = useState("");
   const [monitoringFreq, setMonitoringFreq] = useState("");
   
   const [currentPassword, setCurrentPassword] = useState("");
@@ -525,6 +526,7 @@ export default function Settings() {
       setBrandingSecondary(tenant.secondaryColor || "#E60CB3");
       setBrandingAccent((tenant as any).accentColor || "#F59E0B");
       setBrandingNeutral((tenant as any).neutralColor || "#6B7280");
+      setMailingAddress((tenant as any).mailingAddress || "");
       setMonitoringFreq(tenant.monitoringFrequency || "weekly");
       setEntraEnabled(tenant.entraEnabled || false);
       const allowed = tenant.allowedAuthProviders && tenant.allowedAuthProviders.length > 0
@@ -689,6 +691,7 @@ export default function Settings() {
           secondaryColor: brandingSecondary,
           accentColor: brandingAccent,
           neutralColor: brandingNeutral,
+          mailingAddress,
           monitoringFrequency: monitoringFreq,
         }),
       });
@@ -1055,6 +1058,18 @@ export default function Settings() {
                   onChange={(e) => setBrandingName(e.target.value)}
                   data-testid="input-org-name"
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label>Mailing Address</Label>
+                <Input
+                  value={mailingAddress}
+                  onChange={(e) => setMailingAddress(e.target.value)}
+                  placeholder="123 Main St, Suite 100, City, ST 00000"
+                  data-testid="input-mailing-address"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shown in the footer of marketing emails (required for CAN-SPAM compliance).
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

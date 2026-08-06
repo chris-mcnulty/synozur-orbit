@@ -76,13 +76,16 @@ function link(href: string, text: string, color: string): string {
 
 /** Case study: image-left / text-right on desktop, stacked on mobile. */
 function renderCaseStudy(cs: SectionCaseStudy, brand: string): string {
+  // 240px wrapper with 20px right padding (border-box) = 220px image + a
+  // visible gutter between image and text on desktop (MSO path has its own
+  // 20px spacer cell).
   const img = cs.imageUrl
-    ? `<div style="display:inline-block;width:100%;max-width:220px;vertical-align:top;">
+    ? `<div style="display:inline-block;width:100%;max-width:240px;vertical-align:top;box-sizing:border-box;padding:0 20px 12px 0;">
         ${cs.url ? `<a href="${esc(cs.url)}" target="_blank">` : ""}<img src="${esc(cs.imageUrl)}" alt="${esc(cs.title)}" width="220" style="width:100%;max-width:220px;height:auto;display:block;border-radius:6px;border:0;">${cs.url ? "</a>" : ""}
       </div><!--
       -->`
     : "";
-  const textMax = cs.imageUrl ? 340 : 560;
+  const textMax = cs.imageUrl ? 320 : 560;
   const titleHtml = cs.url ? link(cs.url, cs.title, brand) : `<span style="color:#1a1a1a;">${esc(cs.title)}</span>`;
   // Outlook's Word engine ignores inline-block/max-width — give it a fixed
   // two-cell table via MSO conditionals; all other clients use the fluid divs.
@@ -100,7 +103,7 @@ function renderCaseStudy(cs: SectionCaseStudy, brand: string): string {
         <div style="${BODY_TEXT}${cs.imageUrl ? "padding:8px 0 0 0;" : ""}">
           <p style="margin:0 0 10px 0;${BODY_TEXT}font-weight:bold;">${titleHtml}</p>
           <p style="margin:0 0 10px 0;${BODY_TEXT}">${esc(cs.blurb)}</p>
-          ${cs.quote ? `<p style="margin:0 0 10px 0;${BODY_TEXT}font-style:italic;color:#555555;">${esc(cs.quote)}</p>` : ""}
+          ${cs.quote ? `<p style="margin:0 0 10px 0;${BODY_TEXT}font-style:italic;color:#444444;">${esc(cs.quote)}</p>` : ""}
           ${cs.url ? `<p style="margin:0;${BODY_TEXT}"><a href="${esc(cs.url)}" target="_blank" style="color:${brand};text-decoration:underline;font-weight:bold;">Read the full case study &rarr;</a></p>` : ""}
         </div>
       </div>${msoClose}
@@ -194,14 +197,14 @@ function renderGeneralInfo(g: SectionGeneralInfo): string {
   <tr><td style="padding:24px 16px 8px 16px;">
     ${g.senderSignoff ? `<p style="margin:0 0 6px 0;${BODY_TEXT}">${esc(g.senderSignoff)}</p>` : ""}
     ${g.senderName ? `<p style="margin:0 0 2px 0;${BODY_TEXT}font-weight:bold;">${esc(g.senderName)}</p>` : ""}
-    ${g.senderTitle ? `<p style="margin:0;${BODY_TEXT}color:#555555;">${esc(g.senderTitle)}</p>` : ""}
+    ${g.senderTitle ? `<p style="margin:0;${BODY_TEXT}color:#444444;">${esc(g.senderTitle)}</p>` : ""}
   </td></tr>
 </table>` : "";
 
   if (!hasAbout) return signoffHtml;
 
   const img = g.aboutImageUrl
-    ? `<div style="display:inline-block;width:100%;max-width:220px;vertical-align:top;">
+    ? `<div style="display:inline-block;width:100%;max-width:240px;vertical-align:top;box-sizing:border-box;padding:0 20px 12px 0;">
         <img src="${esc(g.aboutImageUrl)}" alt="${esc(g.aboutTitle ?? "")}" width="220" style="width:100%;max-width:220px;height:auto;display:block;border-radius:6px;border:0;">
       </div><!--
       -->`

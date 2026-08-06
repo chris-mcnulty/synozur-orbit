@@ -95,6 +95,9 @@ export const tenants = pgTable("tenants", {
   socialMonitoringEnabled: boolean("social_monitoring_enabled").default(false), // Premium feature
   logoUrl: text("logo_url"),
   faviconUrl: text("favicon_url"),
+  // Physical mailing address for CAN-SPAM compliance — injected into every
+  // marketing email footer alongside the unsubscribe links.
+  mailingAddress: text("mailing_address"),
   primaryColor: text("primary_color").default("#810FFB"),
   secondaryColor: text("secondary_color").default("#E60CB3"),
   // Extended brand palette for graphics generation

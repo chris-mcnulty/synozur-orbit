@@ -95,7 +95,7 @@ import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
-import { enforceMinimumFontSize, wrapResponsiveDocument } from "../services/email-campaign-sender";
+import { enforceMinimumFontSize, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
 
@@ -4284,14 +4284,14 @@ REQUIRED HTML STRUCTURE:
 - Image/banner <td> cells should have style="padding:0" with the image at width="100%"
 
 REQUIRED SECTIONS (adapt based on content):
-1. **Branded Header Banner**: Use the Brand Primary Color as the header background-color. LOGO_RULE Company name in small uppercase white text (letter-spacing:2px), a bold headline (h1 style, max font-size 26px, color:#ffffff), and a subheading in white/light text.
+1. **Header**: HEADER_RULE
 2. **Hero Image**: If the content asset has an image URL, include it as <img src="URL" width="560" style="display:block;width:100%;max-width:560px;height:auto;border:0" alt="...">. The image td must have NO padding (padding:0).
 3. **Opening Paragraph**: Jump straight into 2-3 context-setting paragraphs. Do NOT include a greeting like "Hi there" or "Dear Reader" — the email platform handles greetings separately in its pre-HTML section.
 4. **Key Stats / Data Cards**: If stats exist, use a SINGLE-ROW table with 2-3 <td> cells, each with percentage widths (e.g. width="33%"). Each cell: use Brand Secondary Color as background, border-radius:8px, centered large bold number and label in white. Do NOT use fixed pixel widths on stat cells.
 5. **Key Points**: Present 3-5 highlights as styled paragraphs with bold titles (use Brand Primary Color for bold text) and descriptions.
 6. **Primary CTA Button**: Render as a centered <table> with a single <td bgcolor="BRAND_PRIMARY_COLOR" style="border-radius:6px;text-align:center"><a href="URL" style="display:inline-block;padding:14px 32px;color:#ffffff;font-weight:bold;text-decoration:none;font-family:Arial,sans-serif;font-size:16px">Button Text</a></td>. Do NOT use [CTA_BUTTON] placeholders.
 7. **Secondary Content**: If multiple assets, add another section. IMPORTANT: Do NOT place images and text side by side in a 2-column layout. Each image must occupy its own full-width <tr><td style="padding:0"> row; its accompanying text goes in a separate <tr><td style="padding:24px 32px"> below it. Never use width="50%" or width="33%" on image cells.
-8. **Footer**: Simple single-column footer. Do NOT use multi-column footer layouts — stack footer items vertically. Include EXACTLY ONE footer at the very end — never repeat or duplicate the footer section under any circumstances.
+8. **Ending**: End the email after the final content section or CTA. Do NOT include an "About [company]" section, company boilerplate paragraph, sign-off block, or footer of any kind — the platform automatically appends a configured "About" section and a compliance footer at send time, and adding your own creates duplicates.
 
 VISUAL DESIGN RULES:
 - Use <hr> with style="border:none;border-top:1px solid #e8ecf0;margin:24px 0" between sections
@@ -4370,9 +4370,23 @@ VISUAL DESIGN RULES:
         eq(brandAssets.status, "active"),
       ))
       .limit(5);
+    // Only treat an asset as the logo when it is explicitly a logo — the old
+    // "any image file" fallback once picked an unrelated photo as the header
+    // logo. A prebuilt email header banner (name contains "header") is used
+    // as the full-width header image instead of the AI-composed banner.
+    // Both are matched by name across ALL active brand assets (not a
+    // limit(5) sample, which could miss the right asset).
     const logoAsset = logoAssets.find((a: any) =>
-      a.name?.toLowerCase().includes("logo") || a.fileType?.startsWith("image")
+      a.name?.toLowerCase().includes("logo") || a.assetType === "logo"
     );
+    const [headerAsset] = await db.select().from(brandAssets)
+      .where(and(
+        eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.status, "active"),
+        ilike(brandAssets.name, "%header%"),
+      ))
+      .orderBy(brandAssets.name)
+      .limit(1);
 
     let brandContext = "";
     if (companyProfile) {
@@ -4399,6 +4413,14 @@ VISUAL DESIGN RULES:
       ? `Include the company logo image in the header as <img src="${logoUrl}" style="height:40px;width:auto;display:block;margin-bottom:8px;border:0" alt="Logo">.`
       : `Do NOT include any <img> element for a logo or icon in the header — no logo URL has been provided. Use only text (company name, headline, subheading) in the header.`;
     platformInstruction = platformInstruction.replace(/LOGO_RULE/g, resolvedLogoRule);
+
+    // HEADER_RULE: prefer the tenant's prebuilt email header image (a brand
+    // asset whose name contains "header") over an AI-composed colored banner.
+    const headerImageUrl = (headerAsset as any)?.fileUrl || (headerAsset as any)?.url || "";
+    const resolvedHeaderRule = headerImageUrl
+      ? `Use the company's prebuilt email header image as the FIRST row of the email: <tr><td style="padding:0"><img src="${headerImageUrl}" width="560" style="display:block;width:100%;max-width:560px;height:auto;border:0" alt="Header"></td></tr>. Do NOT compose a colored banner block, do NOT add a separate logo image, and do NOT repeat the company name in the header. Directly below the header image, add a <td style="padding:24px 32px 0 32px"> row containing the bold headline (max font-size 26px, Brand Primary Color) and a subheading in #555555.`
+      : `Compose a branded header banner: use the Brand Primary Color as the header background-color. ${resolvedLogoRule} Company name in small uppercase white text (letter-spacing:2px), a bold headline (h1 style, max font-size 26px, color:#ffffff), and a subheading in white/light text.`;
+    platformInstruction = platformInstruction.replace(/HEADER_RULE/g, resolvedHeaderRule);
 
     const assetContext = selectedAssets
       .map((a: any) => {
@@ -5030,6 +5052,17 @@ Structure your response using these exact delimiters:
     }
     let body = appendSectionsToBody(email.htmlBody || "", freshSectionsHtml);
     body = enforceMinimumFontSize(body);
+    // Exports are pasted into external editors (HubSpot/Wix) whose readers
+    // fetch images from the public internet: publish private images and
+    // absolutize relative srcs, then harden CTA button backgrounds — same
+    // treatment the SendGrid send path applies.
+    try {
+      const exportBaseUrl = `${req.protocol}://${req.get("host")}`;
+      body = await prepareEmailImages(body, exportBaseUrl, ctx.tenantDomain);
+    } catch (err) {
+      console.warn("[export-html] image preparation failed; exporting original srcs:", err);
+    }
+    body = hardenCtaButtons(body);
     // HubSpot's HTML module rejects <html>/<head>/<body>, <style> blocks, and
     // even the tags inside MSO conditional comments (it flags a "missing </td>").
     // hubspotFragment is the paste-safe variant: bare fragment, inline styles

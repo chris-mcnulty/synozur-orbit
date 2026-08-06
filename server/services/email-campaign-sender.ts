@@ -193,13 +193,20 @@ async function getSendGridCreds(): Promise<{ apiKey: string; fromEmail: string }
   return { apiKey: item.settings.api_key, fromEmail: item.settings.from_email };
 }
 
-function injectFooter(html: string, unsubUrl: string, prefsUrl: string): string {
+function injectFooter(html: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // CAN-SPAM requires the sender's physical mailing address in every
+  // commercial email. Rendered on its own line above the unsubscribe links.
+  const addressLine = mailingAddress?.trim()
+    ? `${esc(mailingAddress.trim()).replace(/\n/g, ", ")}<br/>`
+    : "";
   const footer = `
-    <div style="margin-top:24px;padding:16px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;">
+    <div style="margin-top:24px;padding:16px;border-top:1px solid #ddd;font-size:12px;color:#555555;text-align:center;font-family:Arial,Helvetica,sans-serif;">
+      ${addressLine}
       You're receiving this email from a campaign sent through Orbit.<br/>
-      <a href="${unsubUrl}" style="color:#666;text-decoration:underline;">Unsubscribe</a>
+      <a href="${unsubUrl}" style="color:#555555;text-decoration:underline;">Unsubscribe</a>
       &nbsp;·&nbsp;
-      <a href="${prefsUrl}" style="color:#666;text-decoration:underline;">Manage preferences</a>
+      <a href="${prefsUrl}" style="color:#555555;text-decoration:underline;">Manage preferences</a>
     </div>
   `;
   if (/<\/body>/i.test(html)) {
@@ -269,10 +276,10 @@ export function wrapResponsiveDocument(html: string): string {
     body { margin:0; padding:0; background:#ffffff; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
     img { border:0; outline:none; }
     table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }
-    /* Force light mode in Apple Mail / Outlook dark mode */
-    @media (prefers-color-scheme: dark) {
-      body, table, td, div { background-color: inherit !important; color: inherit !important; }
-    }
+    /* NOTE: no dark-mode override block here on purpose. A previous
+       "background-color:inherit !important" rule wiped td bgcolor on CTA
+       buttons and stat cards in dark-mode clients, turning buttons into
+       plain text. The color-scheme meta above is the supported opt-out. */
     @media only screen and (max-width:620px) {
       /* Outer email wrapper — switch from fixed 560px to full width */
       table[width="560"],
@@ -311,8 +318,134 @@ ${html}
 </html>`;
 }
 
-function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string): string {
-  return `${text}\n\n---\nUnsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
+function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null): string {
+  const addressLine = mailingAddress?.trim() ? `${mailingAddress.trim().replace(/\n/g, ", ")}\n` : "";
+  return `${text}\n\n---\n${addressLine}Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
+}
+
+/**
+ * Make CTA buttons robust across clients: the AI generator styles buttons as
+ * `<td bgcolor="#xxxxxx"><a style="...">` — but some clients (notably ones
+ * that rewrite or drop td bgcolor, and dark-mode transforms) lose the cell
+ * background, leaving white text on a white/dark body ("invisible buttons").
+ * Copy the cell's bgcolor onto the anchor itself as an inline
+ * background-color so the button survives even if the cell styling is lost.
+ */
+export function hardenCtaButtons(html: string): string {
+  return html.replace(
+    /(<td[^>]*bgcolor=("|')(#[0-9a-fA-F]{3,8})\2[^>]*>\s*)<a\b([^>]*)>/gi,
+    (full, tdPart, _q, color, anchorAttrs) => {
+      if (/background(-color)?\s*:/i.test(anchorAttrs)) return full;
+      let newAttrs: string;
+      const styleMatch = anchorAttrs.match(/style=("|')([^"']*)\1/i);
+      if (styleMatch) {
+        const augmented = `${styleMatch[2].replace(/;?\s*$/, "")};background-color:${color};border-radius:6px`;
+        newAttrs = anchorAttrs.replace(styleMatch[0], `style=${styleMatch[1]}${augmented}${styleMatch[1]}`);
+      } else {
+        newAttrs = `${anchorAttrs} style="background-color:${color};border-radius:6px"`;
+      }
+      return `${tdPart}<a${newAttrs}>`;
+    },
+  );
+}
+
+/**
+ * Make every <img src> in the email fetchable by external recipients:
+ *  - `/objects/...` (private, auth-gated) → copy the bytes into the public
+ *    bucket under a deterministic `email-images/<original-id>` path (idempotent
+ *    across resends) and rewrite to an absolute `/public-objects/...` URL.
+ *  - `/public-objects/...` and other relative paths → prefix with baseUrl.
+ * Failures are per-image and non-fatal (the src is left as-is, logged).
+ */
+const MAX_PUBLISHED_IMAGE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Is this /objects/... path referenced by an asset the tenant owns? Guards
+ * the public-publication step below so an arbitrary private object path
+ * pasted into an email body cannot be leaked through /public-objects/.
+ */
+async function isTenantOwnedObjectPath(src: string, tenantDomain: string): Promise<boolean> {
+  const { contentAssets, brandAssets } = await import("@shared/schema");
+  const { or, like } = await import("drizzle-orm");
+  const pattern = `%${src}%`;
+  const [ca] = await db.select({ id: contentAssets.id }).from(contentAssets)
+    .where(and(
+      eq(contentAssets.tenantDomain, tenantDomain),
+      or(like(contentAssets.fileUrl, pattern), like(contentAssets.leadImageUrl, pattern), like(contentAssets.url, pattern)),
+    )).limit(1);
+  if (ca) return true;
+  const [ba] = await db.select({ id: brandAssets.id }).from(brandAssets)
+    .where(and(
+      eq(brandAssets.tenantDomain, tenantDomain),
+      or(like(brandAssets.fileUrl, pattern), like(brandAssets.url, pattern)),
+    )).limit(1);
+  return !!ba;
+}
+
+export async function prepareEmailImages(html: string, baseUrl: string, tenantDomain?: string): Promise<string> {
+  if (!html) return html;
+  const base = baseUrl.replace(/\/$/, "");
+  const SRC_RE = /(<img\b[^>]*\bsrc\s*=\s*)("|')([^"']+)\2/gi;
+  const srcs = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = SRC_RE.exec(html)) !== null) {
+    const src = m[3];
+    if (src.startsWith("/")) srcs.add(src);
+  }
+  if (srcs.size === 0) return html;
+
+  const { ObjectStorageService, objectStorageClient } = await import(
+    "../replit_integrations/object_storage/objectStorage"
+  );
+  const svc = new ObjectStorageService();
+  let out = html;
+  for (const src of Array.from(srcs)) {
+    try {
+      let publicPath = src;
+      if (src.startsWith("/objects/")) {
+        // Security gate: only publish objects the tenant demonstrably owns
+        // (referenced by one of its content/brand assets), and only images
+        // under a sane size cap.
+        if (!tenantDomain || !(await isTenantOwnedObjectPath(src, tenantDomain))) {
+          console.warn(`[Email Sender] Skipping private image not owned by tenant: ${src}`);
+          continue;
+        }
+        // Deterministic public name keyed on the private object id so repeat
+        // sends reuse the same public copy.
+        const objectId = src.replace(/^\/objects\//, "").replace(/[^a-zA-Z0-9._/-]/g, "_").replace(/\//g, "_");
+        const publicName = `email-images/${objectId}`;
+        const existing = await svc.searchPublicObject(publicName);
+        if (!existing) {
+          const file = await svc.getObjectEntityFile(src);
+          const [meta] = await file.getMetadata();
+          const contentType = String(meta.contentType || "");
+          const size = Number(meta.size || 0);
+          if (!contentType.startsWith("image/")) {
+            console.warn(`[Email Sender] Skipping non-image object ${src} (${contentType})`);
+            continue;
+          }
+          if (size > MAX_PUBLISHED_IMAGE_BYTES) {
+            console.warn(`[Email Sender] Skipping oversized image ${src} (${size} bytes)`);
+            continue;
+          }
+          const [buf] = await file.download();
+          const publicPaths = svc.getPublicObjectSearchPaths();
+          const parts = publicPaths[0].replace(/^\//, "").split("/");
+          const bucketName = parts[0];
+          const prefix = parts.slice(1).join("/").replace(/\/$/, "");
+          await objectStorageClient.bucket(bucketName).file(`${prefix}/${publicName}`).save(buf, {
+            metadata: { contentType: meta.contentType || "image/png" },
+          });
+        }
+        publicPath = `/public-objects/${publicName}`;
+      }
+      const absolute = `${base}${publicPath}`;
+      out = out.split(`src="${src}"`).join(`src="${absolute}"`).split(`src='${src}'`).join(`src='${absolute}'`);
+    } catch (err: any) {
+      console.warn(`[Email Sender] Could not prepare image ${src}:`, err?.message || err);
+    }
+  }
+  return out;
 }
 
 /**
@@ -1100,7 +1233,18 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     }
     effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, sectionsHtml);
     effectiveHtmlBody = enforceMinimumFontSize(effectiveHtmlBody);
+    // Recipients fetch images from outside the app: publish private object
+    // images and absolutize relative srcs, then harden CTA button styling.
+    effectiveHtmlBody = await prepareEmailImages(effectiveHtmlBody, baseUrl, tenantDomain);
+    effectiveHtmlBody = hardenCtaButtons(effectiveHtmlBody);
   }
+
+  // CAN-SPAM: the tenant's physical mailing address goes in every footer.
+  let tenantMailingAddress: string | null = null;
+  try {
+    const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, tenantDomain)).limit(1);
+    tenantMailingAddress = (tenantRow as any)?.mailingAddress ?? null;
+  } catch { /* best-effort */ }
 
   // ── Correct recipientCount to reflect actual cohort size ─────────────────
   // Only needed for non-pre-assigned sends (pre-assigned counts were set at
@@ -1198,11 +1342,11 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     // If htmlBody is empty (plain-text email) don't produce an HTML part at
     // all — let the email client fall back to the text part instead of
     // showing a document that contains only the unsubscribe footer.
-    const htmlWithFooter = personalizedHtml ? injectFooter(personalizedHtml, unsubUrl, prefsUrl) : null;
+    const htmlWithFooter = personalizedHtml ? injectFooter(personalizedHtml, unsubUrl, prefsUrl, tenantMailingAddress) : null;
     const html = htmlWithFooter ? wrapResponsiveDocument(htmlWithFooter) : undefined;
     const text = personalizedText
-      ? injectTextFooter(personalizedText, unsubUrl, prefsUrl)
-      : `Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
+      ? injectTextFooter(personalizedText, unsubUrl, prefsUrl, tenantMailingAddress)
+      : `${tenantMailingAddress ? tenantMailingAddress.replace(/\n/g, ", ") + "\n" : ""}Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
     try {
       const [resp] = await sgMail.send({
         to: r.email,
