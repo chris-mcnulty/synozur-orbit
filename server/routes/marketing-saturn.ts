@@ -972,15 +972,17 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const kindParam = (req.query.kind as string | undefined) ?? "all";
 
     // Which website `kind` value corresponds to each picker card.
-    const POST_KIND_FILTER: Record<string, string> = {
-      blog_posts:   "post",
-      case_studies: "case_study",
-      whitepapers:  "whitepaper",
-      videos:       "video",
-      workshops:    "workshop",
+    // blog_posts is intentionally broad: match "post", "blog", "blog_post", or no kind at all
+    // (websites that predate the kind field would return undefined for every post).
+    const POST_KIND_MATCH: Record<string, (k: string | undefined) => boolean> = {
+      blog_posts:   k => !k || k === "post" || k === "blog" || k === "blog_post",
+      case_studies: k => k === "case_study",
+      whitepapers:  k => k === "whitepaper",
+      videos:       k => k === "video",
+      workshops:    k => k === "workshop",
     };
-    const isPostSubtype = kindParam in POST_KIND_FILTER;
-    const postKindFilter = POST_KIND_FILTER[kindParam] ?? null; // null = no filter (fetch all)
+    const isPostSubtype = kindParam in POST_KIND_MATCH;
+    const postKindMatch = POST_KIND_MATCH[kindParam] ?? null; // null = no filter (fetch all)
 
     const wantEvents   = kindParam === "events"        || kindParam === "all";
     const wantEpisodes = kindParam === "episodes"      || kindParam === "all";
@@ -991,9 +993,15 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const effectiveEvents = wantEvents || wantBoth;
 
     // Fetch website content and existing Orbit records in parallel.
+    // For specific post subtypes (blog_posts, case_studies …) we fetch published posts only and
+    // let errors propagate — the caller already passed a ping check so a failure here is
+    // actionable (wrong tool, auth issue, etc.) and must surface to the user.
+    // For legacy "all" / "both" modes we still swallow the error so events/episodes can load.
     const [posts, events, episodes, landingPages, existingAssets, existingConferences] = await Promise.all([
       effectivePosts
-        ? websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[])
+        ? (isPostSubtype
+            ? websiteMcp.searchPublishedPosts(ctx.tenantDomain)
+            : websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[]))
         : Promise.resolve([] as websiteMcp.WebsitePostSummary[]),
       effectiveEvents
         ? websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[])
@@ -1032,9 +1040,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const confByKey = new Map(existingConferences.map(c => [c.name.trim().toLowerCase(), c]));
 
     // Filter posts to the requested sub-type when a specific kind was chosen.
-    // postKindFilter === null means "all posts" (legacy / all mode).
-    const filteredPosts = postKindFilter
-      ? posts.filter(p => (p.kind ?? "post") === postKindFilter)
+    // postKindMatch === null means "all posts" (legacy / all mode).
+    const filteredPosts = postKindMatch
+      ? posts.filter(p => postKindMatch(p.kind))
       : posts;
 
     const annotatedPosts = filteredPosts.map(post => {
@@ -1177,6 +1185,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const safeAssetType = (raw: string): ContentAssetType =>
       (VALID_ASSET_TYPES.has(raw) ? raw : "blog_post") as ContentAssetType;
 
+    try {
     for (const post of postsToImport) {
       const postUrl = `${siteUrl}/insights/${post.slug}`;
       const assetDate = post.publishedAt ? new Date(post.publishedAt) : null;
@@ -1339,6 +1348,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
         } as any);
         landingAdded++;
       }
+    }
+
+    } catch (err: any) {
+      console.error("[mcp-website/import]", err);
+      return res.status(500).json({ error: err?.message ?? "Import failed due to an internal error" });
     }
 
     res.json({ postsAdded, postsUpdated, eventsAdded, eventsUpdated, episodesAdded, episodesUpdated, landingAdded, landingUpdated });
