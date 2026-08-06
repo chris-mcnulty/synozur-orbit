@@ -39,26 +39,64 @@ function unwrapToolResult(result: any): any {
   return result;
 }
 
+/**
+ * Read an SSE (text/event-stream) response incrementally.
+ * Returns as soon as a `data:` line contains a JSON-RPC message with a
+ * `result` or `error` field — we do NOT wait for the server to close the
+ * connection, which is what `res.text()` would do and what caused prod hangs.
+ */
+async function parseSSEStream(res: Response): Promise<any> {
+  const body = res.body;
+  if (!body) return {};
+  const reader = (body as ReadableStream<Uint8Array>).getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // Process every complete line in the buffer.
+      let nlIdx: number;
+      while ((nlIdx = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nlIdx).trim();
+        buf = buf.slice(nlIdx + 1);
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const msg = JSON.parse(payload);
+          if (msg.result !== undefined || msg.error !== undefined) {
+            // Got what we need — cancel the stream so the server doesn't keep
+            // the TCP connection busy waiting for us to read more.
+            reader.cancel().catch(() => {});
+            return msg;
+          }
+        } catch { /* not JSON or not the message we want — keep reading */ }
+      }
+    }
+  } catch (err) {
+    // Read error after we already have what we need is fine; propagate otherwise.
+    throw err;
+  } finally {
+    reader.releaseLock();
+  }
+  return {};
+}
+
 /** Parse a Streamable-HTTP response body that is either a plain JSON-RPC
- *  message or an SSE stream carrying one. */
+ *  message or an SSE stream carrying one.
+ *
+ *  IMPORTANT: for SSE, we stream the body line-by-line and return as soon as
+ *  we find the JSON-RPC result rather than calling res.text() which blocks
+ *  until the server closes the connection (= 30-second hang in production). */
 async function parseMcpResponse(res: Response): Promise<any> {
-  const text = await res.text();
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("text/event-stream")) {
-    // Concatenate the JSON from `data:` lines; the tool reply is the message
-    // that carries a `result` or `error`.
-    for (const line of text.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const msg = JSON.parse(payload);
-        if (msg.result !== undefined || msg.error !== undefined) return msg;
-      } catch { /* keep scanning */ }
-    }
-    return {};
+    return parseSSEStream(res);
   }
+  // Plain JSON response — safe to buffer.
+  const text = await res.text();
   try { return JSON.parse(text); } catch { return { error: { message: text.slice(0, 500) } }; }
 }
 
