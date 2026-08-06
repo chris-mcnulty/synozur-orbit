@@ -80,7 +80,7 @@ export default function WebsiteMcpImportDialog({
   const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(new Set());
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
   // Per-post type override (blog_post | case_study)
-  const [postTypes, setPostTypes] = useState<Map<string, "blog_post" | "case_study">>(new Map());
+  const [postTypes, setPostTypes] = useState<Map<string, string>>(new Map());
   // Duplicate confirmation step
   const [confirmingUpdates, setConfirmingUpdates] = useState(false);
 
@@ -237,7 +237,7 @@ export default function WebsiteMcpImportDialog({
           >
             <TabsList className="mx-6 mt-2 w-auto justify-start">
               <TabsTrigger value="posts">
-                Posts &amp; Case Studies
+                Content
                 {posts.length > 0 && (
                   <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">{posts.length}</Badge>
                 )}
@@ -254,7 +254,7 @@ export default function WebsiteMcpImportDialog({
             <TabsContent value="posts" className="flex-1 overflow-y-auto mt-0 px-6 pb-2">
               {posts.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  No published posts found on the connected website.
+                  No content found on the connected website.
                 </p>
               ) : (
                 <>
@@ -278,9 +278,10 @@ export default function WebsiteMcpImportDialog({
                   <div className="space-y-0.5">
                     {posts.map(post => {
                       const checked = selectedPostIds.has(post.mcpId);
-                      const currentType: "blog_post" | "case_study" =
+                      const currentType: string =
                         postTypes.get(post.mcpId) ??
-                        (post.existingAssetType === "case_study" ? "case_study" : "blog_post");
+                        post.existingAssetType ??
+                        "blog_post";
                       return (
                         <div
                           key={post.mcpId}
@@ -321,17 +322,21 @@ export default function WebsiteMcpImportDialog({
                             onValueChange={v => {
                               setPostTypes(prev => {
                                 const next = new Map(prev);
-                                next.set(post.mcpId, v as "blog_post" | "case_study");
+                                next.set(post.mcpId, v);
                                 return next;
                               });
                             }}
                           >
-                            <SelectTrigger className="h-7 text-xs w-32 shrink-0">
+                            <SelectTrigger className="h-7 text-xs w-36 shrink-0">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="blog_post">Blog Post</SelectItem>
                               <SelectItem value="case_study">Case Study</SelectItem>
+                              <SelectItem value="whitepaper">Whitepaper</SelectItem>
+                              <SelectItem value="video">Video</SelectItem>
+                              <SelectItem value="workshop">Workshop</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
