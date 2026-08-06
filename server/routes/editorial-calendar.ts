@@ -358,6 +358,7 @@ export function registerEditorialCalendarRoutes(app: Express) {
         ? await db
             .select({
               sourceBriefId: contentAssets.sourceBriefId,
+              title: contentAssets.title,
               websitePostSlug: contentAssets.websitePostSlug,
               websitePostStatus: contentAssets.websitePostStatus,
               websiteScheduledFor: contentAssets.websiteScheduledFor,
@@ -378,8 +379,13 @@ export function registerEditorialCalendarRoutes(app: Express) {
       );
       const enrichedBriefs = briefs.map((b) => {
         const ai = assetInfoByBriefId.get(b.id);
+        // draftTitle: title from asset linked via sourceBriefId (reverse FK).
+        // contentAssetId on the brief is the forward FK (set when drafting).
+        // Use whichever is available; they should agree.
+        const draftTitle = ai?.title ?? null;
         return {
           ...b,
+          draftTitle,
           websitePostSlug: ai?.websitePostSlug ?? null,
           websitePostStatus: ai?.websitePostStatus ?? null,
           websiteScheduledFor: ai?.websiteScheduledFor ?? null,

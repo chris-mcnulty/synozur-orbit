@@ -2821,6 +2821,47 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Bulk-assign (or clear) a social account on campaign posts.
+  // Body: { socialAccountId: string | null, postIds: string[] (empty = all) }
+  app.put("/api/campaigns/:campaignId/generated-posts/bulk-assign-account", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select().from(campaigns)
+        .where(and(eq(campaigns.id, req.params.campaignId), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { socialAccountId, postIds } = req.body;
+      if (socialAccountId !== null && typeof socialAccountId !== "string") {
+        return res.status(400).json({ error: "socialAccountId must be a string or null" });
+      }
+      // If setting an account, verify it belongs to this campaign
+      if (socialAccountId) {
+        const [linked] = await db.select().from(campaignSocialAccounts)
+          .where(and(
+            eq(campaignSocialAccounts.campaignId, campaign.id),
+            eq(campaignSocialAccounts.socialAccountId, socialAccountId),
+          ));
+        if (!linked) return res.status(400).json({ error: "Social account is not linked to this campaign" });
+      }
+      const scopedIds: string[] = Array.isArray(postIds) && postIds.length > 0 ? postIds : [];
+      const baseCondition = and(
+        eq(generatedPosts.campaignId, campaign.id),
+        ne(generatedPosts.status, "deleted"),
+      );
+      const condition = scopedIds.length
+        ? and(baseCondition, inArray(generatedPosts.id, scopedIds))
+        : baseCondition;
+      const rows = await db.update(generatedPosts)
+        .set({ socialAccountId: socialAccountId ?? null, updatedAt: new Date() })
+        .where(condition)
+        .returning();
+      res.json({ updated: rows.length });
+    } catch (err: any) {
+      console.error("[Generated Posts Bulk Assign Account Error]", err.message);
+      res.status(500).json({ error: "Failed to assign account" });
+    }
+  });
+
   // Per-post delivery mode — marks posts as Orbit-scheduled (null) or CSV-only.
   // Skipping auto-publish for individual posts without touching the campaign-wide
   // autoPublish toggle. Accepted: deliveryMode = null | "csv"; postIds = [] for all.

@@ -53,6 +53,8 @@ import {
   Upload,
   CheckCircle2,
   Info,
+  UserCheck,
+  FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useJobStatus, jobStatusLabel } from "@/hooks/use-job-status";
@@ -186,6 +188,7 @@ interface ContentBrief {
   estimatedHours?: number | null;
   ideaSignals?: string[] | null;
   contentAssetId?: string | null;
+  draftTitle?: string | null;
   websitePostSlug?: string | null;
   websitePostStatus?: string | null;
   websiteScheduledFor?: string | null;
@@ -520,6 +523,8 @@ export default function CampaignDetailPage() {
   const [postSelectedIds, setPostSelectedIds] = useState<Set<string>>(new Set());
   const [postBulkProgress, setPostBulkProgress] = useState(0);
   const [postBulkTotal, setPostBulkTotal] = useState(0);
+  const [bulkAssignAccountOpen, setBulkAssignAccountOpen] = useState(false);
+  const [bulkAssignAccountId, setBulkAssignAccountId] = useState<string>("");
 
   // Brief source navigation — highlights the source brief in the Content Plan tab
   const [highlightedBriefId, setHighlightedBriefId] = useState<string | null>(null);
@@ -1301,6 +1306,29 @@ export default function CampaignDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
       setPostSelectedIds(new Set());
       toast({ title: `${data.updated} post${data.updated !== 1 ? "s" : ""} ${vars.status === "approved" ? "approved" : "rejected"}` });
+    },
+  });
+
+  const bulkAssignAccountMutation = useMutation({
+    mutationFn: async ({ socialAccountId, postIds }: { socialAccountId: string | null; postIds?: string[] }) => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/bulk-assign-account`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ socialAccountId, postIds: postIds ?? [] }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      setBulkAssignAccountOpen(false);
+      setBulkAssignAccountId("");
+      setPostSelectedIds(new Set());
+      toast({ title: `Account assigned to ${data.updated} post${data.updated !== 1 ? "s" : ""}` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to assign account", description: err.message, variant: "destructive" });
     },
   });
 
@@ -2883,6 +2911,17 @@ export default function CampaignDetailPage() {
                                 </Badge>
                               </a>
                             )}
+                            {(b.contentAssetId || b.draftTitle) ? (
+                              <Badge variant="outline" className="text-xs gap-1 text-emerald-600 border-emerald-300" data-testid={`badge-brief-has-draft-${b.id}`}>
+                                <FileText className="h-3 w-3" />
+                                {b.draftTitle ? b.draftTitle : "Has draft"}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs gap-1 text-muted-foreground" data-testid={`badge-brief-no-draft-${b.id}`}>
+                                <FileText className="h-3 w-3" />
+                                No draft yet
+                              </Badge>
+                            )}
                           </div>
                           {b.differentiationAngle && (
                             <p className="text-xs text-muted-foreground mt-1">{b.differentiationAngle}</p>
@@ -3459,6 +3498,17 @@ export default function CampaignDetailPage() {
                     data-testid="button-posts-bulk-replace-image"
                   >
                     <ImageLucide className="w-3.5 h-3.5" />Replace image
+                  </Button>
+                )}
+                {postSelectedIds.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => setBulkAssignAccountOpen(true)}
+                    data-testid="button-posts-bulk-assign-account"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />Assign account
                   </Button>
                 )}
               </div>
@@ -6075,6 +6125,46 @@ export default function CampaignDetailPage() {
               {editCampaignMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk assign social account to selected posts */}
+      <Dialog open={bulkAssignAccountOpen} onOpenChange={(open) => { setBulkAssignAccountOpen(open); if (!open) setBulkAssignAccountId(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Assign social account</DialogTitle>
+            <DialogDescription>
+              Set the publishing account on {postSelectedIds.size} selected post{postSelectedIds.size !== 1 ? "s" : ""}. This will overwrite any existing account assignment.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <Select value={bulkAssignAccountId} onValueChange={setBulkAssignAccountId}>
+              <SelectTrigger data-testid="select-bulk-assign-account">
+                <SelectValue placeholder="Choose an account…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(campaign?.socialAccounts ?? []).map((csa) => {
+                  const acct = allSocialAccounts.find(a => a.id === csa.socialAccountId);
+                  if (!acct) return null;
+                  return (
+                    <SelectItem key={acct.id} value={acct.id}>
+                      <span className="capitalize">{acct.platform}</span>{acct.accountName ? ` · ${acct.accountName}` : ""}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkAssignAccountOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!bulkAssignAccountId || bulkAssignAccountMutation.isPending}
+              onClick={() => bulkAssignAccountMutation.mutate({ socialAccountId: bulkAssignAccountId, postIds: Array.from(postSelectedIds) })}
+              data-testid="button-confirm-bulk-assign-account"
+            >
+              {bulkAssignAccountMutation.isPending ? "Assigning…" : "Assign account"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
