@@ -4703,26 +4703,29 @@ Structure your response using these exact delimiters:
   // ── Email sections (case study / upcoming events / recent updates) ──────
 
   // Options for the section pickers.
-  // - events: upcoming conferences (Orbit Events module) merged with events from
-  //   the website MCP server (if connected). The website carries the full
-  //   multi-month-ahead calendar; Orbit's Events module typically only has entries
-  //   within ~30 days of an event's social launch window. Both sources are merged
-  //   and deduplicated by name+date so the picker always shows the complete picture.
-  // - caseStudies: all case_study-typed digital assets (url optional)
-  // - blogPosts: blog_post digital assets with a live URL
+  // - events: upcoming conferences (Orbit Events module) + content-asset events
+  //   (workshop/webinar typed assets with a future assetDate) + website MCP events.
+  //   All three sources are merged and deduplicated by name+date.
+  // - caseStudies: all active case_study digital assets (url optional — shown as
+  //   "(no URL)" in the picker; the renderer omits the link gracefully)
+  // - blogPosts: all active blog_post digital assets ordered by publish date;
+  //   posts without a URL are listed but won't carry a hyperlink in the email
   app.get("/api/email/section-options", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
     const now = new Date();
     const horizon = new Date(now.getTime() + 365 * 24 * 3600 * 1000); // 12 months — website may list further out
 
+    // Match the content library's own filter: exclude archived only.
+    // Using eq(status, "active") was hiding draft/other-status assets that
+    // are perfectly visible in the library — the picker must show the same set.
     const assetBaseWhere = and(
       eq(contentAssets.tenantDomain, ctx.tenantDomain),
       eq(contentAssets.marketId, ctx.marketId),
-      eq(contentAssets.status, "active"),
+      ne(contentAssets.status, "archived"),
     );
 
-    const [orbitEvents, caseStudies, blogPosts, mcpEvents] = await Promise.all([
+    const [orbitEvents, contentAssetEvents, caseStudies, blogPosts, mcpEvents] = await Promise.all([
       db.select({
         id: conferences.id,
         name: conferences.name,
@@ -4740,9 +4743,28 @@ Structure your response using these exact delimiters:
         ))
         .orderBy(conferences.startDate),
 
-      // Case studies: url-backed digital assets of type case_study only.
-      // Assets without a URL are unpublished drafts (created from content
-      // briefs) — the Content Library hides them, so the picker must too.
+      // Events stored as content assets (workshop / webinar types) with a
+      // future assetDate — prefixed "ca_<id>" so the PUT endpoint can
+      // distinguish them from conference table IDs.
+      db.select({
+        id: contentAssets.id,
+        title: contentAssets.title,
+        url: contentAssets.url,
+        assetDate: contentAssets.assetDate,
+        location: contentAssets.description, // description used as location hint when available
+      }).from(contentAssets)
+        .where(and(
+          assetBaseWhere,
+          inArray(contentAssets.assetType, ["workshop", "webinar"] as any[]),
+          isNotNull(contentAssets.assetDate),
+          sql`${contentAssets.assetDate} >= ${now}`,
+          sql`${contentAssets.assetDate} <= ${horizon}`,
+        ))
+        .orderBy(contentAssets.assetDate)
+        .limit(50),
+
+      // Case studies: all active case_study assets — URL optional.
+      // The renderer omits the hyperlink gracefully when url is null.
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
@@ -4752,12 +4774,13 @@ Structure your response using these exact delimiters:
         leadImageUrl: contentAssets.leadImageUrl,
         aiSummary: contentAssets.aiSummary,
       }).from(contentAssets)
-        .where(and(assetBaseWhere, eq(contentAssets.assetType, "case_study"), isNotNull(contentAssets.url)))
+        .where(and(assetBaseWhere, eq(contentAssets.assetType, "case_study")))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
         .limit(20),
 
-      // Blog posts: only url-backed entries from the digital asset library.
-      // A post without a URL can't be linked in the email, so it's excluded.
+      // Blog posts: all active blog_post assets ordered by publish date.
+      // Posts without a URL are included — they appear in the email without a
+      // hyperlink (renderer handles null url gracefully).
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
@@ -4766,13 +4789,9 @@ Structure your response using these exact delimiters:
         assetDate: contentAssets.assetDate,
         leadImageUrl: contentAssets.leadImageUrl,
       }).from(contentAssets)
-        .where(and(
-          assetBaseWhere,
-          eq(contentAssets.assetType, "blog_post"),
-          isNotNull(contentAssets.url),
-        ))
+        .where(and(assetBaseWhere, eq(contentAssets.assetType, "blog_post")))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
-        .limit(30),
+        .limit(50),
 
       // Website MCP events — gracefully returns [] when not connected or the
       // list_events tool isn't available on the connected site build yet.
@@ -4787,6 +4806,23 @@ Structure your response using these exact delimiters:
       return `${name.trim().toLowerCase()}|${d}`;
     };
     const seenKeys = new Set(orbitEvents.map(e => normKey(e.name, e.startDate)));
+
+    // Content-asset events (workshop/webinar) — prefixed "ca_<id>" so the
+    // PUT endpoint can tell them apart from conference UUIDs.
+    const caEvents = contentAssetEvents
+      .filter(e => !seenKeys.has(normKey(e.title, e.assetDate)))
+      .map(e => {
+        seenKeys.add(normKey(e.title, e.assetDate));
+        return {
+          id: `ca_${e.id}`,
+          name: e.title,
+          location: null as string | null,
+          website: e.url ?? null,
+          startDate: e.assetDate as string | null,
+          endDate: null as string | null,
+          source: "library" as const,
+        };
+      });
 
     const mcpOnlyEvents = mcpEvents
       .filter(e => {
@@ -4807,6 +4843,7 @@ Structure your response using these exact delimiters:
 
     const events = [
       ...orbitEvents.map(e => ({ ...e, source: "orbit" as const })),
+      ...caEvents,
       ...mcpOnlyEvents,
     ].sort((a, b) => {
       const da = a.startDate ? new Date(a.startDate).getTime() : Infinity;
@@ -4840,29 +4877,49 @@ Structure your response using these exact delimiters:
     const wantedEventIds = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
     const wantedBlogIds = Array.isArray(blogAssetIds) ? blogAssetIds.filter(Boolean) : [];
 
-    // Load selected rows (tenant-scoped).
-    const [caseStudyRows, eventRows, blogRows] = await Promise.all([
+    // Split event IDs by source:
+    // "ca_<uuid>"  → content-asset events (workshop/webinar)
+    // everything else → conferences table
+    const caEventIds = wantedEventIds.filter(id => id.startsWith("ca_")).map(id => id.slice(3));
+    const confEventIds = wantedEventIds.filter(id => !id.startsWith("ca_") && !id.startsWith("mcp_"));
+
+    // Load selected rows (tenant-scoped). Use ne(status,"archived") to match
+    // the content library's own visibility rules (not eq "active" only).
+    const [caseStudyRows, confEventRows, caEventRows, blogRows] = await Promise.all([
       caseStudyAssetId
         ? db.select().from(contentAssets).where(and(
             eq(contentAssets.id, caseStudyAssetId),
             eq(contentAssets.tenantDomain, ctx.tenantDomain),
             eq(contentAssets.marketId, ctx.marketId),
-            eq(contentAssets.status, "active"),
+            ne(contentAssets.status, "archived"),
           )).limit(1)
         : Promise.resolve([] as any[]),
-      wantedEventIds.length
+      confEventIds.length
         ? db.select().from(conferences).where(and(
-            inArray(conferences.id, wantedEventIds),
+            inArray(conferences.id, confEventIds),
             eq(conferences.tenantDomain, ctx.tenantDomain),
             or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
           )).orderBy(conferences.startDate)
+        : Promise.resolve([] as any[]),
+      caEventIds.length
+        ? db.select({
+            id: contentAssets.id,
+            title: contentAssets.title,
+            url: contentAssets.url,
+            assetDate: contentAssets.assetDate,
+          }).from(contentAssets).where(and(
+            inArray(contentAssets.id, caEventIds),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+            ne(contentAssets.status, "archived"),
+          )).orderBy(contentAssets.assetDate)
         : Promise.resolve([] as any[]),
       wantedBlogIds.length
         ? db.select().from(contentAssets).where(and(
             inArray(contentAssets.id, wantedBlogIds),
             eq(contentAssets.tenantDomain, ctx.tenantDomain),
             eq(contentAssets.marketId, ctx.marketId),
-            eq(contentAssets.status, "active"),
+            ne(contentAssets.status, "archived"),
           ))
         : Promise.resolve([] as any[]),
     ]);
@@ -4887,12 +4944,29 @@ Structure your response using these exact delimiters:
       .filter(Boolean)
       .map((r: any) => ({ title: r.title, url: r.url || null }));
 
-    const eventsData: SectionEvent[] = eventRows.map((ev: any) => ({
-      name: ev.name,
-      dateLabel: fmtRange(ev.startDate, ev.endDate),
-      location: ev.location || null,
-      website: ev.website || null,
-    }));
+    // Merge conference + content-asset events, preserving the user's selected order.
+    const confById = new Map(confEventRows.map((r: any) => [r.id, r]));
+    const caById = new Map(caEventRows.map((r: any) => [r.id, r]));
+    const eventsData: SectionEvent[] = wantedEventIds
+      .map(id => {
+        if (id.startsWith("ca_")) {
+          const r = caById.get(id.slice(3));
+          return r ? {
+            name: r.title as string,
+            dateLabel: fmtDate(r.assetDate),
+            location: null,
+            website: r.url || null,
+          } as SectionEvent : null;
+        }
+        const r = confById.get(id);
+        return r ? {
+          name: r.name as string,
+          dateLabel: fmtRange(r.startDate, r.endDate),
+          location: r.location || null,
+          website: r.website || null,
+        } as SectionEvent : null;
+      })
+      .filter((e): e is SectionEvent => e !== null);
 
     const cs = caseStudyRows[0] as any | undefined;
     const [tenantRow] = await db.select({ primaryColor: tenants.primaryColor })

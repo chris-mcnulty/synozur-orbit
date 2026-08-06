@@ -2719,6 +2719,9 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
                     {ev.source === "website" && (
                       <span className="ml-1 text-[10px] text-muted-foreground/70 border rounded px-1">site</span>
                     )}
+                    {ev.source === "library" && (
+                      <span className="ml-1 text-[10px] text-muted-foreground/70 border rounded px-1">library</span>
+                    )}
                     {" "}
                     <span className="text-muted-foreground">
                       {fmtEventDate(ev.startDate, ev.endDate)}{ev.location ? ` · ${ev.location}` : ""}
@@ -2740,8 +2743,8 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             <div className="max-h-56 overflow-y-auto space-y-1 border rounded p-2">
               {options && (options.blogPosts ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No blog posts with a URL found. Register posts in{" "}
-                  <span className="font-medium">Marketing → Content Library</span> with type "Blog Post" and a live URL.
+                  No blog posts found. Register posts in{" "}
+                  <span className="font-medium">Marketing → Content Library</span> with type "Blog Post".
                 </p>
               )}
               {(options?.blogPosts ?? []).map(a => (
@@ -2751,7 +2754,10 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
                     checked={blogIds.includes(a.id)}
                     onCheckedChange={(c) => setBlogIds(prev => c ? [...prev, a.id] : prev.filter(x => x !== a.id))}
                   />
-                  <span className="min-w-0 truncate">{a.title}</span>
+                  <span className="min-w-0 truncate">
+                    {a.title}
+                    {!a.url && <span className="ml-1 text-[10px] text-muted-foreground/60">(no URL)</span>}
+                  </span>
                 </label>
               ))}
             </div>
