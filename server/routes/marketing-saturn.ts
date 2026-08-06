@@ -964,27 +964,43 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
     };
 
+    // kind param lets the dialog fetch only what it needs (posts | events | both).
+    // Skipping the unused MCP call cuts response time roughly in half when the
+    // website MCP server is slow.
+    const kindParam = (req.query.kind as string | undefined) ?? "both";
+    const wantPosts  = kindParam === "posts"  || kindParam === "both";
+    const wantEvents = kindParam === "events" || kindParam === "both";
+
     // Fetch website content and existing Orbit records in parallel.
+    // Only call the MCP tool the user actually asked for.
     const [posts, events, existingAssets, existingConferences] = await Promise.all([
-      websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[]),
-      websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
-      db.select({
-        id: contentAssets.id,
-        url: contentAssets.url,
-        websitePostId: contentAssets.websitePostId,
-        assetType: contentAssets.assetType,
-      }).from(contentAssets).where(and(
-        eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
-      )),
-      db.select({
-        id: conferences.id,
-        name: conferences.name,
-        startDate: conferences.startDate,
-      }).from(conferences).where(and(
-        eq(conferences.tenantDomain, ctx.tenantDomain),
-        or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
-      )),
+      wantPosts
+        ? websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[])
+        : Promise.resolve([] as websiteMcp.WebsitePostSummary[]),
+      wantEvents
+        ? websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[])
+        : Promise.resolve([] as websiteMcp.WebsiteEventSummary[]),
+      wantPosts
+        ? db.select({
+            id: contentAssets.id,
+            url: contentAssets.url,
+            websitePostId: contentAssets.websitePostId,
+            assetType: contentAssets.assetType,
+          }).from(contentAssets).where(and(
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
+          ))
+        : Promise.resolve([] as { id: string; url: string | null; websitePostId: string | null; assetType: string }[]),
+      wantEvents
+        ? db.select({
+            id: conferences.id,
+            name: conferences.name,
+            startDate: conferences.startDate,
+          }).from(conferences).where(and(
+            eq(conferences.tenantDomain, ctx.tenantDomain),
+            or(eq(conferences.marketId, ctx.marketId), isNull(conferences.marketId)),
+          ))
+        : Promise.resolve([] as { id: string; name: string; startDate: string | null }[]),
     ]);
 
     const byPostId = new Map(existingAssets.filter(a => a.websitePostId).map(a => [a.websitePostId!, a]));

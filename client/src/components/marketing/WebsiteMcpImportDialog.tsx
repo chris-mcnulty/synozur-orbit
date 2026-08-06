@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, FileText, CalendarDays, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type ContentKind = "posts" | "events" | "both";
 
 export interface PostCandidate {
   mcpId: string;
@@ -63,6 +65,40 @@ function fmtDateRange(start?: string, end?: string) {
   return `${format(s, "MMM d")} – ${format(e, "MMM d, yyyy")}`;
 }
 
+// ── Kind picker ───────────────────────────────────────────────────────────────
+
+const KIND_OPTIONS: { value: ContentKind; label: string; description: string; icon: React.ElementType }[] = [
+  { value: "posts",  label: "Content",       description: "Blog posts, case studies, whitepapers, videos", icon: FileText },
+  { value: "events", label: "Events",        description: "Upcoming conferences and webinars",              icon: CalendarDays },
+  { value: "both",   label: "Both",          description: "Fetch content and events together",              icon: Layers },
+];
+
+function KindPicker({ onPick }: { onPick: (k: ContentKind) => void }) {
+  return (
+    <div className="px-6 py-6 space-y-3">
+      <p className="text-sm text-muted-foreground">What would you like to import?</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {KIND_OPTIONS.map(opt => {
+          const Icon = opt.icon;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => onPick(opt.value)}
+              className="flex flex-col items-start gap-1.5 rounded-lg border border-border bg-muted/30 hover:bg-muted/70 hover:border-primary/40 transition-colors px-4 py-3 text-left"
+            >
+              <div className="flex items-center gap-2 font-medium text-sm">
+                <Icon className="w-4 h-4 text-muted-foreground" />
+                {opt.label}
+              </div>
+              <span className="text-[11px] text-muted-foreground leading-snug">{opt.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function WebsiteMcpImportDialog({
@@ -75,34 +111,44 @@ export default function WebsiteMcpImportDialog({
   onImported: () => void;
 }) {
   const { toast } = useToast();
+  const [kind, setKind] = useState<ContentKind | null>(null);
   const [tab, setTab] = useState<"posts" | "events">("posts");
 
   // Selection state: sets of mcpIds
   const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(new Set());
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
-  // Per-post type override (blog_post | case_study)
+  // Per-post type override
   const [postTypes, setPostTypes] = useState<Map<string, string>>(new Map());
   // Duplicate confirmation step
   const [confirmingUpdates, setConfirmingUpdates] = useState(false);
 
-  // Reset selection when dialog re-opens
+  // Reset everything when dialog re-opens
   useEffect(() => {
     if (open) {
+      setKind(null);
       setSelectedPostIds(new Set());
       setSelectedEventIds(new Set());
       setPostTypes(new Map());
       setConfirmingUpdates(false);
+      setTab("posts");
     }
   }, [open]);
 
+  // When kind is chosen, default the active tab sensibly
+  function pickKind(k: ContentKind) {
+    setKind(k);
+    setTab(k === "events" ? "events" : "posts");
+  }
+
   const { data: candidates, isLoading, error } = useQuery<Candidates>({
-    queryKey: ["/api/mcp-website/candidates"],
+    queryKey: ["/api/mcp-website/candidates", kind],
     queryFn: async () => {
-      const r = await fetch("/api/mcp-website/candidates", { credentials: "include" });
+      const url = `/api/mcp-website/candidates?kind=${kind}`;
+      const r = await fetch(url, { credentials: "include" });
       if (!r.ok) throw new Error((await r.json()).error || "Failed to load website content");
       return r.json();
     },
-    enabled: open,
+    enabled: open && kind !== null,
     staleTime: 60_000,
   });
 
@@ -113,7 +159,9 @@ export default function WebsiteMcpImportDialog({
         .map(p => ({
           mcpId: p.mcpId,
           assetType: postTypes.get(p.mcpId) ??
-            (p.existingAssetType === "case_study" ? "case_study" : "blog_post"),
+            p.existingAssetType ??
+            p.suggestedAssetType ??
+            "blog_post",
           title: p.title,
           slug: p.slug,
           excerpt: p.excerpt,
@@ -212,44 +260,68 @@ export default function WebsiteMcpImportDialog({
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle>Import from website</DialogTitle>
           <DialogDescription>
-            Select the posts, case studies, and events you want to bring into Orbit.
-            Items already in the library are marked — selecting them will update the existing record.
+            {kind === null
+              ? "Choose what to import, then pick the items you want."
+              : "Select the items you want to bring into Orbit. Items already in the library are marked — selecting them will update the existing record."}
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading && (
+        {/* ── Step 1: kind picker ─────────────────────────────────────────── */}
+        {kind === null && (
+          <>
+            <KindPicker onPick={pickKind} />
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {/* ── Step 2: loading ─────────────────────────────────────────────── */}
+        {kind !== null && isLoading && (
           <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-sm">Loading website content…</span>
+            <span className="text-sm">
+              Loading {kind === "posts" ? "content" : kind === "events" ? "events" : "content and events"}…
+            </span>
           </div>
         )}
 
-        {error && (
-          <div className="mx-6 my-4 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-            {(error as Error).message}
-          </div>
+        {/* ── Error ───────────────────────────────────────────────────────── */}
+        {kind !== null && error && (
+          <>
+            <div className="mx-6 my-4 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              {(error as Error).message}
+            </div>
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => setKind(null)}>← Back</Button>
+            </DialogFooter>
+          </>
         )}
 
+        {/* ── Step 2: candidate list ──────────────────────────────────────── */}
         {candidates && (
           <Tabs
             value={tab}
             onValueChange={v => { setTab(v as "posts" | "events"); setConfirmingUpdates(false); }}
             className="flex-1 flex flex-col min-h-0"
           >
-            <TabsList className="mx-6 mt-2 w-auto justify-start">
-              <TabsTrigger value="posts">
-                Content
-                {posts.length > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">{posts.length}</Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="events">
-                Events
-                {events.length > 0 && (
-                  <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">{events.length}</Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
+            {/* Only show both tabs when both were fetched */}
+            {kind === "both" && (
+              <TabsList className="mx-6 mt-2 w-auto justify-start">
+                <TabsTrigger value="posts">
+                  Content
+                  {posts.length > 0 && (
+                    <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">{posts.length}</Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="events">
+                  Events
+                  {events.length > 0 && (
+                    <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5">{events.length}</Badge>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            )}
 
             {/* ── Posts tab ─────────────────────────────────────────────── */}
             <TabsContent value="posts" className="flex-1 overflow-y-auto mt-0 px-6 pb-2">
@@ -426,48 +498,50 @@ export default function WebsiteMcpImportDialog({
           </Tabs>
         )}
 
-        {/* ── Footer ──────────────────────────────────────────────────────── */}
-        <DialogFooter className="px-6 py-4 border-t flex-col items-stretch gap-2">
-          {/* Duplicate confirmation warning */}
-          {confirmingUpdates && totalDuplicates > 0 && (
-            <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>
-                <strong>{totalDuplicates} existing record{totalDuplicates !== 1 ? "s" : ""}</strong> will
-                be updated with the latest content from the website. Click Import again to confirm.
-              </span>
-            </div>
-          )}
+        {/* ── Footer (shown only after kind is chosen and data loaded) ──── */}
+        {kind !== null && candidates && (
+          <DialogFooter className="px-6 py-4 border-t flex-col items-stretch gap-2">
+            {/* Duplicate confirmation warning */}
+            {confirmingUpdates && totalDuplicates > 0 && (
+              <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>
+                  <strong>{totalDuplicates} existing record{totalDuplicates !== 1 ? "s" : ""}</strong> will
+                  be updated with the latest content from the website. Click Import again to confirm.
+                </span>
+              </div>
+            )}
 
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-muted-foreground">
-              {totalSelected === 0
-                ? "Nothing selected"
-                : `${totalSelected} selected${totalDuplicates > 0 ? ` · ${totalDuplicates} will update existing` : ""}`}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={importMutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleImport}
-                disabled={totalSelected === 0 || importMutation.isPending}
-              >
-                {importMutation.isPending
-                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Importing…</>
-                  : confirmingUpdates && totalDuplicates > 0
-                    ? "Confirm import"
-                    : `Import ${totalSelected > 0 ? totalSelected : ""} selected`}
-              </Button>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                {totalSelected === 0
+                  ? "Nothing selected"
+                  : `${totalSelected} selected${totalDuplicates > 0 ? ` · ${totalDuplicates} will update existing` : ""}`}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setKind(null); setSelectedPostIds(new Set()); setSelectedEventIds(new Set()); setConfirmingUpdates(false); }}
+                  disabled={importMutation.isPending}
+                >
+                  ← Back
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleImport}
+                  disabled={totalSelected === 0 || importMutation.isPending}
+                >
+                  {importMutation.isPending
+                    ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Importing…</>
+                    : confirmingUpdates && totalDuplicates > 0
+                      ? "Confirm import"
+                      : `Import ${totalSelected > 0 ? totalSelected : ""} selected`}
+                </Button>
+              </div>
             </div>
-          </div>
-        </DialogFooter>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
