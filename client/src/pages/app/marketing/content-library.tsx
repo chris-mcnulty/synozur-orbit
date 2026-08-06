@@ -288,12 +288,20 @@ export default function ContentLibraryPage() {
   const brandImages = brandAssets.filter(ba => {
     const url = ba.fileUrl || ba.url || "";
     const ft = (ba.fileType ?? "").toLowerCase();
-    // Accept: MIME type starting with "image/", a bare extension ("jpg", "png" …),
-    // or a URL whose path ends with a recognised image extension.
+    // Extract the file extension from the URL path before any CDN transform
+    // suffix (e.g. Wix: "~mv2.jpeg/v1/fill/w_5472,h_…" → "jpeg").
+    const urlExt = (() => {
+      const path = url.split("?")[0];             // drop query string
+      const filename = path.split("/").find(seg => /\.[a-z]{2,5}($|\/)/i.test(seg)) ?? "";
+      return filename.split(".").pop()?.toLowerCase() ?? "";
+    })();
+    // Accept: MIME like "image/jpeg", bare "image" (stored by Wix import),
+    // a bare extension ("jpg", "png" …), or a recognised extension in the URL.
     const isImage =
       ft.startsWith("image/") ||
+      ft === "image" ||
       IMAGE_EXTS.has(ft) ||
-      IMAGE_EXTS.has(url.split("?")[0].split(".").pop()?.toLowerCase() ?? "");
+      IMAGE_EXTS.has(urlExt);
     if (!isImage) return false;
     if (brandPickerCategory !== "all" && ba.categoryId !== brandPickerCategory) return false;
     return true;
