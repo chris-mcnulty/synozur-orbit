@@ -123,6 +123,7 @@ export default function ContentLibraryPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"added" | "date">("added");
   const [assetTypeFilter, setAssetTypeFilter] = useState<string>("all");
   const [solutionAreaFilter, setSolutionAreaFilter] = useState<string>("all");
   const [statusTab, setStatusTab] = useState<string>("active");
@@ -202,7 +203,7 @@ export default function ContentLibraryPage() {
 
   useEffect(() => {
     setAssetPage(1);
-  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, sourceFilter, assetTypeFilter, solutionAreaFilter]);
+  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, sourceFilter, assetTypeFilter, solutionAreaFilter, sortBy]);
 
   const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
   const serverCategoryParam = categoryFilter === "all" ? undefined : categoryFilter;
@@ -214,7 +215,7 @@ export default function ContentLibraryPage() {
     queryKey: [
       "/api/content-assets",
       "paginated",
-      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, source: serverSourceParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam },
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, source: serverSourceParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam, sort: sortBy },
     ],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
@@ -224,6 +225,7 @@ export default function ContentLibraryPage() {
       if (serverSourceParam) params.set("source", serverSourceParam);
       if (serverAssetTypeParam) params.set("assetType", serverAssetTypeParam);
       if (serverSolutionAreaParam) params.set("solutionAreaId", serverSolutionAreaParam);
+      if (sortBy === "date") params.set("sort", "date");
       const r = await fetch(`/api/content-assets?${params.toString()}`, { credentials: "include" });
       if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
       return r.json();
@@ -1755,6 +1757,15 @@ export default function ContentLibraryPage() {
               </SelectContent>
             </Select>
           )}
+          <Select value={sortBy} onValueChange={v => setSortBy(v as "added" | "date")}>
+            <SelectTrigger className="h-7 w-[160px] text-xs" data-testid="select-sort-content">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="added">Recently added</SelectItem>
+              <SelectItem value="date">Content date</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {suggestions.length > 0 && (

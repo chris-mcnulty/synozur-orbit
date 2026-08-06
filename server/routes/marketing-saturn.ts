@@ -519,17 +519,24 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
     const where = and(...conditions);
 
+    // sort=date orders by the content's own date (publish date for blog posts,
+    // event start date, etc.), falling back to createdAt for assets without one.
+    // Default remains createdAt (recently added first).
+    const orderExpr = req.query.sort === "date"
+      ? desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`)
+      : desc(contentAssets.createdAt);
+
     if (!pagination.isPaginated) {
       const rows = await db.select().from(contentAssets)
         .where(where)
-        .orderBy(desc(contentAssets.createdAt));
+        .orderBy(orderExpr);
       return res.json(rows);
     }
 
     const [{ value: total }] = await db.select({ value: count() }).from(contentAssets).where(where);
     const items = await db.select().from(contentAssets)
       .where(where)
-      .orderBy(desc(contentAssets.createdAt))
+      .orderBy(orderExpr)
       .limit(pagination.limit)
       .offset(pagination.offset);
 
