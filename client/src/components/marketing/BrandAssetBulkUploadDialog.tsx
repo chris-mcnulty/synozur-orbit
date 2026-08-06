@@ -61,14 +61,17 @@ function guessAssetType(file: File): string {
 }
 
 function guessFileType(file: File): string {
+  // Prefer the browser-supplied MIME type — it's what the picker uses to detect images.
+  // Fall back to extension-derived strings only when the browser can't identify the type.
+  if (file.type && file.type !== "application/octet-stream") return file.type;
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const mime = file.type;
-  if (mime.startsWith("image/")) return ext || "image";
-  if (["ttf", "otf", "woff", "woff2"].includes(ext)) return ext;
-  if (mime.startsWith("video/")) return ext || "video";
-  if (ext === "pdf") return "pdf";
-  if (ext === "svg") return "svg";
-  return ext || "other";
+  const fontMimes: Record<string, string> = { ttf: "font/ttf", otf: "font/otf", woff: "font/woff", woff2: "font/woff2" };
+  if (fontMimes[ext]) return fontMimes[ext];
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return `image/${ext === "jpg" ? "jpeg" : ext}`;
+  if (ext === "svg") return "image/svg+xml";
+  if (["mp4", "mov", "webm"].includes(ext)) return `video/${ext}`;
+  if (ext === "pdf") return "application/pdf";
+  return ext || "application/octet-stream";
 }
 
 function fileBasename(filename: string): string {

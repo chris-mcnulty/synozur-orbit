@@ -282,9 +282,16 @@ export default function ContentLibraryPage() {
     enabled: isAllowed && showBrandImagePicker,
   });
   const [brandPickerCategory, setBrandPickerCategory] = useState<string>("all");
+  const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
   const brandImages = brandAssets.filter(ba => {
     const url = ba.fileUrl || ba.url || "";
-    const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(url) || !!ba.fileType?.startsWith("image/");
+    const ft = (ba.fileType ?? "").toLowerCase();
+    // Accept: MIME type starting with "image/", a bare extension ("jpg", "png" …),
+    // or a URL whose path ends with a recognised image extension.
+    const isImage =
+      ft.startsWith("image/") ||
+      IMAGE_EXTS.has(ft) ||
+      IMAGE_EXTS.has(url.split("?")[0].split(".").pop()?.toLowerCase() ?? "");
     if (!isImage) return false;
     if (brandPickerCategory !== "all" && ba.categoryId !== brandPickerCategory) return false;
     return true;
