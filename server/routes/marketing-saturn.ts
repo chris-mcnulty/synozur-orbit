@@ -4740,9 +4740,9 @@ Structure your response using these exact delimiters:
         ))
         .orderBy(conferences.startDate),
 
-      // Case studies: all registered digital assets of type case_study.
-      // URL is optional — the section renders the title + blurb regardless,
-      // and only shows a "Read more" link when url is present.
+      // Case studies: url-backed digital assets of type case_study only.
+      // Assets without a URL are unpublished drafts (created from content
+      // briefs) — the Content Library hides them, so the picker must too.
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
@@ -4752,7 +4752,7 @@ Structure your response using these exact delimiters:
         leadImageUrl: contentAssets.leadImageUrl,
         aiSummary: contentAssets.aiSummary,
       }).from(contentAssets)
-        .where(and(assetBaseWhere, eq(contentAssets.assetType, "case_study")))
+        .where(and(assetBaseWhere, eq(contentAssets.assetType, "case_study"), isNotNull(contentAssets.url)))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
         .limit(20),
 
@@ -4776,7 +4776,7 @@ Structure your response using these exact delimiters:
 
       // Website MCP events — gracefully returns [] when not connected or the
       // list_events tool isn't available on the connected site build yet.
-      websiteMcp.listEvents(ctx.tenantDomain, 100).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
+      websiteMcp.listEvents(ctx.tenantDomain, 100, { upcoming: true }).catch(() => [] as websiteMcp.WebsiteEventSummary[]),
     ]);
 
     // Merge orbit events + MCP events, deduplicated by normalised name+date key.
@@ -4846,6 +4846,7 @@ Structure your response using these exact delimiters:
             eq(contentAssets.id, caseStudyAssetId),
             eq(contentAssets.tenantDomain, ctx.tenantDomain),
             eq(contentAssets.marketId, ctx.marketId),
+            eq(contentAssets.status, "active"),
           )).limit(1)
         : Promise.resolve([] as any[]),
       wantedEventIds.length
@@ -4860,6 +4861,7 @@ Structure your response using these exact delimiters:
             inArray(contentAssets.id, wantedBlogIds),
             eq(contentAssets.tenantDomain, ctx.tenantDomain),
             eq(contentAssets.marketId, ctx.marketId),
+            eq(contentAssets.status, "active"),
           ))
         : Promise.resolve([] as any[]),
     ]);

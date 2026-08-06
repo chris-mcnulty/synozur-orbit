@@ -401,10 +401,13 @@ export interface WebsiteLandingPageSummary {
  * Normalises the `name` vs `title` ambiguity from the spec.
  * Throws on transport/auth errors so callers can surface a real error message.
  */
-export async function listEvents(tenant: string, limit = 50): Promise<WebsiteEventSummary[]> {
-  // upcoming defaults to TRUE server-side, so we must pass false explicitly to
-  // get the full event history for the import picker (verified in website code).
-  const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming: false, limit });
+export async function listEvents(tenant: string, limit = 50, opts?: { upcoming?: boolean }): Promise<WebsiteEventSummary[]> {
+  // upcoming defaults to TRUE server-side (verified in website code), so the
+  // import picker passes upcoming:false to get the full event history, while
+  // upcoming-only surfaces (email sections) pass upcoming:true so the limit
+  // isn't consumed by past events.
+  const upcoming = opts?.upcoming ?? false;
+  const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming, limit });
   // Normalise: spec says field may be `name` or `title` — ensure `name` is always populated.
   return raw.map(ev => ({ ...ev, name: ev.name ?? ev.title ?? "Unnamed event" }));
 }
