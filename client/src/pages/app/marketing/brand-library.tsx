@@ -11,7 +11,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import {
   ImageIcon, Plus, Search, ExternalLink, Trash2, Lock, Settings, ChevronDown, X, Tag, Filter,
-  Download, Upload, LayoutGrid, List, Archive, RotateCcw, Type
+  Download, Upload, LayoutGrid, List, Archive, RotateCcw, Type, Files
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger,
+  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
@@ -813,31 +814,74 @@ export default function BrandLibraryPage() {
               </h1>
               <p className="text-muted-foreground text-sm mt-1">Approved visuals for your marketing campaigns.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                ref={importFileRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleImportCSV}
-                data-testid="input-import-csv-brand"
-              />
-              <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-brand">
-                <Upload className="w-4 h-4 mr-1" /> Import CSV
+            {/* Hidden CSV input */}
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleImportCSV}
+              data-testid="input-import-csv-brand"
+            />
+
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+
+              {/* Import / Export dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-importexport-brand-menu">
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">Import / Export</span>
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Get assets in</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-brand">
+                    <Upload className="w-4 h-4 mr-2 text-muted-foreground" /> Import CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Export</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={handleExportCSV} disabled={assetsTotal === 0} data-testid="button-export-csv-brand">
+                    <Download className="w-4 h-4 mr-2 text-muted-foreground" /> Export CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Categories — icon only */}
+              <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} title="Manage categories" data-testid="button-manage-brand-categories">
+                <Settings className="w-4 h-4" />
+                <span className="sr-only">Categories</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={assetsTotal === 0} data-testid="button-export-csv-brand">
-                <Download className="w-4 h-4 mr-1" /> Export CSV
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-brand-categories">
-                <Settings className="w-4 h-4 mr-1" /> Categories
-              </Button>
-              <Button variant="outline" onClick={() => setBulkUploadOpen(true)} data-testid="button-bulk-upload-brand">
-                <Upload className="w-4 h-4 mr-1" /> Upload Files
-              </Button>
+
+              {/* Add Asset — hero CTA with bulk upload as child */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button className="gap-1.5" data-testid="button-add-brand-asset-menu">
+                    <Plus className="w-4 h-4" /> Add Asset
+                    <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => setAddOpen(true)} data-testid="button-add-brand-asset">
+                    <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm">Add single asset</p>
+                      <p className="text-xs text-muted-foreground">URL, logo, font, or file</p>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setBulkUploadOpen(true)} data-testid="button-bulk-upload-brand">
+                    <Files className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm">Upload multiple files</p>
+                      <p className="text-xs text-muted-foreground">Same category, batch upload</p>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) resetForm(); }}>
-                <DialogTrigger asChild>
-                  <Button data-testid="button-add-brand-asset"><Plus className="w-4 h-4 mr-2" />Add Image</Button>
-                </DialogTrigger>
+                <DialogTrigger asChild><span /></DialogTrigger>
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Add Brand Asset</DialogTitle>

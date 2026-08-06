@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger,
+  DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
@@ -1109,63 +1110,93 @@ export default function ContentLibraryPage() {
                 Manage web content used to generate posts.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                ref={importFileRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleImportCSV}
-                data-testid="input-import-csv-content"
-              />
-              {websiteConnected && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setImportDialogOpen(true)}
-                  data-testid="button-import-from-website"
-                >
-                  <Globe className="w-4 h-4 mr-1" /> Import from website
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-content">
-                <Upload className="w-4 h-4 mr-1" /> Import CSV
+            {/* Hidden CSV input */}
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleImportCSV}
+              data-testid="input-import-csv-content"
+            />
+
+            {/* Header actions — responsive: secondary group collapses on mobile */}
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+
+              {/* Import / Export dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-importexport-menu">
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">Import / Export</span>
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Get content in</DropdownMenuLabel>
+                  {websiteConnected && (
+                    <DropdownMenuItem onClick={() => setImportDialogOpen(true)} data-testid="button-import-from-website">
+                      <Globe className="w-4 h-4 mr-2 text-muted-foreground" /> Import from website
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => importFileRef.current?.click()} data-testid="button-import-csv-content">
+                    <Upload className="w-4 h-4 mr-2 text-muted-foreground" /> Import CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Export</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={handleExportCSV} disabled={filtered.length === 0} data-testid="button-export-csv-content">
+                    <Download className="w-4 h-4 mr-2 text-muted-foreground" /> Export CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* AI Summaries dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5" disabled={bulkGenerating} data-testid="button-summaries-menu">
+                    {bulkGenerating
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Sparkles className="w-4 h-4" />}
+                    <span className="hidden sm:inline">
+                      {bulkGenerating ? `AI Summaries${bulkQueuedCount ? ` (${bulkQueuedCount})` : ""}…` : "AI Summaries"}
+                    </span>
+                    <ChevronDown className="w-3 h-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuItem onClick={handleBulkGenerateSummaries} disabled={bulkGenerating} data-testid="button-generate-all-summaries">
+                    <Sparkles className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm">Generate missing</p>
+                      <p className="text-xs text-muted-foreground">Only assets without a summary</p>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={handleRegenerateAllSummaries}
+                    disabled={bulkGenerating}
+                    className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                    data-testid="button-regenerate-all-summaries"
+                  >
+                    <AlertTriangle className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">Regenerate all</p>
+                      <p className="text-xs opacity-70">Overwrites every existing summary</p>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Categories — icon only to save space */}
+              <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} title="Manage categories" data-testid="button-manage-categories">
+                <Settings className="w-4 h-4" />
+                <span className="sr-only">Categories</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filtered.length === 0} data-testid="button-export-csv-content">
-                <Download className="w-4 h-4 mr-1" /> Export CSV
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBulkGenerateSummaries}
-                disabled={bulkGenerating}
-                data-testid="button-generate-all-summaries"
-              >
-                {bulkGenerating ? (
-                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Generating{bulkQueuedCount ? ` (${bulkQueuedCount})` : ""}...</>
-                ) : (
-                  <><Sparkles className="w-4 h-4 mr-1" /> Generate Missing Summaries</>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRegenerateAllSummaries}
-                disabled={bulkGenerating}
-                data-testid="button-regenerate-all-summaries"
-              >
-                {bulkGenerating ? (
-                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Regenerating{bulkQueuedCount ? ` (${bulkQueuedCount})` : ""}...</>
-                ) : (
-                  <><RefreshCw className="w-4 h-4 mr-1" /> Regenerate All Summaries</>
-                )}
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setManageCategoriesOpen(true)} data-testid="button-manage-categories">
-                <Settings className="w-4 h-4 mr-1" /> Categories
-              </Button>
+
+              {/* Add Asset — hero CTA, splits into add-manually + import-from-website on mobile via same dropdown */}
               <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) { resetForm(); setDuplicateAsset(null); } }}>
                 <DialogTrigger asChild>
-                  <Button data-testid="button-add-content-asset"><Plus className="w-4 h-4 mr-2" />Add Asset</Button>
+                  <Button data-testid="button-add-content-asset"><Plus className="w-4 h-4 mr-1.5" />Add Asset</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
