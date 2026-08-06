@@ -522,21 +522,23 @@ export function registerSaturnMarketingRoutes(app: Express) {
     // sort=date orders by the content's own date (publish date for blog posts,
     // event start date, etc.), falling back to createdAt for assets without one.
     // Default remains createdAt (recently added first).
-    const orderExpr = req.query.sort === "date"
-      ? desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`)
-      : desc(contentAssets.createdAt);
+    // id DESC tie-breaker keeps LIMIT/OFFSET pagination deterministic when
+    // multiple rows share the same effective date.
+    const orderExprs = req.query.sort === "date"
+      ? [desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`), desc(contentAssets.id)]
+      : [desc(contentAssets.createdAt), desc(contentAssets.id)];
 
     if (!pagination.isPaginated) {
       const rows = await db.select().from(contentAssets)
         .where(where)
-        .orderBy(orderExpr);
+        .orderBy(...orderExprs);
       return res.json(rows);
     }
 
     const [{ value: total }] = await db.select({ value: count() }).from(contentAssets).where(where);
     const items = await db.select().from(contentAssets)
       .where(where)
-      .orderBy(orderExpr)
+      .orderBy(...orderExprs)
       .limit(pagination.limit)
       .offset(pagination.offset);
 
