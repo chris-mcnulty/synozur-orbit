@@ -357,18 +357,17 @@ export interface WebsiteLandingPageSummary {
 }
 
 /**
- * List upcoming events from the website MCP server.
- * Returns [] gracefully if the tool is not available on the connected site.
+ * List events from the website MCP server.
+ * Returns ALL events (past + upcoming) so the import dialog can show the full
+ * set — `upcoming: true` is intentionally omitted because older website plugin
+ * builds don't support that parameter and silently return nothing.
  * Normalises the `name` vs `title` ambiguity from the spec.
+ * Throws on transport/auth errors so callers can surface a real error message.
  */
 export async function listEvents(tenant: string, limit = 50): Promise<WebsiteEventSummary[]> {
-  try {
-    const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming: true, limit });
-    // Normalise: spec says field may be `name` or `title` — ensure `name` is always populated.
-    return raw.map(ev => ({ ...ev, name: ev.name ?? ev.title ?? "Unnamed event" }));
-  } catch {
-    return [];
-  }
+  const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { limit });
+  // Normalise: spec says field may be `name` or `title` — ensure `name` is always populated.
+  return raw.map(ev => ({ ...ev, name: ev.name ?? ev.title ?? "Unnamed event" }));
 }
 
 /**

@@ -1004,7 +1004,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
             : websiteMcp.searchPosts(ctx.tenantDomain, undefined, 50).catch(() => [] as websiteMcp.WebsitePostSummary[]))
         : Promise.resolve([] as websiteMcp.WebsitePostSummary[]),
       effectiveEvents
-        ? websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[])
+        ? (wantEvents && !wantBoth
+            // Specific "events" kind — let errors propagate so the dialog shows the real reason.
+            ? websiteMcp.listEvents(ctx.tenantDomain, 50)
+            // "all" / legacy "both" — still swallow so posts/episodes can still load.
+            : websiteMcp.listEvents(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEventSummary[]))
         : Promise.resolve([] as websiteMcp.WebsiteEventSummary[]),
       wantEpisodes
         ? websiteMcp.listEpisodes(ctx.tenantDomain, 50).catch(() => [] as websiteMcp.WebsiteEpisodeSummary[])
