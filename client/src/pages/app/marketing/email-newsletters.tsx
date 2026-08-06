@@ -762,11 +762,24 @@ export default function EmailNewslettersPage() {
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
+      return r.json() as Promise<SavedEmail>;
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
       setPreviewEmail(null);
-      toast({ title: "Email saved" });
+      // For HubSpot emails, open the edit dialog immediately so the user can
+      // configure sections (case study, events, blog posts) right away.
+      if (saved?.platform === "hubspot-marketing") {
+        setEditMode("visual");
+        setEditingEmail(saved);
+        setEditSubject(saved.subject);
+        setEditBody(saved.htmlBody || "");
+        setEditSourceAssetIds(Array.isArray(saved.sourceAssetIds) ? saved.sourceAssetIds : []);
+        setEditAssetSearch("");
+        toast({ title: "Email saved", description: "Add sections like case studies and upcoming events below." });
+      } else {
+        toast({ title: "Email saved" });
+      }
     },
   });
 
@@ -1822,6 +1835,16 @@ export default function EmailNewslettersPage() {
               >
                 {updateEmailMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
+
+              {editingEmail?.platform === "hubspot-marketing" && (
+                <EmailSectionsPanel
+                  email={editingEmail}
+                  onSaved={(updated) => {
+                    setEditingEmail(updated);
+                    queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+                  }}
+                />
+              )}
 
               {/* ── A/B Test configuration ─────────────────────────────── */}
               <div className="border-t pt-4 space-y-3" data-testid="ab-test-section">
