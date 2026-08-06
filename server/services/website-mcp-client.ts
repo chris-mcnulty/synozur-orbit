@@ -44,17 +44,38 @@ function unwrapToolResult(result: any): any {
  * Returns as soon as a `data:` line contains a JSON-RPC message with a
  * `result` or `error` field — we do NOT wait for the server to close the
  * connection, which is what `res.text()` would do and what caused prod hangs.
+ *
+ * A hard deadline of `timeoutMs` (default 25 s) cancels the reader so the
+ * caller never hangs indefinitely when the website MCP sends an unrecognised
+ * SSE frame shape (e.g. a tool that emits progress events before the final
+ * result, or a server that keeps the stream open without sending `result`).
+ * The `AbortSignal.timeout` on the outer fetch() call does not reliably abort
+ * body reads in all Node.js / undici versions, hence the explicit timer here.
  */
-async function parseSSEStream(res: Response): Promise<any> {
+async function parseSSEStream(res: Response, timeoutMs = 25_000): Promise<any> {
   const body = res.body;
   if (!body) return {};
   const reader = (body as ReadableStream<Uint8Array>).getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  let timedOut = false;
+
+  // Cancel the reader from outside after the deadline so reader.read() resolves
+  // with { done: true } and the loop exits cleanly.
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    reader.cancel().catch(() => {});
+  }, timeoutMs);
+
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        if (timedOut) {
+          throw new Error(`Website MCP SSE stream timed out after ${timeoutMs / 1000}s — no JSON-RPC result received`);
+        }
+        break;
+      }
       buf += decoder.decode(value, { stream: true });
       // Process every complete line in the buffer.
       let nlIdx: number;
@@ -76,9 +97,12 @@ async function parseSSEStream(res: Response): Promise<any> {
       }
     }
   } catch (err) {
-    // Read error after we already have what we need is fine; propagate otherwise.
+    if (timedOut) {
+      throw new Error(`Website MCP SSE stream timed out after ${timeoutMs / 1000}s — no JSON-RPC result received`);
+    }
     throw err;
   } finally {
+    clearTimeout(deadline);
     reader.releaseLock();
   }
   return {};
@@ -298,10 +322,12 @@ export const searchPosts = (tenant: string, query?: string, pageSize = 30) =>
     pageSize,
   });
 
-/** Fetch all published posts for import into the content library (up to 50 — website MCP max). */
+/** Fetch posts for import into the content library (up to 50 — website MCP max).
+ *  We intentionally omit `status: "published"` because older website plugin builds
+ *  don't support that parameter and may hang or return unrecognised SSE frames when
+ *  it is present.  The website's search_posts tool returns published posts by default. */
 export const searchPublishedPosts = (tenant: string) =>
   callWebsiteTool<WebsitePostSummary[]>(tenant, "search_posts", {
-    status: "published",
     pageSize: 50,
   });
 
