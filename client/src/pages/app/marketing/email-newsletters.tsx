@@ -30,6 +30,8 @@ import {
   Upload,
   Plus,
   Library,
+  Check,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EmailListSkeleton } from "@/components/ui/skeletons";
@@ -141,6 +143,29 @@ async function fetchSavedEmailExport(id: string): Promise<{ html: string; fragme
   } catch {
     return null;
   }
+}
+
+/**
+ * Faithful email preview: renders the full responsive export (main body +
+ * freshly re-rendered sections) in a sandboxed iframe, exactly as recipients
+ * see it — instead of squeezing the 600px email tables into a padded div.
+ */
+function EmailPreviewFrame({ emailId, fallbackHtml }: { emailId: string; fallbackHtml: string }) {
+  const { data } = useQuery<{ html: string } | null>({
+    queryKey: ["/api/email/saved", emailId, "export-html"],
+    queryFn: () => fetchSavedEmailExport(emailId),
+  });
+  const doc = data?.html || `<!doctype html><html><body style="margin:0;background:#ffffff;">${DOMPurify.sanitize(fallbackHtml)}</body></html>`;
+  return (
+    <iframe
+      title="Email preview"
+      sandbox=""
+      srcDoc={doc}
+      className="w-full border rounded bg-white"
+      style={{ height: "65vh" }}
+      data-testid="view-email-html"
+    />
+  );
 }
 
 function buildWixHtml(htmlBody: string, subject: string): string {
@@ -2575,12 +2600,7 @@ export default function EmailNewslettersPage() {
                   );
                 })()}
                 {viewingEmail.platform === "hubspot-marketing" ? (
-                  <div
-                    className="border rounded bg-white text-black text-sm overflow-y-auto"
-                    style={{ maxHeight: "65vh" }}
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(`${viewingEmail.htmlBody}${viewingEmail.sectionsHtml || ""}`) }}
-                    data-testid="view-email-html"
-                  />
+                  <EmailPreviewFrame emailId={viewingEmail.id} fallbackHtml={`${viewingEmail.htmlBody}${viewingEmail.sectionsHtml || ""}`} />
                 ) : (
                   <pre className="border rounded p-4 bg-card text-card-foreground text-sm overflow-y-auto whitespace-pre-wrap font-sans" style={{ maxHeight: "65vh" }} data-testid="view-email-text">
                     {viewingEmail.textBody || viewingEmail.htmlBody}
@@ -2921,9 +2941,23 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             </div>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">About image</Label>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 items-center">
+                {giAboutImage.trim() && (
+                  <img
+                    src={giAboutImage}
+                    alt="Selected About image"
+                    className="w-7 h-7 rounded border object-cover shrink-0"
+                    onError={e => (e.currentTarget.style.display = "none")}
+                    data-testid="img-gi-about-selected"
+                  />
+                )}
                 <Input className="h-7 text-xs flex-1 min-w-0" placeholder="Paste image URL or pick below…" value={giAboutImage} onChange={e => setGiAboutImage(e.target.value)} data-testid="input-gi-about-image" />
-                <Button type="button" variant="outline" size="sm" className="h-7 px-2 shrink-0" onClick={() => setShowGiImagePicker(v => !v)}>
+                {giAboutImage.trim() && (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 shrink-0 text-muted-foreground" title="Clear image" onClick={() => setGiAboutImage("")} data-testid="button-gi-about-image-clear">
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 shrink-0" title="Pick from Brand Assets" onClick={() => setShowGiImagePicker(v => !v)} data-testid="button-gi-about-image-picker">
                   <Library className="w-3 h-3" />
                 </Button>
               </div>
@@ -2931,18 +2965,36 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
                 <div className="border rounded p-2 space-y-1.5 bg-muted/30 mt-1">
                   {giImages.length === 0
                     ? <p className="text-xs text-muted-foreground">No images in Visual/Brand Assets.</p>
-                    : <div className="grid grid-cols-4 gap-1.5 max-h-32 overflow-y-auto">
+                    : <div className="grid grid-cols-3 gap-1.5 max-h-48 overflow-y-auto">
                         {giImages.map(ba => {
                           const imgUrl = ba.fileUrl || ba.url || "";
+                          const selected = giAboutImage.trim() === imgUrl;
                           return (
-                            <button key={ba.id} type="button" className="relative rounded border overflow-hidden aspect-square hover:ring-2 ring-primary transition-all bg-card"
-                              onClick={() => { setGiAboutImage(imgUrl); setShowGiImagePicker(false); }}>
-                              <img src={imgUrl} alt={ba.name} className="w-full h-full object-cover" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
+                            <button
+                              key={ba.id}
+                              type="button"
+                              title={ba.name}
+                              className={`relative rounded border overflow-hidden text-left bg-card transition-all hover:ring-2 hover:ring-primary/50 ${selected ? "ring-2 ring-primary border-primary" : ""}`}
+                              onClick={() => setGiAboutImage(imgUrl)}
+                              data-testid={`button-gi-about-image-${ba.id}`}
+                            >
+                              <div className="aspect-video bg-muted">
+                                <img src={imgUrl} alt={ba.name} className="w-full h-full object-cover" loading="lazy" onError={e => (e.currentTarget.style.display = "none")} />
+                              </div>
+                              {selected && (
+                                <span className="absolute top-1 right-1 rounded-full bg-primary text-primary-foreground p-0.5">
+                                  <Check className="w-3 h-3" />
+                                </span>
+                              )}
+                              <span className={`block px-1.5 py-1 text-[10px] truncate ${selected ? "text-primary font-medium" : "text-muted-foreground"}`}>{ba.name}</span>
                             </button>
                           );
                         })}
                       </div>
                   }
+                  <div className="flex justify-end">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setShowGiImagePicker(false)} data-testid="button-gi-about-image-done">Done</Button>
+                  </div>
                 </div>
               )}
             </div>

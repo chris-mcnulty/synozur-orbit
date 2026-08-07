@@ -342,7 +342,17 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
       }
 
       try {
-        const result = await publisher.publish({ account, post });
+        // Re-fetch the account row immediately before publishing. The
+        // candidates list was loaded at tick start; if an earlier post in
+        // this tick refreshed this account's token, X has already rotated
+        // the refresh token (single-use). Publishing with the stale
+        // in-memory copy triggers refresh-token reuse, which makes X revoke
+        // the whole grant — the account then fails with "token was invalid"
+        // until the user reconnects, only to be burned again next tick.
+        const [freshAccount] = await db.select().from(socialAccounts)
+          .where(eq(socialAccounts.id, account.id));
+        const liveAccount = freshAccount ?? account;
+        const result = await publisher.publish({ account: liveAccount, post });
         // Always persist refreshed tokens immediately — even on a failed
         // publish — so the next attempt doesn't reuse a now-consumed token.
         if (result.refreshedAccessToken) {
@@ -350,8 +360,8 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
             encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
             encryptedRefreshToken: result.refreshedRefreshToken
               ? encryptSecret(result.refreshedRefreshToken)
-              : account.encryptedRefreshToken,
-            tokenExpiresAt: result.refreshedTokenExpiresAt ?? account.tokenExpiresAt,
+              : liveAccount.encryptedRefreshToken,
+            tokenExpiresAt: result.refreshedTokenExpiresAt ?? liveAccount.tokenExpiresAt,
             updatedAt: new Date(),
           }).where(eq(socialAccounts.id, account.id));
         }

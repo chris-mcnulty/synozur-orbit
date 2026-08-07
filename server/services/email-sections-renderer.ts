@@ -18,7 +18,7 @@
 
 import { db } from "../db";
 import { conferences, contentAssets, tenants } from "@shared/schema";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 
 export interface SectionGeneralInfo {
   senderSignoff?: string | null;   // e.g. "Best,"
@@ -372,7 +372,15 @@ export async function reRenderSectionsHtml(
 
   if (!caseStudyAssetId && !wantedEventIds.length && !wantedBlogIds.length) return null;
 
-  const [caseStudyRows, eventRows, blogRows, tenantRows] = await Promise.all([
+  // Event IDs mix sources: "ca_<uuid>" → content-asset events (workshops,
+  // webinars), "mcp_*" → website-MCP events (not in our DB, dropped here),
+  // everything else → conferences. Passing prefixed IDs to the conferences
+  // query used to throw (invalid uuid), which silently killed the whole
+  // re-render — and with it, the events column in send/export output.
+  const caEventIds = wantedEventIds.filter(id => id.startsWith("ca_")).map(id => id.slice(3));
+  const confEventIds = wantedEventIds.filter(id => !id.startsWith("ca_") && !id.startsWith("mcp_"));
+
+  const [caseStudyRows, eventRows, caEventRows, blogRows, tenantRows] = await Promise.all([
     caseStudyAssetId
       ? db.select().from(contentAssets)
           .where(and(
@@ -383,14 +391,24 @@ export async function reRenderSectionsHtml(
           ))
           .limit(1)
       : Promise.resolve([] as any[]),
-    wantedEventIds.length
+    confEventIds.length
       ? db.select().from(conferences)
           .where(and(
-            inArray(conferences.id, wantedEventIds),
+            inArray(conferences.id, confEventIds),
             eq(conferences.tenantDomain, context.tenantDomain),
             or(eq(conferences.marketId, context.marketId), isNull(conferences.marketId)),
           ))
           .orderBy(conferences.startDate)
+      : Promise.resolve([] as any[]),
+    caEventIds.length
+      ? db.select().from(contentAssets)
+          .where(and(
+            inArray(contentAssets.id, caEventIds),
+            eq(contentAssets.tenantDomain, context.tenantDomain),
+            eq(contentAssets.marketId, context.marketId),
+            ne(contentAssets.status, "archived"),
+          ))
+          .orderBy(contentAssets.assetDate)
       : Promise.resolve([] as any[]),
     wantedBlogIds.length
       ? db.select().from(contentAssets)
@@ -433,12 +451,29 @@ export async function reRenderSectionsHtml(
     })
     .map((r: any) => ({ title: r.title, url: r.url || null }));
 
-  const eventsData: SectionEvent[] = (eventRows as any[]).map((ev: any) => ({
-    name: ev.name,
-    dateLabel: fmtRange(ev.startDate, ev.endDate),
-    location: ev.location || null,
-    website: ev.website || null,
-  }));
+  // Merge conference + content-asset events, preserving the user's selected order.
+  const confById = new Map((eventRows as any[]).map((r: any) => [r.id, r]));
+  const caById = new Map((caEventRows as any[]).map((r: any) => [r.id, r]));
+  const eventsData: SectionEvent[] = wantedEventIds
+    .map((id: string) => {
+      if (id.startsWith("ca_")) {
+        const r = caById.get(id.slice(3));
+        return r ? {
+          name: r.title as string,
+          dateLabel: fmtDate(r.assetDate),
+          location: null,
+          website: r.url || null,
+        } as SectionEvent : null;
+      }
+      const ev = confById.get(id);
+      return ev ? {
+        name: ev.name as string,
+        dateLabel: fmtRange(ev.startDate, ev.endDate),
+        location: ev.location || null,
+        website: ev.website || null,
+      } as SectionEvent : null;
+    })
+    .filter((e): e is SectionEvent => e !== null);
 
   const cs = (caseStudyRows as any[])[0];
   const html = renderEmailSections({

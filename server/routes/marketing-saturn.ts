@@ -4697,6 +4697,34 @@ Structure your response using these exact delimiters:
       coachingTips: coachingTips || null,
       sourceAssetIds: Array.isArray(sourceAssetIds) && sourceAssetIds.length > 0 ? sourceAssetIds : null,
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      // Carry reusable section settings (About copy, blog/events descriptions
+      // and links) forward from the most recently configured email so they
+      // don't have to be retyped — item selections stay per-email.
+      sections: await (async () => {
+        try {
+          const [prev] = await db.select({ sections: generatedEmails.sections })
+            .from(generatedEmails)
+            .where(and(
+              eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+              eq(generatedEmails.marketId, ctx.marketId),
+              isNotNull(generatedEmails.sections),
+            ))
+            .orderBy(desc(generatedEmails.updatedAt))
+            .limit(1);
+          const s: any = prev?.sections;
+          if (!s) return null;
+          const carried: any = {
+            ...(s.eventsCalendarUrl ? { eventsCalendarUrl: s.eventsCalendarUrl } : {}),
+            ...(s.blogIndexUrl ? { blogIndexUrl: s.blogIndexUrl } : {}),
+            ...(s.blogSectionTitle ? { blogSectionTitle: s.blogSectionTitle } : {}),
+            ...(s.blogIntro ? { blogIntro: s.blogIntro } : {}),
+            ...(s.generalInfo ? { generalInfo: s.generalInfo } : {}),
+          };
+          return Object.keys(carried).length ? carried : null;
+        } catch {
+          return null;
+        }
+      })(),
       createdBy: ctx.userId,
     } as InsertGeneratedEmail).returning();
     res.status(201).json(row);
@@ -4734,8 +4762,8 @@ Structure your response using these exact delimiters:
   //   All three sources are merged and deduplicated by name+date.
   // - caseStudies: all active case_study digital assets (url optional — shown as
   //   "(no URL)" in the picker; the renderer omits the link gracefully)
-  // - blogPosts: all active blog_post digital assets ordered by publish date;
-  //   posts without a URL are listed but won't carry a hyperlink in the email
+  // - blogPosts: url-fronted blog_post digital assets ordered by publish date;
+  //   assets without a usable URL (content drafts/briefs) are excluded
   app.get("/api/email/section-options", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
@@ -4834,6 +4862,10 @@ Structure your response using these exact delimiters:
             eq(contentAssets.assetType, "blog_post"),
             ilike(contentAssetCategories.name, "blog post"),
           ),
+          // Only url-fronted digital assets are selectable — content briefs /
+          // drafts have no usable public URL and must not appear in the picker.
+          isNotNull(contentAssets.url),
+          sql`${contentAssets.url} <> ''`,
         ))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
         .limit(50),

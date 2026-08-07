@@ -211,7 +211,28 @@ export class TwitterPublisher implements SocialPublisher {
     };
   }
 
+  /**
+   * Per-account serialization: X rotates refresh tokens (single-use), and a
+   * concurrent refresh — e.g. worker tick overlapping a manual Retry click —
+   * counts as token reuse, which makes X revoke the entire grant. Chain all
+   * publishes for the same account so only one token refresh can be in
+   * flight at a time within this process.
+   */
+  private publishChains = new Map<string, Promise<PublishResult>>();
+
   async publish(ctx: PublishContext): Promise<PublishResult> {
+    const key = ctx.account.id;
+    const prev = this.publishChains.get(key) ?? Promise.resolve(undefined as unknown as PublishResult);
+    const next = prev.catch(() => undefined).then(() => this.publishInner(ctx));
+    this.publishChains.set(key, next);
+    try {
+      return await next;
+    } finally {
+      if (this.publishChains.get(key) === next) this.publishChains.delete(key);
+    }
+  }
+
+  private async publishInner(ctx: PublishContext): Promise<PublishResult> {
     const { account, post } = ctx;
     if (!account.encryptedAccessToken) {
       return {
@@ -234,7 +255,9 @@ export class TwitterPublisher implements SocialPublisher {
     let refreshedAccessToken: string | null = null;
     let refreshedRefreshToken: string | null = null;
     let refreshedTokenExpiresAt: Date | null = null;
-    if (account.tokenExpiresAt && account.tokenExpiresAt.getTime() < Date.now()) {
+    // Refresh 60s early so the token can't expire mid-publish (media upload
+    // + tweet create can span several seconds).
+    if (account.tokenExpiresAt && account.tokenExpiresAt.getTime() < Date.now() + 60_000) {
       if (!account.encryptedRefreshToken) {
         return {
           success: false,
