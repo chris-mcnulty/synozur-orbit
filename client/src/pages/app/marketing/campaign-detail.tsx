@@ -398,6 +398,30 @@ export default function CampaignDetailPage() {
   const [brandAssetSearch, setBrandAssetSearch] = useState("");
   const [postFilter, setPostFilter] = useState<string>(() => filterFromSearch(window.location.search) ?? "active");
   const [postAccountFilter, setPostAccountFilter] = useState<string>("all");
+  const [postPlatformFilter, setPostPlatformFilter] = useState<string>("all");
+  // Lifecycle filter: pending = still editable (not yet published/exported),
+  // completed = already out the door. Date range applies to scheduledDate.
+  const [postTimeFilter, setPostTimeFilter] = useState<string>("all");
+  const [postDateFrom, setPostDateFrom] = useState<string>("");
+  const [postDateTo, setPostDateTo] = useState<string>("");
+
+  // Shared platform/lifecycle/date-range predicate for the Social Posts tab —
+  // used by the visible-post list AND "Select all visible" so bulk edits
+  // operate on exactly what the user is looking at.
+  const postPassesScopeFilters = (p: { platform: string; status: string; publishedAt?: string; scheduledDate?: string }) => {
+    if (postPlatformFilter !== "all" && p.platform !== postPlatformFilter) return false;
+    const completed = !!p.publishedAt || ["published", "posted", "delivered", "exported", "scheduled_external"].includes(p.status);
+    if (postTimeFilter === "pending" && completed) return false;
+    if (postTimeFilter === "completed" && !completed) return false;
+    if (postDateFrom || postDateTo) {
+      if (!p.scheduledDate) return false;
+      // Compare on date-only keys to avoid timezone drift.
+      const day = p.scheduledDate.slice(0, 10);
+      if (postDateFrom && day < postDateFrom) return false;
+      if (postDateTo && day > postDateTo) return false;
+    }
+    return true;
+  };
   const [manualPostedAtMap, setManualPostedAtMap] = useState<Record<string, string>>({});
   // WS4: when drilling into one collapsed social batch (its generation run,
   // repurpose group, or event); null shows the batch overview.
@@ -3421,6 +3445,7 @@ export default function CampaignDetailPage() {
                       if (batchFilter) { if (src !== batchFilter) return false; }
                       else if (isBatched) return false;
                       if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
+                      if (!postPassesScopeFilters(p)) return false;
                       if (postFilter === "all") return p.status !== "deleted";
                       if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
                       if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
@@ -3582,6 +3607,63 @@ export default function CampaignDetailPage() {
                     </Select>
                   );
                 })()}
+                {(() => {
+                  const platformsWithPosts = [...new Set(posts.filter(p => p.status !== "deleted").map(p => p.platform))].sort();
+                  if (platformsWithPosts.length < 2) return null;
+                  return (
+                    <Select value={postPlatformFilter} onValueChange={setPostPlatformFilter}>
+                      <SelectTrigger className="w-36" data-testid="select-post-platform-filter">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All platforms</SelectItem>
+                        {platformsWithPosts.map(pl => (
+                          <SelectItem key={pl} value={pl}>{pl.charAt(0).toUpperCase() + pl.slice(1)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  );
+                })()}
+                <Select value={postTimeFilter} onValueChange={setPostTimeFilter}>
+                  <SelectTrigger className="w-36" data-testid="select-post-time-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any stage</SelectItem>
+                    <SelectItem value="pending">Pending / upcoming</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="date"
+                    value={postDateFrom}
+                    onChange={e => setPostDateFrom(e.target.value)}
+                    className="h-9 w-36 text-xs"
+                    title="Scheduled on or after"
+                    data-testid="input-post-date-from"
+                  />
+                  <span className="text-xs text-muted-foreground">–</span>
+                  <Input
+                    type="date"
+                    value={postDateTo}
+                    onChange={e => setPostDateTo(e.target.value)}
+                    className="h-9 w-36 text-xs"
+                    title="Scheduled on or before"
+                    data-testid="input-post-date-to"
+                  />
+                  {(postDateFrom || postDateTo || postPlatformFilter !== "all" || postTimeFilter !== "all") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                      onClick={() => { setPostDateFrom(""); setPostDateTo(""); setPostPlatformFilter("all"); setPostTimeFilter("all"); }}
+                      data-testid="button-clear-post-scope-filters"
+                    >
+                      <X className="w-3 h-3 mr-0.5" />Clear
+                    </Button>
+                  )}
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -3784,6 +3866,7 @@ export default function CampaignDetailPage() {
                   if (batchFilter) { if (src !== batchFilter) return false; }
                   else if (isBatched) return false;
                   if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
+                  if (!postPassesScopeFilters(p)) return false;
                   if (postFilter === "all") return p.status !== "deleted";
                   if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
                   if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
