@@ -2600,6 +2600,7 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
   const [eventIds, setEventIds] = useState<string[]>(email.sections?.eventIds || []);
   const [blogIds, setBlogIds] = useState<string[]>(email.sections?.blogAssetIds || []);
   const [eventsCalendarUrl, setEventsCalendarUrl] = useState<string>(email.sections?.eventsCalendarUrl || "");
+  const [blogIndexUrl, setBlogIndexUrl] = useState<string>((email.sections as any)?.blogIndexUrl || "");
   // General information (rendered below the three content sections)
   const savedGI = email.sections?.generalInfo;
   const [giSignoff, setGiSignoff] = useState<string>(savedGI?.senderSignoff ?? "Best,");
@@ -2679,6 +2680,7 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
           eventIds,
           blogAssetIds: blogIds,
           eventsCalendarUrl: eventsCalendarUrl.trim() || null,
+          blogIndexUrl: blogIndexUrl.trim() || null,
           generalInfo: buildGeneralInfo(),
         }),
       });
@@ -2786,7 +2788,7 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">3 · Recent blog posts</Label>
+            <Label className="text-xs font-semibold">3 · From Our Blog</Label>
             <div className="max-h-56 overflow-y-auto space-y-1 border rounded p-2">
               {options && (options.blogPosts ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -2803,13 +2805,25 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
                   />
                   <span className="min-w-0 truncate">
                     {a.title}
+                    {a.assetDate && (
+                      <span className="ml-1 text-[10px] text-muted-foreground">
+                        · {format(new Date(a.assetDate), "MMM d, yyyy")}
+                      </span>
+                    )}
                     {!a.url && <span className="ml-1 text-[10px] text-muted-foreground/60">(no URL)</span>}
                   </span>
                 </label>
               ))}
             </div>
+            <Input
+              className="h-7 text-xs"
+              placeholder="Blog URL (adds a “Read more on our blog” link)"
+              value={blogIndexUrl}
+              onChange={(e) => setBlogIndexUrl(e.target.value)}
+              data-testid="input-blog-index-url"
+            />
             <p className="text-[11px] text-muted-foreground">
-              Only blog posts registered in the Content Library with a live URL appear here.
+              Rendered as a “From Our Blog” column. Only blog posts registered in the Content Library with a live URL appear here.
             </p>
           </div>
         </div>

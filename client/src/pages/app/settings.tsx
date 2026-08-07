@@ -1068,9 +1068,10 @@ export default function Settings() {
                   data-testid="input-mailing-address"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Shown in the footer of marketing emails (required for CAN-SPAM compliance).
+                  Shown with your company name in the footer of marketing emails (required for CAN-SPAM compliance).
                 </p>
               </div>
+              <EmailHeaderImageField />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Primary Color</Label>
@@ -2935,5 +2936,115 @@ function ManualActionUsageCard() {
         </CardFooter>
       )}
     </Card>
+  );
+}
+
+/**
+ * Email header image uploader (Branding card). The email generator uses the
+ * first active brand asset whose name contains "header" as the full-width
+ * top image of generated emails — without one, the AI composes its own
+ * banner (or picks a hero image). This gives admins a direct place to
+ * upload / replace that header.
+ */
+function EmailHeaderImageField() {
+  const queryClient = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+
+  const { data: brandAssets = [], isError } = useQuery<Array<{ id: string; name: string; fileUrl: string | null; url: string | null; status?: string | null }>>({
+    queryKey: ["/api/brand-assets"],
+    retry: false,
+  });
+  const headerAsset = brandAssets.find(
+    (a) => a.name?.toLowerCase().includes("header") && (a.status ?? "active") === "active",
+  );
+  const headerSrc = headerAsset?.fileUrl || headerAsset?.url || null;
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file (PNG or JPG).");
+      return;
+    }
+    setUploading(true);
+    try {
+      const reqRes = await fetch("/api/uploads/request-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
+      });
+      if (!reqRes.ok) throw new Error("Could not get upload URL");
+      const { uploadURL, objectPath } = await reqRes.json();
+      const putRes = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      if (!putRes.ok) throw new Error("File upload to storage failed");
+
+      if (headerAsset) {
+        const r = await fetch(`/api/brand-assets/${headerAsset.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ fileUrl: objectPath, fileType: file.type, fileSize: file.size }),
+        });
+        if (!r.ok) throw new Error("Could not update the header asset");
+      } else {
+        const r = await fetch("/api/brand-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            name: "Email Header",
+            description: "Full-width header image used at the top of generated marketing emails.",
+            fileUrl: objectPath,
+            fileType: file.type,
+            fileSize: file.size,
+          }),
+        });
+        if (!r.ok) throw new Error("Could not save the header asset");
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      toast.success("Email header saved. Newly generated emails will use it — regenerate existing drafts to pick it up.");
+    } catch (err: any) {
+      toast.error(err.message || "Header upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Brand Library is a gated feature — hide the field entirely for tenants
+  // whose plan doesn't include it rather than showing a control that 403s.
+  if (isError) return null;
+
+  return (
+    <div className="grid gap-2">
+      <Label>Email Header Image</Label>
+      {headerSrc ? (
+        <img
+          src={headerSrc}
+          alt="Email header"
+          className="max-h-24 w-auto rounded border object-contain"
+          data-testid="img-email-header-preview"
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No header image yet — generated emails compose a colored banner instead.
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <Button asChild variant="outline" size="sm" disabled={uploading} data-testid="button-upload-email-header">
+          <label className="cursor-pointer">
+            {uploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+            {headerAsset ? "Replace header" : "Upload header"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+            />
+          </label>
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Full-width banner (ideally 1120×200–320px PNG/JPG with your logo) placed at the top of generated marketing emails. Applies when an email is generated — regenerate existing drafts to use a new header.
+      </p>
+    </div>
   );
 }

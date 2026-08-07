@@ -54,8 +54,27 @@ export interface RenderSectionsInput {
   events?: SectionEvent[];
   posts?: SectionPost[];
   eventsCalendarUrl?: string | null;
+  blogIndexUrl?: string | null;    // link to the full blog under "From Our Blog"
   generalInfo?: SectionGeneralInfo | null;
   brandPrimary?: string;   // link/heading accent
+}
+
+/**
+ * Keep case-study blurbs scannable: cut at a sentence boundary near maxChars.
+ * AI summaries can run several paragraphs — an email card needs 2-3 sentences.
+ */
+export function truncateBlurb(text: string, maxChars = 300): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= maxChars) return t;
+  const sentences = t.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [t];
+  let out = "";
+  for (const s of sentences) {
+    if (out && (out + s).trim().length > maxChars) break;
+    out += s;
+  }
+  out = out.trim();
+  if (!out) out = t.slice(0, maxChars).trim() + "…";
+  return out;
 }
 
 const FONT = "font-family:Arial,Helvetica,sans-serif;";
@@ -102,7 +121,7 @@ function renderCaseStudy(cs: SectionCaseStudy, brand: string): string {
       ${msoOpen}${img}${msoMid}<div style="display:inline-block;width:100%;max-width:${textMax}px;vertical-align:top;">
         <div style="${BODY_TEXT}${cs.imageUrl ? "padding:8px 0 0 0;" : ""}">
           <p style="margin:0 0 10px 0;${BODY_TEXT}font-weight:bold;">${titleHtml}</p>
-          <p style="margin:0 0 10px 0;${BODY_TEXT}">${esc(cs.blurb)}</p>
+          <p style="margin:0 0 10px 0;${BODY_TEXT}">${esc(truncateBlurb(cs.blurb))}</p>
           ${cs.quote ? `<p style="margin:0 0 10px 0;${BODY_TEXT}font-style:italic;color:#444444;">${esc(cs.quote)}</p>` : ""}
           ${cs.url ? `<p style="margin:0;${BODY_TEXT}"><a href="${esc(cs.url)}" target="_blank" style="color:${brand};text-decoration:underline;font-weight:bold;">Read the full case study &rarr;</a></p>` : ""}
         </div>
@@ -113,11 +132,12 @@ function renderCaseStudy(cs: SectionCaseStudy, brand: string): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-size:0;line-height:0;height:24px;">&nbsp;</td></tr></table>`;
 }
 
-/** Events + Recent Updates: two fluid columns that stack on mobile. */
+/** Events + From Our Blog: two fluid columns that stack on mobile. */
 function renderTwoColumn(
   events: SectionEvent[],
   posts: SectionPost[],
   eventsCalendarUrl: string | null | undefined,
+  blogIndexUrl: string | null | undefined,
   brand: string,
 ): string {
   const eventItems = events
@@ -147,8 +167,9 @@ function renderTwoColumn(
   const postsCol = posts.length
     ? `<div style="display:inline-block;width:100%;max-width:280px;vertical-align:top;">
         <div style="padding:0 0 24px 0;">
-          <h2 style="${H2}">Recent Updates</h2>
+          <h2 style="${H2}">From Our Blog</h2>
           <ul style="margin:0;padding:0 0 0 20px;">${postItems}</ul>
+          ${blogIndexUrl ? `<p style="margin:12px 0 0 0;${BODY_TEXT}">${link(blogIndexUrl, "Read more on our blog →", brand)}</p>` : ""}
         </div>
       </div>`
     : "";
@@ -237,7 +258,7 @@ export function renderEmailSections(input: RenderSectionsInput): string {
   const brand = input.brandPrimary || "#7C3AED";
   const parts: string[] = [];
   if (input.caseStudy) parts.push(renderCaseStudy(input.caseStudy, brand));
-  const twoCol = renderTwoColumn(input.events ?? [], input.posts ?? [], input.eventsCalendarUrl, brand);
+  const twoCol = renderTwoColumn(input.events ?? [], input.posts ?? [], input.eventsCalendarUrl, input.blogIndexUrl, brand);
   if (twoCol) parts.push(twoCol);
   const genInfo = renderGeneralInfo(input.generalInfo ?? {});
   if (genInfo) parts.push(genInfo);
@@ -251,7 +272,49 @@ export interface SectionsConfig {
   eventIds?: string[];
   blogAssetIds?: string[];
   eventsCalendarUrl?: string | null;
+  blogIndexUrl?: string | null;
   generalInfo?: SectionGeneralInfo | null;
+}
+
+/**
+ * Remove an AI-generated "About …" block from the main email body when the
+ * configured sections already include an About block — older saved emails
+ * were generated before the prompt forbade the AI from writing its own,
+ * which produced two About sections in the final output.
+ *
+ * Conservative: only removes the nearest enclosing <tr> (or, failing that,
+ * the heading plus its immediately following paragraph), and only when the
+ * removed chunk is small and does not contain the deterministic sections
+ * marker.
+ */
+export function stripDuplicateAboutSection(html: string, aboutTitle?: string | null): string {
+  // Only remove headings that unambiguously duplicate the configured About
+  // block: the exact configured title (e.g. "About Synozur") or "About Us".
+  // A generic /^About/ match would eat legitimate content like
+  // "About the webinar".
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const titles = ["About Us"];
+  if (aboutTitle?.trim()) titles.push(aboutTitle.trim());
+  const titleAlt = titles.map(escapeRe).join("|");
+  const re = new RegExp(`<(h[1-4])\\b[^>]*>\\s*(?:${titleAlt})\\s*<\\/\\1>`, "i");
+  const m = re.exec(html);
+  if (!m) return html;
+  const headStart = m.index;
+  const headEnd = m.index + m[0].length;
+  // Prefer removing the enclosing <tr> row (AI emails are table-based).
+  const trStart = html.lastIndexOf("<tr", headStart);
+  const trEndIdx = html.indexOf("</tr>", headEnd);
+  if (trStart !== -1 && trEndIdx !== -1) {
+    const chunk = html.slice(trStart, trEndIdx + 5);
+    if (chunk.length < 4000 && !chunk.includes("orbit:sections")) {
+      return html.slice(0, trStart) + html.slice(trEndIdx + 5);
+    }
+  }
+  // Fallback: heading + the paragraph immediately after it.
+  const after = html.slice(headEnd);
+  const pMatch = /^\s*<p\b[^>]*>[\s\S]{0,2000}?<\/p>/i.exec(after);
+  const removeEnd = headEnd + (pMatch ? pMatch[0].length : 0);
+  return html.slice(0, headStart) + html.slice(removeEnd);
 }
 
 /**
@@ -269,7 +332,7 @@ export async function reRenderSectionsHtml(
 ): Promise<string | null> {
   if (!sections) return null;
 
-  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, generalInfo } = sections;
+  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, blogIndexUrl, generalInfo } = sections;
   const wantedEventIds = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
   const wantedBlogIds = Array.isArray(blogAssetIds) ? blogAssetIds.filter(Boolean) : [];
 
@@ -350,6 +413,7 @@ export async function reRenderSectionsHtml(
     events: eventsData,
     posts,
     eventsCalendarUrl: eventsCalendarUrl || null,
+    blogIndexUrl: blogIndexUrl || null,
     generalInfo: generalInfo || null,
     brandPrimary: tenantRows[0]?.primaryColor || undefined,
   });

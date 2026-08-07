@@ -40,7 +40,7 @@ import {
   type EmailSend,
 } from "@shared/schema";
 import { resolveTokens, resolveTokensForEmail } from "./email-ab-test";
-import { appendSectionsToBody, reRenderSectionsHtml } from "./email-sections-renderer";
+import { appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection } from "./email-sections-renderer";
 import { wrapOutboundLinksInText } from "./marketing-links-helpers";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
@@ -193,12 +193,14 @@ async function getSendGridCreds(): Promise<{ apiKey: string; fromEmail: string }
   return { apiKey: item.settings.api_key, fromEmail: item.settings.from_email };
 }
 
-export function injectFooter(html: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null): string {
+export function injectFooter(html: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null, companyName?: string | null): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   // CAN-SPAM requires the sender's physical mailing address in every
-  // commercial email. Rendered on its own line above the unsubscribe links.
+  // commercial email. Prefixed with the company name so recipients (and the
+  // sender reviewing the email) can tell whose address it is. Configured in
+  // Settings → Branding → Mailing Address.
   const addressLine = mailingAddress?.trim()
-    ? `${esc(mailingAddress.trim()).replace(/\n/g, ", ")}<br/>`
+    ? `${companyName?.trim() ? `<strong>${esc(companyName.trim())}</strong> · ` : ""}${esc(mailingAddress.trim()).replace(/\n/g, ", ")}<br/>`
     : "";
   const footer = `
     <div style="margin-top:24px;padding:16px;border-top:1px solid #ddd;font-size:12px;color:#555555;text-align:center;font-family:Arial,Helvetica,sans-serif;">
@@ -242,6 +244,20 @@ export function injectFooter(html: string, unsubUrl: string, prefsUrl: string, m
  * stated 16 px floor. Fixed to `n < minPx` so the threshold and the
  * replacement value are always consistent.
  */
+/**
+ * Normalize every inline font-family declaration to the single email-safe
+ * stack used by the deterministic sections renderer, so the AI-generated main
+ * body and the appended sections read as one consistent email. AI fragments
+ * otherwise mix Georgia/'Helvetica Neue'/system stacks between rows.
+ */
+export const EMAIL_FONT_STACK = "Arial,Helvetica,sans-serif";
+export function normalizeFontFamily(html: string, stack = EMAIL_FONT_STACK): string {
+  // Font names may be quoted with HTML entities inside style attributes
+  // (font-family: &quot;Helvetica Neue&quot;, sans-serif) — treat those
+  // entities as part of the value so their semicolons don't truncate the match.
+  return html.replace(/font-family:\s*(?:&quot;|&#3[49];|[^;"'>])+/gi, `font-family:${stack}`);
+}
+
 export function enforceMinimumFontSize(html: string, minPx = 16): string {
   return html.replace(/font-size:\s*(\d+)px/gi, (m, size) => {
     const n = parseInt(size, 10);
@@ -318,8 +334,10 @@ ${html}
 </html>`;
 }
 
-function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null): string {
-  const addressLine = mailingAddress?.trim() ? `${mailingAddress.trim().replace(/\n/g, ", ")}\n` : "";
+function injectTextFooter(text: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null, companyName?: string | null): string {
+  const addressLine = mailingAddress?.trim()
+    ? `${companyName?.trim() ? `${companyName.trim()} · ` : ""}${mailingAddress.trim().replace(/\n/g, ", ")}\n`
+    : "";
   return `${text}\n\n---\n${addressLine}Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
 }
 
@@ -889,10 +907,11 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
   // Fetch the tenant mailing address once, early — used both for the CAN-SPAM
   // compliance guard below and for footer injection later.
   const [tenantAddrRow] = await db
-    .select({ mailingAddress: tenants.mailingAddress })
+    .select({ mailingAddress: tenants.mailingAddress, name: tenants.name })
     .from(tenants)
     .where(eq(tenants.domain, tenantDomain));
   const tenantMailingAddress: string | null = tenantAddrRow?.mailingAddress?.trim() || null;
+  const tenantCompanyName: string | null = tenantAddrRow?.name?.trim() || null;
 
   // CAN-SPAM: re-validate at delivery time. A tenant can schedule a list/
   // segment send while an address is saved, then delete it before the worker
@@ -1276,8 +1295,14 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
         console.warn("[Email Sender] sections re-render failed; using stored HTML:", err);
       }
     }
+    // If the configured sections include an About block, drop any AI-written
+    // "About …" section from the main body so the send never shows two.
+    if (sectionsConfig?.generalInfo?.aboutTitle || sectionsConfig?.generalInfo?.aboutText) {
+      effectiveHtmlBody = stripDuplicateAboutSection(effectiveHtmlBody, sectionsConfig.generalInfo.aboutTitle);
+    }
     effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, sectionsHtml);
     effectiveHtmlBody = enforceMinimumFontSize(effectiveHtmlBody);
+    effectiveHtmlBody = normalizeFontFamily(effectiveHtmlBody);
     // Recipients fetch images from outside the app: publish private object
     // images and absolutize relative srcs, then harden CTA button styling.
     effectiveHtmlBody = await prepareEmailImages(effectiveHtmlBody, baseUrl, tenantDomain);
@@ -1380,11 +1405,11 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     // If htmlBody is empty (plain-text email) don't produce an HTML part at
     // all — let the email client fall back to the text part instead of
     // showing a document that contains only the unsubscribe footer.
-    const htmlWithFooter = personalizedHtml ? injectFooter(personalizedHtml, unsubUrl, prefsUrl, tenantMailingAddress) : null;
+    const htmlWithFooter = personalizedHtml ? injectFooter(personalizedHtml, unsubUrl, prefsUrl, tenantMailingAddress, tenantCompanyName) : null;
     const html = htmlWithFooter ? wrapResponsiveDocument(htmlWithFooter) : undefined;
     const text = personalizedText
-      ? injectTextFooter(personalizedText, unsubUrl, prefsUrl, tenantMailingAddress)
-      : `${tenantMailingAddress ? tenantMailingAddress.replace(/\n/g, ", ") + "\n" : ""}Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
+      ? injectTextFooter(personalizedText, unsubUrl, prefsUrl, tenantMailingAddress, tenantCompanyName)
+      : `${tenantMailingAddress ? `${tenantCompanyName ? tenantCompanyName + " · " : ""}${tenantMailingAddress.replace(/\n/g, ", ")}\n` : ""}Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;
     try {
       const [resp] = await sgMail.send({
         to: r.email,

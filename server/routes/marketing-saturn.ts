@@ -95,8 +95,8 @@ import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
-import { enforceMinimumFontSize, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons } from "../services/email-campaign-sender";
-import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
+import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons } from "../services/email-campaign-sender";
+import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -4382,6 +4382,7 @@ VISUAL DESIGN RULES:
     const [headerAsset] = await db.select().from(brandAssets)
       .where(and(
         eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
         eq(brandAssets.status, "active"),
         ilike(brandAssets.name, "%header%"),
       ))
@@ -4565,6 +4566,9 @@ Structure your response using these exact delimiters:
       // Inline styles defeat media queries, and the HubSpot paste path has no
       // media queries at all, so the floor must live in the fragment itself.
       emailBody = enforceMinimumFontSize(emailBody);
+      // One consistent typeface throughout — AI output otherwise mixes
+      // Georgia/'Helvetica Neue'/system stacks between rows.
+      emailBody = normalizeFontFamily(emailBody);
     }
 
     const coachingTipsMap: Record<string, string[]> = {
@@ -4899,13 +4903,23 @@ Structure your response using these exact delimiters:
   app.put("/api/email/saved/:id/sections", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, generalInfo } = req.body as {
+    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, blogIndexUrl, generalInfo } = req.body as {
       caseStudyAssetId?: string | null;
       eventIds?: string[];
       blogAssetIds?: string[];
       eventsCalendarUrl?: string | null;
+      blogIndexUrl?: string | null;
       generalInfo?: { senderSignoff?: string | null; senderName?: string | null; senderTitle?: string | null; aboutTitle?: string | null; aboutText?: string | null; aboutImageUrl?: string | null } | null;
     };
+
+    // Outbound email links must be plain http(s) — reject javascript: and
+    // other schemes at the boundary rather than trusting the client.
+    const isHttpUrl = (u: string) => { try { const p = new URL(u); return p.protocol === "http:" || p.protocol === "https:"; } catch { return false; } };
+    for (const [label, val] of [["eventsCalendarUrl", eventsCalendarUrl], ["blogIndexUrl", blogIndexUrl]] as const) {
+      if (val && !isHttpUrl(val)) {
+        return res.status(400).json({ error: `${label} must be an absolute http(s) URL` });
+      }
+    }
 
     const [email] = await db.select().from(generatedEmails)
       .where(and(
@@ -5023,6 +5037,7 @@ Structure your response using these exact delimiters:
       events: eventsData,
       posts,
       eventsCalendarUrl: eventsCalendarUrl || null,
+      blogIndexUrl: blogIndexUrl || null,
       generalInfo: generalInfo || null,
       brandPrimary: tenantRow?.primaryColor || undefined,
     });
@@ -5032,6 +5047,7 @@ Structure your response using these exact delimiters:
       eventIds: wantedEventIds,
       blogAssetIds: wantedBlogIds,
       ...(eventsCalendarUrl ? { eventsCalendarUrl } : {}),
+      ...(blogIndexUrl ? { blogIndexUrl } : {}),
       ...(generalInfo ? { generalInfo } : {}),
     };
 
@@ -5069,8 +5085,16 @@ Structure your response using these exact delimiters:
         console.warn("[export-html] sections re-render failed; using stored HTML:", err);
       }
     }
-    let body = appendSectionsToBody(email.htmlBody || "", freshSectionsHtml);
+    // If the configured sections include an About block, drop any AI-written
+    // "About …" section from the main body so the export never shows two.
+    let mainBody = email.htmlBody || "";
+    const exportGeneralInfo = (email.sections as any)?.generalInfo;
+    if (exportGeneralInfo?.aboutTitle || exportGeneralInfo?.aboutText) {
+      mainBody = stripDuplicateAboutSection(mainBody, exportGeneralInfo.aboutTitle);
+    }
+    let body = appendSectionsToBody(mainBody, freshSectionsHtml);
     body = enforceMinimumFontSize(body);
+    body = normalizeFontFamily(body);
     // Exports are pasted into external editors (HubSpot/Wix) whose readers
     // fetch images from the public internet: publish private images and
     // absolutize relative srcs, then harden CTA button backgrounds — same
