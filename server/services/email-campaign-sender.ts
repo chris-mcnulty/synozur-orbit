@@ -193,7 +193,7 @@ async function getSendGridCreds(): Promise<{ apiKey: string; fromEmail: string }
   return { apiKey: item.settings.api_key, fromEmail: item.settings.from_email };
 }
 
-function injectFooter(html: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null): string {
+export function injectFooter(html: string, unsubUrl: string, prefsUrl: string, mailingAddress?: string | null): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   // CAN-SPAM requires the sender's physical mailing address in every
   // commercial email. Rendered on its own line above the unsubscribe links.
