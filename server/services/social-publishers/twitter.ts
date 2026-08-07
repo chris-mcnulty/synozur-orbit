@@ -179,14 +179,21 @@ export class TwitterPublisher implements SocialPublisher {
     if (creds.clientSecret) {
       headers.Authorization = buildBasicAuthHeader(creds.clientId, creds.clientSecret);
     }
+    // Per Twitter's OAuth 2.0 spec: when using HTTP Basic auth (confidential
+    // clients that have a client_secret), do NOT also send client_id in the
+    // request body — sending both causes a 400 "invalid_request" error.
+    // Public clients (PKCE only, no secret) need client_id in the body.
+    const refreshBody: Record<string, string> = {
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    };
+    if (!creds.clientSecret) {
+      refreshBody.client_id = creds.clientId;
+    }
     const resp = await fetch(`${API_HOST}/2/oauth2/token`, {
       method: "POST",
       headers,
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: creds.clientId,
-      }).toString(),
+      body: new URLSearchParams(refreshBody).toString(),
     });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => "");
@@ -264,15 +271,29 @@ export class TwitterPublisher implements SocialPublisher {
       (post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null;
     let mediaId: string | null = null;
     if (imageUrl) {
-      mediaId = await this.uploadMedia(accessToken, imageUrl);
+      let uploadError: { code: string; message: string } | null = null;
+      try {
+        mediaId = await this.uploadMedia(accessToken, imageUrl);
+      } catch (uploadErr: any) {
+        // uploadMedia throws only for auth failures (401) so we can
+        // surface a targeted "reconnect" message rather than "Orbit storage".
+        uploadError = { code: uploadErr.code ?? "image_upload_failed", message: uploadErr.message };
+      }
       // If the user explicitly set an override image and the upload failed,
       // return an error so the post stays retryable rather than being silently
       // posted as text-only.
-      if (!mediaId && (post as any).overrideImageUrl) {
+      if ((mediaId === null || uploadError) && (post as any).overrideImageUrl) {
+        if (uploadError?.code === "token_expired") {
+          return {
+            success: false,
+            errorCode: "token_expired",
+            errorMessage: uploadError.message,
+          };
+        }
         return {
           success: false,
           errorCode: "image_upload_failed",
-          errorMessage: `Image could not be fetched from Orbit storage for upload to X. This is a server-side issue — use the Retry button to try again. If it keeps failing, use the Change Image button (🖼) on the post to replace the graphic.`,
+          errorMessage: uploadError?.message ?? `Image could not be fetched from Orbit storage for upload to X. This is a server-side issue — use the Retry button to try again. If it keeps failing, use the Change Image button (🖼) on the post to replace the graphic.`,
         };
       }
     }
@@ -403,6 +424,14 @@ export class TwitterPublisher implements SocialPublisher {
       if (!uploadResp.ok) {
         const errText = await uploadResp.text().catch(() => "");
         console.warn("[Twitter] Media upload failed:", uploadResp.status, errText);
+        // 401 means the access token is expired/revoked — throw a typed error
+        // so the caller can surface "reconnect the account" instead of the
+        // misleading "Image could not be fetched from Orbit storage" message.
+        if (uploadResp.status === 401) {
+          const err: any = new Error("X / Twitter access token has been revoked or expired — reconnect the account.");
+          err.code = "token_expired";
+          throw err;
+        }
         return null;
       }
 

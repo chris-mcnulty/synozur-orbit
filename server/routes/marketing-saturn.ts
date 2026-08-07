@@ -4765,19 +4765,25 @@ Structure your response using these exact delimiters:
         ))
         .orderBy(conferences.startDate),
 
-      // Events stored as content assets (workshop / webinar types) with a
-      // future assetDate — prefixed "ca_<id>" so the PUT endpoint can
-      // distinguish them from conference table IDs.
+      // Events stored as content assets: assets with assetType in
+      // ['workshop','webinar','event'] OR a category named "Event".
+      // Most real event assets are stored as assetType='other' with an "Event"
+      // category, so the category join is required — assetType alone misses them.
+      // Prefixed "ca_<id>" so the PUT endpoint can distinguish from conferences.
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
         url: contentAssets.url,
         assetDate: contentAssets.assetDate,
-        location: contentAssets.description, // description used as location hint when available
+        location: contentAssets.description,
       }).from(contentAssets)
+        .leftJoin(contentAssetCategories, eq(contentAssets.categoryId, contentAssetCategories.id))
         .where(and(
           assetBaseWhere,
-          inArray(contentAssets.assetType, ["workshop", "webinar"] as any[]),
+          or(
+            inArray(contentAssets.assetType, ["workshop", "webinar", "event"] as any[]),
+            ilike(contentAssetCategories.name, "event"),
+          ),
           isNotNull(contentAssets.assetDate),
           sql`${contentAssets.assetDate} >= ${now}`,
           sql`${contentAssets.assetDate} <= ${horizon}`,
@@ -4785,8 +4791,9 @@ Structure your response using these exact delimiters:
         .orderBy(contentAssets.assetDate)
         .limit(50),
 
-      // Case studies: all active case_study assets — URL optional.
-      // The renderer omits the hyperlink gracefully when url is null.
+      // Case studies: assets with assetType='case_study' OR a category named
+      // "Case Study". Most real case studies are assetType='other' with a
+      // "Case Study" category, so the category join is required.
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
@@ -4796,13 +4803,18 @@ Structure your response using these exact delimiters:
         leadImageUrl: contentAssets.leadImageUrl,
         aiSummary: contentAssets.aiSummary,
       }).from(contentAssets)
-        .where(and(assetBaseWhere, eq(contentAssets.assetType, "case_study")))
+        .leftJoin(contentAssetCategories, eq(contentAssets.categoryId, contentAssetCategories.id))
+        .where(and(
+          assetBaseWhere,
+          or(
+            eq(contentAssets.assetType, "case_study"),
+            ilike(contentAssetCategories.name, "case study"),
+          ),
+        ))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
-        .limit(20),
+        .limit(50),
 
-      // Blog posts: all active blog_post assets ordered by publish date.
-      // Posts without a URL are included — they appear in the email without a
-      // hyperlink (renderer handles null url gracefully).
+      // Blog posts: assetType='blog_post' OR category named "Blog Post".
       db.select({
         id: contentAssets.id,
         title: contentAssets.title,
@@ -4811,7 +4823,14 @@ Structure your response using these exact delimiters:
         assetDate: contentAssets.assetDate,
         leadImageUrl: contentAssets.leadImageUrl,
       }).from(contentAssets)
-        .where(and(assetBaseWhere, eq(contentAssets.assetType, "blog_post")))
+        .leftJoin(contentAssetCategories, eq(contentAssets.categoryId, contentAssetCategories.id))
+        .where(and(
+          assetBaseWhere,
+          or(
+            eq(contentAssets.assetType, "blog_post"),
+            ilike(contentAssetCategories.name, "blog post"),
+          ),
+        ))
         .orderBy(desc(sql`COALESCE(${contentAssets.assetDate}, ${contentAssets.createdAt})`))
         .limit(50),
 
