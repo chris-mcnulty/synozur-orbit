@@ -655,6 +655,22 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
   if (opts.workflowRecipients?.length) {
     return deliverEmailSend(opts);
   }
+
+  // CAN-SPAM compliance: bulk/marketing sends require a physical mailing address.
+  // Test sends (testRecipient) and workflow single-contact sends are exempt.
+  const [tenantRow] = await db.select({ mailingAddress: tenants.mailingAddress })
+    .from(tenants)
+    .where(eq(tenants.domain, tenantDomain));
+  if (!tenantRow?.mailingAddress?.trim()) {
+    throw Object.assign(
+      new Error(
+        "A physical mailing address is required for commercial email sends (CAN-SPAM). " +
+        "Add one in Settings → Branding.",
+      ),
+      { status: 422 },
+    );
+  }
+
   if (!listId && !segmentId) {
     throw Object.assign(new Error("listId or segmentId is required for list sends"), { status: 400 });
   }
@@ -868,6 +884,35 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
       new Error("Direct email delivery is not enabled on this tenant's plan."),
       { status: 403 },
     );
+  }
+
+  // Fetch the tenant mailing address once, early — used both for the CAN-SPAM
+  // compliance guard below and for footer injection later.
+  const [tenantAddrRow] = await db
+    .select({ mailingAddress: tenants.mailingAddress })
+    .from(tenants)
+    .where(eq(tenants.domain, tenantDomain));
+  const tenantMailingAddress: string | null = tenantAddrRow?.mailingAddress?.trim() || null;
+
+  // CAN-SPAM: re-validate at delivery time. A tenant can schedule a list/
+  // segment send while an address is saved, then delete it before the worker
+  // runs. This covers immediate, scheduled, and A/B-holdback deliveries.
+  // Test sends (single-message previews) and workflow single-contact sends
+  // are exempt — the sender is always known and the send is non-commercial.
+  if (!testRecipient && !opts.workflowRecipients?.length) {
+    if (!tenantMailingAddress) {
+      const errMsg =
+        "A physical mailing address is required for commercial email sends (CAN-SPAM). " +
+        "Add one in Settings → Branding.";
+      if (existingSendId) {
+        await db.update(emailSends).set({
+          status: "failed",
+          errorMessage: errMsg,
+          completedAt: new Date(),
+        }).where(eq(emailSends.id, existingSendId));
+      }
+      throw Object.assign(new Error(errMsg), { status: 422 });
+    }
   }
 
   // A/B variant identity — needed early for both pre-assigned check and delivery.
@@ -1238,13 +1283,6 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     effectiveHtmlBody = await prepareEmailImages(effectiveHtmlBody, baseUrl, tenantDomain);
     effectiveHtmlBody = hardenCtaButtons(effectiveHtmlBody);
   }
-
-  // CAN-SPAM: the tenant's physical mailing address goes in every footer.
-  let tenantMailingAddress: string | null = null;
-  try {
-    const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, tenantDomain)).limit(1);
-    tenantMailingAddress = (tenantRow as any)?.mailingAddress ?? null;
-  } catch { /* best-effort */ }
 
   // ── Correct recipientCount to reflect actual cohort size ─────────────────
   // Only needed for non-pre-assigned sends (pre-assigned counts were set at

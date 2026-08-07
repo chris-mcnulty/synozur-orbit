@@ -1000,6 +1000,7 @@ export function registerTenantAdminRoutes(app: Express) {
         plan: tenant.plan,
         isPremium,
         name: tenant.name,
+        mailingAddress: tenant.mailingAddress ?? null,
         features,
         // LinkedIn direct posting is gated until LinkedIn approves the shared
         // Synozur app; the UI uses this to show "coming soon" instead of a

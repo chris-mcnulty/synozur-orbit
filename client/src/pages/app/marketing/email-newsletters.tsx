@@ -437,7 +437,7 @@ export default function EmailNewslettersPage() {
   const [rescheduleEmail, setRescheduleEmail] = useState<SavedEmail | null>(null);
   const [rescheduleDateTime, setRescheduleDateTime] = useState<string>("");
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
+  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean>; mailingAddress?: string | null }>({
     queryKey: ["/api/tenant/info"],
     queryFn: async () => {
       const r = await fetch("/api/tenant/info", { credentials: "include" });
@@ -447,6 +447,7 @@ export default function EmailNewslettersPage() {
 
   const isAllowed = tenantInfo?.features?.emailNewsletters === true;
   const directDeliveryEnabled = tenantInfo?.features?.directEmailDelivery === true;
+  const hasMailingAddress = !!(tenantInfo?.mailingAddress?.trim());
 
   const { data: hubspotStatus } = useQuery<{ connection?: { activeProspectSuppressionDefault?: string } }>({
     queryKey: ["/api/integrations/hubspot/status"],
@@ -2291,6 +2292,25 @@ export default function EmailNewslettersPage() {
                   </div>
                 </>
               )}
+              {(sendMode === "list" || sendMode === "segment") && !hasMailingAddress && (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 space-y-1" data-testid="banner-missing-mailing-address">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <span>⛔</span>
+                    <span>Mailing address required (CAN-SPAM)</span>
+                  </div>
+                  <p className="text-red-700">
+                    Commercial email sends must include a physical mailing address.{" "}
+                    <a
+                      href="/app/settings/branding"
+                      className="underline font-medium hover:text-red-900"
+                      onClick={() => setSendDialogEmail(null)}
+                    >
+                      Add one in Settings → Branding
+                    </a>
+                    . Test sends are still allowed.
+                  </p>
+                </div>
+              )}
               {sendDialogEmail && sendDialogEmail.status !== "approved" && sendDialogEmail.status !== "sent" && (sendMode === "list" || sendMode === "segment") && (
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="text-approval-warning">
                   This email is in <strong>{sendDialogEmail.status}</strong> status. Approve it before sending. Test sends are still allowed.
@@ -2301,6 +2321,7 @@ export default function EmailNewslettersPage() {
                 <Button
                   disabled={
                     sendEmailMutation.isPending ||
+                    ((sendMode === "list" || sendMode === "segment") && !hasMailingAddress) ||
                     (sendMode === "test" ? !sendTestRecipient.includes("@") :
                      sendMode === "segment" ? !sendSegmentId :
                      !sendListId)
