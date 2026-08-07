@@ -27,11 +27,11 @@ import { GraphClient } from "../sharepoint-graph-client.js";
 
 const AUTH_HOST = "https://twitter.com";
 const API_HOST = "https://api.twitter.com";
-// Media upload still lives on v1.1 even for OAuth 2.0 user-context apps.
-const UPLOAD_HOST = "https://upload.twitter.com";
 // `tweet.write` to post, `tweet.read` + `users.read` to look up the author,
-// `offline.access` so we can refresh the access token later.
-const DEFAULT_SCOPE = "tweet.read tweet.write users.read offline.access";
+// `offline.access` so we can refresh the access token later, `media.write`
+// to upload images via the v2 media endpoint (the legacy v1.1
+// upload.twitter.com endpoint now returns 403 for OAuth 2.0 apps).
+const DEFAULT_SCOPE = "tweet.read tweet.write users.read media.write offline.access";
 
 function generateCodeVerifier(): string {
   // RFC 7636 §4.1: 43–128 chars, [A-Z a-z 0-9 -._~]. base64url(48 bytes) = 64 chars.
@@ -421,11 +421,14 @@ export class TwitterPublisher implements SocialPublisher {
         contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
       }
 
-      // 2. Upload to X via multipart/form-data.
+      // 2. Upload to X via the v2 media endpoint (multipart/form-data).
+      // The legacy v1.1 upload.twitter.com endpoint was retired for
+      // OAuth 2.0 apps and now answers 403 regardless of token validity.
       const form = new FormData();
       form.append("media", new Blob([imageBuffer], { type: contentType }), "image");
+      form.append("media_category", "tweet_image");
 
-      const uploadResp = await fetch(`${UPLOAD_HOST}/1.1/media/upload.json`, {
+      const uploadResp = await fetch(`${API_HOST}/2/media/upload`, {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
         body: form,
@@ -434,24 +437,36 @@ export class TwitterPublisher implements SocialPublisher {
       if (!uploadResp.ok) {
         const errText = await uploadResp.text().catch(() => "");
         console.warn("[Twitter] Media upload failed:", uploadResp.status, errText);
-        // 401 means the access token is expired/revoked — throw a typed error
-        // so the caller can surface "reconnect the account" instead of the
-        // misleading "Image could not be fetched from Orbit storage" message.
+        // 401 means the access token is expired/revoked; 403 means the token
+        // lacks the media.write scope (connections made before the scope was
+        // added). Both need a reconnect — throw typed errors so the caller
+        // surfaces that instead of the misleading "Orbit storage" message.
         if (uploadResp.status === 401) {
           const err: any = new Error("X / Twitter access token has been revoked or expired — reconnect the account.");
           err.code = "token_expired";
           throw err;
         }
+        if (uploadResp.status === 403) {
+          const err: any = new Error(
+            "X / Twitter rejected the image upload (missing media permission). " +
+            "Reconnect the X account in Settings → Social Accounts to grant the new media upload permission, then retry.",
+          );
+          err.code = "media_scope_missing";
+          throw err;
+        }
         return null;
       }
 
-      const uploadJson = await uploadResp.json() as { media_id_string?: string };
-      if (!uploadJson.media_id_string) {
-        console.warn("[Twitter] Media upload response missing media_id_string:", uploadJson);
+      // v2 responds { data: { id: "..." } }; tolerate the legacy
+      // media_id_string shape defensively.
+      const uploadJson = await uploadResp.json() as { data?: { id?: string }; media_id_string?: string };
+      const mediaId = uploadJson.data?.id ?? uploadJson.media_id_string;
+      if (!mediaId) {
+        console.warn("[Twitter] Media upload response missing media id:", uploadJson);
         return null;
       }
 
-      return uploadJson.media_id_string;
+      return mediaId;
     } catch (err: any) {
       // Re-throw typed errors (e.g. token_expired) so publish() can surface
       // a targeted message instead of the generic "Orbit storage" one.
