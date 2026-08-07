@@ -996,6 +996,12 @@ export default function ContentLibraryPage() {
           )}
         </div>
         <div className="flex flex-wrap gap-1.5 mt-1">
+          {asset.assetDate && (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-asset-date-${asset.id}`}>
+              <Calendar className="w-2.5 h-2.5 mr-0.5" />
+              {new Date(asset.assetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            </Badge>
+          )}
           {asset.capturedViaExtension && <Badge variant="secondary" className="text-xs">Captured</Badge>}
           {asset.extractionStatus === "extracted" && <Badge variant="secondary" className="text-xs"><Sparkles className="w-2.5 h-2.5 mr-0.5" />AI Extracted</Badge>}
           {asset.aiSummary && <Badge variant="secondary" className="text-xs text-primary"><Sparkles className="w-2.5 h-2.5 mr-0.5" />Summarized</Badge>}
@@ -1871,6 +1877,7 @@ export default function ContentLibraryPage() {
                   <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Category</th>
                   <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Status</th>
                   <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">AI Extraction</th>
+                  <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Date</th>
                   <th className="text-left py-2.5 px-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Added</th>
                   <th className="text-right py-2.5 px-4 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Actions</th>
                 </tr>
@@ -1938,6 +1945,13 @@ export default function ContentLibraryPage() {
                         <span className="text-xs text-yellow-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Pending</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-xs whitespace-nowrap" data-testid={`text-asset-date-${asset.id}`}>
+                      {asset.assetDate ? (
+                        <span className="text-foreground">{new Date(asset.assetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">
