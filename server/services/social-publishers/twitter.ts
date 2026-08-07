@@ -275,8 +275,9 @@ export class TwitterPublisher implements SocialPublisher {
       try {
         mediaId = await this.uploadMedia(accessToken, imageUrl);
       } catch (uploadErr: any) {
-        // uploadMedia throws only for auth failures (401) so we can
-        // surface a targeted "reconnect" message rather than "Orbit storage".
+        // uploadMedia throws typed errors (token_expired on 401 from X,
+        // image_fetch_failed on non-OK storage fetches) so we can surface a
+        // targeted message rather than the generic "Orbit storage" one.
         uploadError = { code: uploadErr.code ?? "image_upload_failed", message: uploadErr.message };
       }
       // If the user explicitly set an override image and the upload failed,
@@ -405,7 +406,16 @@ export class TwitterPublisher implements SocialPublisher {
         const imgResp = await fetch(absoluteUrl);
         if (!imgResp.ok) {
           console.warn("[Twitter] Failed to fetch image for upload:", absoluteUrl, imgResp.status);
-          return null;
+          const err: any = new Error(
+            `Image fetch from Orbit storage failed with HTTP ${imgResp.status} for ${imageUrl}. ` +
+            (imgResp.status === 401 || imgResp.status === 403
+              ? "The image lives behind an auth-gated path — use Change Image (🖼) to pick or re-upload the graphic so it lands in public storage."
+              : imgResp.status === 404
+                ? "The image no longer exists at that path — use Change Image (🖼) to replace the graphic."
+                : "Use the Retry button to try again."),
+          );
+          err.code = "image_fetch_failed";
+          throw err;
         }
         imageBuffer = Buffer.from(await imgResp.arrayBuffer());
         contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
@@ -443,6 +453,9 @@ export class TwitterPublisher implements SocialPublisher {
 
       return uploadJson.media_id_string;
     } catch (err: any) {
+      // Re-throw typed errors (e.g. token_expired) so publish() can surface
+      // a targeted message instead of the generic "Orbit storage" one.
+      if (err?.code) throw err;
       console.warn("[Twitter] uploadMedia error:", err.message);
       return null;
     }
