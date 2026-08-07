@@ -84,6 +84,9 @@ interface SavedEmail {
     eventIds?: string[];
     blogAssetIds?: string[];
     eventsCalendarUrl?: string | null;
+    blogIndexUrl?: string | null;
+    blogSectionTitle?: string | null;
+    blogIntro?: string | null;
     generalInfo?: {
       senderSignoff?: string | null;
       senderName?: string | null;
@@ -95,6 +98,7 @@ interface SavedEmail {
   } | null;
   sectionsHtml?: string | null;
   createdAt: string;
+  updatedAt?: string | null;
   // A/B test config
   abTestEnabled?: boolean;
   abTestSplit?: number;
@@ -1444,7 +1448,11 @@ export default function EmailNewslettersPage() {
                             : (email.textBody || email.htmlBody);
                           if (email.platform === "hubspot-marketing") {
                             const exported = await fetchSavedEmailExport(email.id);
-                            if (exported) content = exported.hubspotFragment || exported.fragment;
+                            if (!exported) {
+                              toast({ title: "Export failed", description: "Could not build the HTML with sections — nothing was copied. Try again or reload the page.", variant: "destructive" });
+                              return;
+                            }
+                            content = exported.hubspotFragment || exported.fragment;
                           }
                           navigator.clipboard.writeText(content);
                           toast({
@@ -1466,7 +1474,11 @@ export default function EmailNewslettersPage() {
                           onClick={async e => {
                             e.stopPropagation();
                             const exported = await fetchSavedEmailExport(email.id);
-                            const body = exported?.fragment || email.htmlBody;
+                            if (!exported) {
+                              toast({ title: "Export failed", description: "Could not build the HTML with sections — no file was downloaded. Try again or reload the page.", variant: "destructive" });
+                              return;
+                            }
+                            const body = exported.fragment;
                             const wixHtml = buildWixHtml(body, email.subject);
                             const filename = `${email.subject.replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/, "").toLowerCase()}-wix.html`;
                             downloadHtmlFile(wixHtml, filename);
@@ -2430,7 +2442,11 @@ export default function EmailNewslettersPage() {
                         : (viewingEmail.textBody || viewingEmail.htmlBody);
                       if (viewingEmail.platform === "hubspot-marketing") {
                         const exported = await fetchSavedEmailExport(viewingEmail.id);
-                        if (exported) content = exported.hubspotFragment || exported.fragment;
+                        if (!exported) {
+                          toast({ title: "Export failed", description: "Could not build the HTML with sections — nothing was copied. Try again or reload the page.", variant: "destructive" });
+                          return;
+                        }
+                        content = exported.hubspotFragment || exported.fragment;
                       }
                       navigator.clipboard.writeText(content);
                       toast({
@@ -2601,6 +2617,8 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
   const [blogIds, setBlogIds] = useState<string[]>(email.sections?.blogAssetIds || []);
   const [eventsCalendarUrl, setEventsCalendarUrl] = useState<string>(email.sections?.eventsCalendarUrl || "");
   const [blogIndexUrl, setBlogIndexUrl] = useState<string>((email.sections as any)?.blogIndexUrl || "");
+  const [blogSectionTitle, setBlogSectionTitle] = useState<string>((email.sections as any)?.blogSectionTitle || "");
+  const [blogIntro, setBlogIntro] = useState<string>((email.sections as any)?.blogIntro || "");
   // General information (rendered below the three content sections)
   const savedGI = email.sections?.generalInfo;
   const [giSignoff, setGiSignoff] = useState<string>(savedGI?.senderSignoff ?? "Best,");
@@ -2612,6 +2630,36 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
   const [showGiImagePicker, setShowGiImagePicker] = useState(false);
   const seededRef = useRef(false);
   const giSeededRef = useRef(!!savedGI);
+
+  // Re-hydrate the form only when a *different* email is opened — without
+  // this, saved URLs looked "lost" because the initial useState values were
+  // captured from a stale email object. Deliberately NOT keyed on updatedAt:
+  // re-syncing on every server-side version bump would clobber in-progress
+  // unsaved edits (our own save already reflects local state).
+  const lastSyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = email.id;
+    if (lastSyncedRef.current === key) return;
+    lastSyncedRef.current = key;
+    const s: any = email.sections || {};
+    setCaseStudyAssetId(s.caseStudyAssetId || "none");
+    setEventIds(s.eventIds || []);
+    setBlogIds(s.blogAssetIds || []);
+    setEventsCalendarUrl(s.eventsCalendarUrl || "");
+    setBlogIndexUrl(s.blogIndexUrl || "");
+    setBlogSectionTitle(s.blogSectionTitle || "");
+    setBlogIntro(s.blogIntro || "");
+    const gi = s.generalInfo;
+    if (gi) {
+      setGiSignoff(gi.senderSignoff ?? "Best,");
+      setGiName(gi.senderName ?? "");
+      setGiTitle(gi.senderTitle ?? "");
+      setGiAboutTitle(gi.aboutTitle ?? "");
+      setGiAboutText(gi.aboutText ?? "");
+      setGiAboutImage(gi.aboutImageUrl ?? "");
+      giSeededRef.current = true;
+    }
+  }, [email.id, email.sections]);
 
   const { data: options } = useQuery<{
     events: Array<{ id: string; name: string; location?: string | null; website?: string | null; startDate?: string | null; endDate?: string | null }>;
@@ -2681,6 +2729,8 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
           blogAssetIds: blogIds,
           eventsCalendarUrl: eventsCalendarUrl.trim() || null,
           blogIndexUrl: blogIndexUrl.trim() || null,
+          blogSectionTitle: blogSectionTitle.trim() || null,
+          blogIntro: blogIntro.trim() || null,
           generalInfo: buildGeneralInfo(),
         }),
       });
@@ -2817,13 +2867,27 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
             </div>
             <Input
               className="h-7 text-xs"
+              placeholder="Blog section title (default: From Our Blog)"
+              value={blogSectionTitle}
+              onChange={(e) => setBlogSectionTitle(e.target.value)}
+              data-testid="input-blog-section-title"
+            />
+            <Textarea
+              className="text-xs min-h-[48px]"
+              placeholder="Short message about your blog and where to read more (optional)"
+              value={blogIntro}
+              onChange={(e) => setBlogIntro(e.target.value)}
+              data-testid="input-blog-intro"
+            />
+            <Input
+              className="h-7 text-xs"
               placeholder="Blog URL (adds a “Read more on our blog” link)"
               value={blogIndexUrl}
               onChange={(e) => setBlogIndexUrl(e.target.value)}
               data-testid="input-blog-index-url"
             />
             <p className="text-[11px] text-muted-foreground">
-              Rendered as a “From Our Blog” column. Only blog posts registered in the Content Library with a live URL appear here.
+              Posts are listed newest-first by publish date. Only blog posts registered in the Content Library with a live URL appear here.
             </p>
           </div>
         </div>

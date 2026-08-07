@@ -4871,7 +4871,7 @@ Structure your response using these exact delimiters:
 
     const mcpOnlyEvents = mcpEvents
       .filter(e => {
-        if (!e.startDate) return false;
+        if (!e.name || !e.startDate) return false;
         const start = new Date(e.startDate);
         if (start < now || start > horizon) return false;
         return !seenKeys.has(normKey(e.name, e.startDate));
@@ -4903,12 +4903,14 @@ Structure your response using these exact delimiters:
   app.put("/api/email/saved/:id/sections", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, blogIndexUrl, generalInfo } = req.body as {
+    const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, blogIndexUrl, blogSectionTitle, blogIntro, generalInfo } = req.body as {
       caseStudyAssetId?: string | null;
       eventIds?: string[];
       blogAssetIds?: string[];
       eventsCalendarUrl?: string | null;
       blogIndexUrl?: string | null;
+      blogSectionTitle?: string | null;
+      blogIntro?: string | null;
       generalInfo?: { senderSignoff?: string | null; senderName?: string | null; senderTitle?: string | null; aboutTitle?: string | null; aboutText?: string | null; aboutImageUrl?: string | null } | null;
     };
 
@@ -4992,11 +4994,17 @@ Structure your response using these exact delimiters:
       return `${fmtDate(s)} – ${fmtDate(e)}`;
     };
 
-    // Keep the order the client sent for blog posts.
+    // Blog posts render newest-first by publish date (fallback createdAt),
+    // regardless of the order they were added to the database or selected.
     const blogById = new Map(blogRows.map((r: any) => [r.id, r]));
     const posts: SectionPost[] = wantedBlogIds
       .map(id => blogById.get(id))
       .filter(Boolean)
+      .sort((a: any, b: any) => {
+        const da = new Date(a.assetDate ?? a.createdAt ?? 0).getTime();
+        const db2 = new Date(b.assetDate ?? b.createdAt ?? 0).getTime();
+        return db2 - da;
+      })
       .map((r: any) => ({ title: r.title, url: r.url || null }));
 
     // Merge conference + content-asset events, preserving the user's selected order.
@@ -5038,6 +5046,8 @@ Structure your response using these exact delimiters:
       posts,
       eventsCalendarUrl: eventsCalendarUrl || null,
       blogIndexUrl: blogIndexUrl || null,
+      blogSectionTitle: typeof blogSectionTitle === "string" ? blogSectionTitle.trim().slice(0, 120) || null : null,
+      blogIntro: typeof blogIntro === "string" ? blogIntro.trim().slice(0, 500) || null : null,
       generalInfo: generalInfo || null,
       brandPrimary: tenantRow?.primaryColor || undefined,
     });
@@ -5046,8 +5056,12 @@ Structure your response using these exact delimiters:
       caseStudyAssetId: caseStudyAssetId || null,
       eventIds: wantedEventIds,
       blogAssetIds: wantedBlogIds,
-      ...(eventsCalendarUrl ? { eventsCalendarUrl } : {}),
-      ...(blogIndexUrl ? { blogIndexUrl } : {}),
+      // Persist explicit nulls (not absent keys) so a cleared field stays
+      // cleared and a saved value always round-trips back to the editor.
+      eventsCalendarUrl: eventsCalendarUrl?.trim() || null,
+      blogIndexUrl: blogIndexUrl?.trim() || null,
+      blogSectionTitle: typeof blogSectionTitle === "string" ? blogSectionTitle.trim().slice(0, 120) || null : null,
+      blogIntro: typeof blogIntro === "string" ? blogIntro.trim().slice(0, 500) || null : null,
       ...(generalInfo ? { generalInfo } : {}),
     };
 
@@ -5090,7 +5104,9 @@ Structure your response using these exact delimiters:
     let mainBody = email.htmlBody || "";
     const exportGeneralInfo = (email.sections as any)?.generalInfo;
     if (exportGeneralInfo?.aboutTitle || exportGeneralInfo?.aboutText) {
-      mainBody = stripDuplicateAboutSection(mainBody, exportGeneralInfo.aboutTitle);
+      const [exportTenant] = await db.select({ name: tenants.name })
+        .from(tenants).where(eq(tenants.domain, ctx.tenantDomain)).limit(1);
+      mainBody = stripDuplicateAboutSection(mainBody, exportGeneralInfo.aboutTitle, exportTenant?.name);
     }
     let body = appendSectionsToBody(mainBody, freshSectionsHtml);
     body = enforceMinimumFontSize(body);

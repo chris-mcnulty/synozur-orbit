@@ -1298,7 +1298,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     // If the configured sections include an About block, drop any AI-written
     // "About …" section from the main body so the send never shows two.
     if (sectionsConfig?.generalInfo?.aboutTitle || sectionsConfig?.generalInfo?.aboutText) {
-      effectiveHtmlBody = stripDuplicateAboutSection(effectiveHtmlBody, sectionsConfig.generalInfo.aboutTitle);
+      effectiveHtmlBody = stripDuplicateAboutSection(effectiveHtmlBody, sectionsConfig.generalInfo.aboutTitle, tenantCompanyName);
     }
     effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, sectionsHtml);
     effectiveHtmlBody = enforceMinimumFontSize(effectiveHtmlBody);

@@ -54,7 +54,9 @@ export interface RenderSectionsInput {
   events?: SectionEvent[];
   posts?: SectionPost[];
   eventsCalendarUrl?: string | null;
-  blogIndexUrl?: string | null;    // link to the full blog under "From Our Blog"
+  blogIndexUrl?: string | null;    // link to the full blog under the blog column
+  blogSectionTitle?: string | null; // heading for the blog column (default "From Our Blog")
+  blogIntro?: string | null;        // short message shown above the post list
   generalInfo?: SectionGeneralInfo | null;
   brandPrimary?: string;   // link/heading accent
 }
@@ -139,6 +141,8 @@ function renderTwoColumn(
   eventsCalendarUrl: string | null | undefined,
   blogIndexUrl: string | null | undefined,
   brand: string,
+  blogSectionTitle?: string | null,
+  blogIntro?: string | null,
 ): string {
   const eventItems = events
     .map(ev => {
@@ -167,7 +171,8 @@ function renderTwoColumn(
   const postsCol = posts.length
     ? `<div style="display:inline-block;width:100%;max-width:280px;vertical-align:top;">
         <div style="padding:0 0 24px 0;">
-          <h2 style="${H2}">From Our Blog</h2>
+          <h2 style="${H2}">${esc(blogSectionTitle?.trim() || "From Our Blog")}</h2>
+          ${blogIntro?.trim() ? `<p style="margin:0 0 10px 0;${BODY_TEXT}">${esc(blogIntro.trim())}</p>` : ""}
           <ul style="margin:0;padding:0 0 0 20px;">${postItems}</ul>
           ${blogIndexUrl ? `<p style="margin:12px 0 0 0;${BODY_TEXT}">${link(blogIndexUrl, "Read more on our blog →", brand)}</p>` : ""}
         </div>
@@ -258,7 +263,7 @@ export function renderEmailSections(input: RenderSectionsInput): string {
   const brand = input.brandPrimary || "#7C3AED";
   const parts: string[] = [];
   if (input.caseStudy) parts.push(renderCaseStudy(input.caseStudy, brand));
-  const twoCol = renderTwoColumn(input.events ?? [], input.posts ?? [], input.eventsCalendarUrl, input.blogIndexUrl, brand);
+  const twoCol = renderTwoColumn(input.events ?? [], input.posts ?? [], input.eventsCalendarUrl, input.blogIndexUrl, brand, input.blogSectionTitle, input.blogIntro);
   if (twoCol) parts.push(twoCol);
   const genInfo = renderGeneralInfo(input.generalInfo ?? {});
   if (genInfo) parts.push(genInfo);
@@ -273,6 +278,8 @@ export interface SectionsConfig {
   blogAssetIds?: string[];
   eventsCalendarUrl?: string | null;
   blogIndexUrl?: string | null;
+  blogSectionTitle?: string | null;
+  blogIntro?: string | null;
   generalInfo?: SectionGeneralInfo | null;
 }
 
@@ -287,34 +294,61 @@ export interface SectionsConfig {
  * removed chunk is small and does not contain the deterministic sections
  * marker.
  */
-export function stripDuplicateAboutSection(html: string, aboutTitle?: string | null): string {
+export function stripDuplicateAboutSection(html: string, aboutTitle?: string | null, companyName?: string | null): string {
   // Only remove headings that unambiguously duplicate the configured About
-  // block: the exact configured title (e.g. "About Synozur") or "About Us".
-  // A generic /^About/ match would eat legitimate content like
-  // "About the webinar".
+  // block: the exact configured title (e.g. "About Synozur"), "About Us",
+  // or "About <company name>". A generic /^About/ match would eat
+  // legitimate content like "About the webinar".
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const titles = ["About Us"];
   if (aboutTitle?.trim()) titles.push(aboutTitle.trim());
+  if (companyName?.trim()) titles.push(`About ${companyName.trim()}`);
   const titleAlt = titles.map(escapeRe).join("|");
-  const re = new RegExp(`<(h[1-4])\\b[^>]*>\\s*(?:${titleAlt})\\s*<\\/\\1>`, "i");
-  const m = re.exec(html);
-  if (!m) return html;
-  const headStart = m.index;
-  const headEnd = m.index + m[0].length;
-  // Prefer removing the enclosing <tr> row (AI emails are table-based).
-  const trStart = html.lastIndexOf("<tr", headStart);
-  const trEndIdx = html.indexOf("</tr>", headEnd);
-  if (trStart !== -1 && trEndIdx !== -1) {
-    const chunk = html.slice(trStart, trEndIdx + 5);
-    if (chunk.length < 4000 && !chunk.includes("orbit:sections")) {
-      return html.slice(0, trStart) + html.slice(trEndIdx + 5);
+  // Tolerate inline markup inside the heading (e.g. <h2><strong>About Us</strong></h2>)
+  // and non-heading "headings" the AI sometimes emits as a bold paragraph.
+  const inner = `(?:\\s|<[^>]+>)*`;
+  const patterns = [
+    new RegExp(`<(h[1-4])\\b[^>]*>${inner}(?:${titleAlt})${inner}<\\/\\1>`, "i"),
+    new RegExp(`<p\\b[^>]*>${inner}<(?:strong|b)\\b[^>]*>\\s*(?:${titleAlt})\\s*<\\/(?:strong|b)>${inner}<\\/p>`, "i"),
+  ];
+  let out = html;
+  // Remove every duplicate occurrence (AI has been seen writing About at both
+  // the top and bottom of the body), with a hard cap as a safety valve.
+  for (let pass = 0; pass < 4; pass++) {
+    let m: RegExpExecArray | null = null;
+    for (const re of patterns) {
+      m = re.exec(out);
+      if (m) break;
     }
+    if (!m) break;
+    const headStart = m.index;
+    const headEnd = m.index + m[0].length;
+    // Prefer removing the enclosing <tr> row (AI emails are table-based) —
+    // but only when the row is provably an isolated About block: small, no
+    // other headings, no nested tables/CTA modules, and not our own sections.
+    const trStart = out.lastIndexOf("<tr", headStart);
+    const trEndIdx = out.indexOf("</tr>", headEnd);
+    if (trStart !== -1 && trEndIdx !== -1) {
+      const chunk = out.slice(trStart, trEndIdx + 5);
+      const headingCount = (chunk.match(/<h[1-4]\b/gi) ?? []).length;
+      const isolated =
+        chunk.length < 4000 &&
+        !chunk.includes("orbit:sections") &&
+        headingCount <= 1 &&
+        !/<table\b/i.test(chunk) &&        // nested module (CTA button table, etc.)
+        !/<a\b[^>]*class="[^"]*btn/i.test(chunk);
+      if (isolated) {
+        out = out.slice(0, trStart) + out.slice(trEndIdx + 5);
+        continue;
+      }
+    }
+    // Fallback: heading + the paragraph immediately after it.
+    const after = out.slice(headEnd);
+    const pMatch = /^\s*<p\b[^>]*>[\s\S]{0,2000}?<\/p>/i.exec(after);
+    const removeEnd = headEnd + (pMatch ? pMatch[0].length : 0);
+    out = out.slice(0, headStart) + out.slice(removeEnd);
   }
-  // Fallback: heading + the paragraph immediately after it.
-  const after = html.slice(headEnd);
-  const pMatch = /^\s*<p\b[^>]*>[\s\S]{0,2000}?<\/p>/i.exec(after);
-  const removeEnd = headEnd + (pMatch ? pMatch[0].length : 0);
-  return html.slice(0, headStart) + html.slice(removeEnd);
+  return out;
 }
 
 /**
@@ -332,7 +366,7 @@ export async function reRenderSectionsHtml(
 ): Promise<string | null> {
   if (!sections) return null;
 
-  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, blogIndexUrl, generalInfo } = sections;
+  const { caseStudyAssetId, eventIds, blogAssetIds, eventsCalendarUrl, blogIndexUrl, blogSectionTitle, blogIntro, generalInfo } = sections;
   const wantedEventIds = Array.isArray(eventIds) ? eventIds.filter(Boolean) : [];
   const wantedBlogIds = Array.isArray(blogAssetIds) ? blogAssetIds.filter(Boolean) : [];
 
@@ -385,12 +419,18 @@ export async function reRenderSectionsHtml(
     return `${fmtDate(s)} – ${fmtDate(e)}`;
   };
 
-  // Preserve the client-specified order for blog posts; silently skip items
-  // that were archived or deleted since the config was saved.
+  // Sort blog posts chronologically (newest first) by publish date, falling
+  // back to createdAt; silently skip items archived/deleted since the config
+  // was saved.
   const blogById = new Map((blogRows as any[]).map((r: any) => [r.id, r]));
   const posts: SectionPost[] = wantedBlogIds
     .map((id: string) => blogById.get(id))
     .filter(Boolean)
+    .sort((a: any, b: any) => {
+      const da = new Date(a.assetDate ?? a.createdAt ?? 0).getTime();
+      const db2 = new Date(b.assetDate ?? b.createdAt ?? 0).getTime();
+      return db2 - da;
+    })
     .map((r: any) => ({ title: r.title, url: r.url || null }));
 
   const eventsData: SectionEvent[] = (eventRows as any[]).map((ev: any) => ({
@@ -414,6 +454,8 @@ export async function reRenderSectionsHtml(
     posts,
     eventsCalendarUrl: eventsCalendarUrl || null,
     blogIndexUrl: blogIndexUrl || null,
+    blogSectionTitle: blogSectionTitle || null,
+    blogIntro: blogIntro || null,
     generalInfo: generalInfo || null,
     brandPrimary: tenantRows[0]?.primaryColor || undefined,
   });
