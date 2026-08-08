@@ -32,7 +32,8 @@ vi.mock("wouter", () => ({
     React.createElement("a", { href, ...rest }, children),
   useLocation: () => ["/", vi.fn()],
   useSearch: () => "",
-  useParams: () => ({}),
+  // vi.fn so campaign-detail tests can override it per-describe block.
+  useParams: vi.fn(() => ({})),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -82,13 +83,79 @@ vi.mock("@dnd-kit/core", () => ({
   useSensors: (...sensors: any[]) => sensors,
 }));
 
+// ── mocks needed by CalendarPage ──────────────────────────────────────────────
+
+// useDeepLinkFocus is a read-only hook; return a stable no-op for all tests.
+vi.mock("@/lib/use-deep-link-focus", () => ({
+  useDeepLinkFocus: () => [null, vi.fn()],
+}));
+
+// ── mocks needed by CampaignDetailPage ───────────────────────────────────────
+
+// Post-batch rollup: return empty batches so the draft test post is always a
+// "loose" post (not collapsed into a batch header) and the edit button renders.
+vi.mock("@shared/social-rollup", () => ({
+  rollupPosts: () => ({ batches: [], loosePosts: [] }),
+  batchSourceOf: () => null,
+}));
+
+vi.mock("@/components/ui/optimized-thumbnail", () => ({
+  OptimizedThumbnail: () => null,
+  thumbnailUrl: () => "",
+  buildSrcSet: () => "",
+}));
+
+vi.mock("@/hooks/use-job-status", () => ({
+  useJobStatus: () => ({ status: null }),
+  jobStatusLabel: () => "",
+}));
+
+vi.mock("@/components/marketing/LinkBuilderTab", () => ({
+  LinkBuilderTab: () => null,
+}));
+
+vi.mock("@/components/marketing/CampaignLinkClicks", () => ({
+  CampaignLinkClicks: () => null,
+}));
+
+// hub-components: stub all named exports used by CampaignDetailPage.
+vi.mock("@/pages/app/marketing/hub-components", () => ({
+  RollupStat: () => null,
+  HubItemsList: () => null,
+  AttachDialog: () => null,
+  CreateActionDialog: () => null,
+  STAGE_META: {},
+  STAGE_ORDER: [],
+}));
+
+vi.mock("@/components/marketing/NextActionsByBatch", () => ({
+  CampaignNextActions: () => null,
+}));
+
 // ── component imports (after mocks) ──────────────────────────────────────────
 
 import SocialPostEditor from "../SocialPostEditor";
 import QueuePage from "@/pages/app/marketing/queue";
 import ContentPipelinePage from "@/pages/app/marketing/pipeline";
+import CalendarPage from "@/pages/app/marketing/calendar";
+import CampaignDetailPage from "@/pages/app/marketing/campaign-detail";
+import { useParams } from "wouter";
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
+
+/**
+ * Minimal campaign fixture used by CampaignDetailPage tests.
+ * Only the fields the component reads during initial render are required.
+ */
+const CAMPAIGN_FIXTURE = {
+  id: "camp-1",
+  name: "Test Campaign",
+  status: "active",
+  campaignType: "theme",
+  assets: [],
+  pinnedBrandAssets: [],
+  socialAccounts: [],
+};
 
 /**
  * A full-post fixture (status: draft) used by SocialPostEditor and by the
@@ -163,6 +230,36 @@ function makeFetchStub(
     }
     calls.push({ url, method, body });
 
+    // ── CalendarPage needs ────────────────────────────────────────────────────
+    if (method === "GET" && url.includes("/api/tenant/info")) {
+      return ok({ features: { socialPosts: true } });
+    }
+    if (method === "GET" && url.includes("/api/marketing-calendar/filters")) {
+      return ok({ campaigns: [] });
+    }
+
+    // ── CampaignDetailPage needs (specific before generic) ────────────────────
+    // Job-status polling
+    if (method === "GET" && url.includes("/generate-posts-status")) {
+      return ok({ status: "idle" });
+    }
+    // Generation config
+    if (method === "GET" && url.includes("/api/social/generation-config")) {
+      return ok({ minVariantsPerPlatform: 3, maxVariantsPerPlatform: 10, maxDraftsPerGeneration: 60 });
+    }
+    // Strategic context
+    if (method === "GET" && url.includes("/strategic-context")) {
+      return ok({ available: false, sections: {} });
+    }
+    // Campaign posts (must come before the generic /api/campaigns handler)
+    if (method === "GET" && url.includes("/api/campaigns/") && url.includes("/generated-posts")) {
+      return ok(queueCalendarPosts);
+    }
+    // Single campaign
+    if (method === "GET" && url.match(/\/api\/campaigns\/camp-\w+$/)) {
+      return ok(CAMPAIGN_FIXTURE);
+    }
+    // ── Shared / queue / pipeline ─────────────────────────────────────────────
     // Calendar (queue rows, pipeline board)
     if (method === "GET" && url.includes("/api/generated-posts/calendar")) {
       return ok(queueCalendarPosts);
@@ -180,6 +277,9 @@ function makeFetchStub(
     if (method === "GET" && url.includes("/api/content-briefs")) return ok([]);
     if (method === "GET" && url.includes("/api/campaigns")) return ok([]);
     if (method === "GET" && url.includes("/api/brand-assets")) return ok([]);
+    // Catch-all for other GET calls (content-assets, categories, personas, etc.)
+    // Return [] so queries with `= []` defaults never receive a non-array.
+    if (method === "GET") return ok([]);
 
     // All writes succeed with a minimal echoed payload.
     return ok({ id: "post-abc", status: (fullPost as any).status });
@@ -569,6 +669,331 @@ describe("Queue surface — delete (failed post row → editor → delete)", () 
     await act(async () => { fireEvent.click(screen.getByTestId("queue-row-post-abc")); });
     await waitForEditorReady();
 
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-cancel-post")); });
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-confirm-cancel")); });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("social-post-editor")).toBeNull();
+    });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4. Calendar surface (real CalendarPage)
+//
+// CalendarPage holds `selectedPost` (a CalendarPost | null).  Clicking a pill
+// in the month grid — or a row in the unscheduled-drafts rail — calls
+// `setSelectedPost(post)`, which mounts SocialPostEditor with
+// `postId={selectedPost.id}` and `onClose={() => setSelectedPost(null)}`.
+//
+// We use a post with scheduledDate: null so it lands in the unscheduled-drafts
+// rail (testid="unscheduled-post-post-abc"), avoiding date-grid math.
+// The tenant/info mock returns socialPosts: true so isAllowed is true.
+// ═════════════════════════════════════════════════════════════════════════════
+
+function renderCalendarPage() {
+  render(
+    React.createElement(Wrapper, null, React.createElement(CalendarPage)),
+  );
+}
+
+describe("Calendar surface — save (unscheduled pill → editor → save)", () => {
+  it("opens the editor when an unscheduled-drafts row is clicked", async () => {
+    // DRAFT_FULL_POST has scheduledDate: null → unscheduled rail.
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(
+      () => expect(screen.getByTestId("unscheduled-post-post-abc")).not.toBeNull(),
+      { timeout: 4000 },
+    );
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("social-post-editor")).not.toBeNull();
+    });
+  });
+
+  it("fires PATCH /api/generated-posts/:id when Save changes is clicked from calendar", async () => {
+    const { stub, calls } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(() => screen.getByTestId("unscheduled-post-post-abc"), { timeout: 4000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-save")); });
+
+    await waitFor(() => {
+      expect(
+        calls.find(
+          (c) => c.method === "PATCH" && c.url.includes("/api/generated-posts/post-abc"),
+        ),
+      ).toBeDefined();
+    });
+  });
+
+  it("closes the calendar editor after save (selectedPost cleared)", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(() => screen.getByTestId("unscheduled-post-post-abc"), { timeout: 4000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-save")); });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("social-post-editor")).toBeNull();
+    });
+  });
+});
+
+describe("Calendar surface — approve (unscheduled pill → editor → approve)", () => {
+  it("fires PATCH with status:approved when approve is clicked from calendar", async () => {
+    const { stub, calls } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(() => screen.getByTestId("unscheduled-post-post-abc"), { timeout: 4000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-approve")); });
+
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) =>
+          c.method === "PATCH" &&
+          c.url.includes("/api/generated-posts/post-abc") &&
+          (c.body as any)?.status === "approved",
+      );
+      expect(hit).toBeDefined();
+    });
+  });
+
+  it("closes the calendar editor after approve (selectedPost cleared)", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(() => screen.getByTestId("unscheduled-post-post-abc"), { timeout: 4000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-approve")); });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("social-post-editor")).toBeNull();
+    });
+  });
+});
+
+describe("Calendar surface — delete (unscheduled pill → editor → delete)", () => {
+  it("fires PUT status:deleted when delete is confirmed from calendar", async () => {
+    const { stub, calls } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(() => screen.getByTestId("unscheduled-post-post-abc"), { timeout: 4000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-cancel-post")); });
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-confirm-cancel")); });
+
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) => c.method === "PUT" && (c.body as any)?.status === "deleted",
+      );
+      expect(hit).toBeDefined();
+    });
+  });
+
+  it("closes the calendar editor after delete (selectedPost cleared)", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCalendarPage();
+
+    await waitFor(() => screen.getByTestId("unscheduled-post-post-abc"), { timeout: 4000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("unscheduled-post-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-cancel-post")); });
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-confirm-cancel")); });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("social-post-editor")).toBeNull();
+    });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5. Campaign-detail surface (real CampaignDetailPage)
+//
+// CampaignDetailPage holds `sharedEditorPostId` (string | null).  Every post
+// card's edit button (data-testid="button-edit-<id>") calls
+// `setSharedEditorPostId(post.id)`.  SocialPostEditor mounts with
+// `postId={sharedEditorPostId}` and `onClose={() => setSharedEditorPostId(null)}`.
+//
+// Setup requirements:
+//   - window.location.hash="#posts" so tabFromHash() initialises activeTab="posts"
+//   - useParams() returns { id: "camp-1" }
+//   - /api/campaigns/camp-1 → CAMPAIGN_FIXTURE
+//   - /api/campaigns/camp-1/generated-posts → [DRAFT_FULL_POST]
+//   - rollupPosts() → { batches: [] } so the post is loose (never collapsed)
+//   - batchSourceOf() → null (post not part of any batch)
+// ═════════════════════════════════════════════════════════════════════════════
+
+function renderCampaignDetailPage() {
+  render(
+    React.createElement(Wrapper, null, React.createElement(CampaignDetailPage)),
+  );
+}
+
+describe("Campaign-detail surface — save (post edit button → editor → save)", () => {
+  beforeEach(() => {
+    // Start on the Social Posts tab so post cards are visible immediately.
+    window.location.hash = "#posts";
+    vi.mocked(useParams).mockReturnValue({ id: "camp-1" });
+  });
+
+  afterEach(() => {
+    vi.mocked(useParams).mockReturnValue({});
+  });
+
+  it("opens the editor when the post edit button is clicked", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(
+      () => expect(screen.getByTestId("button-edit-post-abc")).not.toBeNull(),
+      { timeout: 5000 },
+    );
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("social-post-editor")).not.toBeNull();
+    });
+  });
+
+  it("fires PATCH /api/generated-posts/:id when Save changes is clicked from campaign-detail", async () => {
+    const { stub, calls } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(() => screen.getByTestId("button-edit-post-abc"), { timeout: 5000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-save")); });
+
+    await waitFor(() => {
+      expect(
+        calls.find(
+          (c) => c.method === "PATCH" && c.url.includes("/api/generated-posts/post-abc"),
+        ),
+      ).toBeDefined();
+    });
+  });
+
+  it("closes the campaign-detail editor after save (sharedEditorPostId cleared)", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(() => screen.getByTestId("button-edit-post-abc"), { timeout: 5000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-save")); });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("social-post-editor")).toBeNull();
+    });
+  });
+});
+
+describe("Campaign-detail surface — approve (post edit button → editor → approve)", () => {
+  beforeEach(() => {
+    window.location.hash = "#posts";
+    vi.mocked(useParams).mockReturnValue({ id: "camp-1" });
+  });
+
+  afterEach(() => {
+    vi.mocked(useParams).mockReturnValue({});
+  });
+
+  it("fires PATCH with status:approved when approve is clicked from campaign-detail", async () => {
+    const { stub, calls } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(() => screen.getByTestId("button-edit-post-abc"), { timeout: 5000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-approve")); });
+
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) =>
+          c.method === "PATCH" &&
+          c.url.includes("/api/generated-posts/post-abc") &&
+          (c.body as any)?.status === "approved",
+      );
+      expect(hit).toBeDefined();
+    });
+  });
+
+  it("closes the campaign-detail editor after approve (sharedEditorPostId cleared)", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(() => screen.getByTestId("button-edit-post-abc"), { timeout: 5000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-approve")); });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("social-post-editor")).toBeNull();
+    });
+  });
+});
+
+describe("Campaign-detail surface — delete (post edit button → editor → delete)", () => {
+  beforeEach(() => {
+    window.location.hash = "#posts";
+    vi.mocked(useParams).mockReturnValue({ id: "camp-1" });
+  });
+
+  afterEach(() => {
+    vi.mocked(useParams).mockReturnValue({});
+  });
+
+  it("fires PUT status:deleted when delete is confirmed from campaign-detail", async () => {
+    const { stub, calls } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(() => screen.getByTestId("button-edit-post-abc"), { timeout: 5000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-cancel-post")); });
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-confirm-cancel")); });
+
+    await waitFor(() => {
+      const hit = calls.find(
+        (c) => c.method === "PUT" && (c.body as any)?.status === "deleted",
+      );
+      expect(hit).toBeDefined();
+    });
+  });
+
+  it("closes the campaign-detail editor after delete (sharedEditorPostId cleared)", async () => {
+    const { stub } = makeFetchStub([DRAFT_FULL_POST], DRAFT_FULL_POST);
+    vi.stubGlobal("fetch", stub);
+    renderCampaignDetailPage();
+
+    await waitFor(() => screen.getByTestId("button-edit-post-abc"), { timeout: 5000 });
+    await act(async () => { fireEvent.click(screen.getByTestId("button-edit-post-abc")); });
+    await waitForEditorReady();
     await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-cancel-post")); });
     await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-confirm-cancel")); });
 
