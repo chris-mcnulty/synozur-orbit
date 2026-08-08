@@ -27,7 +27,7 @@ import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle, AtSign, Calendar, CheckCircle2, Clock, Download, ExternalLink,
-  ImageOff, Library, Loader2, RefreshCw, Share2, Sparkles, Trash2, Upload,
+  ImageOff, Library, Link2, Loader2, RefreshCw, Share2, Sparkles, Trash2, Upload,
   WrenchIcon, X, XCircle, Zap,
 } from "lucide-react";
 import {
@@ -76,6 +76,8 @@ interface FullPost {
   socialAccountId: string | null;
   deliveryMode: string | null;
   exactSchedule: boolean;
+  linkUrl: string | null;
+  linkLabel: string | null;
 }
 
 interface SocialAccount {
@@ -166,6 +168,8 @@ export default function SocialPostEditor({
   const [didInit, setDidInit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [linkUrlValue, setLinkUrlValue] = useState<string>("");
+  const [linkLabelValue, setLinkLabelValue] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -247,6 +251,8 @@ export default function SocialPostEditor({
     setScheduledValue(post.scheduledDate ? toDatetimeLocal(new Date(post.scheduledDate)) : "");
     setSelectedAccountId(post.socialAccountId ?? null);
     setExactSchedule(post.exactSchedule ?? false);
+    setLinkUrlValue(post.linkUrl ?? "");
+    setLinkLabelValue(post.linkLabel ?? "");
     const initUrls: Record<number, string> = {};
     (post.carouselSlides ?? []).forEach((s) => { initUrls[s.index] = s.imageUrl ?? ""; });
     setSlideUrls(initUrls);
@@ -279,6 +285,9 @@ export default function SocialPostEditor({
       .filter(h => h.length > 0);
   }
 
+  const LINK_PREVIEW_PLATFORMS = ["linkedin", "facebook", "twitter", "x"];
+  const supportsLinkPreview = LINK_PREVIEW_PLATFORMS.includes(post?.platform ?? "");
+
   // Build the PATCH body from current edits
   function buildPatchBody(extra: Record<string, unknown> = {}): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -286,6 +295,10 @@ export default function SocialPostEditor({
       hashtags: parseHashtags(),
       ...extra,
     };
+    if (supportsLinkPreview) {
+      body.linkUrl = linkUrlValue.trim() || null;
+      body.linkLabel = linkLabelValue.trim() || null;
+    }
     if (isMissed && postNow) {
       body.scheduledDate = new Date().toISOString();
     } else if (scheduledValue) {
@@ -873,6 +886,69 @@ export default function SocialPostEditor({
                 {post.hashtags!.map((h, i) => (
                   <Badge key={i} variant="outline" className="text-[10px]">#{h}</Badge>
                 ))}
+              </div>
+            )}
+
+            {/* Link preview — linkedin / facebook / twitter / x only */}
+            {supportsLinkPreview && (
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
+                  Link preview
+                </Label>
+                {isReadOnly ? (
+                  post?.linkUrl ? (
+                    (() => {
+                      let safe = false;
+                      try { const u = new URL(post.linkUrl); safe = u.protocol === "http:" || u.protocol === "https:"; } catch {}
+                      return safe ? (
+                        <a
+                          href={post.linkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          {post.linkLabel || post.linkUrl}
+                        </a>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">{post.linkLabel || post.linkUrl}</span>
+                      );
+                    })()
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No link attached.</p>
+                  )
+                ) : (
+                  <div className="space-y-2">
+                    <Input
+                      value={linkUrlValue}
+                      onChange={(e) => setLinkUrlValue(e.target.value)}
+                      placeholder="https://example.com/your-page"
+                      className="text-sm font-mono"
+                      data-testid="edit-dialog-link-url"
+                      disabled={isBusy}
+                    />
+                    <Input
+                      value={linkLabelValue}
+                      onChange={(e) => setLinkLabelValue(e.target.value)}
+                      placeholder="Link label (optional)"
+                      className="text-sm"
+                      data-testid="edit-dialog-link-label"
+                      disabled={isBusy}
+                    />
+                    {linkUrlValue.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => { setLinkUrlValue(""); setLinkLabelValue(""); }}
+                        className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1"
+                        data-testid="edit-dialog-remove-link"
+                        disabled={isBusy}
+                      >
+                        <X className="w-3 h-3" /> Remove link
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

@@ -443,6 +443,32 @@ export function registerMarketingPostsRoutes(app: Express) {
         if (!exactSchedule) (updateFields as any).publishNotBefore = null;
       }
 
+      const { linkUrl, linkLabel } = req.body ?? {};
+      if (linkUrl !== undefined) {
+        if (linkUrl === null || linkUrl === "") {
+          (updateFields as any).linkUrl = null;
+          (updateFields as any).linkLabel = null; // clearing URL also clears label
+        } else if (typeof linkUrl !== "string") {
+          return res.status(400).json({ error: "linkUrl must be a string or null" });
+        } else {
+          // Only allow safe http/https URLs to prevent javascript: injection.
+          let parsed: URL;
+          try { parsed = new URL(linkUrl); } catch {
+            return res.status(400).json({ error: "linkUrl must be a valid URL" });
+          }
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return res.status(400).json({ error: "linkUrl must use http or https" });
+          }
+          (updateFields as any).linkUrl = linkUrl;
+        }
+      }
+      if (linkLabel !== undefined) {
+        if (linkLabel !== null && typeof linkLabel !== "string") {
+          return res.status(400).json({ error: "linkLabel must be a string or null" });
+        }
+        (updateFields as any).linkLabel = linkLabel || null;
+      }
+
       // When the user transitions to 'approved' (regardless of campaign vs
       // standalone), capture the voice profile in effect right now so a
       // later edit to the profile doesn't retroactively change history.
