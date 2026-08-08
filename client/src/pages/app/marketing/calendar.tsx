@@ -30,6 +30,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
 // Download an image straight to the user's machine. Images are served
@@ -100,6 +102,9 @@ export default function CalendarPage() {
     const p = new URLSearchParams(searchString);
     return p.get("campaignId") || "all";
   });
+  // Filter by platform (client-side, same as campaign filter).
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [reassignOpen, setReassignOpen] = useState(false);
 
   const [cursorMonth, setCursorMonth] = useState<Date>(() => {
     const p = new URLSearchParams(searchString);
@@ -168,8 +173,11 @@ export default function CalendarPage() {
   });
 
   const filteredPosts = useMemo(
-    () => (campaignFilter === "all" ? posts : posts.filter(p => p.campaignId === campaignFilter)),
-    [posts, campaignFilter],
+    () => posts.filter(p =>
+      (campaignFilter === "all" || p.campaignId === campaignFilter) &&
+      (platformFilter === "all" || p.platform === platformFilter),
+    ),
+    [posts, campaignFilter, platformFilter],
   );
 
   // Bucket posts by ISO day key for fast cell lookups.
@@ -335,6 +343,20 @@ export default function CalendarPage() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="mr-2" onClick={() => setReassignOpen(true)} data-testid="button-open-reassign">
+              <AtSign className="w-3.5 h-3.5 mr-1" /> Reassign account
+            </Button>
+            <select
+              value={platformFilter}
+              onChange={(e) => setPlatformFilter(e.target.value)}
+              className="mr-2 h-9 rounded-md border bg-background px-2 text-sm capitalize"
+              data-testid="select-platform-filter"
+            >
+              <option value="all">All platforms</option>
+              {(["linkedin","twitter","instagram","facebook","bluesky"] as const).map(p => (
+                <option key={p} value={p}>{p === "twitter" ? "X (Twitter)" : p}</option>
+              ))}
+            </select>
             {campaignOptions.length > 0 && (
               <select
                 value={campaignFilter}
@@ -492,6 +514,8 @@ export default function CalendarPage() {
             .
           </p>
         )}
+
+        <ReassignAccountDialog open={reassignOpen} onClose={() => setReassignOpen(false)} />
 
         {selectedPost && (
           <PostDetailDrawer
@@ -950,5 +974,173 @@ function PostDetailDrawer({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Bulk account reassignment. Used when a social account is recreated or
+ * reconnected: pending posts still point at the old account row and would
+ * fail to publish. Pick the target account, tick the pending posts (all
+ * pre-selected), and reassign in one shot. Published posts keep their
+ * original account for accurate history.
+ */
+function ReassignAccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [targetAccountId, setTargetAccountId] = useState<string>("");
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  // Fresh start each time the dialog opens — stale target/selection from a
+  // previous session could otherwise be applied by accident.
+  useEffect(() => {
+    if (open) {
+      setTargetAccountId("");
+      setChecked(new Set());
+    }
+  }, [open]);
+
+  const { data: accounts = [] } = useQuery<Array<{ id: string; platform: string; accountName: string | null; status: string }>>({
+    queryKey: ["/api/social-accounts"],
+    queryFn: async () => {
+      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open,
+  });
+  const targetAccount = accounts.find(a => a.id === targetAccountId) ?? null;
+
+  // All pending posts for the target platform, tenant-wide: wide date window
+  // plus undated drafts, filtered client-side to unpublished statuses.
+  const { data: candidatePosts = [], isLoading: postsLoading } = useQuery<CalendarPost[]>({
+    queryKey: ["/api/generated-posts/calendar", "reassign", targetAccount?.platform ?? "none"],
+    queryFn: async () => {
+      const now = new Date();
+      const params = new URLSearchParams({
+        from: new Date(now.getTime() - 365 * 86400000).toISOString(),
+        to: new Date(now.getTime() + 365 * 86400000).toISOString(),
+        includeUnscheduled: "true",
+        platform: targetAccount!.platform,
+      });
+      const r = await fetch(`/api/generated-posts/calendar?${params.toString()}`, { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: open && !!targetAccount,
+  });
+  const pending = useMemo(
+    () => candidatePosts.filter(p => ["draft", "approved", "publish_failed", "exported"].includes(p.status)),
+    [candidatePosts],
+  );
+
+  // Pre-select every pending post not already on the target account whenever
+  // the target (and thus the candidate list) changes.
+  useEffect(() => {
+    setChecked(new Set(pending.filter(p => p.socialAccountId !== targetAccountId).map(p => p.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending.length, targetAccountId]);
+
+  const reassignMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/generated-posts/bulk-reassign-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ socialAccountId: targetAccountId, postIds: Array.from(checked) }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || "Reassign failed");
+      return r.json() as Promise<{ updated: number }>;
+    },
+    onSuccess: (data) => {
+      toast({ title: "Posts reassigned", description: `${data.updated} post(s) now publish via ${targetAccount?.accountName ?? "the selected account"}.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      onClose();
+    },
+    onError: (err: any) => toast({ title: "Reassign failed", description: err.message, variant: "destructive" }),
+  });
+
+  const allChecked = pending.length > 0 && pending.every(p => checked.has(p.id));
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Reassign posting account</DialogTitle>
+          <DialogDescription>
+            Move pending (unpublished) posts to a different connected account — e.g. after reconnecting or recreating an account. Published posts are not changed.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Publish via</Label>
+            <select
+              value={targetAccountId}
+              onChange={e => setTargetAccountId(e.target.value)}
+              className="w-full h-9 rounded-md border bg-background px-2 text-sm"
+              data-testid="select-reassign-target-account"
+            >
+              <option value="">Choose an account…</option>
+              {accounts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {(a.platform === "twitter" ? "X" : a.platform)} — {a.accountName ?? a.id}{a.status !== "active" ? ` (${a.status.replace(/_/g, " ")})` : ""}
+                </option>
+              ))}
+            </select>
+            {targetAccount && targetAccount.status !== "active" && (
+              <p className="text-xs text-amber-600 dark:text-amber-500">This account is not active — posts assigned to it won't publish until it's reconnected.</p>
+            )}
+          </div>
+          {targetAccount && (
+            postsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading pending posts…</div>
+            ) : pending.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No pending {targetAccount.platform === "twitter" ? "X" : targetAccount.platform} posts found.</p>
+            ) : (
+              <div className="border rounded">
+                <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/40">
+                  <Checkbox
+                    checked={allChecked}
+                    onCheckedChange={v => setChecked(v ? new Set(pending.map(p => p.id)) : new Set())}
+                    data-testid="checkbox-reassign-all"
+                  />
+                  <span className="text-xs font-medium">{checked.size} of {pending.length} pending post(s) selected</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto divide-y">
+                  {pending.map(p => (
+                    <label key={p.id} className="flex items-start gap-2 px-3 py-2 cursor-pointer hover:bg-muted/30">
+                      <Checkbox
+                        checked={checked.has(p.id)}
+                        onCheckedChange={v => setChecked(prev => {
+                          const next = new Set(prev);
+                          if (v) next.add(p.id); else next.delete(p.id);
+                          return next;
+                        })}
+                        className="mt-0.5"
+                        data-testid={`checkbox-reassign-${p.id}`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs truncate">{p.preview}</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {p.status.replace(/_/g, " ")} · {p.scheduledDate ? format(parseISO(p.scheduledDate), "MMM d, h:mm a") : "unscheduled"} · currently: {p.accountName ?? "no account"}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={!targetAccountId || checked.size === 0 || reassignMutation.isPending}
+              onClick={() => reassignMutation.mutate()}
+              data-testid="button-reassign-apply"
+            >
+              {reassignMutation.isPending ? "Reassigning…" : `Reassign ${checked.size} post(s)`}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

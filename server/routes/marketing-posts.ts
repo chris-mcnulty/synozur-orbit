@@ -547,6 +547,54 @@ export function registerMarketingPostsRoutes(app: Express) {
   // Returns scheduled or recently-published posts within a date range.
   // Filters: from/to (ISO), socialAccountId(s), platform(s), status(es),
   // includeUnscheduled=true to also return drafts with no scheduledDate.
+  // Bulk-reassign unpublished posts to a different social account of the
+  // same platform (tenant-wide, not campaign-scoped). Used when an account
+  // is recreated/reconnected and pending posts still point at the old row.
+  // Body: { socialAccountId: string, postIds: string[] (empty = all matching) }
+  app.post("/api/generated-posts/bulk-reassign-account", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { socialAccountId, postIds } = req.body ?? {};
+      if (typeof socialAccountId !== "string" || !socialAccountId) {
+        return res.status(400).json({ error: "socialAccountId is required" });
+      }
+      const [account] = await db.select().from(socialAccounts).where(and(
+        eq(socialAccounts.id, socialAccountId),
+        eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!account) return res.status(404).json({ error: "Social account not found" });
+      const scopedIds: string[] = Array.isArray(postIds) ? postIds.filter((x: any) => typeof x === "string") : [];
+      const condition = and(
+        eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+        eq(generatedPosts.platform, account.platform),
+        // Only pending work is reassignable — published/deleted history keeps
+        // its original account for accurate records.
+        inArray(generatedPosts.status, ["draft", "approved", "publish_failed", "exported"]),
+        scopedIds.length ? inArray(generatedPosts.id, scopedIds) : undefined,
+      );
+      const rows = await db.update(generatedPosts)
+        .set({ socialAccountId: account.id, updatedAt: new Date() })
+        .where(condition)
+        .returning({ id: generatedPosts.id });
+      await db.insert(marketingAuditLog).values({
+        tenantDomain: ctx.tenantDomain,
+        marketId: account.marketId ?? null,
+        userId: ctx.userId ?? null,
+        action: "bulk_reassign_account",
+        entityType: "generated_post",
+        entityId: account.id,
+        status: "success",
+        message: `Reassigned ${rows.length} ${account.platform} post(s) to ${account.accountName ?? account.id}`,
+        details: { platform: account.platform, count: rows.length },
+      });
+      res.json({ updated: rows.length, platform: account.platform });
+    } catch (err: any) {
+      console.error("[Posts] bulk-reassign-account failed:", err);
+      res.status(500).json({ error: err.message || "Bulk reassign failed" });
+    }
+  });
+
   app.get("/api/generated-posts/calendar", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {

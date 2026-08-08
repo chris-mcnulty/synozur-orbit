@@ -21,7 +21,10 @@ import type {
   OAuthAuthorizeResult,
   OAuthCallbackResult,
 } from "./index";
-import { decryptSecret } from "../../utils/encryption";
+import { decryptSecret, encryptSecret } from "../../utils/encryption";
+import { db } from "../../db";
+import { socialAccounts } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-credentials-service";
 import { GraphClient } from "../sharepoint-graph-client.js";
 
@@ -233,7 +236,19 @@ export class TwitterPublisher implements SocialPublisher {
   }
 
   private async publishInner(ctx: PublishContext): Promise<PublishResult> {
-    const { account, post } = ctx;
+    const { post } = ctx;
+    // Re-read the account row INSIDE the per-account lock. A caller queued
+    // behind another publish captured its account object before waiting; if
+    // the earlier publish rotated the (single-use) refresh token, that
+    // captured copy is stale and reusing it would get the grant revoked by X.
+    let account = ctx.account;
+    try {
+      const [fresh] = await db.select().from(socialAccounts)
+        .where(eq(socialAccounts.id, ctx.account.id));
+      if (fresh) account = fresh;
+    } catch {
+      // fall back to the caller-provided row
+    }
     if (!account.encryptedAccessToken) {
       return {
         success: false,
@@ -272,6 +287,23 @@ export class TwitterPublisher implements SocialPublisher {
         refreshedAccessToken = refreshed.accessToken;
         refreshedRefreshToken = refreshed.refreshToken;
         refreshedTokenExpiresAt = refreshed.expiresAt;
+        // Persist the rotated tokens IMMEDIATELY, inside the per-account
+        // lock — before any caller-side persistence. If the process crashes
+        // mid-publish or a queued caller starts right after this publish
+        // resolves, the DB must already hold the new (unconsumed) refresh
+        // token or the old one gets reused and X revokes the grant.
+        try {
+          await db.update(socialAccounts).set({
+            encryptedAccessToken: encryptSecret(refreshed.accessToken),
+            encryptedRefreshToken: refreshed.refreshToken
+              ? encryptSecret(refreshed.refreshToken)
+              : account.encryptedRefreshToken,
+            tokenExpiresAt: refreshed.expiresAt ?? account.tokenExpiresAt,
+            updatedAt: new Date(),
+          }).where(eq(socialAccounts.id, account.id));
+        } catch (persistErr) {
+          console.error("[Twitter] Failed to persist refreshed tokens:", persistErr);
+        }
       } catch (err: any) {
         return {
           success: false,
