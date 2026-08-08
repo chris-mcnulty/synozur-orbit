@@ -419,6 +419,32 @@ describe("SocialPostEditor — save mutation", () => {
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
   });
+
+  it("does NOT call onClose when fetch rejects (network error keeps dialog open)", async () => {
+    // Stub: GETs succeed (editor loads), PATCH rejects at the network level.
+    const networkErrorStub = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "GET") {
+        if (url.includes("/api/generated-posts/")) return ok(DRAFT_FULL_POST);
+        if (url.includes("/api/social-accounts")) return ok([]);
+        if (url.includes("/api/brand-assets")) return ok([]);
+        return ok([]);
+      }
+      // Network-level failure on writes.
+      throw new TypeError("Failed to fetch");
+    });
+    vi.stubGlobal("fetch", networkErrorStub);
+    const { onClose } = renderEditor();
+
+    await waitForEditorReady();
+    await act(async () => { fireEvent.click(screen.getByTestId("edit-dialog-save")); });
+
+    // Give mutations time to settle — onClose must stay at 0.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(onClose).not.toHaveBeenCalled();
+    // Editor should still be in the DOM.
+    expect(screen.getByTestId("social-post-editor")).not.toBeNull();
+  });
 });
 
 describe("SocialPostEditor — approve mutation", () => {

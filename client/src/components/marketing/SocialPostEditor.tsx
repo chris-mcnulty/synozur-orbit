@@ -320,12 +320,17 @@ export default function SocialPostEditor({
   }
 
   async function patchPost(body: Record<string, unknown>) {
-    const r = await fetch(`/api/generated-posts/${postId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(body),
-    });
+    let r: Response;
+    try {
+      r = await fetch(`/api/generated-posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new Error("Couldn't save — check your connection and try again");
+    }
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Save failed");
     return r.json();
   }
@@ -402,12 +407,17 @@ export default function SocialPostEditor({
       const url = campaignId
         ? `/api/campaigns/${campaignId}/generated-posts/${postId}`
         : `/api/generated-posts/${postId}`;
-      const r = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ status: "deleted" }),
-      });
+      let r: Response;
+      try {
+        r = await fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: "deleted" }),
+        });
+      } catch {
+        throw new Error("Couldn't save — check your connection and try again");
+      }
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Delete failed");
     },
     onSuccess: () => {
