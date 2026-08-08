@@ -515,17 +515,33 @@ export default function SocialPostEditor({
             )}
 
             {/* Failure reason */}
-            {isFailed && post.publishError && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-destructive">Why it failed</p>
-                    <p className="text-destructive/80 mt-0.5 font-mono text-xs break-all">{post.publishError}</p>
+            {isFailed && post.publishError && (() => {
+              const isDisconnected = /disconnected.*account|account.*disconnected|needs_reconnect|account_disconnected/i.test(post.publishError);
+              return isDisconnected ? (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-amber-700 dark:text-amber-400">Wrong or disconnected account</p>
+                      <p className="text-amber-700/80 dark:text-amber-400/80 mt-0.5 text-[12px]">
+                        This post is linked to an X account that has been disconnected or deleted.
+                        Use the <strong>Account</strong> selector below to reassign it to your active account, then retry.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-destructive">Why it failed</p>
+                      <p className="text-destructive/80 mt-0.5 font-mono text-xs break-all">{post.publishError}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Overdue scheduled notice */}
             {isOverdue && (

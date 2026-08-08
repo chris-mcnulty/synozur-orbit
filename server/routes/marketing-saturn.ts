@@ -2019,7 +2019,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/social-accounts/:id", async (req, res) => {
     if (!await guardFeature(req, res, "socialAccounts")) return;
     const ctx = await getRequestContext(req);
-    const { accountName, accountId, profileUrl, notes, status, publishingPaused } = req.body;
+    const { accountName, accountId, profileUrl, notes, status, publishingPaused, platform } = req.body;
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (accountName !== undefined) patch.accountName = accountName;
     if (accountId !== undefined) patch.accountId = accountId;
@@ -2027,6 +2027,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (notes !== undefined) patch.notes = notes;
     if (status !== undefined) patch.status = status;
     if (publishingPaused !== undefined) patch.publishingPaused = Boolean(publishingPaused);
+    if (platform !== undefined) patch.platform = platform;
     const [row] = await db.update(socialAccounts)
       .set(patch)
       .where(and(

@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import { Link, useSearch } from "wouter";
 import {
-  CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
+  AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
   Sparkles, Upload, Library, Loader2, Share2, Download, Copy,
 } from "lucide-react";
 import { useUpload } from "@/hooks/use-upload";
@@ -72,6 +72,7 @@ interface CalendarPost {
   campaignId: string | null;
   campaignName?: string | null;
   accountName?: string | null;
+  accountStatus?: string | null;
   overrideImageUrl?: string | null;
 }
 
@@ -423,9 +424,14 @@ export default function CalendarPage() {
                           onClick={() => setSelectedPost(post)}
                           className={`text-[10px] px-1 py-0.5 rounded border cursor-pointer truncate flex items-center gap-1 ${PLATFORM_COLORS[post.platform] ?? "bg-gray-100 text-gray-900 border-gray-300"} ${focusId === post.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
                           data-testid={`calendar-post-${post.id}`}
-                          title={post.accountName ? `${post.accountName} · ${post.preview}` : post.preview}
+                          title={post.accountStatus === "needs_reconnect"
+                            ? `⚠ Disconnected account — ${post.accountName ?? "unknown"} · ${post.preview}`
+                            : post.accountName ? `${post.accountName} · ${post.preview}` : post.preview}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[post.status] ?? "bg-gray-400"}`} />
+                          {post.accountStatus === "needs_reconnect" && (
+                            <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-amber-500" aria-label="Disconnected account" />
+                          )}
                           {post.accountName && <span className="shrink-0 font-medium">{post.accountName}</span>}
                           {post.accountName && <span className="shrink-0 opacity-50">·</span>}
                           <span className="truncate">{post.preview || "(empty)"}</span>

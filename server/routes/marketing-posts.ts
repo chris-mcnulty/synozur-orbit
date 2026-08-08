@@ -654,6 +654,7 @@ export function registerMarketingPostsRoutes(app: Express) {
         campaignId: generatedPosts.campaignId,
         overrideImageUrl: generatedPosts.overrideImageUrl,
         accountName: socialAccounts.accountName,
+        accountStatus: socialAccounts.status,
         // deliveryMode/publishError power the Orbit posting queue (queue.tsx):
         // who Orbit is publishing itself vs. handing off to CSV, and why a
         // send failed. campaignName lets the queue label cross-campaign rows.
