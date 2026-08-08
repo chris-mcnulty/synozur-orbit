@@ -68,6 +68,8 @@ import {
   STAGE_META, STAGE_ORDER,
 } from "./hub-components";
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
+import SocialPostEditor from "@/components/marketing/SocialPostEditor";
+import { PostStageBadge } from "@/components/marketing/post-stage";
 import { CampaignNextActions } from "@/components/marketing/NextActionsByBatch";
 import { CAMPAIGN_TABS, type CampaignTab, tabFromHash, filterFromSearch } from "@/lib/campaign-url-helpers";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
@@ -307,39 +309,6 @@ interface GeneratedPost {
   campaignId?: string | null;
 }
 
-// ── Post lifecycle stage (brief → draft → ready → scheduled → posted) ──────────
-// Turns the raw generated-post status into one clear, human-readable stage so the
-// state of every post is obvious at a glance in lists and the review grid.
-function getPostStage(post: { status: string; publishedAt?: string; publishError?: string; scheduledDate?: string; deliveryMode?: string | null }) {
-  if (post.publishedAt || post.status === "published")
-    return { label: "Posted via Orbit", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
-  if (post.status === "rejected")
-    return { label: "Rejected", cls: "text-orange-600 border-orange-300", Icon: XCircle };
-  if (post.status === "publish_failed" || post.publishError)
-    return { label: "Orbit: post failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
-  if (post.status === "exported" || post.status === "scheduled_external")
-    return { label: "Exported to CSV", cls: "text-blue-600 border-blue-300", Icon: FileDown };
-  if (post.status === "approved") {
-    if (!post.scheduledDate)
-      return { label: "Approved – needs date", cls: "text-amber-600 border-amber-300", Icon: Calendar };
-    if (post.deliveryMode === "csv")
-      return { label: "Approved – export pending", cls: "text-sky-600 border-sky-300", Icon: FileDown };
-    return { label: "Approved – Orbit scheduled", cls: "text-emerald-600 border-emerald-300", Icon: Zap };
-  }
-  return { label: "Draft", cls: "text-muted-foreground border-muted-foreground/40", Icon: Pencil };
-}
-
-function PostStageBadge({ post, className = "" }: { post: GeneratedPost; className?: string }) {
-  const s = getPostStage(post);
-  const { Icon } = s;
-  return (
-    <Badge variant="outline" className={`text-[10px] gap-1 ${s.cls} ${className}`} data-testid={`badge-stage-${post.id}`}>
-      <Icon className="w-2.5 h-2.5" /> {s.label}
-    </Badge>
-  );
-}
-
-
 interface BrandAsset {
   id: string;
   name: string;
@@ -389,9 +358,8 @@ export default function CampaignDetailPage() {
   const searchStr = useSearch();
   const [activeTab, setActiveTab] = useState<CampaignTab>(() => tabFromHash(window.location.hash));
   const [fsOpen, setFsOpen] = useState(false);
-  const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState("");
-  const [editSocialAccountId, setEditSocialAccountId] = useState<string | null>(null);
+  // Post editing now happens in the shared SocialPostEditor dialog.
+  const [sharedEditorPostId, setSharedEditorPostId] = useState<string | null>(null);
   const [imagePickerPostId, setImagePickerPostId] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [assetSearch, setAssetSearch] = useState("");
@@ -451,8 +419,6 @@ export default function CampaignDetailPage() {
   const [archiveWithChildrenOpen, setArchiveWithChildrenOpen] = useState(false);
   const [editCampaignAlwaysHashtags, setEditCampaignAlwaysHashtags] = useState("");
   const [editCampaignBriefOnly, setEditCampaignBriefOnly] = useState(false);
-  const [editingPostHashtags, setEditingPostHashtags] = useState<string | null>(null);
-  const [editHashtagsValue, setEditHashtagsValue] = useState("");
   // Density: post cards render compact (small thumbnail + clamped text) by
   // default so a long generation batch fits on a screen; expanding a card
   // shows the full text, full-size image, and the inline editors.
@@ -1286,8 +1252,6 @@ export default function CampaignDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/marketing/campaigns", id, "next-actions"] });
       if (vars.status === "rejected") toast({ title: "Post rejected and removed" });
       else if (vars.status === "approved") toast({ title: "Post approved" });
-      setEditingPostId(null);
-      setEditingPostHashtags(null);
       setImagePickerPostId(null);
       setLinkPopoverPostId(null);
     },
@@ -3882,10 +3846,7 @@ export default function CampaignDetailPage() {
                   const postImage = getPostImage(post);
                   // Inline editors live in the expanded body, so editing a
                   // collapsed card implicitly expands it.
-                  const isExpanded =
-                    expandedPosts.has(post.id) ||
-                    editingPostId === post.id ||
-                    editingPostHashtags === post.id;
+                  const isExpanded = expandedPosts.has(post.id);
                   return (
                     <Card
                       key={post.id}
@@ -3984,11 +3945,7 @@ export default function CampaignDetailPage() {
                               variant="ghost"
                               size="sm"
                               title="Edit post content"
-                              onClick={() => {
-                                setEditingPostId(post.id);
-                                setEditContent(post.editedContent ?? post.content);
-                                setEditSocialAccountId(post.socialAccountId ?? null);
-                              }}
+                              onClick={() => setSharedEditorPostId(post.id)}
                               data-testid={`button-edit-${post.id}`}
                             >
                               <Pencil className="w-3.5 h-3.5" />
@@ -4018,19 +3975,14 @@ export default function CampaignDetailPage() {
                             {(post.status === "approved" || post.status === "publish_failed") && !post.publishedAt && post.deliveryMode !== "csv" && (() => {
                               const acct = post.socialAccountId ? allSocialAccounts.find(a => a.id === post.socialAccountId) : null;
                               const connected = acct == null || acct.isConnected !== false;
-                              const isEditing = editingPostId === post.id;
                               const isRetry = post.status === "publish_failed" || !!post.publishError;
                               return (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className={`gap-1 ${isEditing ? "text-muted-foreground" : isRetry ? "text-amber-600" : connected ? "text-blue-600" : "text-amber-600"}`}
-                                  title={isEditing ? "Save your edits first, then publish" : isRetry ? "Previous attempt failed — retry publishing now" : connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
+                                  className={`gap-1 ${isRetry ? "text-amber-600" : connected ? "text-blue-600" : "text-amber-600"}`}
+                                  title={isRetry ? "Previous attempt failed — retry publishing now" : connected ? "Publish now via Orbit to the linked social account" : "Account not connected — tap to see details"}
                                   onClick={() => {
-                                    if (isEditing) {
-                                      toast({ title: "Save first", description: "Click Save to apply your edits (including the account) before publishing.", variant: "default" });
-                                      return;
-                                    }
                                     if (!connected) {
                                       toast({ title: "Account not connected", description: "The linked social account has no active connection. Go to Social Accounts settings and reconnect it before publishing.", variant: "destructive" });
                                       return;
@@ -4041,7 +3993,7 @@ export default function CampaignDetailPage() {
                                   data-testid={`button-publish-now-${post.id}`}
                                 >
                                   {publishNowMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isRetry ? <RefreshCw className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                                  {isEditing ? "Save first →" : isRetry ? "Retry publish" : "Publish now"}
+                                  {isRetry ? "Retry publish" : "Publish now"}
                                 </Button>
                               );
                             })()}
@@ -4249,8 +4201,6 @@ export default function CampaignDetailPage() {
                               next.delete(post.id);
                               return next;
                             });
-                            if (editingPostId === post.id) setEditingPostId(null);
-                            if (editingPostHashtags === post.id) setEditingPostHashtags(null);
                           }}
                           data-testid={`button-collapse-${post.id}`}
                         >
@@ -4342,55 +4292,7 @@ export default function CampaignDetailPage() {
                             </OptimizedThumbnail>
                           </button>
                         )}
-                        {editingPostId === post.id ? (
-                          <div className="space-y-2">
-                            <Textarea
-                              value={editContent}
-                              onChange={e => setEditContent(e.target.value)}
-                              rows={5}
-                              data-testid={`textarea-edit-${post.id}`}
-                            />
-                            {(() => {
-                              const campaignAccounts = (campaign?.socialAccounts ?? [])
-                                .map(csa => allSocialAccounts.find(a => a.id === csa.socialAccountId))
-                                .filter((a): a is NonNullable<typeof a> => !!a && a.platform === post.platform);
-                              if (campaignAccounts.length === 0) return null;
-                              return (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-muted-foreground shrink-0">Publish as</span>
-                                  <Select
-                                    value={editSocialAccountId ?? "__none__"}
-                                    onValueChange={v => setEditSocialAccountId(v === "__none__" ? null : v)}
-                                  >
-                                    <SelectTrigger className="h-7 text-xs flex-1" data-testid={`select-account-${post.id}`}>
-                                      <SelectValue placeholder="No account assigned" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none__">No account assigned</SelectItem>
-                                      {campaignAccounts.map(a => (
-                                        <SelectItem key={a.id} value={a.id}>{a.accountName}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              );
-                            })()}
-                            {(editSocialAccountId ?? post.socialAccountId) && (
-                              <AIRewritePanel
-                                socialAccountId={(editSocialAccountId ?? post.socialAccountId)!}
-                                draft={editContent}
-                                postId={post.id}
-                                onApply={(variant) => setEditContent(variant)}
-                              />
-                            )}
-                            <div className="flex gap-2">
-                              <Button size="sm" onClick={() => updatePostMutation.mutate({ postId: post.id, editedContent: editContent, socialAccountId: editSocialAccountId })} data-testid={`button-save-edit-${post.id}`}>Save</Button>
-                              <Button size="sm" variant="ghost" onClick={() => setEditingPostId(null)}>Cancel</Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm whitespace-pre-wrap">{post.editedContent ?? post.content}</p>
-                        )}
+                        <p className="text-sm whitespace-pre-wrap">{post.editedContent ?? post.content}</p>
                         {post.sourceUrl && !(post.editedContent ?? post.content).includes(post.sourceUrl) && (
                           <a
                             href={post.sourceUrl}
@@ -4443,53 +4345,25 @@ export default function CampaignDetailPage() {
                           </div>
                         )}
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {editingPostHashtags === post.id ? (
-                            <div className="flex items-center gap-2 w-full">
-                              <Input
-                                value={editHashtagsValue}
-                                onChange={e => setEditHashtagsValue(e.target.value)}
-                                placeholder="tag1, tag2, tag3 (comma or space separated)"
-                                className="text-xs h-7 flex-1"
-                                data-testid={`input-hashtags-${post.id}`}
-                              />
-                              <Button
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={() => {
-                                  const tags = editHashtagsValue
-                                    .split(/[,\s]+/)
-                                    .map(h => h.replace(/^#/, "").trim())
-                                    .filter(h => h.length > 0);
-                                  updatePostMutation.mutate({ postId: post.id, hashtags: tags });
-                                }}
-                                data-testid={`button-save-hashtags-${post.id}`}
-                              >Save</Button>
-                              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingPostHashtags(null)}>Cancel</Button>
-                            </div>
-                          ) : (
-                            <div
-                              className="flex items-center gap-1 flex-wrap cursor-pointer group"
-                              onClick={() => {
-                                setEditingPostHashtags(post.id);
-                                setEditHashtagsValue((post.hashtags || []).join(", "));
-                              }}
-                              title="Click to edit hashtags"
-                              data-testid={`hashtags-${post.id}`}
-                            >
-                              {post.hashtags?.length > 0 ? (
-                                <>
-                                  {post.hashtags.map((h, i) => (
-                                    <Badge key={i} variant="outline" className="text-[10px] bg-primary/10 text-primary-foreground border-primary/20">#{h}</Badge>
-                                  ))}
-                                  <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </>
-                              ) : (
-                                <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                                  <Pencil className="w-2.5 h-2.5" /> Add hashtags
-                                </span>
-                              )}
-                            </div>
-                          )}
+                          <div
+                            className="flex items-center gap-1 flex-wrap cursor-pointer group"
+                            onClick={() => setSharedEditorPostId(post.id)}
+                            title="Click to edit hashtags"
+                            data-testid={`hashtags-${post.id}`}
+                          >
+                            {post.hashtags?.length > 0 ? (
+                              <>
+                                {post.hashtags.map((h, i) => (
+                                  <Badge key={i} variant="outline" className="text-[10px] bg-primary/10 text-primary-foreground border-primary/20">#{h}</Badge>
+                                ))}
+                                <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                <Pencil className="w-2.5 h-2.5" /> Add hashtags
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {post.status === "approved" && <Badge variant="outline" className="text-green-600 border-green-200">Approved</Badge>}
@@ -5476,6 +5350,15 @@ export default function CampaignDetailPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Shared post editor — same component as calendar/queue/pipeline */}
+      {sharedEditorPostId && (
+        <SocialPostEditor
+          postId={sharedEditorPostId}
+          campaignName={campaign?.name}
+          onClose={() => setSharedEditorPostId(null)}
+        />
+      )}
 
       {/* Image Override Picker Dialog — brand assets + content assets */}
       <Dialog open={!!imagePickerPostId} onOpenChange={v => { if (!v) { setImagePickerPostId(null); setPickerCategoryFilter("all"); setPickerContentCategoryFilter("all"); setPickerPage(0); setPickerTab("brand"); setPickerShowAll(false); setPickerUploadFile(null); setPickerUploadPreview(null); setPickerUploadAlt(""); setPickerUploadResult(null); setPickerUploadError(null); } }}>

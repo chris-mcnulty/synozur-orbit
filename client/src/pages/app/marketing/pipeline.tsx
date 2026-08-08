@@ -60,6 +60,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import SocialPostEditor from "@/components/marketing/SocialPostEditor";
 import { cn } from "@/lib/utils";
 import {
   NATIVE_SOCIAL_BRIEF_FORMATS,
@@ -348,6 +349,7 @@ export default function ContentPipelinePage() {
   const [showClosed, setShowClosed] = useState(false);
   const [search, setSearch] = useState("");
   const [activeItem, setActiveItem] = useState<PipelineItem | null>(null);
+  const [editPostId, setEditPostId] = useState<string | null>(null);
   // The Published/Sent archive loads collapsed so the board stays focused on
   // in-flight work.
   const [collapsedStages, setCollapsedStages] = useState<Set<PipelineStage>>(
@@ -602,7 +604,12 @@ export default function ContentPipelinePage() {
     setSchedulePending(null);
   };
 
-  const openItem = (item: PipelineItem) => setLocation(item.href);
+  // Posts open the shared social post editor in place; emails/briefs still
+  // deep-link to their own editors.
+  const openItem = (item: PipelineItem) => {
+    if (item.type === "post") setEditPostId(item.id);
+    else setLocation(item.href);
+  };
 
   const toggleCollapsed = (stage: PipelineStage) => {
     setCollapsedStages((prev) => {
@@ -817,6 +824,15 @@ export default function ContentPipelinePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {editPostId && (
+        <SocialPostEditor
+          postId={editPostId}
+          onClose={() => setEditPostId(null)}
+          onChanged={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+          }}
+        />
+      )}
     </AppLayout>
   );
 }
