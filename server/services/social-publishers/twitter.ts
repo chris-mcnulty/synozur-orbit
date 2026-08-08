@@ -256,6 +256,17 @@ export class TwitterPublisher implements SocialPublisher {
         errorMessage: "Twitter account is not connected — re-authorize before publishing.",
       };
     }
+    // A post can still reference an account whose grant was revoked (e.g. the
+    // account was reconnected as a NEW row). Don't attempt a refresh that is
+    // guaranteed to fail with a cryptic "token was invalid" — tell the user
+    // what to actually do.
+    if (account.status === "needs_reconnect") {
+      return {
+        success: false,
+        errorCode: "account_disconnected",
+        errorMessage: `This post is assigned to a disconnected X account ("${account.accountName ?? account.id}"). Use "Reassign account" on the Social Calendar to move pending posts to the active account, or reconnect this account.`,
+      };
+    }
     let accessToken: string;
     try {
       accessToken = decryptSecret(account.encryptedAccessToken);
