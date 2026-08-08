@@ -14,10 +14,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import { Link, useSearch } from "wouter";
 import {
-  AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, X, AtSign, Lock, ExternalLink,
-  Sparkles, Upload, Library, Loader2, Share2, Download, Copy,
+  AlertTriangle, ChevronLeft, ChevronRight, AtSign, Lock,
+  Loader2, Share2,
 } from "lucide-react";
-import { useUpload } from "@/hooks/use-upload";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths,
   format, isSameMonth, isSameDay, isToday, parseISO, setHours, setMinutes, setSeconds,
@@ -34,32 +33,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import SocialPostEditor from "@/components/marketing/SocialPostEditor";
-
-// Download an image straight to the user's machine. Images are served
-// same-origin via Orbit, so we fetch the blob and save it; if blocked, open in
-// a new tab as a fallback.
-async function downloadImageFromUrl(url: string, fallbackName: string) {
-  try {
-    const res = await fetch(url, { credentials: "include" });
-    if (!res.ok) throw new Error("fetch failed");
-    const blob = await res.blob();
-    const ext = ((blob.type.split("/")[1] || "png").split("+")[0]) || "png";
-    const name = /\.[a-z0-9]+$/i.test(fallbackName) ? fallbackName : `${fallbackName}.${ext}`;
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(link.href);
-  } catch {
-    window.open(url, "_blank");
-  }
-}
-
-function safeFileStub(s: string): string {
-  return (s || "post").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60).toLowerCase() || "post";
-}
 
 interface CalendarPost {
   id: string;
