@@ -275,6 +275,7 @@ interface SocialAccount {
   id: string;
   platform: string;
   accountName: string;
+  status?: string;
   isConnected?: boolean;
 }
 
@@ -798,9 +799,11 @@ export default function CampaignDetailPage() {
   });
 
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    // includeInactive: posts may still reference a disconnected/replaced
+    // account — we need its name for filters/badges instead of a raw GUID.
+    queryKey: ["/api/social-accounts", "includeInactive"],
     queryFn: async () => {
-      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      const r = await fetch("/api/social-accounts?includeInactive=true", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
@@ -3597,9 +3600,13 @@ export default function CampaignDetailPage() {
                         <SelectItem value="all">All accounts</SelectItem>
                         {accountIdsWithPosts.map(aid => {
                           const acct = allSocialAccounts.find(a => a.id === aid);
+                          // Same name can appear twice after an account is
+                          // recreated — tag non-active rows so they're
+                          // distinguishable from the live connection.
+                          const suffix = acct && acct.status !== "active" ? " (disconnected)" : "";
                           return (
                             <SelectItem key={aid} value={aid}>
-                              {acct?.accountName ?? aid}
+                              {acct ? `${acct.accountName ?? aid}${suffix}` : `${aid.slice(0, 8)}… (removed account)`}
                             </SelectItem>
                           );
                         })}

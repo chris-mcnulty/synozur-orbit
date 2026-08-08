@@ -1978,7 +1978,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
         eq(socialAccounts.marketId, ctx.marketId),
-        eq(socialAccounts.status, "active"),
+        // Default: active accounts only. ?includeInactive=true also returns
+        // disconnected/needs_reconnect rows so UIs can resolve names for
+        // posts that still reference an old account (otherwise dropdowns
+        // show a raw GUID).
+        req.query.includeInactive === "true" ? undefined : eq(socialAccounts.status, "active"),
       ))
       .orderBy(socialAccounts.platform, socialAccounts.accountName);
     // Map hasAccessToken → encryptedAccessToken-shaped boolean field for
