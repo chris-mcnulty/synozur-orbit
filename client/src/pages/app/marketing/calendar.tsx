@@ -1015,8 +1015,11 @@ function ReassignAccountDialog({ open, onClose }: { open: boolean; onClose: () =
     queryKey: ["/api/generated-posts/calendar", "reassign", targetAccount?.platform ?? "none"],
     queryFn: async () => {
       const now = new Date();
+      // Only posts that can still publish: from the start of today forward,
+      // plus undated drafts. Past-dated posts are dead weight here.
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const params = new URLSearchParams({
-        from: new Date(now.getTime() - 365 * 86400000).toISOString(),
+        from: startOfToday.toISOString(),
         to: new Date(now.getTime() + 365 * 86400000).toISOString(),
         includeUnscheduled: "true",
         platform: targetAccount!.platform,
@@ -1026,10 +1029,17 @@ function ReassignAccountDialog({ open, onClose }: { open: boolean; onClose: () =
     },
     enabled: open && !!targetAccount,
   });
-  const pending = useMemo(
-    () => candidatePosts.filter(p => ["draft", "approved", "publish_failed", "exported"].includes(p.status)),
-    [candidatePosts],
-  );
+  const pending = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return candidatePosts.filter(p =>
+      // Exported posts were already handed off to an external tool; published
+      // posts are history. Neither should be reassigned.
+      ["draft", "approved", "publish_failed"].includes(p.status) &&
+      // Unscheduled, or scheduled today onward — past-dated posts won't publish.
+      (!p.scheduledDate || parseISO(p.scheduledDate) >= todayStart),
+    );
+  }, [candidatePosts]);
 
   // Pre-select every pending post not already on the target account whenever
   // the target (and thus the candidate list) changes.

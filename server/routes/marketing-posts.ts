@@ -568,9 +568,11 @@ export function registerMarketingPostsRoutes(app: Express) {
       const condition = and(
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
         eq(generatedPosts.platform, account.platform),
-        // Only pending work is reassignable — published/deleted history keeps
-        // its original account for accurate records.
-        inArray(generatedPosts.status, ["draft", "approved", "publish_failed", "exported"]),
+        // Only pending work is reassignable. Published/deleted history keeps
+        // its original account, and "exported" posts were already handed off
+        // to an external tool (CSV) — changing their account here would
+        // misrepresent where they'll actually be posted.
+        inArray(generatedPosts.status, ["draft", "approved", "publish_failed"]),
         scopedIds.length ? inArray(generatedPosts.id, scopedIds) : undefined,
       );
       const rows = await db.update(generatedPosts)
