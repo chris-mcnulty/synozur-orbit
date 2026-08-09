@@ -845,10 +845,28 @@ export default function CampaignDetailPage() {
     () => new Set(postBatches.batches.map((b) => b.key)),
     [postBatches.batches],
   );
-  const unscheduledDraftCount = useMemo(
-    () => posts.filter((p) => p.status === "draft" && !p.scheduledDate).length,
-    [posts],
-  );
+  // Count of unscheduled drafts visible under every active filter (platform,
+  // lifecycle, date range, account, batch drill, and status-list).  Mirrors the
+  // predicate used by _bulkFilteredIds so the button label and the actual
+  // archive operation always agree.
+  const unscheduledDraftCount = useMemo(() => {
+    const visiblePosts = postSelectedIds.size > 0
+      ? posts.filter(p => postSelectedIds.has(p.id))
+      : posts.filter(p => {
+          const src = batchSourceOf(p);
+          const isBatched = src != null && batchKeySet.has(src);
+          if (batchFilter) { if (src !== batchFilter) return false; }
+          else if (isBatched) return false;
+          if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
+          if (!postPassesScopeFilters(p)) return false;
+          if (postFilter === "all") return p.status !== "deleted";
+          if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
+          if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
+          return p.status === postFilter;
+        });
+    return visiblePosts.filter(p => p.status === "draft" && !p.scheduledDate).length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts, postSelectedIds, batchFilter, batchKeySet, postAccountFilter, postFilter, postPlatformFilter, postTimeFilter, postDateFrom, postDateTo]);
   const archivedCount = useMemo(() => posts.filter((p) => p.status === "archived").length, [posts]);
   // Progress funnel for the header summary. Buckets follow the same precedence
   // as getPostStage() so the summary and the per-post badges always agree.
@@ -1045,8 +1063,13 @@ export default function CampaignDetailPage() {
   });
 
   const archiveUnscheduledMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/campaigns/${id}/archive-unscheduled`, { method: "POST", credentials: "include" });
+    mutationFn: async (postIds: string[]) => {
+      const r = await fetch(`/api/campaigns/${id}/archive-unscheduled`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ postIds }),
+      });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to archive");
       return r.json();
     },
@@ -2287,6 +2310,13 @@ export default function CampaignDetailPage() {
   const bulkRejectIds = _bulkFilteredIds.filter(id => {
     const p = _postById.get(id);
     return p && p.status !== "rejected" && p.status !== "deleted";
+  });
+  // Archive unscheduled: scoped to the same filtered-visible set as every
+  // other bulk action (account, batch-drill, status-list, scope filters), then
+  // narrowed to only draft posts without a scheduled date.
+  const bulkArchiveIds = _bulkFilteredIds.filter(id => {
+    const p = _postById.get(id);
+    return p && p.status === "draft" && !p.scheduledDate;
   });
 
   return (
@@ -3689,7 +3719,7 @@ export default function CampaignDetailPage() {
                     size="sm"
                     className="gap-1.5"
                     disabled={archiveUnscheduledMutation.isPending}
-                    onClick={() => archiveUnscheduledMutation.mutate()}
+                    onClick={() => archiveUnscheduledMutation.mutate(bulkArchiveIds)}
                     title="Move unscheduled draft posts to the archive so they stop cluttering planning"
                     data-testid="button-archive-unscheduled"
                   >

@@ -3288,13 +3288,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [campaign] = await db.select({ id: campaigns.id }).from(campaigns)
         .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const { postIds } = req.body ?? {};
+      const scopedIds: string[] = Array.isArray(postIds) && postIds.length > 0 ? postIds : [];
+      const baseWhere = and(
+        eq(generatedPosts.campaignId, campaign.id),
+        eq(generatedPosts.status, "draft"),
+        isNull(generatedPosts.scheduledDate),
+      );
+      const condition = scopedIds.length
+        ? and(baseWhere, inArray(generatedPosts.id, scopedIds))
+        : baseWhere;
       const rows = await db.update(generatedPosts)
         .set({ status: "archived", updatedAt: new Date() })
-        .where(and(
-          eq(generatedPosts.campaignId, campaign.id),
-          eq(generatedPosts.status, "draft"),
-          isNull(generatedPosts.scheduledDate),
-        ))
+        .where(condition)
         .returning({ id: generatedPosts.id });
       res.json({ archived: rows.length });
     } catch (err: any) {
