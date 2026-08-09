@@ -5708,11 +5708,13 @@ const CONTENT_ANGLES: { name: string; directive: string }[] = [
  *   the backlog manageable and AI generation cost bounded).
  */
 const MIN_VARIANTS_PER_PLATFORM = 3;
-const MAX_VARIANTS_PER_PLATFORM = 10;
+// Raised from 10 → 30 to support product campaigns where each asset needs its
+// own post (e.g. 25 products × 3 platforms = 75 posts minimum per run).
+const MAX_VARIANTS_PER_PLATFORM = 30;
 // Hard cap on how many draft rows a single generation run may persist, across
-// all platforms and image variations combined. Prevents the variants × brand
-// images × platforms grid from flooding the backlog with hundreds of drafts.
-const MAX_DRAFTS_PER_GENERATION = 60;
+// all platforms and image variations combined. Raised from 60 → 150 to match
+// the higher per-platform cap (30 variants × 3 platforms + image grid buffer).
+const MAX_DRAFTS_PER_GENERATION = 150;
 
 function calculateTargetVariantsPerPlatform(
   campaignRow: { numberOfDays: number | null; includeSaturday: boolean | null; includeSunday: boolean | null },
