@@ -2256,6 +2256,26 @@ export default function CampaignDetailPage() {
     );
   }
 
+  // Effective scope for the bulk Orbit / CSV delivery-mode buttons.
+  // • If posts are individually selected, use exactly those.
+  // • Otherwise, use every post that matches the current filters
+  //   (same predicate as "Select all visible") so the buttons act on
+  //   what the user can see — not silently on the whole campaign.
+  const bulkDeliveryScope: string[] = postSelectedIds.size > 0
+    ? Array.from(postSelectedIds)
+    : posts.filter(p => {
+        const src = batchSourceOf(p);
+        const isBatched = src != null && batchKeySet.has(src);
+        if (batchFilter) { if (src !== batchFilter) return false; }
+        else if (isBatched) return false;
+        if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
+        if (!postPassesScopeFilters(p)) return false;
+        if (postFilter === "all") return p.status !== "deleted";
+        if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
+        if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
+        return p.status === postFilter;
+      }).map(p => p.id);
+
   return (
     <AppLayout breadcrumbs={campaignBreadcrumbs}>
       <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -3708,25 +3728,25 @@ export default function CampaignDetailPage() {
                   variant="outline"
                   size="sm"
                   className="gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
-                  onClick={() => bulkDeliveryModeMutation.mutate({ deliveryMode: null, postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
-                  disabled={bulkDeliveryModeMutation.isPending}
-                  title="Mark these posts for auto-delivery by Orbit at their scheduled time"
+                  onClick={() => bulkDeliveryModeMutation.mutate({ deliveryMode: null, postIds: bulkDeliveryScope })}
+                  disabled={bulkDeliveryModeMutation.isPending || bulkDeliveryScope.length === 0}
+                  title={bulkDeliveryScope.length === 0 ? "No posts match the current filters" : "Mark these posts for auto-delivery by Orbit at their scheduled time"}
                   data-testid="button-bulk-orbit"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  {postSelectedIds.size > 0 ? `Orbit (${postSelectedIds.size})` : "Orbit: all"}
+                  {`Orbit (${bulkDeliveryScope.length})`}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   className="gap-1 text-muted-foreground border-muted-foreground/30 hover:bg-muted"
-                  onClick={() => bulkDeliveryModeMutation.mutate({ deliveryMode: "csv", postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
-                  disabled={bulkDeliveryModeMutation.isPending}
-                  title="Reserve these posts for CSV export — Orbit will never auto-publish them"
+                  onClick={() => bulkDeliveryModeMutation.mutate({ deliveryMode: "csv", postIds: bulkDeliveryScope })}
+                  disabled={bulkDeliveryModeMutation.isPending || bulkDeliveryScope.length === 0}
+                  title={bulkDeliveryScope.length === 0 ? "No posts match the current filters" : "Reserve these posts for CSV export — Orbit will never auto-publish them"}
                   data-testid="button-bulk-csv"
                 >
                   <FileDown className="w-3.5 h-3.5" />
-                  {postSelectedIds.size > 0 ? `CSV only (${postSelectedIds.size})` : "CSV only: all"}
+                  {`CSV only (${bulkDeliveryScope.length})`}
                 </Button>
               </div>
             )}
