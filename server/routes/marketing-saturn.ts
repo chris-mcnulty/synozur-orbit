@@ -4316,7 +4316,7 @@ REQUIRED SECTIONS (adapt based on content):
 VISUAL DESIGN RULES:
 - Use <hr> with style="border:none;border-top:1px solid #e8ecf0;margin:24px 0" between sections
 - All buttons must be real HTML <table><tr><td bgcolor><a> buttons, NOT placeholders
-- Typography: font-family:Arial,sans-serif throughout, headings 22-26px, body 15-16px, line-height:1.6
+- Typography: font-family:Arial,sans-serif throughout, headings 22-26px, body text MUST use explicit font-size:16px on every <td> and <p> element (NEVER below 16px — 15px and 14px are NOT permitted), line-height:1.6. Every text-bearing <td> must carry an explicit style="font-size:16px;..." — do not rely on inherited sizes.
 - IMPORTANT: Use the Brand Primary Color for heading text, header backgrounds, and CTA button backgrounds. Use Brand Secondary Color for accent elements (stat cards, highlights, secondary buttons). Do NOT fall back to navy (#0a2540) or generic blue when brand colors are provided.
 - Body text: #333 for primary body, #555 for secondary/lighter text
 - LOGO_RULE (see Company & Brand Identity section for whether a logo URL is available)`,

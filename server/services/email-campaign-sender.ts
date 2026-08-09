@@ -259,10 +259,20 @@ export function normalizeFontFamily(html: string, stack = EMAIL_FONT_STACK): str
 }
 
 export function enforceMinimumFontSize(html: string, minPx = 16): string {
-  return html.replace(/font-size:\s*(\d+)px/gi, (m, size) => {
-    const n = parseInt(size, 10);
+  // px values: bump anything below the minimum
+  let result = html.replace(/font-size:\s*(\d+(?:\.\d+)?)px/gi, (m, size) => {
+    const n = parseFloat(size);
     return n > 0 && n < minPx ? `font-size:${minPx}px` : m;
   });
+  // pt values: 1pt ≈ 1.333px, so 12pt ≈ 16px; bump anything below minPx/1.333
+  const minPt = minPx / 1.333;
+  result = result.replace(/font-size:\s*(\d+(?:\.\d+)?)pt/gi, (m, size) => {
+    const n = parseFloat(size);
+    return n > 0 && n < minPt ? `font-size:${minPx}px` : m;
+  });
+  // em/rem values below 1em are smaller than the base — clamp to 1em (= base 16px)
+  result = result.replace(/font-size:\s*(0?\.\d+)(?:r?em)/gi, () => `font-size:1em`);
+  return result;
 }
 
 export function wrapResponsiveDocument(html: string): string {
