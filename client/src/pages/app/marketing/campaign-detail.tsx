@@ -2261,7 +2261,7 @@ export default function CampaignDetailPage() {
   // • Otherwise, use every post that matches the current filters
   //   (same predicate as "Select all visible") so the buttons act on
   //   what the user can see — not silently on the whole campaign.
-  const bulkDeliveryScope: string[] = postSelectedIds.size > 0
+  const _bulkFilteredIds = postSelectedIds.size > 0
     ? Array.from(postSelectedIds)
     : posts.filter(p => {
         const src = batchSourceOf(p);
@@ -2275,6 +2275,19 @@ export default function CampaignDetailPage() {
         if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
         return p.status === postFilter;
       }).map(p => p.id);
+  const bulkDeliveryScope: string[] = _bulkFilteredIds;
+
+  // Approve All / Reject All are also scoped to the filtered-visible posts
+  // (or selected posts when a selection is active), not the whole campaign.
+  const _postById = new Map(posts.map(p => [p.id, p]));
+  const bulkApproveIds = _bulkFilteredIds.filter(id => {
+    const p = _postById.get(id);
+    return p && !["approved", "exported", "scheduled_external", "published", "publish_failed", "rejected", "deleted"].includes(p.status);
+  });
+  const bulkRejectIds = _bulkFilteredIds.filter(id => {
+    const p = _postById.get(id);
+    return p && p.status !== "rejected" && p.status !== "deleted";
+  });
 
   return (
     <AppLayout breadcrumbs={campaignBreadcrumbs}>
@@ -3698,30 +3711,30 @@ export default function CampaignDetailPage() {
                     Purge archived
                   </Button>
                 )}
-                {posts.some(p => !["approved", "exported", "scheduled_external", "published", "publish_failed", "rejected", "deleted"].includes(p.status)) && (
+                {bulkApproveIds.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="gap-1 text-green-600 border-green-200 hover:bg-green-50"
-                    onClick={() => bulkStatusMutation.mutate({ status: "approved", postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
+                    onClick={() => bulkStatusMutation.mutate({ status: "approved", postIds: bulkApproveIds })}
                     disabled={bulkStatusMutation.isPending}
                     data-testid="button-approve-all"
                   >
                     <CheckCircle className="w-3.5 h-3.5" />
-                    {postSelectedIds.size > 0 ? `Approve selected (${postSelectedIds.size})` : "Approve All"}
+                    {`Approve (${bulkApproveIds.length})`}
                   </Button>
                 )}
-                {posts.some(p => p.status !== "rejected" && p.status !== "deleted") && (
+                {bulkRejectIds.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="gap-1 text-orange-600 border-orange-200 hover:bg-orange-50"
-                    onClick={() => bulkStatusMutation.mutate({ status: "rejected", postIds: postSelectedIds.size > 0 ? Array.from(postSelectedIds) : undefined })}
+                    onClick={() => bulkStatusMutation.mutate({ status: "rejected", postIds: bulkRejectIds })}
                     disabled={bulkStatusMutation.isPending}
                     data-testid="button-reject-all"
                   >
                     <XCircle className="w-3.5 h-3.5" />
-                    {postSelectedIds.size > 0 ? `Reject selected (${postSelectedIds.size})` : "Reject All"}
+                    {`Reject (${bulkRejectIds.length})`}
                   </Button>
                 )}
                 <Button
