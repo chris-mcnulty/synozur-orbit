@@ -471,6 +471,7 @@ export default function CampaignDetailPage() {
   const [generatingForBriefId, setGeneratingForBriefId] = useState<string | null>(null);
   const [wrapPostLinks, setWrapPostLinks] = useState(false);
   const [variantsPerPlatform, setVariantsPerPlatform] = useState<number | null>(null);
+  const [onePostPerAsset, setOnePostPerAsset] = useState(false);
   const BRAND_PAGE_SIZE = 12;
   const [pickerCategoryFilter, setPickerCategoryFilter] = useState<string>("all");
   const [pickerPage, setPickerPage] = useState(0);
@@ -1187,12 +1188,12 @@ export default function CampaignDetailPage() {
   });
 
   const generatePostsMutation = useMutation({
-    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds, blogAssetId: bAssetId }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null; blogAssetId?: string }) => {
+    mutationFn: async ({ brandImageIds, personaIds, thematicBrief: brief, thematicUrl: url, wrapLinks, variantsPerPlatform: variants, sourceBriefId, accountIds, blogAssetId: bAssetId, onePostPerAsset: onePerAsset }: { brandImageIds?: string[]; personaIds?: string[]; thematicBrief?: string; thematicUrl?: string; wrapLinks?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string | null; accountIds?: string[] | null; blogAssetId?: string; onePostPerAsset?: boolean }) => {
       const r = await fetch(`/api/campaigns/${id}/generate-posts`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [], blogAssetId: bAssetId || "" }),
+        body: JSON.stringify({ brandImageIds: brandImageIds || [], personaIds: personaIds || [], thematicBrief: brief || "", thematicUrl: url || "", wrapLinks: !!wrapLinks, variantsPerPlatform: variants ?? null, includeAssetLeadImages: false, sourceBriefId: sourceBriefId ?? null, accountIds: accountIds ?? [], blogAssetId: bAssetId || "", onePostPerAsset: !!onePerAsset }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -6773,7 +6774,7 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogAssetId(null); setBlogSearch(""); setBlogImportUrl(""); setBlogImportStatus("idle"); setBlogImportError(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); } else { setGenerateDialogOpen(true); } }}>
+      <Dialog open={generateDialogOpen} onOpenChange={(o) => { if (!o) { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogAssetId(null); setBlogSearch(""); setBlogImportUrl(""); setBlogImportStatus("idle"); setBlogImportError(""); setGenerateMode("asset"); setVariantsPerPlatform(null); setSelectedBriefId(null); setGenerateDialogAccountIds(null); setOnePostPerAsset(false); } else { setGenerateDialogOpen(true); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[80vh]">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Generate Social Posts</DialogTitle>
@@ -6896,6 +6897,29 @@ export default function CampaignDetailPage() {
                   </p>
                 )}
               </div>
+            )}
+
+            {/* One post per asset — asset mode only, only shown when assets exist */}
+            {generateMode === "asset" && campaign && campaign.assets.length > 1 && (
+              <label className="flex items-start gap-2 cursor-pointer text-sm rounded-lg border p-3 hover:bg-muted/30 transition-colors" data-testid="toggle-one-post-per-asset-label">
+                <Checkbox
+                  checked={onePostPerAsset}
+                  onCheckedChange={(v) => setOnePostPerAsset(!!v)}
+                  className="mt-0.5"
+                  data-testid="checkbox-one-post-per-asset"
+                />
+                <div>
+                  <span className="font-medium">One post per asset</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Guarantee that every pinned asset gets at least one post on each platform before generating extras. Ideal for product campaigns where each item needs its own promotion.
+                    {onePostPerAsset && campaign.assets.length > 0 && (
+                      <span className="block mt-1 text-primary">
+                        Will generate at least {campaign.assets.length} variant{campaign.assets.length !== 1 ? "s" : ""} per channel — one for each of the {campaign.assets.length} pinned assets.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </label>
             )}
 
             {/* Variants-per-platform control */}
@@ -7188,7 +7212,7 @@ export default function CampaignDetailPage() {
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t flex-shrink-0">
-            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogAssetId(null); setBlogSearch(""); setBlogImportUrl(""); setBlogImportStatus("idle"); setBlogImportError(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); }} data-testid="button-cancel-generate">Cancel</Button>
+            <Button variant="outline" onClick={() => { saveAccountIds(id, generateDialogAccountIds); setGenerateDialogOpen(false); setSelectedBrandImageIds([]); setSelectedPersonaIds([]); setGenerateDialogAccountIds(null); setBrandCategoryFilter("all"); setBrandPage(0); setThematicBrief(""); setThematicUrl(""); setBlogAssetId(null); setBlogSearch(""); setBlogImportUrl(""); setBlogImportStatus("idle"); setBlogImportError(""); setGenerateMode("asset"); setWrapPostLinks(false); setVariantsPerPlatform(null); setSelectedBriefId(null); setOnePostPerAsset(false); }} data-testid="button-cancel-generate">Cancel</Button>
             <Button
               onClick={() => generatePostsMutation.mutate({
                 brandImageIds: selectedBrandImageIds.length > 0 ? selectedBrandImageIds : undefined,
@@ -7200,6 +7224,7 @@ export default function CampaignDetailPage() {
                 variantsPerPlatform: generateMode === "blog" ? 5 : variantsPerPlatform,
                 sourceBriefId: selectedBriefId,
                 accountIds: generateDialogAccountIds,
+                onePostPerAsset: generateMode === "asset" ? onePostPerAsset : false,
               })}
               disabled={generatePostsMutation.isPending || isGenerating || (generateMode === "thematic" && !thematicBrief.trim()) || (generateMode === "blog" && !blogAssetId) || (generateDialogAccountIds !== null && generateDialogAccountIds.length === 0)}
               className="gap-2"

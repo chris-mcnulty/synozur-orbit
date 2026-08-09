@@ -4027,6 +4027,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
         .where(eq(campaigns.id, campaign.id));
 
       const wrapLinks: boolean = !!req.body?.wrapLinks;
+      const onePostPerAsset: boolean = !!req.body?.onePostPerAsset;
       const reqHost = req.get("host") || undefined;
       const reqProtocol = req.protocol;
       const ownerUserId = ctx.userId;
@@ -4045,7 +4046,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
           personaIds,
           useThematicMode ? thematicBrief : "",
           useThematicMode ? thematicUrl : "",
-          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined, accountIds: accountIds.length > 0 ? accountIds : undefined },
+          { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined, accountIds: accountIds.length > 0 ? accountIds : undefined, onePostPerAsset },
           reportProgress,
         ),
         { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
@@ -5741,7 +5742,7 @@ async function generatePostsAsync(
   personaIds: string[] = [],
   thematicBrief: string = "",
   thematicUrl: string = "",
-  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string; sourceBriefContentAsset?: typeof contentAssets.$inferSelect; accountIds?: string[] } = {},
+  wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string; sourceBriefContentAsset?: typeof contentAssets.$inferSelect; accountIds?: string[]; onePostPerAsset?: boolean } = {},
   reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
 ): Promise<void> {
   // Default ON: lead images from source content assets are folded into the
@@ -5980,61 +5981,53 @@ async function generatePostsAsync(
       console.log(`[Saturn] Campaign ${campaignId} has ${eligibleDays} eligible posting days but variant target capped at ${targetVariantsPerPlatform}; the variant pool will cycle approximately every ${targetVariantsPerPlatform} scheduled days.`);
     }
 
+    // One-post-per-asset mode: active when the flag is set, we're in asset mode
+    // (contextPools has one entry per asset), and there are multiple assets.
+    // In this mode every asset is guaranteed one post per platform before extras
+    // are generated. The per-platform target is raised to at least the asset count
+    // so no asset is silently skipped.
+    const onePostPerAsset = wrapOpts.onePostPerAsset === true && !isThematic && contextPools.length > 1;
+    // Effective per-platform target: at least assetCount in one-per-asset mode
+    // (clamped to MAX so we don't blow out the cap).
+    const effectiveTargetVariantsPerPlatform = onePostPerAsset
+      ? Math.min(Math.max(targetVariantsPerPlatform, contextPools.length), MAX_VARIANTS_PER_PLATFORM)
+      : targetVariantsPerPlatform;
+
+    if (onePostPerAsset) {
+      if (contextPools.length > targetVariantsPerPlatform) {
+        console.log(
+          `[Saturn] One-post-per-asset: raising variant target from ${targetVariantsPerPlatform} → ${effectiveTargetVariantsPerPlatform} ` +
+          `to cover all ${contextPools.length} assets (MAX_VARIANTS_PER_PLATFORM=${MAX_VARIANTS_PER_PLATFORM})`,
+        );
+      }
+      if (contextPools.length > MAX_VARIANTS_PER_PLATFORM) {
+        console.warn(
+          `[Saturn] One-post-per-asset: campaign has ${contextPools.length} assets but MAX_VARIANTS_PER_PLATFORM=${MAX_VARIANTS_PER_PLATFORM}; ` +
+          `only ${MAX_VARIANTS_PER_PLATFORM} will be generated per platform — some assets will not get a post.`,
+        );
+      }
+    }
+
     const campaignAlwaysHashtags = (campaignRow.alwaysHashtags as string[] || [])
       .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
       .filter((h: string) => h.length > 0);
 
-    let platformIdx = 0;
-    for (const account of platformTargets) {
-      platformIdx++;
-      const platformPct = 15 + Math.round((platformIdx - 1) / platformTargets.length * 75);
-      reportProgress?.({
-        phase: `Drafting ${account.platform} variants`,
-        percent: platformPct,
-        currentItem: platformIdx,
-        totalItems: platformTargets.length,
-        currentItemName: account.platform,
-      });
-      const platformGuide = getPlatformGuide(account.platform);
-      const variantGroupId = randomUUID();
-      const cleanedVariantsForAccount: {
-        content: string;
-        hashtags: string[];
-        imagePrompt: string;
-        sourceUrl: string | null;
-        sourceAssetId: string | null;
-        leadImageUrl: string | null;
-      }[] = [];
-      const usedOpenings: string[] = []; // first ~80 chars of each accepted variant — passed back to the AI to forbid reuse
+    // (Coverage is computed post-truncation from persisted rows below.)
 
-      let angleIndex = 0;
-      let poolIndex = 0;
-      let safetyLoops = 0;
-      const MAX_SAFETY_LOOPS = Math.ceil(targetVariantsPerPlatform / VARIANTS_PER_BATCH) * 3 + 2;
-
-      while (cleanedVariantsForAccount.length < targetVariantsPerPlatform && safetyLoops < MAX_SAFETY_LOOPS) {
-        safetyLoops++;
-        const remaining = targetVariantsPerPlatform - cleanedVariantsForAccount.length;
-        const batchSize = Math.min(VARIANTS_PER_BATCH, remaining);
-
-        // Pick the next N angles (with wrap-around) and the pool to ground this batch in
-        const batchAngles: { name: string; directive: string }[] = [];
-        for (let i = 0; i < batchSize; i++) {
-          batchAngles.push(CONTENT_ANGLES[(angleIndex + i) % CONTENT_ANGLES.length]);
-        }
-        angleIndex = (angleIndex + batchSize) % CONTENT_ANGLES.length;
-        const pool = contextPools[poolIndex % contextPools.length];
-        poolIndex++;
-
-        const anglesBlock = batchAngles
-          .map((a, i) => `Variant ${i + 1} — ANGLE: "${a.name}". ${a.directive}`)
-          .join("\n");
-
-        const avoidBlock = usedOpenings.length > 0
-          ? `\n\n## Already-used openings — do NOT reuse, paraphrase, or echo these first lines:\n${usedOpenings.map((o, i) => `${i + 1}. "${o}"`).join("\n")}`
-          : "";
-
-        const prompt = `You are an expert social media copywriter. Generate ${batchSize} variant ${account.platform} post${batchSize > 1 ? "s" : ""} for the account "${account.accountName}" based on the following ${pool.thematic ? "campaign theme brief" : "content"}.
+    // Helper: build the AI prompt for a given pool + batch of angles.
+    const buildGenerationPrompt = (
+      pool: ContextPool,
+      batchAngles: { name: string; directive: string }[],
+      usedOpenings: string[],
+    ): string => {
+      const batchSize = batchAngles.length;
+      const anglesBlock = batchAngles
+        .map((a, i) => `Variant ${i + 1} — ANGLE: "${a.name}". ${a.directive}`)
+        .join("\n");
+      const avoidBlock = usedOpenings.length > 0
+        ? `\n\n## Already-used openings — do NOT reuse, paraphrase, or echo these first lines:\n${usedOpenings.map((o, i) => `${i + 1}. "${o}"`).join("\n")}`
+        : "";
+      return `You are an expert social media copywriter. Generate ${batchSize} variant ${account.platform} post${batchSize > 1 ? "s" : ""} for the account "${account.accountName}" based on the following ${pool.thematic ? "campaign theme brief" : "content"}.
 
 CRITICAL ANTI-REPETITION RULES — follow strictly:
 - Each variant MUST commit to its assigned ANGLE below. Do NOT blend angles.
@@ -6056,12 +6049,144 @@ GENERAL RULES:
 ${campaignMissionContext ? `${campaignMissionContext}\n\n` : ""}${briefsContext ? `${briefsContext}\n\n` : ""}${foundingSignalsContext ? `${foundingSignalsContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
 
 ## Platform Guidelines
-${platformGuide}
+${getPlatformGuide(account.platform)}
 
 Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSize} object${batchSize > 1 ? "s" : ""}, each with:
 - "content": string (the post body — include the source URL naturally if one was provided, no inline hashtags)
 - "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)
 - "imagePrompt": string (a suggested image description for this post)`;
+    };
+
+    // Helper: accept parsed AI variants into the account's variant list.
+    // Returns how many were accepted.
+    const acceptVariants = (
+      parsed: any[],
+      pool: ContextPool,
+      cleanedVariantsForAccount: { content: string; hashtags: string[]; imagePrompt: string; sourceUrl: string | null; sourceAssetId: string | null; leadImageUrl: string | null }[],
+      usedOpenings: string[],
+      cap: number,
+      result: { text: string },
+    ): number => {
+      let accepted = 0;
+      for (const p of parsed) {
+        if (cleanedVariantsForAccount.length >= cap) break;
+        let postContent = (p.content ?? result.text).trim();
+        postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
+        if (!postContent || postContent.length < 10) {
+          console.warn(`[Saturn] Skipping empty/trivial AI variant for campaign ${campaignId}`);
+          continue;
+        }
+        const normalizedOpening = postContent.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase();
+        if (cleanedVariantsForAccount.some(v => v.content.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase() === normalizedOpening)) {
+          console.warn(`[Saturn] Rejecting near-duplicate variant for ${account.platform}`);
+          continue;
+        }
+        let hashtags: string[] = (p.hashtags ?? [])
+          .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
+          .filter((h: string) => h.length > 0 && h.length < 50);
+        if (campaignAlwaysHashtags.length > 0) {
+          const existing = new Set(hashtags.map(h => h.toLowerCase()));
+          for (const ah of campaignAlwaysHashtags) {
+            if (!existing.has(ah.toLowerCase())) hashtags.push(ah);
+          }
+        }
+        const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+        cleanedVariantsForAccount.push({
+          content: adapted.content,
+          hashtags: adapted.hashtags,
+          imagePrompt: p.imagePrompt ?? "",
+          sourceUrl: pool.sourceUrl,
+          sourceAssetId: pool.assetId,
+          leadImageUrl: pool.leadImageUrl,
+        });
+        usedOpenings.push(adapted.content.replace(/\s+/g, " ").trim().slice(0, 80));
+        accepted++;
+      }
+      return accepted;
+    };
+
+    let platformIdx = 0;
+    // `account` must be accessible inside buildGenerationPrompt so declare it
+    // in outer scope; it's set at the top of the loop body.
+    let account: typeof platformTargets[number] = platformTargets[0];
+    for (const acct of platformTargets) {
+      account = acct;
+      platformIdx++;
+      const platformPct = 15 + Math.round((platformIdx - 1) / platformTargets.length * 75);
+      reportProgress?.({
+        phase: `Drafting ${account.platform} variants`,
+        percent: platformPct,
+        currentItem: platformIdx,
+        totalItems: platformTargets.length,
+        currentItemName: account.platform,
+      });
+      const variantGroupId = randomUUID();
+      const cleanedVariantsForAccount: {
+        content: string;
+        hashtags: string[];
+        imagePrompt: string;
+        sourceUrl: string | null;
+        sourceAssetId: string | null;
+        leadImageUrl: string | null;
+      }[] = [];
+      const usedOpenings: string[] = []; // first ~80 chars of each accepted variant — passed back to the AI to forbid reuse
+
+      let angleIndex = 0;
+
+      // ── Guaranteed pass (one-post-per-asset mode) ──────────────────────────
+      // Before the normal rotation loop, iterate through every pool exactly
+      // once and call the AI for 1 variant per pool. This guarantees every
+      // selected content asset gets at least one post on this platform.
+      // Assets that fail the AI call (or produce only duplicates) are noted
+      // in the coverage map but generation continues rather than blocking.
+      if (onePostPerAsset) {
+        for (const pool of contextPools) {
+          if (cleanedVariantsForAccount.length >= effectiveTargetVariantsPerPlatform) break;
+          const angle = CONTENT_ANGLES[angleIndex % CONTENT_ANGLES.length];
+          angleIndex++;
+          const prompt = buildGenerationPrompt(pool, [angle], usedOpenings);
+          let result;
+          try {
+            result = await completeForFeature("marketing_tasks", prompt);
+          } catch (err: any) {
+            console.error(`[Saturn][one-per-asset] AI call failed for ${account.platform} pool "${pool.label}":`, err.message);
+            continue;
+          }
+          let variants: any[] = [];
+          try {
+            variants = extractJsonVariants(result.text);
+          } catch {
+            variants = buildFallbackVariants(result.text);
+          }
+          const countBefore = cleanedVariantsForAccount.length;
+          acceptVariants(variants, pool, cleanedVariantsForAccount, usedOpenings, effectiveTargetVariantsPerPlatform, result);
+          const added = cleanedVariantsForAccount.length - countBefore;
+          if (added === 0) {
+            console.warn(`[Saturn][one-per-asset] No variant accepted for pool "${pool.label}" on ${account.platform} — asset may lack coverage`);
+          }
+        }
+      }
+
+      // ── Normal rotation loop (fills remaining capacity) ────────────────────
+      let poolIndex = onePostPerAsset ? contextPools.length : 0; // skip pools already done in the guaranteed pass
+      let safetyLoops = 0;
+      const MAX_SAFETY_LOOPS = Math.ceil(effectiveTargetVariantsPerPlatform / VARIANTS_PER_BATCH) * 3 + 2;
+
+      while (cleanedVariantsForAccount.length < effectiveTargetVariantsPerPlatform && safetyLoops < MAX_SAFETY_LOOPS) {
+        safetyLoops++;
+        const remaining = effectiveTargetVariantsPerPlatform - cleanedVariantsForAccount.length;
+        const batchSize = Math.min(VARIANTS_PER_BATCH, remaining);
+
+        // Pick the next N angles (with wrap-around) and the pool to ground this batch in
+        const batchAngles: { name: string; directive: string }[] = [];
+        for (let i = 0; i < batchSize; i++) {
+          batchAngles.push(CONTENT_ANGLES[(angleIndex + i) % CONTENT_ANGLES.length]);
+        }
+        angleIndex = (angleIndex + batchSize) % CONTENT_ANGLES.length;
+        const pool = contextPools[poolIndex % contextPools.length];
+        poolIndex++;
+
+        const prompt = buildGenerationPrompt(pool, batchAngles, usedOpenings);
 
         let result;
         try {
@@ -6080,58 +6205,10 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
           variants = buildFallbackVariants(result.text);
         }
 
-        for (const parsed of variants) {
-          if (cleanedVariantsForAccount.length >= targetVariantsPerPlatform) break;
-
-          let postContent = (parsed.content ?? result.text).trim();
-          postContent = postContent.replace(/\[insert\s+link\]/gi, "").trim();
-
-          if (!postContent || postContent.length < 10) {
-            console.warn(`[Saturn] Skipping empty/trivial AI variant for campaign ${campaignId}`);
-            continue;
-          }
-
-          // Reject near-duplicates: if the first 60 chars (case/whitespace-normalized) match
-          // an already-accepted variant, skip it.
-          const normalizedOpening = postContent.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase();
-          const isDuplicate = cleanedVariantsForAccount.some(v =>
-            v.content.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase() === normalizedOpening
-          );
-          if (isDuplicate) {
-            console.warn(`[Saturn] Rejecting near-duplicate variant for ${account.platform}`);
-            continue;
-          }
-
-          let hashtags: string[] = (parsed.hashtags ?? [])
-            .map((h: string) => h.replace(/^#/, "").replace(/\s+/g, "").trim())
-            .filter((h: string) => h.length > 0 && h.length < 50);
-
-          if (campaignAlwaysHashtags.length > 0) {
-            const existing = new Set(hashtags.map(h => h.toLowerCase()));
-            for (const ah of campaignAlwaysHashtags) {
-              if (!existing.has(ah.toLowerCase())) {
-                hashtags.push(ah);
-              }
-            }
-          }
-
-          const adapted = applyPlatformRules(postContent, account.platform, hashtags);
-          postContent = adapted.content;
-          hashtags = adapted.hashtags;
-
-          cleanedVariantsForAccount.push({
-            content: postContent,
-            hashtags,
-            imagePrompt: parsed.imagePrompt ?? "",
-            sourceUrl: pool.sourceUrl,
-            sourceAssetId: pool.assetId,
-            leadImageUrl: pool.leadImageUrl,
-          });
-          usedOpenings.push(postContent.replace(/\s+/g, " ").trim().slice(0, 80));
-        }
+        acceptVariants(variants, pool, cleanedVariantsForAccount, usedOpenings, effectiveTargetVariantsPerPlatform, result);
       }
 
-      console.log(`[Saturn] ${account.platform}/${account.accountName}: produced ${cleanedVariantsForAccount.length}/${targetVariantsPerPlatform} unique variants across ${safetyLoops} batches`);
+      console.log(`[Saturn] ${account.platform}/${account.accountName}: produced ${cleanedVariantsForAccount.length}/${effectiveTargetVariantsPerPlatform} unique variants across ${safetyLoops} extra batches` + (onePostPerAsset ? ` (one-per-asset guaranteed pass ran for ${Math.min(contextPools.length, effectiveTargetVariantsPerPlatform)} pools)` : ""));
 
       // Persist variants. Image-variation strategy:
       //   1. (if enabled) one row per variant carrying its source asset's
@@ -6259,22 +6336,97 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
     }
 
     reportProgress?.({ phase: "Saving posts", percent: 95 });
-    // Server-side hard cap: never persist more than MAX_DRAFTS_PER_GENERATION
-    // drafts from a single run, no matter how the variants × images × platforms
-    // grid multiplies out. Keeps the backlog manageable.
-    let rowsToInsert = generatedRows;
-    if (rowsToInsert.length > MAX_DRAFTS_PER_GENERATION) {
+
+    // ── Cap / truncation ─────────────────────────────────────────────────────
+    // In one-post-per-asset mode we must not let a simple slice() discard
+    // later-platform coverage. Two-phase allocation:
+    //   Phase 1 – reserve one base row per (assetId, platform) pair. These are
+    //             the guaranteed posts; they survive the cap unconditionally
+    //             (as long as guaranteed count ≤ MAX_DRAFTS_PER_GENERATION).
+    //   Phase 2 – fill remaining budget with extra rows (brand-image variants,
+    //             additional text variants).
+    // Without this, 30 assets × 3 platforms × 2 brand images = 180 rows; a
+    // naive slice(0,150) would drop the last platform entirely.
+    let rowsToInsert: InsertGeneratedPost[];
+    if (onePostPerAsset && generatedRows.length > MAX_DRAFTS_PER_GENERATION) {
+      const guaranteedRows: InsertGeneratedPost[] = [];
+      const seenAssetPlatform = new Set<string>();
+      for (const row of generatedRows) {
+        if (row.sourceAssetId) {
+          const key = `${row.sourceAssetId}:${row.platform}`;
+          if (!seenAssetPlatform.has(key)) {
+            seenAssetPlatform.add(key);
+            guaranteedRows.push(row);
+          }
+        }
+      }
+      const extraBudget = Math.max(0, MAX_DRAFTS_PER_GENERATION - guaranteedRows.length);
+      const guaranteedSet = new Set(guaranteedRows);
+      const extraRows = generatedRows.filter(r => !guaranteedSet.has(r)).slice(0, extraBudget);
+      rowsToInsert = [...guaranteedRows, ...extraRows];
       console.warn(
-        `[Saturn] Capping generated drafts from ${rowsToInsert.length} to ${MAX_DRAFTS_PER_GENERATION} (per-run limit)`,
+        `[Saturn][one-per-asset] Capping: ${generatedRows.length} rows → ${guaranteedRows.length} guaranteed + ${extraRows.length} extras = ${rowsToInsert.length} total (limit ${MAX_DRAFTS_PER_GENERATION})`,
       );
-      rowsToInsert = rowsToInsert.slice(0, MAX_DRAFTS_PER_GENERATION);
+    } else {
+      rowsToInsert = generatedRows;
+      if (rowsToInsert.length > MAX_DRAFTS_PER_GENERATION) {
+        console.warn(
+          `[Saturn] Capping generated drafts from ${rowsToInsert.length} to ${MAX_DRAFTS_PER_GENERATION} (per-run limit)`,
+        );
+        rowsToInsert = rowsToInsert.slice(0, MAX_DRAFTS_PER_GENERATION);
+      }
     }
+
     if (rowsToInsert.length) {
       await db.insert(generatedPosts).values(rowsToInsert);
     }
 
+    // Build per-asset coverage summary from the PERSISTED rows (post-truncation)
+    // so the report accurately reflects what actually landed in the database.
+    // Coverage is scoped per platform so callers can see which platform/asset
+    // pairs failed even if other platforms succeeded.
+    let assetCoverage: { coveredAssetIds: string[]; uncoveredAssetIds: string[]; platformGaps: { platform: string; assetId: string }[] } | undefined;
+    if (onePostPerAsset) {
+      const persistedAssetPlatformPairs = new Set<string>();
+      const persistedAssetIds = new Set<string>();
+      for (const row of rowsToInsert) {
+        if (row.sourceAssetId) {
+          persistedAssetIds.add(row.sourceAssetId);
+          persistedAssetPlatformPairs.add(`${row.sourceAssetId}:${row.platform}`);
+        }
+      }
+      const allPlatforms = [...new Set(platformTargets.map(a => a.platform))];
+      const allAssetIds = contextPools.map(p => p.assetId).filter((id): id is string => !!id);
+      const platformGaps: { platform: string; assetId: string }[] = [];
+      for (const assetId of allAssetIds) {
+        for (const platform of allPlatforms) {
+          if (!persistedAssetPlatformPairs.has(`${assetId}:${platform}`)) {
+            platformGaps.push({ platform, assetId });
+          }
+        }
+      }
+      assetCoverage = {
+        coveredAssetIds: allAssetIds.filter(id => persistedAssetIds.has(id)),
+        uncoveredAssetIds: allAssetIds.filter(id => !persistedAssetIds.has(id)),
+        platformGaps,
+      };
+    }
+
+    if (assetCoverage && assetCoverage.uncoveredAssetIds.length > 0) {
+      console.warn(
+        `[Saturn] One-post-per-asset: ${assetCoverage.uncoveredAssetIds.length} asset(s) received no persisted post — ` +
+        `IDs: ${assetCoverage.uncoveredAssetIds.join(", ")}`,
+      );
+    }
+    if (assetCoverage && assetCoverage.platformGaps.length > 0) {
+      console.warn(
+        `[Saturn] One-post-per-asset: ${assetCoverage.platformGaps.length} asset/platform gap(s) — ` +
+        assetCoverage.platformGaps.map(g => `${g.assetId}@${g.platform}`).join(", "),
+      );
+    }
+
     await db.update(scheduledJobRuns)
-      .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: rowsToInsert.length } })
+      .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: rowsToInsert.length, ...(assetCoverage ? { assetCoverage } : {}) } })
       .where(eq(scheduledJobRuns.id, jobId));
   } catch (err: any) {
     console.error("[Saturn] Post generation failed:", err.message, err.stack);
