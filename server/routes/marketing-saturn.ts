@@ -32,6 +32,7 @@ import {
   brandAssetProductTags,
   brandAssetSolutionAreas,
   marketingProductTags,
+  tenantFonts,
   solutionAreas,
   socialAccounts,
   campaigns,
@@ -95,7 +96,7 @@ import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv, isOrbitDirectPost } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
-import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons } from "../services/email-campaign-sender";
+import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons, CURATED_EMAIL_FONTS, buildFontStack, buildFontHeadCss } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
 
@@ -4269,6 +4270,40 @@ Return ONLY a valid JSON object (no markdown fences) with:
   // EMAIL GENERATION
   // ══════════════════════════════════════════════════════════
 
+  // ── Font options for the email composer ─────────────────────────────────
+  // Returns the curated font list plus the tenant's brand body font (if any)
+  // so the client can pre-select the right default.
+  app.get("/api/email/font-options", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    const ctx = await getRequestContext(req);
+    // Look up the tenant's brand body font from the brand kit (tenantFonts table).
+    const [bodyFont] = await db.select({ fontFamily: tenantFonts.fontFamily, name: tenantFonts.name })
+      .from(tenantFonts)
+      .where(and(
+        eq(tenantFonts.tenantDomain, ctx.tenantDomain),
+        eq(tenantFonts.fontUsage, "body"),
+      ))
+      .orderBy(tenantFonts.sortOrder)
+      .limit(1);
+    // Try to match the brand body font against a curated entry by label (CSS name).
+    // e.g. "Avenir Next LT Pro" → "AvenirNextLTPro".  If no match the raw CSS
+    // font-family string becomes the value key (treated as a pass-through in
+    // buildFontStack at send/export time).
+    const rawCssName = bodyFont?.fontFamily ?? null;
+    const curatedMatch = rawCssName
+      ? CURATED_EMAIL_FONTS.find(f => f.label.toLowerCase() === rawCssName.toLowerCase())
+      : null;
+    const brandBodyFont = curatedMatch ? curatedMatch.value : rawCssName;
+    const brandBodyFontLabel = bodyFont?.name ?? rawCssName;
+    const brandBodyFontIsCustom = rawCssName !== null && curatedMatch === null;
+    res.json({
+      fonts: CURATED_EMAIL_FONTS,
+      brandBodyFont,
+      brandBodyFontLabel,
+      brandBodyFontIsCustom,
+    });
+  });
+
   app.post("/api/email/generate", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     if (!await guardManualAction(req, res, "aiEmailGen")) return;
@@ -4685,7 +4720,7 @@ Structure your response using these exact delimiters:
   app.post("/api/email/saved", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { campaignId, subject, previewText, htmlBody, textBody, platform, tone, callToAction, recipientContext, subjectLineSuggestions, coachingTips, sourceAssetIds, scheduledAt } = req.body;
+    const { campaignId, subject, previewText, htmlBody, textBody, platform, tone, callToAction, recipientContext, subjectLineSuggestions, coachingTips, sourceAssetIds, scheduledAt, fontFamily } = req.body;
     if (!subject?.trim() || (!htmlBody?.trim() && !textBody?.trim())) {
       return res.status(400).json({ error: "subject and either htmlBody or textBody are required" });
     }
@@ -4700,6 +4735,8 @@ Structure your response using these exact delimiters:
         return res.status(400).json({ error: "Campaign not found" });
       }
     }
+    // Validate fontFamily against the curated list
+    const resolvedFont = CURATED_EMAIL_FONTS.find(f => f.value === fontFamily)?.value ?? null;
     const [row] = await db.insert(generatedEmails).values({
       id: randomUUID(),
       tenantDomain: ctx.tenantDomain,
@@ -4717,6 +4754,7 @@ Structure your response using these exact delimiters:
       coachingTips: coachingTips || null,
       sourceAssetIds: Array.isArray(sourceAssetIds) && sourceAssetIds.length > 0 ? sourceAssetIds : null,
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      fontFamily: resolvedFont,
       // Carry reusable section settings (About copy, blog/events descriptions
       // and links) forward from the most recently configured email so they
       // don't have to be retyped — item selections stay per-email.
@@ -4753,7 +4791,7 @@ Structure your response using these exact delimiters:
   app.patch("/api/email/saved/:id", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
-    const { subject, htmlBody, textBody, status, label, sourceAssetIds, scheduledAt } = req.body;
+    const { subject, htmlBody, textBody, status, label, sourceAssetIds, scheduledAt, fontFamily } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (subject !== undefined) updates.subject = subject;
     if (htmlBody !== undefined) updates.htmlBody = htmlBody;
@@ -4762,6 +4800,7 @@ Structure your response using these exact delimiters:
     if (label !== undefined) updates.label = label || null;
     if (sourceAssetIds !== undefined) updates.sourceAssetIds = Array.isArray(sourceAssetIds) && sourceAssetIds.length > 0 ? sourceAssetIds : null;
     if ("scheduledAt" in req.body) updates.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+    if (fontFamily !== undefined) updates.fontFamily = CURATED_EMAIL_FONTS.find(f => f.value === fontFamily)?.value ?? null;
     const [row] = await db.update(generatedEmails)
       .set(updates)
       .where(and(
@@ -5161,19 +5200,25 @@ Structure your response using these exact delimiters:
       mainBody = stripDuplicateAboutSection(mainBody, exportGeneralInfo.aboutTitle, exportTenant?.name);
     }
     let body = appendSectionsToBody(mainBody, freshSectionsHtml);
+    const exportBaseUrl = `${req.protocol}://${req.get("host")}`;
+    const emailFontFamily = (email as any).fontFamily as string | null | undefined;
+    const fontStack = buildFontStack(emailFontFamily);
     body = enforceMinimumFontSize(body);
-    body = normalizeFontFamily(body);
+    body = normalizeFontFamily(body, fontStack);
     // Exports are pasted into external editors (HubSpot/Wix) whose readers
     // fetch images from the public internet: publish private images and
     // absolutize relative srcs, then harden CTA button backgrounds — same
     // treatment the SendGrid send path applies.
     try {
-      const exportBaseUrl = `${req.protocol}://${req.get("host")}`;
       body = await prepareEmailImages(body, exportBaseUrl, ctx.tenantDomain);
     } catch (err) {
       console.warn("[export-html] image preparation failed; exporting original srcs:", err);
     }
     body = hardenCtaButtons(body);
+    // Build @font-face / @import CSS for the chosen body font so the full
+    // document export renders in Apple Mail, iOS Mail, etc. The font URLs must
+    // be absolute so email clients can fetch them from outside the app.
+    const fontHeadCss = buildFontHeadCss(emailFontFamily, exportBaseUrl);
     // HubSpot's HTML module rejects <html>/<head>/<body>, <style> blocks, and
     // even the tags inside MSO conditional comments (it flags a "missing </td>").
     // hubspotFragment is the paste-safe variant: bare fragment, inline styles
@@ -5182,7 +5227,7 @@ Structure your response using these exact delimiters:
       .replace(/<!--\[if [^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .trim();
-    res.json({ html: wrapResponsiveDocument(body), fragment: body, hubspotFragment });
+    res.json({ html: wrapResponsiveDocument(body, fontHeadCss), fragment: body, hubspotFragment });
   });
 
   app.delete("/api/email/saved/:id", async (req, res) => {

@@ -112,6 +112,14 @@ vi.mock("../../services/email-campaign-sender", () => ({
   previewListDeliverability: vi.fn(),
   verifyUnsubscribeToken: vi.fn().mockReturnValue(null),
   verifySendGridWebhook: vi.fn().mockReturnValue({ ok: true }),
+  CURATED_EMAIL_FONTS: [],
+  buildFontStack: vi.fn(() => "Arial,Helvetica,sans-serif"),
+  buildFontHeadCss: vi.fn(() => ""),
+  enforceMinimumFontSize: vi.fn((html: string) => html),
+  normalizeFontFamily: vi.fn((html: string) => html),
+  wrapResponsiveDocument: vi.fn((html: string) => html),
+  prepareEmailImages: vi.fn(async (html: string) => html),
+  hardenCtaButtons: vi.fn((html: string) => html),
 }));
 vi.mock("../../services/hubspot-timeline", () => ({
   pushEmailTimelineEvent: vi.fn(),

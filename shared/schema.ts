@@ -3334,6 +3334,9 @@ export const generatedEmails = pgTable("generated_emails", {
   abEvaluationHours: integer("ab_evaluation_hours").notNull().default(24),
   abWinnerVariantLabel: text("ab_winner_variant_label"), // "A" | "B" once declared
   abWinnerDeclaredAt: timestamp("ab_winner_declared_at"),
+  // Per-email body font chosen in the composer. Stores the curated font value key
+  // (e.g. "MetroNova", "AvenirNextLTPro", "Arial"). NULL = default Arial stack.
+  fontFamily: text("font_family"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

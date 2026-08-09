@@ -251,6 +251,94 @@ export function injectFooter(html: string, unsubUrl: string, prefsUrl: string, m
  * otherwise mix Georgia/'Helvetica Neue'/system stacks between rows.
  */
 export const EMAIL_FONT_STACK = "Arial,Helvetica,sans-serif";
+
+/**
+ * Curated list of email-safe fonts available in the email composer.
+ * The first two are always-present Synozur brand fonts (custom TTFs served
+ * from /fonts/). The rest are system or Google Fonts with safe fallback stacks.
+ */
+export const CURATED_EMAIL_FONTS: ReadonlyArray<{
+  label: string;
+  value: string;
+  stack: string;
+  isCustom?: true;
+  googleFont?: string;
+}> = [
+  { label: "Avenir Next LT Pro", value: "AvenirNextLTPro", stack: '"Avenir Next LT Pro","Avenir Next","Century Gothic",Arial,sans-serif', isCustom: true },
+  { label: "MetroNova",          value: "MetroNova",       stack: '"MetroNova","Gill Sans","Gill Sans MT",Verdana,sans-serif',               isCustom: true },
+  { label: "Arial",              value: "Arial",           stack: "Arial,Helvetica,sans-serif" },
+  { label: "Georgia",            value: "Georgia",         stack: "Georgia,'Times New Roman',serif" },
+  { label: "Trebuchet MS",       value: "TrebuchetMS",     stack: "'Trebuchet MS',Helvetica,sans-serif" },
+  { label: "Verdana",            value: "Verdana",         stack: "Verdana,Geneva,sans-serif" },
+  { label: "Tahoma",             value: "Tahoma",          stack: "Tahoma,Geneva,sans-serif" },
+  { label: "Times New Roman",    value: "TimesNewRoman",   stack: "'Times New Roman',Times,serif" },
+  { label: "Open Sans",          value: "OpenSans",        stack: "'Open Sans',Arial,sans-serif",  googleFont: "Open+Sans:wght@400;600;700" },
+  { label: "Lato",               value: "Lato",            stack: "Lato,Arial,sans-serif",          googleFont: "Lato:wght@400;700" },
+  { label: "Montserrat",         value: "Montserrat",      stack: "Montserrat,Arial,sans-serif",    googleFont: "Montserrat:wght@400;600;700" },
+];
+
+/** Resolve a curated font value key → its full CSS fallback stack.
+ *
+ * If `fontValue` matches a curated entry's value key, return the pre-built
+ * fallback stack.  Otherwise treat `fontValue` as a raw CSS font-family name
+ * (e.g. from the tenant brand kit) and build a minimal stack from it so the
+ * font still applies — this covers brand fonts like "Inter", "Poppins", etc.
+ * that are not in the curated list.
+ */
+export function buildFontStack(fontValue: string | null | undefined): string {
+  if (!fontValue) return EMAIL_FONT_STACK;
+  const curated = CURATED_EMAIL_FONTS.find(f => f.value === fontValue);
+  if (curated) return curated.stack;
+  // Raw CSS font-family string from the tenant brand kit.  Quote it if needed
+  // and append a safe generic fallback.
+  const name = fontValue.trim();
+  const quoted = /[,"]/.test(name) ? name : `"${name}"`;
+  return `${quoted},Arial,Helvetica,sans-serif`;
+}
+
+/**
+ * Return CSS to inject in <head> for the chosen font.
+ * - Custom fonts (Avenir, MetroNova): @font-face rules pointing to absolute TTF URLs.
+ * - Google Fonts: @import url(…) rule.
+ * - System fonts: empty string (nothing to load).
+ * `baseUrl` must be absolute (e.g. "https://app.example.com") so email clients
+ * can fetch the font files from outside the sending app.
+ */
+export function buildFontHeadCss(fontValue: string | null | undefined, baseUrl = ""): string {
+  const base = baseUrl.replace(/\/$/, "");
+  if (fontValue === "AvenirNextLTPro") {
+    return [
+      `@font-face{font-family:"Avenir Next LT Pro";font-weight:300;font-style:normal;src:url('${base}/fonts/AvenirNextLTPro-Light.ttf') format('truetype')}`,
+      `@font-face{font-family:"Avenir Next LT Pro";font-weight:400;font-style:normal;src:url('${base}/fonts/AvenirNextLTPro-Regular.ttf') format('truetype')}`,
+      `@font-face{font-family:"Avenir Next LT Pro";font-weight:400;font-style:italic;src:url('${base}/fonts/AvenirNextLTPro-Italic.ttf') format('truetype')}`,
+      `@font-face{font-family:"Avenir Next LT Pro";font-weight:500;font-style:normal;src:url('${base}/fonts/AvenirNextLTPro-Medium.ttf') format('truetype')}`,
+      `@font-face{font-family:"Avenir Next LT Pro";font-weight:700;font-style:normal;src:url('${base}/fonts/AvenirNextLTPro-Bold.ttf') format('truetype')}`,
+      `@font-face{font-family:"Avenir Next LT Pro";font-weight:700;font-style:italic;src:url('${base}/fonts/AvenirNextLTPro-BoldItalic.ttf') format('truetype')}`,
+    ].join("\n");
+  }
+  if (fontValue === "MetroNova") {
+    return [
+      `@font-face{font-family:"MetroNova";font-weight:100;font-style:normal;src:url('${base}/fonts/MetroNovaThin.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:100;font-style:italic;src:url('${base}/fonts/MetroNovaThinItalic.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:300;font-style:normal;src:url('${base}/fonts/MetroNovaLight.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:300;font-style:italic;src:url('${base}/fonts/MetroNovaLightItalic.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:400;font-style:normal;src:url('${base}/fonts/MetroNovaRegular.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:400;font-style:italic;src:url('${base}/fonts/MetroNovaItalic.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:500;font-style:normal;src:url('${base}/fonts/MetroNovaMedium.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:500;font-style:italic;src:url('${base}/fonts/MetroNovaMediumItalic.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:700;font-style:normal;src:url('${base}/fonts/MetroNovaBold.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:700;font-style:italic;src:url('${base}/fonts/MetroNovaBoldItalic.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:900;font-style:normal;src:url('${base}/fonts/MetroNovaBlack.ttf') format('truetype')}`,
+      `@font-face{font-family:"MetroNova";font-weight:900;font-style:italic;src:url('${base}/fonts/MetroNovaBlackItalic.ttf') format('truetype')}`,
+    ].join("\n");
+  }
+  const entry = CURATED_EMAIL_FONTS.find(f => f.value === fontValue);
+  if (entry && entry.googleFont) {
+    return `@import url('https://fonts.googleapis.com/css2?family=${entry.googleFont}&display=swap');`;
+  }
+  return "";
+}
+
 export function normalizeFontFamily(html: string, stack = EMAIL_FONT_STACK): string {
   // Font names may be quoted with HTML entities inside style attributes
   // (font-family: &quot;Helvetica Neue&quot;, sans-serif) — treat those
@@ -275,7 +363,12 @@ export function enforceMinimumFontSize(html: string, minPx = 16): string {
   return result;
 }
 
-export function wrapResponsiveDocument(html: string): string {
+/**
+ * Wrap a raw HTML fragment in a full responsive email document.
+ * `fontHeadCss` is injected at the top of the <style> block and should
+ * contain @font-face or @import rules for the chosen body font.
+ */
+export function wrapResponsiveDocument(html: string, fontHeadCss = ""): string {
   // Already a full document — just ensure a viewport meta tag is present.
   if (/<!DOCTYPE/i.test(html)) {
     if (!/<meta[^>]*viewport/i.test(html)) {
@@ -298,7 +391,7 @@ export function wrapResponsiveDocument(html: string): string {
   <meta name="supported-color-schemes" content="light">
   <title></title>
   <style type="text/css">
-    :root { color-scheme: light; supported-color-schemes: light; }
+    ${fontHeadCss ? fontHeadCss + "\n    " : ""}:root { color-scheme: light; supported-color-schemes: light; }
     body { margin:0; padding:0; background:#ffffff; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
     img { border:0; outline:none; }
     table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }
@@ -1312,7 +1405,7 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     }
     effectiveHtmlBody = appendSectionsToBody(effectiveHtmlBody, sectionsHtml);
     effectiveHtmlBody = enforceMinimumFontSize(effectiveHtmlBody);
-    effectiveHtmlBody = normalizeFontFamily(effectiveHtmlBody);
+    effectiveHtmlBody = normalizeFontFamily(effectiveHtmlBody, buildFontStack((email as any).fontFamily));
     // Recipients fetch images from outside the app: publish private object
     // images and absolutize relative srcs, then harden CTA button styling.
     effectiveHtmlBody = await prepareEmailImages(effectiveHtmlBody, baseUrl, tenantDomain);
@@ -1416,7 +1509,8 @@ async function deliverEmailSend(opts: DispatchSendOptions, existingSendId?: stri
     // all — let the email client fall back to the text part instead of
     // showing a document that contains only the unsubscribe footer.
     const htmlWithFooter = personalizedHtml ? injectFooter(personalizedHtml, unsubUrl, prefsUrl, tenantMailingAddress, tenantCompanyName) : null;
-    const html = htmlWithFooter ? wrapResponsiveDocument(htmlWithFooter) : undefined;
+    const fontHeadCss = buildFontHeadCss((email as any).fontFamily, baseUrl);
+    const html = htmlWithFooter ? wrapResponsiveDocument(htmlWithFooter, fontHeadCss) : undefined;
     const text = personalizedText
       ? injectTextFooter(personalizedText, unsubUrl, prefsUrl, tenantMailingAddress, tenantCompanyName)
       : `${tenantMailingAddress ? `${tenantCompanyName ? tenantCompanyName + " · " : ""}${tenantMailingAddress.replace(/\n/g, ", ")}\n` : ""}Unsubscribe: ${unsubUrl}\nManage preferences: ${prefsUrl}`;

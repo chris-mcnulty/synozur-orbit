@@ -108,6 +108,7 @@ interface SavedEmail {
   abEvaluationHours?: number;
   abWinnerVariantLabel?: string | null;
   abWinnerDeclaredAt?: string | null;
+  fontFamily?: string | null;
 }
 
 interface AbTestResults {
@@ -402,6 +403,7 @@ export default function EmailNewslettersPage() {
 
   const [emailPlatform, setEmailPlatform] = useState("outlook");
   const [emailTone, setEmailTone] = useState("professional");
+  const [emailFontFamily, setEmailFontFamily] = useState<string>("Arial"); // default until brand font loaded
   const [emailCallToAction, setEmailCallToAction] = useState("");
   const [emailRecipientContext, setEmailRecipientContext] = useState("");
   const [wrapEmailLinks, setWrapEmailLinks] = useState(false);
@@ -433,6 +435,7 @@ export default function EmailNewslettersPage() {
   const [editingEmail, setEditingEmail] = useState<SavedEmail | null>(null);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [editFontFamily, setEditFontFamily] = useState<string>("Arial");
   const [editSourceAssetIds, setEditSourceAssetIds] = useState<string[]>([]);
   const [editAssetSearch, setEditAssetSearch] = useState("");
   const [editMode, setEditMode] = useState<"visual" | "source">("visual");
@@ -477,6 +480,43 @@ export default function EmailNewslettersPage() {
   const isAllowed = tenantInfo?.features?.emailNewsletters === true;
   const directDeliveryEnabled = tenantInfo?.features?.directEmailDelivery === true;
   const hasMailingAddress = !!(tenantInfo?.mailingAddress?.trim());
+
+  // Font options from the curated list + the tenant's brand body font default.
+  const { data: fontOptions } = useQuery<{
+    fonts: Array<{ label: string; value: string; isCustom?: boolean; googleFont?: string }>;
+    brandBodyFont: string | null;
+    brandBodyFontLabel: string | null;
+    brandBodyFontIsCustom: boolean;
+  }>({
+    queryKey: ["/api/email/font-options"],
+    queryFn: async () => {
+      const r = await fetch("/api/email/font-options", { credentials: "include" });
+      return r.ok ? r.json() : { fonts: [], brandBodyFont: null, brandBodyFontLabel: null, brandBodyFontIsCustom: false };
+    },
+    enabled: isAllowed,
+  });
+
+  // Build the effective font list: curated list + tenant brand font prepended if
+  // it isn't already in the curated list (brandBodyFontIsCustom === true).
+  const effectiveFontList = useMemo(() => {
+    const base = fontOptions?.fonts ?? [];
+    if (fontOptions?.brandBodyFontIsCustom && fontOptions.brandBodyFont) {
+      return [
+        { value: fontOptions.brandBodyFont, label: `${fontOptions.brandBodyFontLabel ?? fontOptions.brandBodyFont} (Brand)`, isBrandCustom: true },
+        ...base,
+      ];
+    }
+    return base;
+  }, [fontOptions]);
+
+  // Auto-select the tenant brand body font the first time options load —
+  // but only if the user hasn't manually changed the selector yet.
+  useEffect(() => {
+    if (fontOptions?.brandBodyFont && emailFontFamily === "Arial") {
+      setEmailFontFamily(fontOptions.brandBodyFont);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontOptions?.brandBodyFont]);
 
   const { data: hubspotStatus } = useQuery<{ connection?: { activeProspectSuppressionDefault?: string } }>({
     queryKey: ["/api/integrations/hubspot/status"],
@@ -717,8 +757,8 @@ export default function EmailNewslettersPage() {
   }, [editingEmail?.id, editMode, editBody]);
 
   const updateEmailMutation = useMutation({
-    mutationFn: async ({ emailId, subject, body, isHtml, sourceAssetIds }: { emailId: string; subject: string; body: string; isHtml: boolean; sourceAssetIds: string[] }) => {
-      const payload: Record<string, unknown> = { subject, sourceAssetIds };
+    mutationFn: async ({ emailId, subject, body, isHtml, sourceAssetIds, fontFamily }: { emailId: string; subject: string; body: string; isHtml: boolean; sourceAssetIds: string[]; fontFamily?: string | null }) => {
+      const payload: Record<string, unknown> = { subject, sourceAssetIds, fontFamily: fontFamily || null };
       if (isHtml) {
         payload.htmlBody = body;
       } else {
@@ -781,6 +821,7 @@ export default function EmailNewslettersPage() {
           recipientContext: emailRecipientContext || undefined,
           personaIds: selectedPersonaIds.length > 0 ? selectedPersonaIds : undefined,
           wrapLinks: wrapEmailLinks,
+          fontFamily: emailFontFamily !== "Arial" ? emailFontFamily : undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -819,6 +860,7 @@ export default function EmailNewslettersPage() {
           subjectLineSuggestions: previewEmail.subjectLineSuggestions,
           coachingTips: previewEmail.coachingTips,
           sourceAssetIds: selectedAssetIds.length > 0 ? selectedAssetIds : undefined,
+          fontFamily: emailFontFamily || undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -834,6 +876,7 @@ export default function EmailNewslettersPage() {
         setEditingEmail(saved);
         setEditSubject(saved.subject);
         setEditBody(saved.htmlBody || "");
+        setEditFontFamily(saved.fontFamily || "Arial");
         setEditSourceAssetIds(Array.isArray(saved.sourceAssetIds) ? saved.sourceAssetIds : []);
         setEditAssetSearch("");
         toast({ title: "Email saved", description: "Add sections like case studies and upcoming events below." });
@@ -1149,6 +1192,36 @@ export default function EmailNewslettersPage() {
                 </Select>
               </div>
             </div>
+            {/* Font picker — only visible for HTML platforms */}
+            {emailPlatform === "hubspot-marketing" && (
+              <div>
+                <label className="text-sm font-medium">Body Font</label>
+                <Select value={emailFontFamily} onValueChange={setEmailFontFamily}>
+                  <SelectTrigger data-testid="select-email-font">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {effectiveFontList.map(f => (
+                      <SelectItem key={f.value} value={f.value}>
+                        {f.label}
+                        {(f as any).isCustom && (
+                          <span className="ml-1.5 text-[10px] text-muted-foreground font-normal">Brand</span>
+                        )}
+                        {(f as any).isBrandCustom && (
+                          <span className="ml-1.5 text-[10px] text-primary font-normal">✓ Brand kit</span>
+                        )}
+                        {!(f as any).isBrandCustom && fontOptions?.brandBodyFont === f.value && (
+                          <span className="ml-1.5 text-[10px] text-primary font-normal">✓ Brand kit default</span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Applied throughout the rendered email. Custom brand fonts (Avenir, MetroNova) load in Apple Mail and iOS.
+                </p>
+              </div>
+            )}
             <div>
               <label className="text-sm font-medium">Call to Action (optional)</label>
               <Input
@@ -1564,6 +1637,7 @@ export default function EmailNewslettersPage() {
                           setEditingEmail(email);
                           setEditSubject(email.subject);
                           setEditBody(email.platform === "hubspot-marketing" ? email.htmlBody : (email.textBody || email.htmlBody));
+                          setEditFontFamily(email.fontFamily || "Arial");
                           setEditSourceAssetIds(Array.isArray(email.sourceAssetIds) ? email.sourceAssetIds : []);
                           setEditAssetSearch("");
                           // Load A/B test config
@@ -1633,6 +1707,32 @@ export default function EmailNewslettersPage() {
                 <Label>Subject</Label>
                 <Input value={editSubject} onChange={e => setEditSubject(e.target.value)} data-testid="input-edit-email-subject" />
               </div>
+              {editingEmail?.platform === "hubspot-marketing" && (
+                <div>
+                  <Label>Body Font</Label>
+                  <Select value={editFontFamily} onValueChange={setEditFontFamily}>
+                    <SelectTrigger data-testid="select-edit-email-font">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {effectiveFontList.map(f => (
+                        <SelectItem key={f.value} value={f.value}>
+                          {f.label}
+                          {(f as any).isCustom && (
+                            <span className="ml-1.5 text-[10px] text-muted-foreground font-normal">Brand</span>
+                          )}
+                          {(f as any).isBrandCustom && (
+                            <span className="ml-1.5 text-[10px] text-primary font-normal">✓ Brand kit</span>
+                          )}
+                          {!(f as any).isBrandCustom && fontOptions?.brandBodyFont === f.value && (
+                            <span className="ml-1.5 text-[10px] text-primary font-normal">✓ Brand kit default</span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 {editingEmail?.platform === "hubspot-marketing" ? (
                   <div className="space-y-2">
@@ -1902,6 +2002,7 @@ export default function EmailNewslettersPage() {
                       body: bodyToSave,
                       isHtml: editingEmail.platform === "hubspot-marketing",
                       sourceAssetIds: editSourceAssetIds,
+                      fontFamily: editFontFamily || null,
                     });
                   }
                 }}
@@ -2519,6 +2620,7 @@ export default function EmailNewslettersPage() {
                       setEditingEmail(viewingEmail);
                       setEditSubject(viewingEmail.subject);
                       setEditBody(viewingEmail.platform === "hubspot-marketing" ? viewingEmail.htmlBody : (viewingEmail.textBody || viewingEmail.htmlBody));
+                      setEditFontFamily(viewingEmail.fontFamily || "Arial");
                       setEditSourceAssetIds(Array.isArray(viewingEmail.sourceAssetIds) ? viewingEmail.sourceAssetIds : []);
                       setEditAssetSearch("");
                       setViewingEmail(null);
