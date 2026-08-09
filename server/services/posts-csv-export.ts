@@ -326,6 +326,15 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       break;
     }
     default: {
+      // SocialPilot bulk CSV columns:
+      //   Content, Image URL, Scheduled Date, Account ID, Account Name,
+      //   First Comment, Tags (internal SP labels), Link URL
+      //
+      // For Twitter: inline hashtags + URL in the content body (character-count aware).
+      // For all other platforms (LinkedIn, Facebook, Instagram, …): keep the post
+      // body clean and put the hashtag block in the "First Comment" field — this is
+      // how SocialPilot posts a first comment containing the hashtags, which is
+      // standard practice for LinkedIn/Instagram engagement.
       lines = [];
       for (const post of sortedPosts) {
         let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
@@ -335,19 +344,25 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const sourceUrl = post.sourceUrl || "";
 
         let fullContent: string;
+        let firstComment: string;
         if (isTwitterPost(post)) {
+          // Twitter: hashtags + source URL inline in the post body.
           fullContent = buildTwitterContent(baseContent, post.hashtags as string[], sourceUrl);
+          firstComment = "";
         } else {
+          // LinkedIn / Facebook / Instagram etc.: clean body, hashtags in first comment.
           const contentParts = [baseContent];
-          if (hashtagLine) contentParts.push(hashtagLine);
           if (sourceUrl) contentParts.push(sourceUrl);
           fullContent = contentParts.join("\n");
+          firstComment = hashtagLine; // e.g. "#Cascadia.Oceanic #Photography"
         }
 
         const imageUrl = getPostImageUrl(post);
         const dateStr = fmtSocialPilotDate(sd);
         const platformAccountId = getAccountId(post);
         const accountName = getAccountName(post);
+        // Tags column = SocialPilot's internal label field (semicolon-separated,
+        // no # prefix). Keep populated so SP's library filtering still works.
         const tags = buildTagsSemicolon(post.hashtags as string[]);
 
         const linkUrlValue = post.linkUrl || "";
@@ -355,7 +370,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
           ? (post.linkLabel ? `${post.linkLabel} | ${linkUrlValue}` : linkUrlValue)
           : "";
 
-        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},${escCsv(accountName)},"",${escCsv(tags)},${escCsv(linkCsvValue)}`);
+        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},${escCsv(accountName)},${escCsv(firstComment)},${escCsv(tags)},${escCsv(linkCsvValue)}`);
       }
       break;
     }
