@@ -93,7 +93,7 @@ import { generateBrandedPostGraphic } from "../services/conference-promotion-ser
 import { resolveBrandAssetUrl } from "../services/brand-asset-url";
 import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
-import { buildPostsCsv } from "../services/posts-csv-export";
+import { buildPostsCsv, isOrbitDirectPost } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
 import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
@@ -4105,23 +4105,13 @@ Return ONLY a valid JSON object (no markdown fences) with:
           notInArray(generatedPosts.status, ["deleted", "rejected", "exported", "scheduled_external", "published"]),
         ));
 
-      // Only include CSV-designated posts in the export. Orbit-scheduled posts
-      // (deliveryMode = null) are published automatically by Orbit and must not
-      // be sent to an external scheduler. If NO posts have been assigned a mode
-      // yet (legacy batches), fall back to including all so nothing breaks.
-      const hasCsvPosts = allPosts.some(p => p.deliveryMode === "csv");
-      const exportablePosts = hasCsvPosts ? allPosts.filter(p => p.deliveryMode === "csv") : allPosts;
-      const orbitCount = hasCsvPosts ? allPosts.filter(p => !p.deliveryMode).length : 0;
-
-      const now = new Date();
-      const dated = exportablePosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
-      const undated = exportablePosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
-
+      // Load campaign-account auto-publish state so we can correctly classify
+      // deliveryMode=null posts as Orbit-direct vs. needing an external scheduler.
       const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
         .where(eq(campaignSocialAccounts.campaignId, campaign.id));
       const campaignAccountIds = campaignAccountLinks.map(l => l.socialAccountId);
       const allAccountIds = Array.from(new Set([
-        ...exportablePosts.map(p => p.socialAccountId).filter(Boolean),
+        ...allPosts.map(p => p.socialAccountId).filter(Boolean),
         ...campaignAccountIds,
       ])) as string[];
       const accountMap = new Map<string, any>();
@@ -4129,6 +4119,20 @@ Return ONLY a valid JSON object (no markdown fences) with:
         const accts = await db.select().from(socialAccounts).where(inArray(socialAccounts.id, allAccountIds));
         for (const a of accts) accountMap.set(a.id, a);
       }
+
+      // Build socialAccountId → autoPublish from campaign links.
+      // publishingPaused is intentionally excluded — see isOrbitDirectPost docs.
+      const autoPublishMap = new Map<string, boolean>();
+      for (const link of campaignAccountLinks) {
+        autoPublishMap.set(link.socialAccountId, link.autoPublish);
+      }
+
+      const exportablePosts = allPosts.filter(p => !isOrbitDirectPost(p, autoPublishMap));
+      const orbitCount = allPosts.filter(p => isOrbitDirectPost(p, autoPublishMap)).length;
+
+      const now = new Date();
+      const dated = exportablePosts.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now);
+      const undated = exportablePosts.filter(p => !p.scheduledDate || new Date(p.scheduledDate) < now);
       const platformAccountFallback = new Map<string, string>();
       for (const link of campaignAccountLinks) {
         const acct = accountMap.get(link.socialAccountId);
@@ -4194,19 +4198,23 @@ Return ONLY a valid JSON object (no markdown fences) with:
         notInArray(generatedPosts.status, excludedStatuses),
       ));
 
-    // Only export CSV-designated posts. Orbit posts (deliveryMode = null) are
-    // published automatically by Orbit and must not go to an external scheduler.
-    // If no delivery modes are set at all (legacy batches), include everything.
-    const hasCsvPosts = allPosts.some(p => p.deliveryMode === "csv");
-    const csvEligible = hasCsvPosts ? allPosts.filter(p => p.deliveryMode === "csv") : allPosts;
+    // Load campaign-account auto-publish state to classify deliveryMode=null posts.
+    const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
+      .where(eq(campaignSocialAccounts.campaignId, campaign.id));
+
+    // Build socialAccountId → autoPublish from campaign links.
+    // publishingPaused is intentionally excluded — see isOrbitDirectPost docs.
+    const autoPublishMap = new Map<string, boolean>();
+    for (const link of campaignAccountLinks) {
+      autoPublishMap.set(link.socialAccountId, link.autoPublish);
+    }
+
+    const csvEligible = allPosts.filter(p => !isOrbitDirectPost(p, autoPublishMap));
 
     const now_filter = new Date();
     const posts = excludeUndated
       ? csvEligible.filter(p => p.scheduledDate && new Date(p.scheduledDate) >= now_filter)
       : csvEligible;
-
-    const campaignAccountLinks = await db.select().from(campaignSocialAccounts)
-      .where(eq(campaignSocialAccounts.campaignId, campaign.id));
 
     const csvFormat = (req.query.format as string || "socialpilot").toLowerCase();
     const clientTzOffset = parseInt(req.query.tzOffset as string || "0", 10);

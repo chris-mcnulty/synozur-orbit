@@ -36,6 +36,35 @@ export interface BuildPostsCsvOptions {
   imageBaseUrl?: string;
 }
 
+/**
+ * Returns true when a post should be published by Orbit's native publisher
+ * rather than exported to an external scheduler CSV.
+ *
+ * Classification rules (in priority order):
+ *   1. deliveryMode="csv"  → always CSV (explicit override), never Orbit-direct
+ *   2. deliveryMode=null + campaign-account link has autoPublish=true → Orbit-direct
+ *   3. deliveryMode=null + autoPublish=false (or no link found)       → CSV eligible
+ *
+ * publishingPaused is intentionally NOT checked here. It is a temporary worker
+ * gate that prevents Orbit from sending the post *right now* — it does not
+ * change who owns the post. Exporting paused auto-publish posts to CSV would
+ * cause duplicate delivery when publishing is resumed.
+ *
+ * @param post            A generatedPost row (needs .deliveryMode, .socialAccountId)
+ * @param autoPublishMap  socialAccountId → campaign autoPublish flag
+ */
+export function isOrbitDirectPost(
+  post: { deliveryMode?: string | null; socialAccountId?: string | null },
+  autoPublishMap: Map<string, boolean>,
+): boolean {
+  if (post.deliveryMode === "csv") return false;
+  if (!post.deliveryMode && post.socialAccountId) {
+    const autoPublish = autoPublishMap.get(post.socialAccountId);
+    if (autoPublish === true) return true;
+  }
+  return false;
+}
+
 export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string> {
   const { posts, tenantDomain, tzOffset } = opts;
   const format = (opts.format || "socialpilot").toLowerCase();
