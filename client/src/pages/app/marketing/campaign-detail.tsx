@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { rollupPosts, batchSourceOf } from "@shared/social-rollup";
+import { deriveBulkDeliveryScope, postPassesScopeFilters as _postPassesScopeFilters } from "@/lib/bulk-delivery-scope";
 import { OptimizedThumbnail, thumbnailUrl, buildSrcSet } from "@/components/ui/optimized-thumbnail";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -377,20 +378,10 @@ export default function CampaignDetailPage() {
   // Shared platform/lifecycle/date-range predicate for the Social Posts tab —
   // used by the visible-post list AND "Select all visible" so bulk edits
   // operate on exactly what the user is looking at.
-  const postPassesScopeFilters = (p: { platform: string; status: string; publishedAt?: string; scheduledDate?: string }) => {
-    if (postPlatformFilter !== "all" && p.platform !== postPlatformFilter) return false;
-    const completed = !!p.publishedAt || ["published", "posted", "delivered", "exported", "scheduled_external"].includes(p.status);
-    if (postTimeFilter === "pending" && completed) return false;
-    if (postTimeFilter === "completed" && !completed) return false;
-    if (postDateFrom || postDateTo) {
-      if (!p.scheduledDate) return false;
-      // Compare on date-only keys to avoid timezone drift.
-      const day = p.scheduledDate.slice(0, 10);
-      if (postDateFrom && day < postDateFrom) return false;
-      if (postDateTo && day > postDateTo) return false;
-    }
-    return true;
-  };
+  // Delegates to the pure utility in @/lib/bulk-delivery-scope so the logic
+  // can be unit-tested without mounting the full component.
+  const postPassesScopeFilters = (p: { platform: string; status: string; publishedAt?: string; scheduledDate?: string }) =>
+    _postPassesScopeFilters(p, { postPlatformFilter, postTimeFilter, postDateFrom, postDateTo });
   const [manualPostedAtMap, setManualPostedAtMap] = useState<Record<string, string>>({});
   // WS4: when drilling into one collapsed social batch (its generation run,
   // repurpose group, or event); null shows the batch overview.
@@ -2279,26 +2270,25 @@ export default function CampaignDetailPage() {
     );
   }
 
-  // Effective scope for the bulk Orbit / CSV delivery-mode buttons.
+  // Effective scope for the bulk Orbit / CSV delivery-mode buttons and the
+  // Approve All / Reject All actions.
   // • If posts are individually selected, use exactly those.
   // • Otherwise, use every post that matches the current filters
   //   (same predicate as "Select all visible") so the buttons act on
   //   what the user can see — not silently on the whole campaign.
-  const _bulkFilteredIds = postSelectedIds.size > 0
-    ? Array.from(postSelectedIds)
-    : posts.filter(p => {
-        const src = batchSourceOf(p);
-        const isBatched = src != null && batchKeySet.has(src);
-        if (batchFilter) { if (src !== batchFilter) return false; }
-        else if (isBatched) return false;
-        if (postAccountFilter !== "all" && p.socialAccountId !== postAccountFilter) return false;
-        if (!postPassesScopeFilters(p)) return false;
-        if (postFilter === "all") return p.status !== "deleted";
-        if (postFilter === "active") return p.status !== "deleted" && p.status !== "rejected" && p.status !== "archived";
-        if (postFilter === "missing_image") return p.status !== "deleted" && !p.overrideImageUrl && !p.overrideBrandAssetId;
-        return p.status === postFilter;
-      }).map(p => p.id);
-  const bulkDeliveryScope: string[] = _bulkFilteredIds;
+  // Delegates to the pure utility in @/lib/bulk-delivery-scope (unit-tested).
+  const bulkDeliveryScope: string[] = deriveBulkDeliveryScope(posts, postSelectedIds, {
+    postFilter,
+    postAccountFilter,
+    postPlatformFilter,
+    postTimeFilter,
+    postDateFrom,
+    postDateTo,
+    batchFilter,
+    batchKeySet,
+  });
+  // Alias used by Approve All / Reject All sub-filters below.
+  const _bulkFilteredIds = bulkDeliveryScope;
 
   // Approve All / Reject All are also scoped to the filtered-visible posts
   // (or selected posts when a selection is active), not the whole campaign.
