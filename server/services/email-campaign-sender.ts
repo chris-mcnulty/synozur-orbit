@@ -376,10 +376,53 @@ export function buildFontHeadCss(fontValue: string | null | undefined, baseUrl =
 }
 
 export function normalizeFontFamily(html: string, stack = EMAIL_FONT_STACK): string {
-  // Font names may be quoted with HTML entities inside style attributes
-  // (font-family: &quot;Helvetica Neue&quot;, sans-serif) — treat those
-  // entities as part of the value so their semicolons don't truncate the match.
-  return html.replace(/font-family:\s*(?:&quot;|&#3[49];|[^;"'>])+/gi, `font-family:${stack}`);
+  // Apply font-family rewrites ONLY inside CSS contexts (style attributes and
+  // <style> blocks) so that prose text nodes that mention "font-family:" are
+  // never modified and tag markup is never consumed by accident.
+  //
+  // Inside the extracted CSS the inner regex handles:
+  //  - literal quoted names:        "Helvetica Neue", 'Helvetica Neue'
+  //  - HTML-entity quoted names:    &quot;Helvetica Neue&quot;
+  //                                 &#34;Helvetica Neue&#34; / &#39;…&#39;
+  //  - unquoted names:              Arial, sans-serif
+  // and stops at the CSS value terminators ; { }
+  //
+  // IMPORTANT: curated stacks such as "MetroNova",Arial contain literal `"`
+  // characters. When written into a double-quoted HTML attribute those `"` chars
+  // would terminate the attribute and produce invalid HTML. For double-quoted
+  // attributes the stack is therefore entity-encoded (`"` → `&quot;`) before
+  // substitution; single-quoted attributes and <style> blocks use the raw stack.
+  const FONT_RE =
+    /font-family:\s*(?:"[^"]*"|'[^']*'|&quot;(?:(?!&quot;)[\s\S])*&quot;|&#34;(?:(?!&#34;)[\s\S])*&#34;|&#39;(?:(?!&#39;)[\s\S])*&#39;|[^;{}"'])+/gi;
+
+  function rewriteInCss(css: string, replacement: string): string {
+    return css.replace(FONT_RE, `font-family:${replacement}`);
+  }
+
+  // Stack variants safe for injection into each HTML attribute quote style.
+  // Curated stacks can contain both `"` (e.g. "MetroNova") and `'` (e.g. 'Trebuchet MS')
+  // — injecting the raw stack into a matching-quoted attribute terminates the attribute early.
+  const stackForDoubleQuoted = stack.replace(/"/g, "&quot;");
+  const stackForSingleQuoted = stack.replace(/'/g, "&#39;");
+
+  // Pass 1a — double-quoted style attributes
+  let result = html.replace(
+    /(\bstyle\s*=\s*")([^"]*?)"/gi,
+    (_, prefix, value) => `${prefix}${rewriteInCss(value, stackForDoubleQuoted)}"`,
+  );
+  // Pass 1b — single-quoted style attributes
+  result = result.replace(
+    /(\bstyle\s*=\s*')([^']*?)'/gi,
+    (_, prefix, value) => `${prefix}${rewriteInCss(value, stackForSingleQuoted)}'`,
+  );
+
+  // Pass 2 — <style> blocks (pure CSS — raw stack with literal quotes is correct)
+  result = result.replace(
+    /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi,
+    (_, open, css, close) => `${open}${rewriteInCss(css, stack)}${close}`,
+  );
+
+  return result;
 }
 
 export function enforceMinimumFontSize(html: string, minPx = 16): string {

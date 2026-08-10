@@ -249,5 +249,307 @@ describe("getFontWarning", () => {
   });
 });
 
+// ─── normalizeFontFamily ─────────────────────────────────────────────────────
+
+import { normalizeFontFamily, EMAIL_FONT_STACK } from "../email-campaign-sender";
+
+describe("normalizeFontFamily", () => {
+  // TARGET uses a quoted font name to stress-test the implementation.
+  // In double-quoted HTML attributes the `"` chars are entity-encoded to &quot;;
+  // in single-quoted attributes and <style> blocks they appear as literal ".
+  const TARGET = '"MetroNova","Arial",Helvetica,sans-serif';
+  // Entity-encoded form used when TARGET is injected inside style="…" attributes.
+  const TARGET_IN_ATTR = TARGET.replace(/"/g, "&quot;");
+
+  // ── Basic rewriting ──────────────────────────────────────────────────────
+
+  describe("system-font body", () => {
+    it("rewrites a plain Arial inline font-family to the target stack", () => {
+      const html = `<p style="font-family:Arial,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      // The full original value (including fallback) is replaced — exact style attr value.
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET_IN_ATTR}`);
+    });
+
+    it("rewrites Helvetica,sans-serif to the target stack with no residual fallback", () => {
+      const html = `<p style="font-family:Helvetica,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET_IN_ATTR}`);
+    });
+
+    it("handles font-family with surrounding whitespace after the colon", () => {
+      const html = `<p style="font-family:  Arial, sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET_IN_ATTR}`);
+    });
+
+    it("rewrites a literal double-quoted font name (including its fallbacks) in a single-quoted attribute", () => {
+      // e.g. style='font-family:"Arial",sans-serif' — the CSS value uses real
+      // double-quote characters AND comma-separated fallbacks after the quoted name.
+      // The complete declaration must be replaced — no trailing ,sans-serif residual.
+      const html = `<p style='font-family:"Arial",sans-serif'>Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      // Single-quoted attrs use the raw (unencoded) stack.
+      const styleAttr = result.match(/style='([^']*)'/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET}`);
+    });
+  });
+
+  // ── AI-generated bodies with multiple declarations ───────────────────────
+
+  describe("AI-generated body with multiple font-family declarations", () => {
+    it("rewrites every font-family occurrence in an HTML body", () => {
+      const html = `
+        <p style="font-family:Arial,sans-serif">Paragraph one</p>
+        <h1 style="font-family:Georgia,serif">Heading</h1>
+        <span style="font-family:Verdana,sans-serif">Span</span>
+      `;
+      const result = normalizeFontFamily(html, TARGET);
+      const matches = result.match(/font-family:/gi) ?? [];
+      // All three occurrences must have been rewritten
+      expect(matches.length).toBe(3);
+      // None of the originals survive
+      expect(result).not.toContain("font-family:Arial");
+      expect(result).not.toContain("font-family:Georgia");
+      expect(result).not.toContain("font-family:Verdana");
+      // All replaced with the entity-encoded target (double-quoted attrs)
+      const targetMatches = result.match(new RegExp(escapeRegex(`font-family:${TARGET_IN_ATTR}`), "gi")) ?? [];
+      expect(targetMatches.length).toBe(3);
+    });
+
+    it("rewrites font-family inside a <style> block as well as inline styles", () => {
+      const html = `
+        <style>body { font-family: Arial, sans-serif; }</style>
+        <p style="font-family:Verdana,sans-serif">Hello</p>
+      `;
+      const result = normalizeFontFamily(html, TARGET);
+      // Both contexts must be rewritten — old values gone
+      expect(result).not.toContain("font-family: Arial");
+      expect(result).not.toContain("font-family:Verdana");
+      // <style> block uses the raw stack (literal quotes are valid CSS)
+      expect(result).toContain(`font-family:${TARGET}`);
+      // Inline double-quoted attr uses entity-encoded stack
+      expect(result).toContain(`font-family:${TARGET_IN_ATTR}`);
+    });
+
+    it("rewrites font-family in a multi-rule style block", () => {
+      const html = `
+        <style>
+          body { font-family: Arial, sans-serif; color: #333; }
+          h1   { font-family: Georgia, serif; font-size: 24px; }
+          p    { font-family: Verdana, sans-serif; }
+        </style>
+        <p>Hello</p>
+      `;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).not.toContain("font-family: Arial");
+      expect(result).not.toContain("font-family: Georgia");
+      expect(result).not.toContain("font-family: Verdana");
+    });
+
+    it("handles HTML-entity-encoded font names (&quot;) — complete replacement, no residual fallback", () => {
+      // Input: &quot;Helvetica Neue&quot;,sans-serif
+      // The full original value (quoted name + its ,sans-serif fallback) must be
+      // replaced atomically; ,sans-serif must NOT survive as a residual fragment.
+      const html = `<p style="font-family:&quot;Helvetica Neue&quot;,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET_IN_ATTR}`);
+    });
+
+    it("handles &#34; entity-encoded quotes — complete replacement, no residual fallback", () => {
+      const html = `<p style="font-family:&#34;Helvetica Neue&#34;,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET_IN_ATTR}`);
+    });
+
+    it("handles &#39; entity-encoded quotes — complete replacement, no residual fallback", () => {
+      const html = `<p style="font-family:&#39;Helvetica Neue&#39;,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toBe(`font-family:${TARGET_IN_ATTR}`);
+    });
+  });
+
+  // ── Inline styles vs. style blocks ──────────────────────────────────────
+
+  describe("inline styles vs. style blocks", () => {
+    it("rewrites only the font-family, leaving surrounding CSS properties intact", () => {
+      const html = `<p style="color:red;font-family:Arial,sans-serif;font-size:16px">Hi</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toContain("color:red");
+      expect(result).toContain("font-size:16px");
+      // Exact font-family value — entity-encoded in a double-quoted attr; no ,sans-serif residual
+      expect(result).toContain(`font-family:${TARGET_IN_ATTR}`);
+      // Original unquoted fallback must be fully consumed
+      expect(result).not.toContain("font-family:Arial");
+    });
+
+    it("does not alter attributes that don't contain font-family", () => {
+      const html = `<img src="photo.jpg" alt="Photo" style="width:100%;border:1px solid #ccc">`;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toBe(html);
+    });
+
+    it("leaves plain-text prose that mentions font-family: entirely unchanged", () => {
+      // The function only rewrites CSS inside style attributes and <style> blocks;
+      // it must not touch text node content, even when it contains "font-family:".
+      const html = `<p>Your font-family: Arial will be updated.</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toBe(html);
+    });
+
+    it("preserves non-font CSS inside the same style block rule", () => {
+      const html = `
+        <style>
+          body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #fff;
+          }
+        </style>
+      `;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toContain("margin: 0");
+      expect(result).toContain("background: #fff");
+      // <style> block: raw stack (no entity encoding)
+      expect(result).toContain(`font-family:${TARGET}`);
+    });
+  });
+
+  // ── No-op when already using the correct stack ───────────────────────────
+
+  describe("no-op when body already uses the correct stack", () => {
+    it("is idempotent when the target stack is already in place (single-quoted attr)", () => {
+      // Use a single-quoted attr so the TARGET (with literal ") is the correct form.
+      const html = `<p style='font-family:${TARGET}'>Hello</p>`;
+      const once = normalizeFontFamily(html, TARGET);
+      const twice = normalizeFontFamily(once, TARGET);
+      expect(once).toBe(twice);
+    });
+
+    it("is idempotent when the target stack is already in place (<style> block)", () => {
+      const html = `<style>p { font-family:${TARGET}; }</style>`;
+      const once = normalizeFontFamily(html, TARGET);
+      const twice = normalizeFontFamily(once, TARGET);
+      expect(once).toBe(twice);
+    });
+
+    it("leaves HTML unchanged when there are no font-family declarations", () => {
+      const html = `<p style="color:blue">No font here</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toBe(html);
+    });
+
+    it("leaves HTML unchanged when it is an empty string", () => {
+      expect(normalizeFontFamily("", TARGET)).toBe("");
+    });
+
+    it("uses EMAIL_FONT_STACK as the default stack argument", () => {
+      const html = `<p style="font-family:Arial,sans-serif">Hello</p>`;
+      const withDefault = normalizeFontFamily(html);
+      const withExplicit = normalizeFontFamily(html, EMAIL_FONT_STACK);
+      expect(withDefault).toBe(withExplicit);
+    });
+  });
+
+  // ── Quoted-stack injection into double-quoted style attributes ──────────
+  // Guards against the MetroNova / Avenir stacks (which contain literal `"`)
+  // corrupting double-quoted style attributes.
+
+  describe("quoted stacks in double-quoted style attributes", () => {
+    it("entity-encodes the MetroNova stack so the attribute remains valid HTML", () => {
+      // MetroNova stack: "MetroNova","Arial",Helvetica,sans-serif
+      // Written raw into style="…", the leading `"` would end the attribute.
+      const metroStack = buildFontStack("MetroNova");
+      const html = `<p style="font-family:Arial,sans-serif" class="body">Hello</p>`;
+      const result = normalizeFontFamily(html, metroStack);
+      // The attribute must close cleanly — class="body" must still be present
+      expect(result).toContain('class="body"');
+      // The font-family value inside the attribute must contain MetroNova
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr).toContain("MetroNova");
+    });
+
+    it("entity-encodes the AvenirNextLTPro stack so the attribute remains valid HTML", () => {
+      const avenirStack = buildFontStack("AvenirNextLTPro");
+      const html = `<p style="font-family:Arial,sans-serif" id="intro">Hello</p>`;
+      const result = normalizeFontFamily(html, avenirStack);
+      // Adjacent attribute must survive intact
+      expect(result).toContain('id="intro"');
+      // Font name must appear inside the style attribute value
+      const styleAttr = result.match(/style="([^"]*)"/)?.[1] ?? "";
+      expect(styleAttr.toLowerCase()).toContain("avenir");
+    });
+
+    it("uses the raw (unescaped) stack inside <style> blocks where literal quotes are valid CSS", () => {
+      const metroStack = buildFontStack("MetroNova");
+      const html = `<style>body { font-family: Arial, sans-serif; }</style>`;
+      const result = normalizeFontFamily(html, metroStack);
+      // Inside a <style> block, literal " is correct CSS — &quot; must NOT appear
+      expect(result).not.toContain("&quot;");
+      expect(result).toContain("MetroNova");
+    });
+
+    it("entity-encodes the stack's single-quotes so single-quoted attributes remain valid HTML", () => {
+      // Stacks like Georgia ('Times New Roman',serif) and TrebuchetMS contain `'`.
+      // Injecting them raw into style='…' terminates the attribute early.
+      const georgiaStack = buildFontStack("Georgia");  // contains 'Times New Roman'
+      const html = `<p style='font-family:Arial,sans-serif' class="body">Hello</p>`;
+      const result = normalizeFontFamily(html, georgiaStack);
+      // Adjacent attribute must survive intact (proves attribute didn't terminate early)
+      expect(result).toContain('class="body"');
+      // The font-family value inside the attribute must mention Georgia
+      const styleAttr = result.match(/style='([^']*)'/)?.[1] ?? "";
+      expect(styleAttr.toLowerCase()).toContain("georgia");
+      // No bare `'` must appear inside the style attribute value (would break the attr)
+      expect(styleAttr).not.toContain("'");
+    });
+
+    it("entity-encodes TrebuchetMS stack single-quotes in a single-quoted attribute", () => {
+      const trebuchetStack = buildFontStack("TrebuchetMS"); // 'Trebuchet MS',Helvetica,sans-serif
+      const html = `<p style='font-family:Arial,sans-serif' id="intro">Hello</p>`;
+      const result = normalizeFontFamily(html, trebuchetStack);
+      expect(result).toContain('id="intro"');
+      const styleAttr = result.match(/style='([^']*)'/)?.[1] ?? "";
+      expect(styleAttr.toLowerCase()).toContain("trebuchet");
+      expect(styleAttr).not.toContain("'");
+    });
+
+    it("uses the raw (unescaped) MetroNova stack inside single-quoted attributes (no single quotes in stack)", () => {
+      const metroStack = buildFontStack("MetroNova");
+      const html = `<p style='font-family:Arial,sans-serif'>Hello</p>`;
+      const result = normalizeFontFamily(html, metroStack);
+      // MetroNova stack has no single quotes — &apos;/&#39; must NOT appear
+      expect(result).not.toContain("&#39;");
+      expect(result).toContain("MetroNova");
+    });
+  });
+
+  // ── Case-insensitivity ───────────────────────────────────────────────────
+
+  describe("case-insensitive matching", () => {
+    it("rewrites FONT-FAMILY (uppercase) declarations", () => {
+      const html = `<p style="FONT-FAMILY:Arial,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toContain("MetroNova");
+    });
+
+    it("rewrites Font-Family (mixed-case) declarations", () => {
+      const html = `<p style="Font-Family:Arial,sans-serif">Hello</p>`;
+      const result = normalizeFontFamily(html, TARGET);
+      expect(result).toContain("MetroNova");
+    });
+  });
+});
+
+/** Escape special regex characters in a literal string. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 // ── needed for beforeAll inside describe ─────────────────────────────────────
 import { beforeAll } from "vitest";
