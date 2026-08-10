@@ -293,7 +293,43 @@ export function buildFontStack(fontValue: string | null | undefined): string {
   // and append a safe generic fallback.
   const name = fontValue.trim();
   const quoted = /[,"]/.test(name) ? name : `"${name}"`;
+  // Emit a structured warning so operators know recipients may see Arial instead.
+  console.warn(JSON.stringify({
+    level: "warn",
+    event: "font_unrecognized_fallback",
+    fontValue,
+    message: `Font "${fontValue}" is not in the curated email-safe list; HubSpot and Outlook will render Arial instead.`,
+  }));
   return `${quoted},Arial,Helvetica,sans-serif`;
+}
+
+/**
+ * Return a human-readable warning string when `fontValue` will not render
+ * correctly in HubSpot or Outlook, or null when the font is a safe system font.
+ *
+ * Classification:
+ * - System safe fonts (Arial, Georgia, etc.): null — no warning
+ * - Custom @font-face fonts (Avenir, MetroNova): warn — Outlook strips @font-face;
+ *   HubSpot's paste editor removes <style> blocks entirely
+ * - Google Fonts (@import): warn — Outlook strips @import; HubSpot paste editor
+ *   removes <style> blocks entirely
+ * - Unrecognized values (not in curated list): warn — degrade silently to Arial
+ */
+export function getFontWarning(fontValue: string | null | undefined): string | null {
+  if (!fontValue) return null;
+  const curated = CURATED_EMAIL_FONTS.find(f => f.value === fontValue);
+  if (!curated) {
+    return `Font "${fontValue}" is not in the email-safe list — HubSpot and Outlook will fall back to Arial.`;
+  }
+  if (curated.isCustom) {
+    const fallback = fontValue === "MetroNova" ? "Verdana" : "Arial";
+    return `${curated.label} uses @font-face rules that Outlook strips and HubSpot's paste editor removes — recipients will see ${fallback}.`;
+  }
+  if (curated.googleFont) {
+    return `${curated.label} is a Google Font loaded via @import, which Outlook and HubSpot's paste editor do not support — recipients will see Arial.`;
+  }
+  // System-safe font — no warning needed
+  return null;
 }
 
 /**

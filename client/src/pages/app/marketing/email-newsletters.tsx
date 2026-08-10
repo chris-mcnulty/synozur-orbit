@@ -1192,8 +1192,8 @@ export default function EmailNewslettersPage() {
                 </Select>
               </div>
             </div>
-            {/* Font picker — visible for HTML platforms */}
-            {(emailPlatform === "hubspot-marketing" || emailPlatform === "outlook" || emailPlatform === "dynamics-365") && (
+            {/* Font picker — only visible for HTML platforms */}
+            {emailPlatform === "hubspot-marketing" && (
               <div>
                 <label className="text-sm font-medium">Body Font</label>
                 <Select value={emailFontFamily} onValueChange={setEmailFontFamily}>
@@ -1222,31 +1222,21 @@ export default function EmailNewslettersPage() {
                 </p>
                 {(() => {
                   const sel = effectiveFontList.find(f => f.value === emailFontFamily);
+                  if (!sel && emailFontFamily && emailFontFamily !== "Arial") {
+                    return (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning-unrecognized">
+                        Font &ldquo;{emailFontFamily}&rdquo; isn&rsquo;t in the email-safe list — HubSpot and Outlook will fall back to Arial.
+                      </p>
+                    );
+                  }
                   const needsLoad = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
                   if (!needsLoad) return null;
                   const fallback = emailFontFamily === "MetroNova" ? "Verdana" : "Arial";
-                  if (emailPlatform === "hubspot-marketing") {
-                    return (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning">
-                        Custom and Google Fonts don't load in HubSpot's paste editor — recipients will see {fallback}.
-                      </p>
-                    );
-                  }
-                  if (emailPlatform === "outlook") {
-                    return (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-outlook-font-warning">
-                        Outlook strips @font-face rules — desktop Outlook and some mobile clients will fall back to {fallback}. The font will render correctly in Apple Mail and web-based clients.
-                      </p>
-                    );
-                  }
-                  if (emailPlatform === "dynamics-365") {
-                    return (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-dynamics-font-warning">
-                        Dynamics 365 Customer Journeys doesn't support @font-face — recipients using Outlook or the Dynamics preview will see {fallback} instead.
-                      </p>
-                    );
-                  }
-                  return null;
+                  return (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning">
+                      Custom and Google Fonts don't load in HubSpot or Outlook — recipients will see {fallback}.
+                    </p>
+                  );
                 })()}
               </div>
             )}
@@ -1761,12 +1751,19 @@ export default function EmailNewslettersPage() {
                   </Select>
                   {(() => {
                     const sel = effectiveFontList.find(f => f.value === editFontFamily);
+                    if (!sel && editFontFamily && editFontFamily !== "Arial") {
+                      return (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning-edit-unrecognized">
+                          Font &ldquo;{editFontFamily}&rdquo; isn&rsquo;t in the email-safe list — HubSpot and Outlook will fall back to Arial.
+                        </p>
+                      );
+                    }
                     const needsLoad = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
                     if (!needsLoad) return null;
                     const fallback = editFontFamily === "MetroNova" ? "Verdana" : "Arial";
                     return (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning-edit">
-                        Custom and Google Fonts don't load in HubSpot's paste editor — recipients will see {fallback}.
+                        Custom and Google Fonts don't load in HubSpot or Outlook — recipients will see {fallback}.
                       </p>
                     );
                   })()}
@@ -2309,22 +2306,6 @@ export default function EmailNewslettersPage() {
                   data-testid="button-send-mode-segment"
                 >Segment</Button>
               </div>
-              {sendDialogEmail?.platform === "hubspot-marketing" && (() => {
-                const fontVal = sendDialogEmail.fontFamily;
-                const sel = effectiveFontList.find(f => f.value === fontVal);
-                const needsWarn = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
-                if (!needsWarn || !fontVal) return null;
-                const fontLabel = sel?.label || fontVal;
-                const fallback = fontVal === "MetroNova" ? "Verdana" : "Arial";
-                return (
-                  <p
-                    className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
-                    data-testid="text-hubspot-font-warning-send"
-                  >
-                    This email uses <strong>{fontLabel}</strong> — recipients will see <strong>{fallback}</strong> in HubSpot.
-                  </p>
-                );
-              })()}
               {sendMode === "test" ? (
                 <div>
                   <Label>Test recipient email</Label>
@@ -2509,6 +2490,32 @@ export default function EmailNewslettersPage() {
                   This email is in <strong>{sendDialogEmail.status}</strong> status. Approve it before sending. Test sends are still allowed.
                 </div>
               )}
+              {(() => {
+                const fv = sendDialogEmail?.fontFamily;
+                if (!fv) return null;
+                const sel = effectiveFontList.find(f => f.value === fv);
+                // Unsafe = custom @font-face, Google @import, brand-custom, or unrecognized
+                const isUnsafe = !sel || (sel as any).isCustom || (sel as any).googleFont || (sel as any).isBrandCustom;
+                if (!isUnsafe) return null;
+                const fallback = fv === "MetroNova" ? "Verdana" : "Arial";
+                const label = sel ? (sel.label ?? fv) : fv;
+                let reason: string;
+                if (!sel) {
+                  reason = `"${label}" isn't in the email-safe list — HubSpot and Outlook will fall back to ${fallback}`;
+                } else if ((sel as any).isCustom) {
+                  reason = `${label} uses @font-face rules that Outlook strips and HubSpot's paste editor removes — recipients will see ${fallback}`;
+                } else if ((sel as any).googleFont) {
+                  reason = `${label} is a Google Font loaded via @import, which Outlook and HubSpot's paste editor don't support — recipients will see ${fallback}`;
+                } else {
+                  // isBrandCustom: unrecognized brand font
+                  reason = `"${label}" isn't in the email-safe list — HubSpot and Outlook will fall back to ${fallback}`;
+                }
+                return (
+                  <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700" data-testid="text-send-font-warning">
+                    ⚠ {reason}. Change the font in the email editor if needed.
+                  </div>
+                );
+              })()}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setSendDialogEmail(null)} data-testid="button-cancel-send">Cancel</Button>
                 <Button

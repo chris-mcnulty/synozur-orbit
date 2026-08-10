@@ -175,5 +175,79 @@ describe("buildFontHeadCss", () => {
   });
 });
 
+// ─── getFontWarning ──────────────────────────────────────────────────────────
+
+import { getFontWarning } from "../email-campaign-sender";
+
+describe("getFontWarning", () => {
+  it("returns null for null (no font chosen)", () => {
+    expect(getFontWarning(null)).toBeNull();
+  });
+
+  it("returns null for undefined", () => {
+    expect(getFontWarning(undefined)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(getFontWarning("")).toBeNull();
+  });
+
+  it("returns null for Arial (system-safe font)", () => {
+    expect(getFontWarning("Arial")).toBeNull();
+  });
+
+  it("returns null for all other curated system fonts", () => {
+    const safeKeys = ["Georgia", "TrebuchetMS", "Verdana", "Tahoma", "TimesNewRoman"];
+    for (const key of safeKeys) {
+      expect(getFontWarning(key), `expected no warning for ${key}`).toBeNull();
+    }
+  });
+
+  it("returns a warning for curated Google Fonts (Outlook and HubSpot strip @import)", () => {
+    const openSans = getFontWarning("OpenSans");
+    expect(openSans).not.toBeNull();
+    expect(openSans!.toLowerCase()).toContain("outlook");
+    expect(openSans!.toLowerCase()).toContain("hubspot");
+    expect(getFontWarning("Lato")).not.toBeNull();
+    expect(getFontWarning("Montserrat")).not.toBeNull();
+  });
+
+  it("returns a warning for AvenirNextLTPro (Outlook strips @font-face)", () => {
+    const w = getFontWarning("AvenirNextLTPro") as string;
+    expect(w).not.toBeNull();
+    expect(w.toLowerCase()).toContain("outlook");
+    expect(w.toLowerCase()).toContain("hubspot");
+  });
+
+  it("returns a warning for MetroNova and mentions Verdana as the fallback", () => {
+    const w = getFontWarning("MetroNova") as string;
+    expect(w).not.toBeNull();
+    expect(w).toContain("Verdana");
+  });
+
+  it("returns a non-null warning string for an unrecognized font value", () => {
+    const warning = getFontWarning("Poppins");
+    expect(warning).not.toBeNull();
+    expect(warning).toContain("Poppins");
+  });
+
+  it("warning for unrecognized font mentions HubSpot and Outlook", () => {
+    const warning = getFontWarning("Inter") as string;
+    expect(warning.toLowerCase()).toContain("hubspot");
+    expect(warning.toLowerCase()).toContain("outlook");
+  });
+
+  it("warning for unrecognized font mentions Arial fallback", () => {
+    const warning = getFontWarning("Raleway") as string;
+    expect(warning).toContain("Arial");
+  });
+
+  it("handles a raw CSS multi-word font name that isn't curated", () => {
+    const warning = getFontWarning("Source Sans Pro");
+    expect(warning).not.toBeNull();
+    expect(warning).toContain("Source Sans Pro");
+  });
+});
+
 // ── needed for beforeAll inside describe ─────────────────────────────────────
 import { beforeAll } from "vitest";

@@ -96,7 +96,7 @@ import { guardManualAction } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv, isOrbitDirectPost } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
-import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons, CURATED_EMAIL_FONTS, buildFontStack, buildFontHeadCss } from "../services/email-campaign-sender";
+import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons, CURATED_EMAIL_FONTS, buildFontStack, buildFontHeadCss, getFontWarning } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
 
@@ -5203,6 +5203,7 @@ Structure your response using these exact delimiters:
     const exportBaseUrl = `${req.protocol}://${req.get("host")}`;
     const emailFontFamily = (email as any).fontFamily as string | null | undefined;
     const fontStack = buildFontStack(emailFontFamily);
+    const fontWarning = getFontWarning(emailFontFamily);
     body = enforceMinimumFontSize(body);
     body = normalizeFontFamily(body, fontStack);
     // Exports are pasted into external editors (HubSpot/Wix) whose readers
@@ -5227,7 +5228,7 @@ Structure your response using these exact delimiters:
       .replace(/<!--\[if [^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .trim();
-    res.json({ html: wrapResponsiveDocument(body, fontHeadCss), fragment: body, hubspotFragment });
+    res.json({ html: wrapResponsiveDocument(body, fontHeadCss), fragment: body, hubspotFragment, fontWarning });
   });
 
   app.delete("/api/email/saved/:id", async (req, res) => {
