@@ -1220,6 +1220,17 @@ export default function EmailNewslettersPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Applied throughout the rendered email. Custom brand fonts (Avenir, MetroNova) load in Apple Mail and iOS.
                 </p>
+                {(() => {
+                  const sel = effectiveFontList.find(f => f.value === emailFontFamily);
+                  const needsLoad = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
+                  if (!needsLoad) return null;
+                  const fallback = emailFontFamily === "MetroNova" ? "Verdana" : "Arial";
+                  return (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning">
+                      Custom and Google Fonts don't load in HubSpot's paste editor — recipients will see {fallback}.
+                    </p>
+                  );
+                })()}
               </div>
             )}
             <div>
@@ -1731,6 +1742,17 @@ export default function EmailNewslettersPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {(() => {
+                    const sel = effectiveFontList.find(f => f.value === editFontFamily);
+                    const needsLoad = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
+                    if (!needsLoad) return null;
+                    const fallback = editFontFamily === "MetroNova" ? "Verdana" : "Arial";
+                    return (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning-edit">
+                        Custom and Google Fonts don't load in HubSpot's paste editor — recipients will see {fallback}.
+                      </p>
+                    );
+                  })()}
                 </div>
               )}
               <div>
