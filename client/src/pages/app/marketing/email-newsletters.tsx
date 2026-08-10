@@ -1192,8 +1192,8 @@ export default function EmailNewslettersPage() {
                 </Select>
               </div>
             </div>
-            {/* Font picker — only visible for HTML platforms */}
-            {emailPlatform === "hubspot-marketing" && (
+            {/* Font picker — visible for HTML platforms */}
+            {(emailPlatform === "hubspot-marketing" || emailPlatform === "outlook" || emailPlatform === "dynamics-365") && (
               <div>
                 <label className="text-sm font-medium">Body Font</label>
                 <Select value={emailFontFamily} onValueChange={setEmailFontFamily}>
@@ -1225,11 +1225,28 @@ export default function EmailNewslettersPage() {
                   const needsLoad = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
                   if (!needsLoad) return null;
                   const fallback = emailFontFamily === "MetroNova" ? "Verdana" : "Arial";
-                  return (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning">
-                      Custom and Google Fonts don't load in HubSpot's paste editor — recipients will see {fallback}.
-                    </p>
-                  );
+                  if (emailPlatform === "hubspot-marketing") {
+                    return (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-hubspot-font-warning">
+                        Custom and Google Fonts don't load in HubSpot's paste editor — recipients will see {fallback}.
+                      </p>
+                    );
+                  }
+                  if (emailPlatform === "outlook") {
+                    return (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-outlook-font-warning">
+                        Outlook strips @font-face rules — desktop Outlook and some mobile clients will fall back to {fallback}. The font will render correctly in Apple Mail and web-based clients.
+                      </p>
+                    );
+                  }
+                  if (emailPlatform === "dynamics-365") {
+                    return (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-1" data-testid="text-dynamics-font-warning">
+                        Dynamics 365 Customer Journeys doesn't support @font-face — recipients using Outlook or the Dynamics preview will see {fallback} instead.
+                      </p>
+                    );
+                  }
+                  return null;
                 })()}
               </div>
             )}
