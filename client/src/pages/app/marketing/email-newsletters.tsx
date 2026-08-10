@@ -2292,6 +2292,22 @@ export default function EmailNewslettersPage() {
                   data-testid="button-send-mode-segment"
                 >Segment</Button>
               </div>
+              {sendDialogEmail?.platform === "hubspot-marketing" && (() => {
+                const fontVal = sendDialogEmail.fontFamily;
+                const sel = effectiveFontList.find(f => f.value === fontVal);
+                const needsWarn = (sel as any)?.isCustom || (sel as any)?.googleFont || (sel as any)?.isBrandCustom;
+                if (!needsWarn || !fontVal) return null;
+                const fontLabel = sel?.label || fontVal;
+                const fallback = fontVal === "MetroNova" ? "Verdana" : "Arial";
+                return (
+                  <p
+                    className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+                    data-testid="text-hubspot-font-warning-send"
+                  >
+                    This email uses <strong>{fontLabel}</strong> — recipients will see <strong>{fallback}</strong> in HubSpot.
+                  </p>
+                );
+              })()}
               {sendMode === "test" ? (
                 <div>
                   <Label>Test recipient email</Label>
