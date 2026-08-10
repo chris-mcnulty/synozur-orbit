@@ -1,10 +1,12 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
+import * as hubspotEmailSyncCore from "../hubspot-email-sync-core";
 import {
   normalizeEmail,
   dedupeEmails,
   syncStatusForOutcome,
   isOptedOutFromStatusPayload,
+  isOptedOutForSubscription,
   reconcileSuppression,
   timelineEventId,
 } from "../hubspot-email-sync-core";
@@ -124,5 +126,82 @@ describe("hubspot-email-sync-core", () => {
       });
       assert.equal(out.get("a@x.com"), "unsubscribe");
     });
+  });
+});
+
+// ─── Font-injection exemption audit ──────────────────────────────────────────
+//
+// The HubSpot email sync path is intentionally exempt from font injection.
+//
+// Design rationale:
+//   The HubSpot integration in this codebase is a CONSENT + TIMELINE path,
+//   not an email-delivery path. It does three things:
+//
+//     1. Consent/opt-out pull (hubspot-email-sync.ts → pullSubscriptionStatus)
+//        Reads each recipient's subscription status from HubSpot BEFORE the
+//        send so opted-out contacts are suppressed.  No HTML is involved.
+//
+//     2. Contact resolution (hubspot-contact-resolver.ts)
+//        Maps recipient email → HubSpot contact id.  No HTML is involved.
+//
+//     3. Timeline event push (hubspot-timeline.ts → pushEmailTimelineEvent)
+//        Writes structured engagement tokens (subject, send id, campaign label)
+//        to the HubSpot contact timeline.  No HTML document is assembled or
+//        transmitted.
+//
+//   Font injection (buildFontHeadCss + wrapResponsiveDocument +
+//   normalizeFontFamily) is applied in email-campaign-sender.ts — specifically
+//   in the send function — BEFORE the finished HTML is transmitted via
+//   SendGrid.  The HubSpot sync path never reads or transmits that HTML
+//   document, so there is no separate injection point to add.
+//
+// The test below asserts the structural invariant: hubspot-email-sync-core
+// must not export any HTML-assembly or font-injection functions.  A future
+// change that accidentally adds such a function here without also wiring up
+// font injection would break this test and prompt the author to handle fonts
+// correctly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("hubspot-email-sync-core font-injection exemption (structural invariant)", () => {
+  it("exports only consent/timeline helpers — no HTML-assembly or font-injection functions", () => {
+    const exportedNames = Object.keys(hubspotEmailSyncCore);
+
+    // These are the known, audited exports of this module.
+    const expectedExports = new Set([
+      "normalizeEmail",
+      "dedupeEmails",
+      "timelineEventId",
+      "syncStatusForOutcome",
+      "isOptedOutFromStatusPayload",
+      "isOptedOutForSubscription",
+      "reconcileSuppression",
+    ]);
+
+    // Any export whose name contains an HTML/font keyword would indicate that
+    // HTML assembly was added to this module without pairing it with font
+    // injection — a silent-Arial regression vector.
+    const htmlOrFontExports = exportedNames.filter((name) =>
+      /font|html|wrap|document|stylesheet|css|style/i.test(name),
+    );
+
+    assert.deepEqual(
+      htmlOrFontExports,
+      [],
+      `hubspot-email-sync-core must not export HTML-assembly or font-injection ` +
+        `functions (found: ${htmlOrFontExports.join(", ")}). ` +
+        `If the HubSpot path begins building HTML, wire up buildFontHeadCss + ` +
+        `wrapResponsiveDocument from email-campaign-sender.ts first.`,
+    );
+
+    // Also verify no new exports were silently added without updating this audit.
+    const unknownExports = exportedNames.filter((name) => !expectedExports.has(name));
+    assert.deepEqual(
+      unknownExports,
+      [],
+      `New export(s) added to hubspot-email-sync-core without updating the ` +
+        `font-exemption audit: ${unknownExports.join(", ")}. ` +
+        `Add the name to expectedExports if it is consent/timeline-only, or add ` +
+        `font injection if it assembles HTML.`,
+    );
   });
 });
