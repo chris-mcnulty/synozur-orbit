@@ -5,6 +5,8 @@ import { buildCompetitorDocumentContext, buildCompetitorDocumentContextForCompet
 import { sendEmail, wrapEmailContent } from "./email-service";
 import { calculateScores } from "./scoring-service";
 import { identifySuggestedAssets } from "./asset-suggestion-service";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "./web-crawler";
+import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } from "./promise-pool";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
@@ -125,8 +127,52 @@ async function runRegenerationInBackground(
     progress.currentStep = "Refreshing baseline data";
     progress.stepsCompleted = 1;
 
-    // Website crawl and social monitoring removed from Orbit
-    console.log(`Full regen: Skipping website crawl and social monitoring (features removed).`);
+    if (companyProfile && companyProfile.websiteUrl) {
+      try {
+        console.log(`Full regen: Crawling baseline website for ${companyProfile.companyName}...`);
+        const crawlResult = await crawlCompetitorWebsite(companyProfile.websiteUrl);
+        
+        if (crawlResult.pages.length > 0) {
+          const combinedContent = getCombinedContent(crawlResult);
+          
+          // Update company profile with crawl data
+          await storage.updateCompanyProfile(companyProfile.id, {
+            crawlData: buildCrawlData(crawlResult),
+            previousWebsiteContent: combinedContent.substring(0, 100000),
+            lastCrawl: new Date().toISOString(),
+            lastFullCrawl: new Date(),
+            // Stamp lastWebsiteMonitor so the scheduled monitor sweep's
+            // freshness gate suppresses a same-cycle duplicate crawl.
+            lastWebsiteMonitor: new Date(),
+          });
+          console.log(`Full regen: Baseline website crawled - ${crawlResult.pages.length} pages`);
+
+          try {
+            await identifySuggestedAssets(crawlResult, companyProfile.id, tenantDomain, marketId);
+          } catch (assetErr: any) {
+            console.error(`Full regen: Asset suggestion failed:`, assetErr.message);
+          }
+        }
+      } catch (error) {
+        console.error(`Full regen: Failed to crawl baseline website:`, error);
+      }
+      
+      // Also refresh LinkedIn data if URL is configured
+      if (companyProfile.linkedInUrl) {
+        try {
+          console.log(`Full regen: Refreshing baseline LinkedIn data...`);
+          await monitorCompanyProfileSocialMedia(
+            companyProfile.id,
+            userId,
+            tenantDomain,
+            marketId || companyProfile.marketId || undefined
+          );
+          console.log(`Full regen: Baseline LinkedIn data refreshed`);
+        } catch (error) {
+          console.error(`Full regen: Failed to refresh baseline social:`, error);
+        }
+      }
+    }
 
     progress.currentStep = "Analyzing competitors";
     progress.stepsCompleted = 2;

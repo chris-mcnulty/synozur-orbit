@@ -14,6 +14,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { objectStorageClient } from "../replit_integrations/object_storage/objectStorage";
 import { documentExtractionService } from "../services/document-extraction";
 import { analyzeCompetitorWebsite, aiCompanyResearch, type LinkedInContext } from "../ai-service";
+import { crawlCompetitorWebsite, getCombinedContent, buildCrawlData } from "../services/web-crawler";
+import { monitorCompetitorWebsite, monitorCompanyProfileWebsite } from "../services/website-monitoring";
+import { monitorCompetitorSocialMedia } from "../services/social-monitoring";
 import { invalidateMarketStatusCache } from "../services/scheduled-jobs";
 import { validateCompetitorUrl, validateBlogUrl } from "../utils/url-validator";
 import { calculateBaselineScore, getCurrentWeeklyPeriod } from "../services/scoring-service";
@@ -1172,7 +1175,199 @@ export function registerAdminRoutes(app: Express) {
         return res.status(404).json({ error: "Company profile not found. Please set up your company profile first." });
       }
 
-      return res.status(503).json({ error: "Website crawl analysis is no longer available in Orbit." });
+      if (!await guardManualAction(req, res, "manualCrawl")) return;
+
+      // Plan-gating: Re-validate domain restriction at analysis time for Trial/Free plans
+      const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
+      if (tenant && (tenant.plan === "trial" || tenant.plan === "free")) {
+        try {
+          const websiteDomain = new URL(profile.websiteUrl).hostname.replace(/^www\./, "").toLowerCase();
+          if (websiteDomain !== ctx.tenantDomain.toLowerCase()) {
+            return res.status(403).json({ 
+              error: `Your ${tenant.plan} plan only allows analyzing your own company website (${ctx.tenantDomain}). Upgrade to Pro or Enterprise to analyze other companies.`,
+              upgradeRequired: true
+            });
+          }
+        } catch {
+          return res.status(400).json({ error: "Invalid website URL in company profile" });
+        }
+      }
+
+      // Use the robust multi-page web crawler (same as competitors)
+      const crawlResult = await crawlCompetitorWebsite(profile.websiteUrl);
+      
+      // Check if profile has existing manual research data
+      const existingAnalysis = profile.analysisData as any;
+      const hasManualResearch = existingAnalysis?.source === "manual";
+      
+      if (crawlResult.pages.length === 0) {
+        return res.json({ 
+          success: false, 
+          message: "Website could not be crawled",
+          canUseManualResearch: true,
+          hasExistingManualResearch: hasManualResearch,
+        });
+      }
+
+      // Update social links if discovered
+      const socialUpdates: any = {};
+      if (crawlResult.socialLinks.linkedIn && !profile.linkedInUrl) {
+        socialUpdates.linkedInUrl = crawlResult.socialLinks.linkedIn;
+      }
+      if (crawlResult.socialLinks.instagram && !profile.instagramUrl) {
+        socialUpdates.instagramUrl = crawlResult.socialLinks.instagram;
+      }
+      if (crawlResult.socialLinks.twitter && !profile.twitterUrl) {
+        socialUpdates.twitterUrl = crawlResult.socialLinks.twitter;
+      }
+      if (crawlResult.socialLinks.facebook && !profile.facebookUrl) {
+        socialUpdates.facebookUrl = crawlResult.socialLinks.facebook;
+      }
+      
+      socialUpdates.crawlData = buildCrawlData(crawlResult);
+      socialUpdates.lastFullCrawl = new Date();
+      // Stamp lastWebsiteMonitor + baseline content so the scheduled monitor
+      // sweep's freshness gate suppresses a same-cycle duplicate crawl.
+      socialUpdates.lastWebsiteMonitor = new Date();
+      socialUpdates.previousWebsiteContent = getCombinedContent(crawlResult).substring(0, 100000);
+      
+      if (crawlResult.blogSnapshot && crawlResult.blogSnapshot.postCount > 0) {
+        const existingBlogSnapshot = profile.blogSnapshot as any;
+        const previousCount = existingBlogSnapshot?.postCount || 0;
+        const newCount = crawlResult.blogSnapshot.postCount;
+        
+        socialUpdates.blogSnapshot = {
+          ...crawlResult.blogSnapshot,
+          capturedAt: new Date().toISOString(),
+        };
+        
+        const isFirstDiscovery = !existingBlogSnapshot || !existingBlogSnapshot.postCount;
+        const hasNewPosts = newCount > previousCount;
+        
+        if (isFirstDiscovery || hasNewPosts) {
+          const newPostCount = newCount - previousCount;
+          await storage.createActivity({
+            type: "blog_activity",
+            sourceType: "baseline",
+            companyProfileId: profile.id,
+            competitorName: profile.companyName,
+            description: isFirstDiscovery 
+              ? `Discovered ${newCount} blog post${newCount > 1 ? 's' : ''}`
+              : `Published ${newPostCount} new blog post${newPostCount > 1 ? 's' : ''}`,
+            summary: crawlResult.blogSnapshot.latestTitles.length > 0 
+              ? `Latest: "${crawlResult.blogSnapshot.latestTitles[0]}"${crawlResult.blogSnapshot.latestTitles.length > 1 ? ` and ${crawlResult.blogSnapshot.latestTitles.length - 1} more` : ''}`
+              : `Found ${newCount} blog posts on the website`,
+            details: {
+              postCount: newCount,
+              previousCount,
+              newPosts: newPostCount,
+              latestTitles: crawlResult.blogSnapshot.latestTitles,
+            },
+            date: new Date().toISOString(),
+            impact: isFirstDiscovery 
+              ? (newCount >= 10 ? "High" : newCount >= 5 ? "Medium" : "Low")
+              : (newPostCount >= 3 ? "High" : "Medium"),
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId,
+          });
+        }
+      }
+      
+      if (Object.keys(socialUpdates).length > 0) {
+        await storage.updateCompanyProfile(profile.id, socialUpdates);
+
+        if (profile.organizationId) {
+          const orgUpdates: any = {};
+          if (socialUpdates.crawlData) orgUpdates.crawlData = socialUpdates.crawlData;
+          if (socialUpdates.lastFullCrawl) orgUpdates.lastFullCrawl = socialUpdates.lastFullCrawl;
+          if (socialUpdates.lastWebsiteMonitor) orgUpdates.lastWebsiteMonitor = socialUpdates.lastWebsiteMonitor;
+          if (socialUpdates.previousWebsiteContent) orgUpdates.previousWebsiteContent = socialUpdates.previousWebsiteContent;
+          if (socialUpdates.blogSnapshot) orgUpdates.blogSnapshot = socialUpdates.blogSnapshot;
+          if (socialUpdates.linkedInUrl) orgUpdates.linkedInUrl = socialUpdates.linkedInUrl;
+          if (socialUpdates.instagramUrl) orgUpdates.instagramUrl = socialUpdates.instagramUrl;
+          await storage.updateOrganization(profile.organizationId, orgUpdates)
+            .catch(err => console.error("[Org Update] Baseline analyze sync failed:", err.message));
+        }
+      }
+
+      const websiteContent = getCombinedContent(crawlResult);
+      
+      const groundingDocs = await storage.getGroundingDocumentsByTenant(ctx.tenantDomain);
+      const globalDocs = await storage.getAllGlobalGroundingDocuments();
+      
+      let groundingContext = "";
+      if (groundingDocs.length > 0 || globalDocs.length > 0) {
+        const allDocs = [...groundingDocs, ...globalDocs];
+        groundingContext = allDocs
+          .filter(doc => doc.extractedText)
+          .map(doc => `[${doc.name}]: ${doc.extractedText?.substring(0, 5000)}`)
+          .join("\n\n");
+      }
+
+      const linkedInEngagement = profile.linkedInEngagement as {
+        followers?: number;
+        posts?: number;
+        employees?: number;
+        recentPosts?: Array<{ text: string; reactions?: number; comments?: number }>;
+      } | null;
+      
+      const linkedInData: LinkedInContext | undefined = linkedInEngagement ? {
+        followerCount: linkedInEngagement.followers,
+        employeeCount: linkedInEngagement.employees,
+        recentPosts: linkedInEngagement.recentPosts,
+      } : undefined;
+      
+      const analysisResult = await analyzeCompetitorWebsite(
+        profile.companyName, 
+        profile.websiteUrl, 
+        websiteContent,
+        groundingContext || undefined,
+        linkedInData
+      );
+
+      const directoryUpdates: any = {};
+      if (analysisResult) {
+        if (analysisResult.headquarters && !profile.headquarters) {
+          directoryUpdates.headquarters = analysisResult.headquarters;
+        }
+        if (analysisResult.foundedYear && !profile.founded) {
+          directoryUpdates.founded = String(analysisResult.foundedYear);
+        }
+        if (analysisResult.employeeCount && !profile.employeeCount) {
+          directoryUpdates.employeeCount = String(analysisResult.employeeCount);
+        }
+        if (analysisResult.industry && !profile.industry) {
+          directoryUpdates.industry = analysisResult.industry;
+        }
+        if (analysisResult.revenueRange && !profile.revenue) {
+          directoryUpdates.revenue = analysisResult.revenueRange;
+        }
+      }
+      
+      if (hasManualResearch) {
+        console.log(`Skipping analysis update for ${profile.companyName} - has manual research data`);
+        await storage.updateCompanyProfile(profile.id, {
+          lastAnalysis: new Date(),
+          ...directoryUpdates,
+        });
+      } else {
+        await storage.updateCompanyProfile(profile.id, {
+          lastAnalysis: new Date(),
+          analysisData: analysisResult,
+          ...directoryUpdates,
+        });
+      }
+      
+      const updated = await storage.getCompanyProfileByContext(toContextFilter(ctx));
+
+      res.json({
+        ...updated,
+        crawlStats: {
+          pagesCrawled: crawlResult.pages.length,
+          totalWordCount: crawlResult.totalWordCount,
+          groundingDocsUsed: groundingDocs.length + globalDocs.length,
+        }
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -2216,9 +2411,8 @@ export function registerAdminRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid URL format" });
       }
 
-      return res.status(503).json({ error: "Website crawl analysis is no longer available in Orbit." });
-      /* eslint-disable-next-line no-unreachable */
-      const crawlResult = { pages: [], totalWordCount: 0 } as any;
+      // Crawl the website
+      const crawlResult = await crawlCompetitorWebsite(url);
       
       // Check if crawl was successful (has at least one page with content)
       if (!crawlResult.pages || crawlResult.pages.length === 0 || crawlResult.totalWordCount === 0) {
@@ -2390,7 +2584,23 @@ Respond in JSON format:
           
           console.log(`[Unarchive] Triggering refresh for market ${market.name} - ${competitors.length} competitors`);
           
-          console.log(`[Unarchive] Market ${market.name} unarchived — website/social monitoring removed from Orbit.`);
+          // Trigger website monitoring for all competitors
+          for (const competitor of competitors) {
+            monitorCompetitorWebsite(competitor.id, undefined, tenantDomain)
+              .catch(err => console.error(`Unarchive refresh error for ${competitor.name}:`, err));
+          }
+          
+          // Trigger baseline monitoring
+          if (companyProfile) {
+            monitorCompanyProfileWebsite(companyProfile.id, user.id, tenantDomain, market.id)
+              .catch(err => console.error(`Unarchive refresh error for baseline:`, err));
+          }
+          
+          // Trigger social monitoring for all competitors
+          for (const competitor of competitors) {
+            monitorCompetitorSocialMedia(competitor.id, undefined, tenantDomain)
+              .catch(err => console.error(`Unarchive social refresh error for ${competitor.name}:`, err));
+          }
         }
       }
       
