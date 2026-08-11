@@ -1216,6 +1216,118 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     res.json({ success: true });
   });
 
+  // ───── HubSpot lists as send audiences ─────
+  // Browse the tenant's HubSpot contact lists, annotated with any linked
+  // Orbit segment (import status, last sync, member count).
+  app.get("/api/marketing/hubspot-lists", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    try {
+      const { listHubspotContactLists } = await import("../services/hubspot-integration");
+      const { marketingSegments, marketingSegmentMembers } = await import("@shared/schema");
+      const lists = await listHubspotContactLists(ctx.tenantDomain);
+
+      const linked = await db
+        .select()
+        .from(marketingSegments)
+        .where(and(
+          eq(marketingSegments.tenantDomain, ctx.tenantDomain),
+          eq(marketingSegments.source, "hubspot_list"),
+        ));
+      const memberCounts = linked.length > 0
+        ? await db
+            .select({
+              segmentId: marketingSegmentMembers.segmentId,
+              memberCount: sql<number>`count(*)::int`,
+            })
+            .from(marketingSegmentMembers)
+            .where(inArray(marketingSegmentMembers.segmentId, linked.map(s => s.id)))
+            .groupBy(marketingSegmentMembers.segmentId)
+        : [];
+      const countMap = new Map(memberCounts.map(c => [c.segmentId, Number(c.memberCount)]));
+      const linkedByListId = new Map(linked.map(s => [s.hubspotListId, s]));
+
+      res.json(lists.map(l => {
+        const seg = linkedByListId.get(l.listId);
+        return {
+          ...l,
+          linkedSegment: seg ? {
+            id: seg.id,
+            name: seg.name,
+            syncStatus: seg.hubspotSyncStatus,
+            syncError: seg.hubspotSyncError,
+            lastSyncedAt: seg.lastHubspotSyncAt,
+            memberCount: countMap.get(seg.id) ?? 0,
+          } : null,
+        };
+      }));
+    } catch (err: any) {
+      res.status(502).json({ error: err?.message || "Failed to fetch HubSpot lists" });
+    }
+  });
+
+  // Import (or re-link) a HubSpot list as an Orbit segment. Creates/finds the
+  // linked segment immediately and runs the membership sync through the job
+  // queue; the client polls the segment's sync status via the browse endpoint.
+  app.post("/api/marketing/hubspot-lists/:listId/import", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    try {
+      const { listHubspotContactLists } = await import("../services/hubspot-integration");
+      const { ensureHubspotListSegment, enqueueHubspotListSegmentSync } =
+        await import("../services/hubspot-list-segment-service");
+
+      // Validate the list exists in the tenant's HubSpot (also gets its name).
+      const lists = await listHubspotContactLists(ctx.tenantDomain);
+      const list = lists.find(l => l.listId === String(req.params.listId));
+      if (!list) return res.status(404).json({ error: "HubSpot list not found" });
+
+      const { segment, created } = await ensureHubspotListSegment({
+        tenantDomain: ctx.tenantDomain,
+        listId: list.listId,
+        listName: list.name,
+        createdBy: req.session.userId!,
+      });
+
+      // Kick off the sync in the background (job queue) — don't block the
+      // request on a potentially large import.
+      enqueueHubspotListSegmentSync(segment).catch(err =>
+        console.warn(`[HubSpot List Segment] Import sync failed for ${segment.id}: ${err?.message ?? err}`));
+
+      res.status(created ? 201 : 200).json({ segment, created, syncing: true });
+    } catch (err: any) {
+      const status = err?.status ?? 502;
+      res.status(status).json({ error: err?.message || "Failed to import HubSpot list" });
+    }
+  });
+
+  // Re-sync a linked segment's membership from HubSpot on demand.
+  app.post("/api/marketing-segments/:id/hubspot-sync", async (req, res) => {
+    if (!await guardFeature(req, res, "directEmailDelivery")) return;
+    const ctx = await getRequestContext(req);
+    try {
+      const { marketingSegments } = await import("@shared/schema");
+      const [segment] = await db
+        .select()
+        .from(marketingSegments)
+        .where(and(
+          eq(marketingSegments.id, req.params.id),
+          eq(marketingSegments.tenantDomain, ctx.tenantDomain),
+        ));
+      if (!segment) return res.status(404).json({ error: "Segment not found" });
+      if (segment.source !== "hubspot_list" || !segment.hubspotListId) {
+        return res.status(400).json({ error: "Segment is not linked to a HubSpot list" });
+      }
+      const { enqueueHubspotListSegmentSync } = await import("../services/hubspot-list-segment-service");
+      enqueueHubspotListSegmentSync(segment).catch(err =>
+        console.warn(`[HubSpot List Segment] Manual sync failed for ${segment.id}: ${err?.message ?? err}`));
+      res.status(202).json({ syncing: true, segmentId: segment.id });
+    } catch (err: any) {
+      const status = err?.status ?? 500;
+      res.status(status).json({ error: err?.message || "Failed to start sync" });
+    }
+  });
+
   app.get("/api/email-recipient-lists/:id/recipients", async (req, res) => {
     if (!await guardFeature(req, res, "directEmailDelivery")) return;
     const ctx = await getRequestContext(req);

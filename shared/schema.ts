@@ -5189,8 +5189,20 @@ export const marketingSegments = pgTable(
     refreshIntervalMinutes: integer("refresh_interval_minutes").notNull().default(60),
     // When the member set was last recomputed.
     lastRefreshedAt: timestamp("last_refreshed_at"),
-    // Optional HubSpot list ID — when set, membership is mirrored to that list.
+    // Optional HubSpot list ID.
+    //  - source='rules':        membership is mirrored TO that list (outbound).
+    //  - source='hubspot_list': membership is imported FROM that list (inbound).
     hubspotListId: text("hubspot_list_id"),
+    // 'rules' (default, rule_json evaluation) | 'hubspot_list' (membership
+    // snapshot imported from the linked HubSpot contact list).
+    source: text("source").notNull().default("rules"),
+    // Display name of the linked HubSpot list (source='hubspot_list' only).
+    hubspotListName: text("hubspot_list_name"),
+    // null | 'pending' | 'syncing' | 'synced' | 'error' (source='hubspot_list' only).
+    hubspotSyncStatus: text("hubspot_sync_status"),
+    hubspotSyncError: text("hubspot_sync_error"),
+    // When membership was last successfully imported from HubSpot.
+    lastHubspotSyncAt: timestamp("last_hubspot_sync_at"),
     // Whether this segment is active and should be refreshed by the scheduler.
     isActive: boolean("is_active").notNull().default(true),
     createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),

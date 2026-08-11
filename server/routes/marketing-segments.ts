@@ -275,8 +275,10 @@ export function registerMarketingSegmentsRoutes(app: Express): void {
 
       const memberCount = await refreshSegmentMembership(segment);
 
-      // Mirror to HubSpot if configured — best-effort
-      if (segment.hubspotListId) {
+      // Mirror to HubSpot if configured — best-effort. Never mirror back a
+      // hubspot_list-sourced segment: it IMPORTS membership from HubSpot and
+      // pushing would mutate the customer's source list.
+      if (segment.hubspotListId && segment.source !== "hubspot_list") {
         const emails = await getSegmentMemberEmails(segment.id, tenantDomain);
         syncSegmentToHubSpotList(tenantDomain, segment.hubspotListId, emails).catch((err) =>
           console.warn("[Segments] HubSpot sync failed:", err.message),

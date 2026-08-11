@@ -653,6 +653,92 @@ export async function listContactsFromHubspotList(
 }
 
 /**
+ * Fetch ALL contacts that are members of a given HubSpot list, following the
+ * legacy API's has-more / vid-offset pagination. Used when importing a HubSpot
+ * list as an Orbit send-audience segment (unlike listContactsFromHubspotList,
+ * which only returns the first page for previews).
+ */
+export async function listAllContactsFromHubspotList(
+  tenantDomain: string,
+  listId: string,
+  maxContacts = 10000,
+): Promise<HubspotContactLite[]> {
+  const { accessToken } = await getTenantAccessToken(tenantDomain);
+  const propertyParams = CONTACT_PROPS.map((p) => `property=${encodeURIComponent(p)}`).join("&");
+  const out: HubspotContactLite[] = [];
+  let vidOffset: number | null = null;
+  // Hard page cap as a runaway guard (100 contacts/page).
+  const maxPages = Math.ceil(maxContacts / 100) + 2;
+  for (let page = 0; page < maxPages; page++) {
+    const offsetParam = vidOffset != null ? `&vidOffset=${vidOffset}` : "";
+    const url = `https://api.hubapi.com/contacts/v1/lists/${encodeURIComponent(listId)}/contacts/all?count=100&${propertyParams}${offsetParam}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => res.statusText);
+      throw new Error(`HubSpot list-contacts API error ${res.status}: ${txt}`);
+    }
+    const data: any = await res.json();
+    const contacts: any[] = data?.contacts ?? [];
+    out.push(...contacts.map(mapLegacyListContact));
+    const hasMore = !!data?.["has-more"];
+    if (out.length > maxContacts || (out.length >= maxContacts && hasMore)) {
+      // Explicit failure instead of a silent truncation — a partially imported
+      // audience would silently omit recipients from sends. Covers both the
+      // over-cap case and the exactly-at-cap case where HubSpot reports more
+      // pages remain.
+      throw new Error(
+        `HubSpot list ${listId} has more than ${maxContacts} contacts, which exceeds the supported import size.`,
+      );
+    }
+    if (!hasMore) return out;
+    vidOffset = data?.["vid-offset"] ?? null;
+    if (vidOffset == null || !Number.isFinite(Number(vidOffset))) {
+      // has-more without a usable cursor — a malformed pagination response.
+      // Never return partial membership.
+      throw new Error(
+        `HubSpot list ${listId} pagination returned has-more without a usable vid-offset cursor; refusing partial membership.`,
+      );
+    }
+  }
+  // Page-cap exhaustion with pages still remaining — never return a silently
+  // partial snapshot.
+  throw new Error(
+    `HubSpot list ${listId} pagination did not terminate within the supported import size (${maxContacts}).`,
+  );
+}
+
+/** Map a legacy contacts/v1 list-membership row to HubspotContactLite. */
+function mapLegacyListContact(c: any): HubspotContactLite {
+  const p = (c.properties as Record<string, { value: string }>) || {};
+  const firstName = p.firstname?.value || null;
+  const lastName = p.lastname?.value || null;
+  const fullName = [firstName, lastName].filter(Boolean).join(" ") || null;
+  const emailFromProps = p.email?.value || null;
+  const emailFromProfile: string | null = (() => {
+    const profiles: any[] = c["identity-profiles"] ?? [];
+    for (const prof of profiles) {
+      for (const ident of prof.identities ?? []) {
+        if (ident.type === "EMAIL" && ident.value) return ident.value as string;
+      }
+    }
+    return null;
+  })();
+  const email = emailFromProps || emailFromProfile;
+  return {
+    hubspotContactId: String(c.vid),
+    email,
+    firstName,
+    lastName,
+    name: fullName || email || "Unknown",
+    jobTitle: p.jobtitle?.value || null,
+    company: p.company?.value || null,
+    linkedinUrl: p.hs_linkedin_url?.value || null,
+  };
+}
+
+/**
  * Pull contacts from the tenant's HubSpot to seed prospects. With `query`,
  * searches first/last/email/company; otherwise returns the most recently
  * modified contacts.

@@ -2448,7 +2448,9 @@ export function startScheduledJobs(): void {
 
       // Mirror only the segments that were actually refreshed this sweep —
       // never all HubSpot-mirrored segments, to avoid spurious rate-limit pressure.
-      const hubspotTargets = refreshedSegments.filter((s) => s.hubspotListId);
+      // hubspot_list-sourced segments IMPORT membership from HubSpot — never
+      // mirror them back (that would mutate the customer's source list).
+      const hubspotTargets = refreshedSegments.filter((s) => s.hubspotListId && s.source !== "hubspot_list");
       if (hubspotTargets.length > 0) {
         try {
           const { syncSegmentToHubSpotList } = await import("./hubspot-service");

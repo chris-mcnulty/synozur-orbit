@@ -247,6 +247,13 @@ async function resolveEventContactIds(
  * marketing_segment_members. Returns the new member count.
  */
 export async function refreshSegmentMembership(segment: MarketingSegment): Promise<number> {
+  // HubSpot-list-backed segments mirror membership FROM HubSpot — evaluating
+  // their (empty) rule tree would wipe the imported membership. Delegate.
+  if (segment.source === "hubspot_list") {
+    const { syncHubspotListSegment } = await import("./hubspot-list-segment-service");
+    return syncHubspotListSegment(segment);
+  }
+
   const rule = parseRule(segment.ruleJson);
 
   const contactIds = await evaluateSegmentRule(segment.tenantDomain, rule);
@@ -292,8 +299,8 @@ export async function refreshDueSegments(tenantDomain?: string): Promise<{
   checked: number;
   refreshed: number;
   errors: number;
-  /** Segments that were actually refreshed in this sweep (id + hubspotListId). */
-  refreshedSegments: Array<{ id: string; tenantDomain: string; hubspotListId: string | null }>;
+  /** Segments that were actually refreshed in this sweep (id + hubspotListId + source). */
+  refreshedSegments: Array<{ id: string; tenantDomain: string; hubspotListId: string | null; source: string }>;
 }> {
   const conditions: any[] = [eq(marketingSegments.isActive, true)];
   if (tenantDomain) conditions.push(eq(marketingSegments.tenantDomain, tenantDomain));
@@ -306,7 +313,7 @@ export async function refreshDueSegments(tenantDomain?: string): Promise<{
   let checked = 0;
   let refreshed = 0;
   let errors = 0;
-  const refreshedSegments: Array<{ id: string; tenantDomain: string; hubspotListId: string | null }> = [];
+  const refreshedSegments: Array<{ id: string; tenantDomain: string; hubspotListId: string | null; source: string }> = [];
   const now = Date.now();
 
   for (const segment of segments) {
@@ -329,6 +336,7 @@ export async function refreshDueSegments(tenantDomain?: string): Promise<{
         id: segment.id,
         tenantDomain: segment.tenantDomain,
         hubspotListId: segment.hubspotListId ?? null,
+        source: segment.source ?? "rules",
       });
     } catch (err: any) {
       console.error(

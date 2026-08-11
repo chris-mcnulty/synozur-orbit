@@ -459,7 +459,8 @@ export default function EmailNewslettersPage() {
   const [sendListId, setSendListId] = useState<string>("");
   const [sendSegmentId, setSendSegmentId] = useState<string>("");
   const [sendTestRecipient, setSendTestRecipient] = useState<string>("");
-  const [sendMode, setSendMode] = useState<"list" | "segment" | "test">("test");
+  const [sendMode, setSendMode] = useState<"list" | "segment" | "hubspot" | "test">("test");
+  const [sendHubspotListId, setSendHubspotListId] = useState<string>("");
   const [sendScheduleAt, setSendScheduleAt] = useState<string>("");
   const [sendTrackOpens, setSendTrackOpens] = useState<boolean>(true);
   const [sendTrackClicks, setSendTrackClicks] = useState<boolean>(true);
@@ -572,6 +573,66 @@ export default function EmailNewslettersPage() {
     enabled: isAllowed && directDeliveryEnabled,
   });
 
+  type HubspotAudienceList = {
+    listId: string;
+    name: string;
+    memberCount: number;
+    linkedSegment: {
+      id: string;
+      name: string;
+      syncStatus: string | null;
+      syncError: string | null;
+      lastSyncedAt: string | null;
+      memberCount: number;
+    } | null;
+  };
+  const hubspotConnected = !!hubspotStatus?.connection;
+  const { data: hubspotAudienceLists = [], isLoading: hubspotListsLoading } = useQuery<HubspotAudienceList[]>({
+    queryKey: ["/api/marketing/hubspot-lists"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketing/hubspot-lists", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
+    enabled: isAllowed && directDeliveryEnabled && hubspotConnected && sendMode === "hubspot" && !!sendDialogEmail,
+    // Poll while an import/sync is running so status + counts stay live.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some(l => ["pending", "syncing"].includes(l.linkedSegment?.syncStatus ?? ""))
+        ? 3000
+        : false,
+  });
+
+  const importHubspotListMutation = useMutation({
+    mutationFn: async (listId: string) => {
+      const r = await fetch(`/api/marketing/hubspot-lists/${encodeURIComponent(listId)}/import`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Import failed");
+      return r.json() as Promise<{ segment: { id: string } }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing/hubspot-lists"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing-segments"] });
+    },
+    onError: (err: Error) => toast({ title: "HubSpot import failed", description: err.message, variant: "destructive" }),
+  });
+
+  const resyncHubspotSegmentMutation = useMutation({
+    mutationFn: async (segmentId: string) => {
+      const r = await fetch(`/api/marketing-segments/${segmentId}/hubspot-sync`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Sync failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing/hubspot-lists"] });
+      toast({ title: "Refresh started", description: "Membership is being re-synced from HubSpot." });
+    },
+    onError: (err: Error) => toast({ title: "Refresh failed", description: err.message, variant: "destructive" }),
+  });
+
   const sendEmailMutation = useMutation({
     mutationFn: async ({ emailId, listId, segmentId, testRecipient, scheduledAt, trackOpens, trackClicks, excludeActiveProspects, senderIdentityId, subscriptionTypeIds }: { emailId: string; listId?: string; segmentId?: string; testRecipient?: string; scheduledAt?: string; trackOpens?: boolean; trackClicks?: boolean; excludeActiveProspects?: boolean; senderIdentityId?: string; subscriptionTypeIds?: string[] }) => {
       const r = await fetch(`/api/generated-emails/${emailId}/send`, {
@@ -599,6 +660,7 @@ export default function EmailNewslettersPage() {
       setSendDialogEmail(null);
       setSendListId("");
       setSendSegmentId("");
+      setSendHubspotListId("");
       setSendTestRecipient("");
       setSendScheduleAt("");
       setSendSenderIdentityId("");
@@ -2305,6 +2367,15 @@ export default function EmailNewslettersPage() {
                   onClick={() => setSendMode("segment")}
                   data-testid="button-send-mode-segment"
                 >Segment</Button>
+                {hubspotConnected && (
+                  <Button
+                    variant={sendMode === "hubspot" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setSendMode("hubspot")}
+                    data-testid="button-send-mode-hubspot"
+                  >HubSpot list</Button>
+                )}
               </div>
               {sendMode === "test" ? (
                 <div>
@@ -2316,6 +2387,63 @@ export default function EmailNewslettersPage() {
                     data-testid="input-test-recipient"
                   />
                   <p className="text-xs text-muted-foreground mt-1">A single test message will be sent and recorded under Sends.</p>
+                </div>
+              ) : sendMode === "hubspot" ? (
+                <div>
+                  <Label>HubSpot contact list</Label>
+                  {hubspotListsLoading ? (
+                    <p className="text-xs text-muted-foreground mt-2">Loading HubSpot lists…</p>
+                  ) : hubspotAudienceLists.length === 0 ? (
+                    <p className="text-xs text-muted-foreground mt-2">No contact lists found in the connected HubSpot account.</p>
+                  ) : (
+                    <Select value={sendHubspotListId} onValueChange={setSendHubspotListId}>
+                      <SelectTrigger data-testid="select-hubspot-list">
+                        <SelectValue placeholder="Choose a HubSpot list..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {hubspotAudienceLists.map(l => (
+                          <SelectItem key={l.listId} value={l.listId}>
+                            {l.name} ({l.memberCount} in HubSpot)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {(() => {
+                    const sel = hubspotAudienceLists.find(l => l.listId === sendHubspotListId);
+                    if (!sel) return null;
+                    const seg = sel.linkedSegment;
+                    if (!seg) {
+                      return (
+                        <p className="text-xs text-muted-foreground mt-1" data-testid="text-hubspot-list-not-imported">
+                          Not imported yet — contacts will be imported from HubSpot when you send. Suppressions, opt-outs, and subscription preferences still apply.
+                        </p>
+                      );
+                    }
+                    const syncing = seg.syncStatus === "pending" || seg.syncStatus === "syncing";
+                    return (
+                      <div className="text-xs text-muted-foreground mt-1 space-y-1" data-testid="text-hubspot-list-status">
+                        <p>
+                          {syncing
+                            ? "Importing contacts from HubSpot…"
+                            : seg.syncStatus === "error"
+                              ? `Last sync failed: ${seg.syncError ?? "unknown error"}`
+                              : `${seg.memberCount} contacts imported${seg.lastSyncedAt ? ` · last synced ${new Date(seg.lastSyncedAt).toLocaleString()}` : ""}`}
+                        </p>
+                        <p>Membership is refreshed from HubSpot automatically before each send.</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={syncing || resyncHubspotSegmentMutation.isPending}
+                          onClick={() => resyncHubspotSegmentMutation.mutate(seg.id)}
+                          data-testid="button-resync-hubspot-list"
+                        >
+                          {syncing ? "Syncing…" : "Re-sync now"}
+                        </Button>
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : sendMode === "segment" ? (
                 <div>
@@ -2361,7 +2489,7 @@ export default function EmailNewslettersPage() {
                   )}
                 </div>
               )}
-              {(sendMode === "list" || sendMode === "segment") && (
+              {(sendMode === "list" || sendMode === "segment" || sendMode === "hubspot") && (
                 <>
                   <div>
                     <Label htmlFor="send-schedule-at">Schedule for later (optional)</Label>
@@ -2466,7 +2594,7 @@ export default function EmailNewslettersPage() {
                   </div>
                 </>
               )}
-              {(sendMode === "list" || sendMode === "segment") && !hasMailingAddress && (
+              {(sendMode === "list" || sendMode === "segment" || sendMode === "hubspot") && !hasMailingAddress && (
                 <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 space-y-1" data-testid="banner-missing-mailing-address">
                   <div className="font-semibold flex items-center gap-1.5">
                     <span>⛔</span>
@@ -2485,7 +2613,7 @@ export default function EmailNewslettersPage() {
                   </p>
                 </div>
               )}
-              {sendDialogEmail && sendDialogEmail.status !== "approved" && sendDialogEmail.status !== "sent" && (sendMode === "list" || sendMode === "segment") && (
+              {sendDialogEmail && sendDialogEmail.status !== "approved" && sendDialogEmail.status !== "sent" && (sendMode === "list" || sendMode === "segment" || sendMode === "hubspot") && (
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="text-approval-warning">
                   This email is in <strong>{sendDialogEmail.status}</strong> status. Approve it before sending. Test sends are still allowed.
                 </div>
@@ -2521,21 +2649,40 @@ export default function EmailNewslettersPage() {
                 <Button
                   disabled={
                     sendEmailMutation.isPending ||
-                    ((sendMode === "list" || sendMode === "segment") && !hasMailingAddress) ||
+                    ((sendMode === "list" || sendMode === "segment" || sendMode === "hubspot") && !hasMailingAddress) ||
+                    importHubspotListMutation.isPending ||
                     (sendMode === "test" ? !sendTestRecipient.includes("@") :
                      sendMode === "segment" ? !sendSegmentId :
+                     sendMode === "hubspot" ? !sendHubspotListId :
                      !sendListId)
                   }
-                  onClick={() => {
+                  onClick={async () => {
                     if (!sendDialogEmail) return;
-                    const isBulk = sendMode === "list" || sendMode === "segment";
+                    const isBulk = sendMode === "list" || sendMode === "segment" || sendMode === "hubspot";
                     const scheduledAt = isBulk && sendScheduleAt
                       ? new Date(sendScheduleAt).toISOString()
                       : undefined;
+                    // HubSpot mode targets the linked segment; import the list
+                    // first if it hasn't been linked yet. Membership is also
+                    // refreshed from HubSpot automatically at delivery time.
+                    let hubspotSegmentId: string | undefined;
+                    if (sendMode === "hubspot") {
+                      const sel = hubspotAudienceLists.find(l => l.listId === sendHubspotListId);
+                      if (sel?.linkedSegment) {
+                        hubspotSegmentId = sel.linkedSegment.id;
+                      } else {
+                        try {
+                          const imported = await importHubspotListMutation.mutateAsync(sendHubspotListId);
+                          hubspotSegmentId = imported.segment.id;
+                        } catch {
+                          return; // toast already shown by the mutation
+                        }
+                      }
+                    }
                     sendEmailMutation.mutate({
                       emailId: sendDialogEmail.id,
                       listId: sendMode === "list" ? sendListId : undefined,
-                      segmentId: sendMode === "segment" ? sendSegmentId : undefined,
+                      segmentId: sendMode === "segment" ? sendSegmentId : sendMode === "hubspot" ? hubspotSegmentId : undefined,
                       testRecipient: sendMode === "test" ? sendTestRecipient.trim() : undefined,
                       scheduledAt,
                       trackOpens: isBulk ? sendTrackOpens : undefined,
