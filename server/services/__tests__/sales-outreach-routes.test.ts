@@ -167,6 +167,16 @@ vi.mock("../outreach-performance-service", () => ({
   getCampaignPerformance: vi.fn(),
 }));
 
+vi.mock("../prospect-promotion-service", () => ({
+  promoteProspects: vi.fn().mockResolvedValue({
+    total: 1, created: 1, linked: 0, skippedOptedOut: 0, skippedNoEmail: 0,
+  }),
+}));
+
+vi.mock("../hubspot-contact-resolver", () => ({
+  preWarmMarketingCache: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../manual-action-quota", () => ({
   reserveManualAction: vi.fn().mockResolvedValue({ ok: false }),
 }));
@@ -183,6 +193,7 @@ import { getLinkedInCapabilities } from "../linkedin-provider";
 import { composeTouch } from "../outreach-composer-service";
 import { discoverProspects, importDiscoveredProspects } from "../discovery-service";
 import { enrichProspectContact, EnrichError } from "../prospect-enrich-service";
+import { promoteProspects } from "../prospect-promotion-service";
 
 // ── Shared test context ───────────────────────────────────────────────────────
 
@@ -1151,6 +1162,98 @@ describe("sales-outreach routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ imported: 1, skipped: 0 });
+    });
+  });
+
+  // ── Promotion authorization (campaign owner or admin only) ─────────────────
+
+  describe("POST /api/sales-outreach/campaigns/:id/promote-prospects", () => {
+    const CAMPAIGN = { id: "camp-1", tenantDomain: "acme.com", createdBy: "owner-9", status: "active" };
+    const PROSPECT_ROW = {
+      id: "pr-1", campaignId: "camp-1", tenantDomain: "acme.com",
+      name: "Ada Lovelace", email: "ada@example.com", title: "CTO",
+      companyName: "Analytical", hubspotContactId: null, status: "dormant",
+    };
+
+    it("rejects a non-owner non-admin with 403 and promotes nothing", async () => {
+      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "someone-else", userRole: "Standard User" } as any);
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
+        .send({ status: "dormant" });
+
+      expect(res.status).toBe(403);
+      expect(promoteProspects).not.toHaveBeenCalled();
+    });
+
+    it("allows the campaign owner", async () => {
+      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "owner-9", userRole: "Standard User" } as any);
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      pushDb(PROSPECT_ROW); // prospects select
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
+        .send({ status: "dormant" });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ created: 1 });
+      expect(promoteProspects).toHaveBeenCalledWith("acme.com", [PROSPECT_ROW]);
+    });
+
+    it("allows a Domain Admin who is not the owner", async () => {
+      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "admin-1", userRole: "Domain Admin" } as any);
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      pushDb(PROSPECT_ROW);
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
+        .send({ prospectIds: ["pr-1"] });
+
+      expect(res.status).toBe(200);
+      expect(promoteProspects).toHaveBeenCalled();
+    });
+
+    it("returns 400 without prospectIds or status", async () => {
+      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "owner-9", userRole: "Standard User" } as any);
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(promoteProspects).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /api/sales-outreach/prospects/:id/promote", () => {
+    const CAMPAIGN = { id: "camp-1", tenantDomain: "acme.com", createdBy: "owner-9", status: "active" };
+    const PROSPECT_ROW = {
+      id: "pr-1", campaignId: "camp-1", tenantDomain: "acme.com",
+      name: "Ada Lovelace", email: "ada@example.com", status: "dormant",
+    };
+
+    it("rejects a non-owner non-admin with 403", async () => {
+      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "someone-else", userRole: "Standard User" } as any);
+      pushDb(PROSPECT_ROW); // prospect select
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+
+      const res = await request(app).post("/api/sales-outreach/prospects/pr-1/promote").send({});
+
+      expect(res.status).toBe(403);
+      expect(promoteProspects).not.toHaveBeenCalled();
+    });
+
+    it("allows the campaign owner", async () => {
+      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "owner-9", userRole: "Standard User" } as any);
+      pushDb(PROSPECT_ROW);
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+
+      const res = await request(app).post("/api/sales-outreach/prospects/pr-1/promote").send({});
+
+      expect(res.status).toBe(200);
+      expect(promoteProspects).toHaveBeenCalledWith("acme.com", [PROSPECT_ROW]);
     });
   });
 });

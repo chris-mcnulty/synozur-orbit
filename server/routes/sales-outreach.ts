@@ -40,6 +40,7 @@ import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-c
 import { getRedirectUri } from "./planner";
 import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote, hasHubspotListScopes } from "../services/hubspot-integration";
 import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
+import { promoteProspects } from "../services/prospect-promotion-service";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
@@ -1248,6 +1249,89 @@ export function registerSalesOutreachRoutes(app: Express) {
   });
 
   // Push a prospect into HubSpot (create/update the contact). Returns the id.
+  // ── Promote prospects into marketing contacts ──────────────────────────
+  // Deliberate user action: bridges outreach prospects into the marketing
+  // contact spine (upsert by tenant+email, opt-out preserved, HubSpot id
+  // carried over). Bulk: selected prospect ids OR all prospects in a status.
+  app.post("/api/sales-outreach/campaigns/:id/promote-prospects", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      if (!(await guardFeature(req, res, "marketingContacts"))) return;
+      const ctx = await getRequestContext(req);
+      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      // Only the campaign creator or an admin may promote prospects — same
+      // policy as campaign edit/delete, since promotion changes marketing
+      // audience membership.
+      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
+      if (!isAdmin && campaign.createdBy !== ctx.userId) {
+        return res.status(403).json({ error: "Only the campaign owner or an admin can promote prospects from this campaign." });
+      }
+
+      const prospectIds = Array.isArray(req.body?.prospectIds)
+        ? (req.body.prospectIds as unknown[]).filter((v): v is string => typeof v === "string")
+        : null;
+      const status = typeof req.body?.status === "string" ? req.body.status : null;
+
+      const PROSPECT_STATUSES = [
+        "new", "researched", "draft_pending_approval", "sent",
+        "awaiting_reply", "replied", "cadence_step_due", "dormant",
+      ];
+      if (status && !PROSPECT_STATUSES.includes(status)) {
+        return res.status(400).json({ error: `Unknown status "${status}"` });
+      }
+      if ((!prospectIds || prospectIds.length === 0) && !status) {
+        return res.status(400).json({ error: "Provide prospectIds or a status filter" });
+      }
+
+      const conditions = [
+        eq(prospects.campaignId, campaign.id),
+        eq(prospects.tenantDomain, ctx.tenantDomain),
+      ];
+      if (prospectIds && prospectIds.length > 0) conditions.push(inArray(prospects.id, prospectIds));
+      if (status) conditions.push(eq(prospects.status, status));
+
+      const rows = await db.select().from(prospects).where(and(...conditions));
+      if (rows.length === 0) {
+        return res.json({ total: 0, created: 0, linked: 0, skippedOptedOut: 0, skippedNoEmail: 0 });
+      }
+      const summary = await promoteProspects(ctx.tenantDomain, rows);
+      res.json(summary);
+    } catch (err: any) {
+      console.error("[sales-outreach-promote]", err);
+      res.status(500).json({ error: err.message || "Failed to promote prospects" });
+    }
+  });
+
+  // Single-prospect promotion (prospect list row action).
+  app.post("/api/sales-outreach/prospects/:id/promote", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      if (!(await guardFeature(req, res, "marketingContacts"))) return;
+      const ctx = await getRequestContext(req);
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      // Same policy as bulk promotion: campaign owner or admin only.
+      const campaign = await getCampaign(ctx.tenantDomain, prospect.campaignId);
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
+      if (!isAdmin && campaign.createdBy !== ctx.userId) {
+        return res.status(403).json({ error: "Only the campaign owner or an admin can promote this prospect." });
+      }
+      if (!prospect.email) {
+        return res.status(400).json({ error: "Prospect has no email address — enrich it first" });
+      }
+      const summary = await promoteProspects(ctx.tenantDomain, [prospect]);
+      res.json(summary);
+    } catch (err: any) {
+      console.error("[sales-outreach-promote-one]", err);
+      res.status(500).json({ error: err.message || "Failed to promote prospect" });
+    }
+  });
+
   app.post("/api/sales-outreach/prospects/:id/sync-hubspot", async (req, res) => {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;

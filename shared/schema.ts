@@ -5054,6 +5054,9 @@ export const marketingContacts = pgTable(
     hubspotContactId: text("hubspot_contact_id"),
     // Source that first created this contact
     source: text("source").notNull().default("manual"),
+    // Set when this contact was promoted from a sales-outreach prospect —
+    // links back to the originating prospects row for attribution.
+    sourceProspectId: varchar("source_prospect_id"),
     metadata: jsonb("metadata"),
     lastEventAt: timestamp("last_event_at"),
     // Cross-channel opt-out: set true when a contact opts out via any channel
@@ -5074,6 +5077,9 @@ export const marketingContacts = pgTable(
     lifecycleIdx: index("marketing_contacts_lifecycle_idx").on(
       table.tenantDomain,
       table.lifecycleStage,
+    ),
+    sourceProspectIdx: index("marketing_contacts_source_prospect_idx").on(
+      table.sourceProspectId,
     ),
   }),
 );
