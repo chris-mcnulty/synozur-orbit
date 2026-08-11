@@ -847,6 +847,74 @@ export function registerSaturnMarketingRoutes(app: Express) {
   // Pulls all published posts via the website MCP connection, then upserts them
   // as blog_post content assets. Matches by websitePostId first, then by
   // normalised URL, so re-running is safe and idempotent.
+  // ── Website import enrichment helpers ──────────────────────────────────────
+  // Imported blog posts must land fully formed: lead image, Blog Post
+  // category, and an AI summary. The summary is generated asynchronously
+  // AFTER the response is sent so a slow AI call (or proxy timeout) can
+  // never truncate the import itself.
+  const resolveBlogCategoryId = async (ctx: { tenantDomain: string; marketId: string; userId: string }): Promise<string | null> => {
+    try {
+      const [existing] = await db.select({ id: contentAssetCategories.id })
+        .from(contentAssetCategories)
+        .where(and(
+          eq(contentAssetCategories.tenantDomain, ctx.tenantDomain),
+          eq(contentAssetCategories.marketId, ctx.marketId),
+          ilike(contentAssetCategories.name, "blog post"),
+        ))
+        .limit(1);
+      if (existing) return existing.id;
+      const [row] = await db.insert(contentAssetCategories).values({
+        id: randomUUID(),
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        name: "Blog Post",
+        createdBy: ctx.userId,
+      } as InsertContentAssetCategory).returning({ id: contentAssetCategories.id });
+      return row?.id ?? null;
+    } catch (err: any) {
+      console.error("[Saturn] Blog category resolution failed:", err.message);
+      return null;
+    }
+  };
+
+  const queueImportSummaries = (ctx: { tenantDomain: string; marketId: string }, assetIds: string[]) => {
+    if (!assetIds.length) return;
+    (async () => {
+      try {
+        const assets = await db.select().from(contentAssets)
+          .where(and(
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            inArray(contentAssets.id, assetIds),
+            sql`(${contentAssets.aiSummary} IS NULL OR ${contentAssets.aiSummary} = '')`,
+          ));
+        if (!assets.length) return;
+        const groundingContext = await loadGroundingContext(ctx.tenantDomain, ctx.marketId);
+        let processed = 0, failed = 0;
+        for (const asset of assets) {
+          try {
+            const summary = await generateContentSummary(
+              asset.title,
+              asset.description || "",
+              asset.content || asset.description || "",
+              asset.url || "",
+              groundingContext,
+            );
+            await db.update(contentAssets)
+              .set({ aiSummary: summary, updatedAt: new Date() })
+              .where(eq(contentAssets.id, asset.id));
+            processed++;
+          } catch (err: any) {
+            console.error(`[Saturn] Import summary failed for ${asset.id}:`, err.message);
+            failed++;
+          }
+        }
+        console.log(`[Saturn] Import summaries complete: ${processed} processed, ${failed} failed of ${assets.length}`);
+      } catch (err: any) {
+        console.error("[Saturn] Import summary batch failed:", err.message);
+      }
+    })();
+  };
+
   app.post("/api/content-assets/import-from-website", async (req, res) => {
     if (!await guardFeature(req, res, "contentLibrary")) return;
     const ctx = await getRequestContext(req);
@@ -882,6 +950,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     const byPostId = new Map(existing.filter(a => a.websitePostId).map(a => [a.websitePostId!, a.id]));
     const byUrl    = new Map(existing.filter(a => a.url).map(a => [normalizeUrl(a.url!), a.id]));
 
+    const blogCategoryId = await resolveBlogCategoryId(ctx);
+    const importedAssetIds: string[] = [];
     let added = 0, updated = 0, skipped = 0;
     for (const post of posts) {
       // Construct the canonical blog post URL from the site + slug.
@@ -893,28 +963,36 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const existingId = byPostId.get(post.id) ?? byUrl.get(normUrl);
       if (existingId) {
         // Update title / excerpt / leadImage if they've changed.
+        // Website MCP returns heroImageUrl (NOT leadImageUrl) — see
+        // WebsitePostSummary. Reading the wrong field silently dropped images.
+        const imageUrl = post.heroImageUrl ?? post.ogImageUrl ?? null;
         await db.update(contentAssets).set({
           title: post.title,
           ...(post.excerpt ? { description: post.excerpt } : {}),
-          ...(post.leadImageUrl ? { leadImageUrl: post.leadImageUrl } : {}),
+          ...(imageUrl ? { leadImageUrl: imageUrl } : {}),
           ...(assetDate ? { assetDate } : {}),
+          // Backfill the Blog Post category if the asset has none.
+          ...(blogCategoryId ? { categoryId: sql`COALESCE(${contentAssets.categoryId}, ${blogCategoryId})` } : {}),
           websitePostId: post.id,
           websitePostSlug: post.slug,
           websitePostStatus: post.status,
           url: postUrl,
         }).where(eq(contentAssets.id, existingId));
+        importedAssetIds.push(existingId);
         updated++;
       } else {
+        const newId = randomUUID();
         await db.insert(contentAssets).values({
-          id: randomUUID(),
+          id: newId,
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
           title: post.title,
           description: post.excerpt ?? null,
           url: postUrl,
           assetType: "blog_post",
-          leadImageUrl: post.leadImageUrl ?? null,
+          leadImageUrl: post.heroImageUrl ?? post.ogImageUrl ?? null,
           extractionStatus: "none",
+          categoryId: blogCategoryId,
           websitePostId: post.id,
           websitePostSlug: post.slug,
           websitePostStatus: post.status,
@@ -922,11 +1000,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
           status: "active",
           createdBy: ctx.userId,
         } as any);
+        importedAssetIds.push(newId);
         added++;
       }
     }
     if (posts.length === 0) skipped = 0; // nothing to skip — all posts processed
     res.json({ added, updated, skipped, total: posts.length });
+    // AI summaries run after the response so they can never block the import.
+    queueImportSummaries(ctx, importedAssetIds);
   });
 
   // ── Selective MCP import — candidates + import ────────────────────────────
@@ -1204,24 +1285,40 @@ export function registerSaturnMarketingRoutes(app: Express) {
     };
 
     let postsAdded = 0, postsUpdated = 0, eventsAdded = 0, eventsUpdated = 0;
+    // Declared here (not inside the try block) — res.json below is outside
+    // that scope; declaring them inside caused a ReferenceError AFTER all DB
+    // writes committed, so imports "failed" while leaving partial data.
+    let episodesAdded = 0, episodesUpdated = 0;
+    let landingAdded = 0, landingUpdated = 0;
 
     // Validate asset type against the known list; fall back to blog_post.
     const VALID_ASSET_TYPES = new Set(["blog_post","case_study","whitepaper","video","workshop","webinar","podcast_outline","other","landing_page","press_release","ebook","linkedin_digest","video_script"]);
     const safeAssetType = (raw: string): ContentAssetType =>
       (VALID_ASSET_TYPES.has(raw) ? raw : "blog_post") as ContentAssetType;
 
+    const importedAssetIds: string[] = [];
+    const blogCategoryId = postsToImport.some(p => safeAssetType(p.assetType) === "blog_post")
+      ? await resolveBlogCategoryId(ctx)
+      : null;
+
     try {
     for (const post of postsToImport) {
       const postUrl = `${siteUrl}/insights/${post.slug}`;
       const assetDate = post.publishedAt ? new Date(post.publishedAt) : null;
       const assetType = safeAssetType(post.assetType);
+      const categoryIdForPost = assetType === "blog_post" ? blogCategoryId : null;
 
+      // existingId comes from the client — never trust it blindly. Scope the
+      // update to tenant + market and verify a row actually matched; a stale
+      // or forged ID falls through to insert instead of silently "succeeding".
+      let updatedRow: { id: string } | undefined;
       if (post.existingId) {
-        await db.update(contentAssets).set({
+        [updatedRow] = await db.update(contentAssets).set({
           title: post.title,
           ...(post.excerpt ? { description: post.excerpt } : {}),
           ...(post.heroImageUrl ? { leadImageUrl: post.heroImageUrl } : {}),
           ...(assetDate ? { assetDate } : {}),
+          ...(categoryIdForPost ? { categoryId: sql`COALESCE(${contentAssets.categoryId}, ${categoryIdForPost})` } : {}),
           assetType,
           websitePostId: post.mcpId,
           websitePostSlug: post.slug,
@@ -1230,11 +1327,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
         }).where(and(
           eq(contentAssets.id, post.existingId),
           eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        ));
+          eq(contentAssets.marketId, ctx.marketId),
+        )).returning({ id: contentAssets.id });
+      }
+      if (updatedRow) {
+        importedAssetIds.push(updatedRow.id);
         postsUpdated++;
       } else {
+        const newId = randomUUID();
         await db.insert(contentAssets).values({
-          id: randomUUID(),
+          id: newId,
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
           title: post.title,
@@ -1243,6 +1345,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           assetType,
           leadImageUrl: post.heroImageUrl ?? null,
           extractionStatus: "none",
+          categoryId: categoryIdForPost,
           websitePostId: post.mcpId,
           websitePostSlug: post.slug,
           websitePostStatus: "published",
@@ -1250,6 +1353,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
           status: "active",
           createdBy: ctx.userId,
         } as any);
+        importedAssetIds.push(newId);
         postsAdded++;
       }
     }
@@ -1296,12 +1400,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
 
     // ── Episodes → content library (assetType "other" — podcast episode)
-    let episodesAdded = 0, episodesUpdated = 0;
     for (const ep of episodesToImport) {
       const epUrl = `${siteUrl}/podcast/${ep.slug}`;
       const assetDate = ep.publishedAt ? new Date(ep.publishedAt) : null;
+      let epUpdated: { id: string } | undefined;
       if (ep.existingId) {
-        await db.update(contentAssets).set({
+        [epUpdated] = await db.update(contentAssets).set({
           title: ep.title,
           ...(ep.summary ? { description: ep.summary } : {}),
           ...(ep.artworkUrl ? { leadImageUrl: ep.artworkUrl } : {}),
@@ -1312,7 +1416,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
         }).where(and(
           eq(contentAssets.id, ep.existingId),
           eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        ));
+          eq(contentAssets.marketId, ctx.marketId),
+        )).returning({ id: contentAssets.id });
+      }
+      if (epUpdated) {
         episodesUpdated++;
       } else {
         await db.insert(contentAssets).values({
@@ -1337,12 +1444,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
 
     // ── Landing pages → content library (assetType "landing_page")
-    let landingAdded = 0, landingUpdated = 0;
     for (const lp of landingPagesToImport) {
       const lpUrl = lp.url ?? `${siteUrl}/${lp.slug}`;
       const assetDate = lp.publishedAt ? new Date(lp.publishedAt) : null;
+      let lpUpdated: { id: string } | undefined;
       if (lp.existingId) {
-        await db.update(contentAssets).set({
+        [lpUpdated] = await db.update(contentAssets).set({
           title: lp.title,
           ...(lp.description ? { description: lp.description } : {}),
           ...(assetDate ? { assetDate } : {}),
@@ -1352,7 +1459,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
         }).where(and(
           eq(contentAssets.id, lp.existingId),
           eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        ));
+          eq(contentAssets.marketId, ctx.marketId),
+        )).returning({ id: contentAssets.id });
+      }
+      if (lpUpdated) {
         landingUpdated++;
       } else {
         await db.insert(contentAssets).values({
@@ -1381,6 +1491,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
 
     res.json({ postsAdded, postsUpdated, eventsAdded, eventsUpdated, episodesAdded, episodesUpdated, landingAdded, landingUpdated });
+    // AI summaries run after the response so they can never block the import.
+    queueImportSummaries(ctx, importedAssetIds);
   });
 
   app.post("/api/content-assets/generate-summaries", async (req, res) => {
