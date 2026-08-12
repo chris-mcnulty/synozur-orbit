@@ -1596,14 +1596,16 @@ async function runGeneration(
   const generateImages = options.generateImages !== false;
 
   // Clear prior conference posts so regeneration doesn't leave behind stale
-  // variant groups. By default we keep already-published posts; when
-  // includePublished is set we wipe those too. Tenant-scoped.
+  // variant groups. Scoped to the selected accounts: generating for LinkedIn
+  // only must not delete Twitter/X posts (and vice versa). By default we keep
+  // already-published posts; includePublished wipes those too for this scope.
   await db
     .delete(generatedPosts)
     .where(
       and(
         eq(generatedPosts.conferenceId, conferenceId),
         eq(generatedPosts.tenantDomain, tenantDomain),
+        inArray(generatedPosts.socialAccountId, accountIds),
         ...(options.includePublished ? [] : [ne(generatedPosts.status, "published")]),
       ),
     );

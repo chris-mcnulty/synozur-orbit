@@ -1747,8 +1747,9 @@ function GenerateTab({
 
           <p className="text-xs text-muted-foreground">
             Generates {sessions.length} session posts + anchor posts, each with multiple copy variations, scheduled across
-            your promotion window. Re-running replaces all unpublished drafts
-            {includePublished ? " and your already-published posts" : " (published posts are kept)"}.
+            your promotion window. Only the accounts you select above are affected — unselected platforms keep their
+            existing posts untouched. Re-running replaces unpublished drafts for the selected accounts
+            {includePublished ? " and their already-published posts" : " (published posts are kept)"}.
           </p>
 
           <Button
