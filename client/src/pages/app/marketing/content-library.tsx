@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription,
 } from "@/components/ui/dialog";
@@ -195,7 +196,7 @@ export default function ContentLibraryPage() {
     },
   });
 
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.contentLibrary === true;
+  const isAllowed = useFeatureFlag("contentLibrary");
 
   const [assetPage, setAssetPage] = useState(1);
   const [ASSETS_PAGE_SIZE, setAssetsPageSize] = usePersistedPageSize("content-library");

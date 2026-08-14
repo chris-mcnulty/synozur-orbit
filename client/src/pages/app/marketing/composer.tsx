@@ -10,6 +10,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { Link } from "wouter";
 import {
   PencilLine, Send, Calendar as CalendarIcon, Save, AtSign, Lock, Loader2, Hash, X,
@@ -72,19 +73,10 @@ export default function ComposerPage() {
   const effectiveDelivery: "orbit" | "csv" = campaignId ? deliveryMode : "orbit";
   const isCsv = effectiveDelivery === "csv";
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
-    queryKey: ["/api/tenant/info"],
-    queryFn: async () => {
-      const r = await fetch("/api/tenant/info", { credentials: "include" });
-      return r.ok ? r.json() : {};
-    },
-  });
   // Composer APIs (rewrite, create, patch, calendar) are gated by socialPosts
   // on the backend; publish is additionally gated by directPublishing. Match
   // the *minimum* gate so the UI doesn't render only to 403 on every call.
-  // Default true while loading — avoids flashing the paywall gate before
-  // tenant features have resolved (same pattern as calendar.tsx).
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.socialPosts === true;
+  const isAllowed = useFeatureFlag("socialPosts");
 
   const { data: accounts = [] } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social-accounts"],

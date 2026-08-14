@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles, Network, Share2, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import { CampaignGridSkeleton } from "@/components/ui/skeletons";
@@ -248,15 +249,7 @@ export default function CampaignsPage() {
     setAdoptedIdea(null);
   };
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
-    queryKey: ["/api/tenant/info"],
-    queryFn: async () => {
-      const r = await fetch("/api/tenant/info", { credentials: "include" });
-      return r.ok ? r.json() : {};
-    },
-  });
-
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.campaigns === true;
+  const isAllowed = useFeatureFlag("campaigns");
 
   const [campaignPage, setCampaignPage] = useState(1);
   const [CAMPAIGNS_PAGE_SIZE, setCampaignsPageSize] = usePersistedPageSize("campaigns");

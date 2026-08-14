@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { useSearch, useLocation } from "wouter";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
 import {
@@ -248,9 +249,9 @@ export default function IntelligenceBriefingPage() {
       return r.ok ? r.json() : {};
     },
   });
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.intelligenceBriefings === true;
-  const podcastAllowed = tenantInfo === undefined || tenantInfo?.features?.podcastBriefings === true;
-  const scheduledUpdatesAllowed = tenantInfo === undefined || tenantInfo?.features?.scheduledBriefingUpdates === true;
+  const isAllowed = useFeatureFlag("intelligenceBriefings");
+  const podcastAllowed = useFeatureFlag("podcastBriefings");
+  const scheduledUpdatesAllowed = useFeatureFlag("scheduledBriefingUpdates");
   const collabAllowed = tenantInfo?.features?.collaboration !== false;
 
   const handleDownloadPdf = async () => {

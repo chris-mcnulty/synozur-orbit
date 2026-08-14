@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Lock, Send, ListPlus, Users, Ban, Trash2, Plus, AlertTriangle, ChevronDown, ChevronRight, Download, Pencil, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { format } from "date-fns";
 
@@ -107,14 +108,7 @@ export default function SendsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
-    queryKey: ["/api/tenant/info"],
-    queryFn: async () => {
-      const r = await fetch("/api/tenant/info", { credentials: "include" });
-      return r.ok ? r.json() : {};
-    },
-  });
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.directEmailDelivery === true;
+  const isAllowed = useFeatureFlag("directEmailDelivery");
 
   const [tab, setTab] = useState<SendsTab>("sends");
   const [drilldownSendId, setDrilldownSendId] = useState<string | null>(null);

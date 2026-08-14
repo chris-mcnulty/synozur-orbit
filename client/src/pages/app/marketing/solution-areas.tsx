@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -45,15 +46,7 @@ export default function SolutionAreasPage() {
   const [form, setForm] = useState(emptyForm);
   const [editForm, setEditForm] = useState(emptyForm);
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
-    queryKey: ["/api/tenant/info"],
-    queryFn: async () => {
-      const r = await fetch("/api/tenant/info", { credentials: "include" });
-      return r.ok ? r.json() : {};
-    },
-  });
-
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.contentLibrary === true;
+  const isAllowed = useFeatureFlag("contentLibrary");
 
   const { data: areas = [], isLoading } = useQuery<SolutionArea[]>({
     queryKey: ["/api/solution-areas"],
@@ -129,7 +122,7 @@ export default function SolutionAreasPage() {
     setEditArea(area);
   };
 
-  if (!isAllowed && tenantInfo !== undefined) {
+  if (!isAllowed) {
     return (
       <AppLayout>
         <div className="p-6 max-w-7xl mx-auto flex items-center justify-center min-h-[60vh]">

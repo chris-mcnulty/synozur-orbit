@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { useSearch, useLocation } from "wouter";
 
 interface ContentAsset {
@@ -478,8 +479,8 @@ export default function EmailNewslettersPage() {
     },
   });
 
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.emailNewsletters === true;
-  const directDeliveryEnabled = tenantInfo === undefined || tenantInfo?.features?.directEmailDelivery === true;
+  const isAllowed = useFeatureFlag("emailNewsletters");
+  const directDeliveryEnabled = useFeatureFlag("directEmailDelivery");
   const hasMailingAddress = !!(tenantInfo?.mailingAddress?.trim());
 
   // Font options from the curated list + the tenant's brand body font default.

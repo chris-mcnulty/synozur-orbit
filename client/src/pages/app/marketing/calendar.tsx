@@ -22,6 +22,7 @@ import {
   format, isSameMonth, isSameDay, isToday, parseISO, setHours, setMinutes, setSeconds,
 } from "date-fns";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,20 +105,11 @@ export default function CalendarPage() {
   // its pill can render and be scrolled to; also toggled by "+N more".
   const [expandedDayKey, setExpandedDayKey] = useState<string | null>(null);
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
-    queryKey: ["/api/tenant/info"],
-    queryFn: async () => {
-      const r = await fetch("/api/tenant/info", { credentials: "include" });
-      return r.ok ? r.json() : {};
-    },
-  });
   // Calendar API (/api/generated-posts/calendar) is gated by socialPosts on
   // the backend — match it client-side so the UI doesn't render only to 403.
-  // Default true while loading — show the page skeleton rather than the paywall.
-  // The paywall only renders once tenantInfo has resolved and socialPosts is
-  // confirmed false. Using === true while undefined flashes "Contact Sales".
-  const isAllowedResolved = tenantInfo !== undefined;
-  const isAllowed = !isAllowedResolved || tenantInfo?.features?.socialPosts === true;
+  // useFeatureFlag defaults true while loading — show the page skeleton
+  // rather than flashing the paywall before tenant features have resolved.
+  const isAllowed = useFeatureFlag("socialPosts");
 
   // Campaign names for the filter dropdown.
   const { data: filterOpts } = useQuery<{ campaigns?: { id: string; name: string }[] }>({

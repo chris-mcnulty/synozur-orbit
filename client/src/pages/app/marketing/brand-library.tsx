@@ -14,6 +14,7 @@ import {
   Download, Upload, LayoutGrid, List, Archive, RotateCcw, Type, Files
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription,
 } from "@/components/ui/dialog";
@@ -166,15 +167,7 @@ export default function BrandLibraryPage() {
     fontFamily: "", fontWeight: "", fontStyle: "normal", fontUsage: "",
   });
 
-  const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean> }>({
-    queryKey: ["/api/tenant/info"],
-    queryFn: async () => {
-      const r = await fetch("/api/tenant/info", { credentials: "include" });
-      return r.ok ? r.json() : {};
-    },
-  });
-
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.brandLibrary === true;
+  const isAllowed = useFeatureFlag("brandLibrary");
 
   const [assetPage, setAssetPage] = useState(1);
   const [ASSETS_PAGE_SIZE, setAssetsPageSize] = usePersistedPageSize("brand-library");

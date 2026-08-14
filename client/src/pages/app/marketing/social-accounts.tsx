@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Plus, Trash2, Lock, Pencil, Link as LinkIcon, Unlink, AlertTriangle, CheckCircle2, Mic, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import {
   Dialog,
   DialogContent,
@@ -816,7 +817,7 @@ export default function SocialAccountsPage() {
     },
   });
 
-  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.socialAccounts === true;
+  const isAllowed = useFeatureFlag("socialAccounts");
   // LinkedIn direct posting is pending LinkedIn's app review. Until it's
   // approved, show a "coming soon" notice instead of a Connect button.
   const linkedinPublishEnabled = tenantInfo?.linkedinDirectPublishEnabled === true;
