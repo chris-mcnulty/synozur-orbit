@@ -2125,30 +2125,45 @@ export function registerAdminRoutes(app: Express) {
         return res.status(401).json({ error: "Not authenticated" });
       }
 
+      // Round-trip 1: resolve the authenticated user
       const user = await storage.getUser(req.session.userId);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
 
       const userDomain = user.email.split("@")[1];
-      const userTenant = await storage.getTenantByDomain(userDomain);
-      
+
+      // Round-trip 2: resolve tenant + access list in parallel
+      const [userTenant, accessibleTenants] = await Promise.all([
+        storage.getTenantByDomain(userDomain),
+        storage.getAccessibleTenants(user.id, user.role, userDomain),
+      ]);
+
       const targetTenantId = getActiveTenantId(req) || userTenant?.id;
       if (!targetTenantId) {
         return res.status(400).json({ error: "No tenant context available" });
       }
 
-      const accessibleTenants = await storage.getAccessibleTenants(user.id, user.role, userDomain);
       if (!accessibleTenants.find(t => t.id === targetTenantId)) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const tenant = await storage.getTenant(targetTenantId);
-      const marketsList = await storage.getMarketsByTenant(targetTenantId);
-      
-      // Fetch all company profiles for this tenant once (efficient single query)
-      const allProfiles = await storage.getCompanyProfilesByTenantDomain(tenant?.domain || "");
-      
+      // Round-trip 3: fetch tenant record, markets, and validate active market id in parallel
+      const headerMarketId = getActiveMarketId(req);
+      const [tenant, marketsList, marketOk] = await Promise.all([
+        storage.getTenant(targetTenantId),
+        storage.getMarketsByTenant(targetTenantId),
+        headerMarketId
+          ? storage.validateMarketBelongsToTenant(headerMarketId, targetTenantId)
+          : Promise.resolve(false),
+      ]);
+
+      // Round-trip 4: fetch company profiles + service plan in parallel
+      const [allProfiles, servicePlan] = await Promise.all([
+        storage.getCompanyProfilesByTenantDomain(tenant?.domain || ""),
+        tenant?.plan ? storage.getServicePlanByName(tenant.plan) : Promise.resolve(null),
+      ]);
+
       // Build a map of marketId -> baseline profile for O(1) lookups
       const profilesByMarketId = new Map<string | null, typeof allProfiles[0]>();
       for (const profile of allProfiles) {
@@ -2168,18 +2183,10 @@ export function registerAdminRoutes(app: Express) {
           baselineCompanyUrl: baselineProfile?.websiteUrl || null,
         };
       });
-      
-      // Get limits from service plan (single source of truth)
-      const servicePlan = tenant?.plan ? await storage.getServicePlanByName(tenant.plan) : null;
 
       // Only echo a market id that actually belongs to the targetTenantId we
       // just authorized — never pass through a header-supplied id from a
       // different tenant.
-      const headerMarketId = getActiveMarketId(req);
-      const marketOk = headerMarketId
-        ? await storage.validateMarketBelongsToTenant(headerMarketId, targetTenantId)
-        : false;
-
       res.json({
         markets: marketsWithBaseline,
         activeMarketId: marketOk ? headerMarketId : null,
