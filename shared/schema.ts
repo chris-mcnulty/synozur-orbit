@@ -74,7 +74,9 @@ export const tenantInvites = pgTable("tenant_invites", {
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantStatusExpiresIdx: index("tenant_invites_tenant_status_idx").on(table.tenantDomain, table.status, table.expiresAt),
+}));
 
 export const tenants = pgTable("tenants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -172,7 +174,9 @@ export const billingEvents = pgTable("billing_events", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   payload: jsonb("payload"),
   processedAt: timestamp("processed_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantIdIdx: index("billing_events_tenant_id_idx").on(table.tenantId, table.processedAt),
+}));
 
 export type BillingEvent = typeof billingEvents.$inferSelect;
 
@@ -261,7 +265,9 @@ export const consultantAccess = pgTable("consultant_access", {
   grantedAt: timestamp("granted_at").notNull().defaultNow(),
   revokedAt: timestamp("revoked_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantStatusIdx: index("consultant_access_tenant_status_idx").on(table.tenantId, table.status),
+}));
 
 export const clientProjects = pgTable("client_projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -277,7 +283,9 @@ export const clientProjects = pgTable("client_projects", {
   ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("client_projects_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -312,7 +320,9 @@ export const products = pgTable("products", {
   feedbackEmailNotificationsEnabled: boolean("feedback_email_notifications_enabled").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("products_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 // Product Features - for tracking product capabilities
 export const productFeatures = pgTable("product_features", {
@@ -331,7 +341,9 @@ export const productFeatures = pgTable("product_features", {
   sourceType: text("source_type").notNull().default("manual"), // manual, csv, parsed, scraped
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantProductIdx: index("product_features_tenant_product_idx").on(table.tenantDomain, table.productId),
+}));
 
 // Roadmap Items - for product roadmap management
 export const roadmapItems = pgTable("roadmap_items", {
@@ -350,7 +362,9 @@ export const roadmapItems = pgTable("roadmap_items", {
   fromFeedback: boolean("from_feedback").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantProductIdx: index("roadmap_items_tenant_product_idx").on(table.tenantDomain, table.productId),
+}));
 
 // Customer Feedback - user-submitted feature requests/feedback per product
 export const productFeedback = pgTable("product_feedback", {
@@ -372,7 +386,9 @@ export const productFeedback = pgTable("product_feedback", {
   embedding: jsonb("embedding"), // optional cached embedding/keywords for similarity grouping
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantProductStatusIdx: index("product_feedback_tenant_product_status_idx").on(table.tenantDomain, table.productId, table.status),
+}));
 
 export const productFeedbackVotes = pgTable("product_feedback_votes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -384,7 +400,9 @@ export const productFeedbackVotes = pgTable("product_feedback_votes", {
   voterIp: text("voter_ip"),
   voterKey: text("voter_key").notNull(), // dedupe key: user id, hashed email or hashed ip
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantFeedbackIdx: index("product_feedback_votes_tenant_feedback_idx").on(table.tenantDomain, table.feedbackId),
+}));
 
 // Feature Recommendations - AI-generated suggestions
 export const featureRecommendations = pgTable("feature_recommendations", {
@@ -403,6 +421,7 @@ export const featureRecommendations = pgTable("feature_recommendations", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   assignedToIdx: index("feature_rec_assigned_to_idx").on(table.assignedToUserId),
+  tenantProductStatusIdx: index("feature_recommendations_tenant_product_status_idx").on(table.tenantDomain, table.productId, table.status),
 }));
 
 export const projectProducts = pgTable("project_products", {
@@ -653,7 +672,9 @@ export const recommendations = pgTable("recommendations", {
   dismissedReason: text("dismissed_reason"), // already_done, not_relevant, duplicate, other
   dismissedBy: varchar("dismissed_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("recommendations_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const reports = pgTable("reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -671,7 +692,9 @@ export const reports = pgTable("reports", {
   fileUrl: text("file_url"),
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("reports_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const analysis = pgTable("analysis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -684,7 +707,9 @@ export const analysis = pgTable("analysis", {
   previousContent: jsonb("previous_content"), // UX3: Snapshot of prior {themes, messaging, gaps} before regeneration
   generatedFromDataAsOf: timestamp("generated_from_data_as_of"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketCreatedIdx: index("analysis_tenant_market_created_idx").on(table.tenantDomain, table.marketId, table.createdAt),
+}));
 
 export const battlecards = pgTable("battlecards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -706,7 +731,9 @@ export const battlecards = pgTable("battlecards", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketCompetitorIdx: index("battlecards_tenant_market_competitor_idx").on(table.tenantDomain, table.marketId, table.competitorId),
+}));
 
 export const productBattlecards = pgTable("product_battlecards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -728,7 +755,9 @@ export const productBattlecards = pgTable("product_battlecards", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("product_battlecards_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 // Relationship reports — on-demand 12-month plans describing how to engage,
 // cooperate with, sell to, compete with, speak to, or steer clear of another
@@ -806,7 +835,9 @@ export const longFormRecommendations = pgTable("long_form_recommendations", {
   generatedBy: varchar("generated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketTypeIdx: index("long_form_recommendations_tenant_market_type_idx").on(table.tenantDomain, table.marketId, table.type),
+}));
 
 export const usersRelations = relations(users, ({ many }) => ({
   competitors: many(competitors),
@@ -1066,7 +1097,9 @@ export const gapDismissals = pgTable("gap_dismissals", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   dismissedBy: varchar("dismissed_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("gap_dismissals_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertGapDismissalSchema = createInsertSchema(gapDismissals).omit({
   id: true,
@@ -1230,7 +1263,9 @@ export const groundingDocuments = pgTable("grounding_documents", {
   speContainerId: text("spe_container_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketScopeUsecaseIdx: index("grounding_documents_tenant_market_scope_usecase_idx").on(table.tenantDomain, table.marketId, table.scope, table.useCase),
+}));
 
 export const groundingDocumentsRelations = relations(groundingDocuments, ({ one }) => ({
   user: one(users, {
@@ -1432,7 +1467,9 @@ export const assessments = pgTable("assessments", {
   status: text("status").notNull().default("completed"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketCreatedIdx: index("assessments_tenant_market_created_idx").on(table.tenantDomain, table.marketId, table.createdAt),
+}));
 
 export const assessmentsRelations = relations(assessments, ({ one }) => ({
   user: one(users, {
@@ -1497,7 +1534,9 @@ export const competitorScores = pgTable("competitor_scores", {
   lastCalculatedAt: timestamp("last_calculated_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("competitor_scores_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const competitorScoresRelations = relations(competitorScores, ({ one }) => ({
   competitor: one(competitors, {
@@ -1543,7 +1582,9 @@ export const socialMetrics = pgTable("social_metrics", {
   rawData: jsonb("raw_data"), // Full platform-specific metrics
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketCompetitorCapturedIdx: index("social_metrics_tenant_market_competitor_captured_idx").on(table.tenantDomain, table.marketId, table.competitorId, table.capturedAt),
+}));
 
 export const socialMetricsRelations = relations(socialMetrics, ({ one }) => ({
   competitor: one(competitors, {
@@ -1579,7 +1620,9 @@ export const scoreHistory = pgTable("score_history", {
   period: text("period").notNull(), // e.g., "2026-01", "2026-W04" 
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketEntityIdx: index("score_history_tenant_market_entity_idx").on(table.tenantDomain, table.marketId, table.entityType, table.entityId),
+}));
 
 export const scoreHistoryRelations = relations(scoreHistory, ({ one }) => ({
   project: one(clientProjects, {
@@ -1625,7 +1668,9 @@ export const executiveSummaries = pgTable("executive_summaries", {
   lastGeneratedAt: timestamp("last_generated_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketScopeIdx: index("executive_summaries_tenant_market_scope_idx").on(table.tenantDomain, table.marketId, table.scope),
+}));
 
 export const executiveSummariesRelations = relations(executiveSummaries, ({ one }) => ({
   project: one(clientProjects, {
@@ -1666,6 +1711,7 @@ export const competitorPositions = pgTable("competitor_positions", {
 }, (t) => [
   // Enforce exactly one entity per row: either a tracked competitor OR the company baseline
   check("competitor_positions_entity_xor", sql`(${t.competitorId} IS NOT NULL AND ${t.companyProfileId} IS NULL) OR (${t.competitorId} IS NULL AND ${t.companyProfileId} IS NOT NULL)`),
+  index("competitor_positions_tenant_market_idx").on(t.tenantDomain, t.marketId),
 ]);
 
 export const insertCompetitorPositionSchema = createInsertSchema(competitorPositions).omit({
@@ -1860,7 +1906,9 @@ export const aiUsage = pgTable("ai_usage", {
   errorMessage: text("error_message"),
   metadata: jsonb("metadata"), // Additional context like competitor name, project id, etc.
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantCreatedIdx: index("ai_usage_tenant_created_idx").on(table.tenantDomain, table.createdAt),
+}));
 
 export const insertAiUsageSchema = createInsertSchema(aiUsage).omit({
   id: true,
@@ -1900,7 +1948,9 @@ export const marketingPlans = pgTable("marketing_plans", {
   vegaLastPushedBy: varchar("vega_last_pushed_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("marketing_plans_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const marketingPlansRelations = relations(marketingPlans, ({ many }) => ({
   tasks: many(marketingTasks),
@@ -2072,7 +2122,9 @@ export const editorialCalendars = pgTable("editorial_calendars", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("editorial_calendars_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const insertEditorialCalendarSchema = createInsertSchema(editorialCalendars).omit({
   id: true,
@@ -2128,7 +2180,10 @@ export const contentBriefs = pgTable("content_briefs", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantCalendarStatusIdx: index("content_briefs_tenant_calendar_status_idx").on(table.tenantDomain, table.calendarId, table.status),
+  tenantMarketStatusIdx: index("content_briefs_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const editorialCalendarsRelations = relations(editorialCalendars, ({ many }) => ({
   briefs: many(contentBriefs),
@@ -2187,7 +2242,9 @@ export const contentOptimizations = pgTable("content_optimizations", {
   contentGaps: jsonb("content_gaps").$type<string[]>(),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("content_optimizations_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertContentOptimizationSchema = createInsertSchema(contentOptimizations).omit({
   id: true,
@@ -2231,7 +2288,9 @@ export const marketingPerformanceReports = pgTable("marketing_performance_report
   recommendationsEmitted: integer("recommendations_emitted").notNull().default(0),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("marketing_performance_reports_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertMarketingPerformanceReportSchema = createInsertSchema(marketingPerformanceReports).omit({
   id: true,
@@ -2320,7 +2379,9 @@ export const intelligenceBriefings = pgTable("intelligence_briefings", {
   hubspotPushedAt: timestamp("hubspot_pushed_at"),
   hubspotPushResult: jsonb("hubspot_push_result"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketCreatedIdx: index("intelligence_briefings_tenant_market_created_idx").on(table.tenantDomain, table.marketId, table.createdAt),
+}));
 
 export const insertIntelligenceBriefingSchema = createInsertSchema(intelligenceBriefings).omit({
   id: true,
@@ -2340,7 +2401,9 @@ export const briefingSubscriptions = pgTable("briefing_subscriptions", {
   frequency: text("frequency").notNull().default("weekly"), // weekly
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantUserIdx: index("briefing_subscriptions_tenant_user_idx").on(table.tenantDomain, table.userId),
+}));
 
 export const insertBriefingSubscriptionSchema = createInsertSchema(briefingSubscriptions).omit({
   id: true,
@@ -2359,7 +2422,9 @@ export const scheduledBriefingConfigs = pgTable("scheduled_briefing_configs", {
   frequency: text("frequency").notNull().default("weekly"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("scheduled_briefing_configs_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertScheduledBriefingConfigSchema = createInsertSchema(scheduledBriefingConfigs).omit({
   id: true,
@@ -2383,7 +2448,9 @@ export const scheduledJobRuns = pgTable("scheduled_job_runs", {
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantTypeCreatedIdx: index("scheduled_job_runs_tenant_type_created_idx").on(table.tenantDomain, table.jobType, table.createdAt),
+}));
 
 export const insertScheduledJobRunSchema = createInsertSchema(scheduledJobRuns).omit({
   id: true,
@@ -2407,7 +2474,9 @@ export const contentAssetCategories = pgTable("content_asset_categories", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("content_asset_categories_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertContentAssetCategorySchema = createInsertSchema(contentAssetCategories).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -2424,7 +2493,9 @@ export const marketingProductTags = pgTable("marketing_product_tags", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("marketing_product_tags_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertMarketingProductTagSchema = createInsertSchema(marketingProductTags).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -2569,7 +2640,9 @@ export const contentAssets = pgTable("content_assets", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("content_assets_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const contentAssetsRelations = relations(contentAssets, ({ one, many }) => ({
   category: one(contentAssetCategories, {
@@ -2607,7 +2680,9 @@ export const suggestedContentAssets = pgTable("suggested_content_assets", {
   suggestedCategory: text("suggested_category"),
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("suggested_content_assets_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export type SuggestedContentAsset = typeof suggestedContentAssets.$inferSelect;
 
@@ -2634,7 +2709,9 @@ export const brandAssetCategories = pgTable("brand_asset_categories", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("brand_asset_categories_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertBrandAssetCategorySchema = createInsertSchema(brandAssetCategories).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -2672,7 +2749,9 @@ export const brandAssets = pgTable("brand_assets", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("brand_assets_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const brandAssetsRelations = relations(brandAssets, ({ one, many }) => ({
   category: one(brandAssetCategories, {
@@ -2722,7 +2801,9 @@ export const tenantFonts = pgTable("tenant_fonts", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantDomainIdx: index("tenant_fonts_tenant_domain_idx").on(table.tenantDomain),
+}));
 
 export const insertTenantFontSchema = createInsertSchema(tenantFonts).omit({
   id: true, createdAt: true,
@@ -2768,7 +2849,9 @@ export const socialAccounts = pgTable("social_accounts", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketPlatformStatusIdx: index("social_accounts_tenant_market_platform_status_idx").on(table.tenantDomain, table.marketId, table.platform, table.status),
+}));
 
 export const insertSocialAccountSchema = createInsertSchema(socialAccounts).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -3086,7 +3169,9 @@ export const campaigns = pgTable("campaigns", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("campaigns_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status),
+}));
 
 export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
   createdByUser: one(users, {
@@ -3278,7 +3363,10 @@ export const generatedPosts = pgTable("generated_posts", {
   publishNotBefore: timestamp("publish_not_before"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantCampaignStatusIdx: index("generated_posts_tenant_campaign_status_idx").on(table.tenantDomain, table.campaignId, table.status),
+  tenantScheduledStatusIdx: index("generated_posts_tenant_scheduled_status_idx").on(table.tenantDomain, table.scheduledDate, table.status),
+}));
 
 export const generatedPostsRelations = relations(generatedPosts, ({ one }) => ({
   campaign: one(campaigns, {
@@ -3348,7 +3436,9 @@ export const generatedEmails = pgTable("generated_emails", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantCampaignIdx: index("generated_emails_tenant_campaign_idx").on(table.tenantDomain, table.campaignId, table.marketId),
+}));
 
 export const generatedEmailsRelations = relations(generatedEmails, ({ one }) => ({
   campaign: one(campaigns, {
@@ -3382,7 +3472,9 @@ export const emailCampaignVariants = pgTable("email_campaign_variants", {
   textBody: text("text_body"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantEmailIdx: index("email_campaign_variants_tenant_email_idx").on(table.tenantDomain, table.generatedEmailId),
+}));
 export const CONFERENCE_IMAGE_SOURCES = ["ai_generated", "template_composite", "uploaded", "logo_composite"] as const;
 export type ConferenceImageSource = (typeof CONFERENCE_IMAGE_SOURCES)[number];
 
@@ -3441,7 +3533,9 @@ export const conferences = pgTable("conferences", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketStatusIdx: index("conferences_tenant_market_status_idx").on(table.tenantDomain, table.marketId, table.status, table.startDate),
+}));
 
 export const insertConferenceSchema = createInsertSchema(conferences).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -3472,7 +3566,9 @@ export const conferenceSessions = pgTable("conference_sessions", {
   status: text("status").notNull().default("active"), // active, deleted
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantConferenceIdx: index("conference_sessions_tenant_conference_idx").on(table.tenantDomain, table.conferenceId, table.sessionStart),
+}));
 
 export const insertConferenceSessionSchema = createInsertSchema(conferenceSessions).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -3492,7 +3588,9 @@ export const conferenceBackgrounds = pgTable("conference_backgrounds", {
   fileSize: integer("file_size"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantConferenceIdx: index("conference_backgrounds_tenant_conference_idx").on(table.tenantDomain, table.conferenceId),
+}));
 
 export const insertConferenceBackgroundSchema = createInsertSchema(conferenceBackgrounds).omit({
   id: true, createdAt: true,
@@ -3526,6 +3624,7 @@ export const conferenceImages = pgTable("conference_images", {
 }, (t) => ({
   // Enforce 1:1 — at most one image per session.
   sessionUnique: uniqueIndex("conference_images_session_unique").on(t.sessionId),
+  tenantConferenceRoleIdx: index("conference_images_tenant_conference_role_idx").on(t.tenantDomain, t.conferenceId, t.role),
 }));
 
 export const insertConferenceImageSchema = createInsertSchema(conferenceImages).omit({
@@ -3603,7 +3702,9 @@ export const marketingLinks = pgTable("marketing_links", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantCampaignStatusIdx: index("marketing_links_tenant_campaign_status_idx").on(table.tenantDomain, table.campaignId, table.status),
+}));
 
 export const marketingLinksRelations = relations(marketingLinks, ({ one, many }) => ({
   campaign: one(campaigns, {
@@ -3636,7 +3737,9 @@ export const marketingLinkClicks = pgTable("marketing_link_clicks", {
   userAgent: text("user_agent"),
   ipHash: text("ip_hash"),
   isBot: boolean("is_bot").notNull().default(false),
-});
+}, (table) => ({
+  tenantLinkClickedIdx: index("marketing_link_clicks_tenant_link_clicked_idx").on(table.tenantDomain, table.linkId, table.clickedAt),
+}));
 
 export const marketingLinkClicksRelations = relations(marketingLinkClicks, ({ one }) => ({
   link: one(marketingLinks, {
@@ -3660,7 +3763,9 @@ export const supportTickets = pgTable("support_tickets", {
   assignedTo: varchar("assigned_to").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantStatusCreatedIdx: index("support_tickets_tenant_status_created_idx").on(table.tenantDomain, table.status, table.createdAt),
+}));
 
 export const supportTicketReplies = pgTable("support_ticket_replies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3740,7 +3845,9 @@ export const notifications = pgTable("notifications", {
   link: text("link"), // deep-link path, e.g. "/app/competitors/abc123"
   readAt: timestamp("read_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantUserCreatedIdx: index("notifications_tenant_user_created_idx").on(table.tenantDomain, table.userId, table.createdAt),
+}));
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
@@ -3772,7 +3879,9 @@ export const personas = pgTable("personas", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("personas_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const personasRelations = relations(personas, ({ one }) => ({
   market: one(markets, {
@@ -3824,7 +3933,9 @@ export const integrationConfigs = pgTable("integration_configs", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   lastUsedAt: timestamp("last_used_at"),
   lastError: text("last_error"),
-});
+}, (table) => ({
+  tenantDomainIdx: index("integration_configs_tenant_idx").on(table.tenantDomain),
+}));
 
 export const integrationConfigsRelations = relations(integrationConfigs, ({ one }) => ({
   createdByUser: one(users, {
@@ -4024,7 +4135,9 @@ export const socialPublishAttempts = pgTable("social_publish_attempts", {
   responsePayload: jsonb("response_payload"),
   attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
   attemptedBy: varchar("attempted_by").references(() => users.id, { onDelete: "set null" }),
-});
+}, (table) => ({
+  tenantPostStatusIdx: index("social_publish_attempts_tenant_post_status_idx").on(table.tenantDomain, table.postId, table.status, table.attemptedAt),
+}));
 
 export const insertSocialPublishAttemptSchema = createInsertSchema(socialPublishAttempts).omit({
   id: true, attemptedAt: true,
@@ -4045,7 +4158,9 @@ export const emailRecipientLists = pgTable("email_recipient_lists", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketIdx: index("email_recipient_lists_tenant_market_idx").on(table.tenantDomain, table.marketId),
+}));
 
 export const insertEmailRecipientListSchema = createInsertSchema(emailRecipientLists).omit({
   id: true, createdAt: true, updatedAt: true, recipientCount: true,
@@ -4071,6 +4186,7 @@ export const emailRecipients = pgTable("email_recipients", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   listEmailUniq: index("email_recipients_list_email_uniq").on(table.listId, table.email),
+  tenantListStatusIdx: index("email_recipients_tenant_list_status_idx").on(table.tenantDomain, table.listId, table.status),
 }));
 
 export const insertEmailRecipientSchema = createInsertSchema(emailRecipients).omit({
@@ -4178,7 +4294,9 @@ export const emailSenderIdentities = pgTable("email_sender_identities", {
   replyToEmail: text("reply_to_email"),   // optional reply-to override
   isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantDefaultIdx: index("email_sender_identities_tenant_default_idx").on(table.tenantDomain, table.isDefault),
+}));
 export const insertEmailSenderIdentitySchema = createInsertSchema(emailSenderIdentities).omit({ id: true, createdAt: true });
 export type EmailSenderIdentity = typeof emailSenderIdentities.$inferSelect;
 export type InsertEmailSenderIdentity = z.infer<typeof insertEmailSenderIdentitySchema>;
@@ -4229,7 +4347,9 @@ export const emailSends = pgTable("email_sends", {
   completedAt: timestamp("completed_at"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantEmailStatusCreatedIdx: index("email_sends_tenant_email_status_created_idx").on(table.tenantDomain, table.generatedEmailId, table.status, table.createdAt),
+}));
 
 export const insertEmailSendSchema = createInsertSchema(emailSends).omit({
   id: true, createdAt: true,
@@ -4270,6 +4390,7 @@ export const emailSendRecipients = pgTable("email_send_recipients", {
   suppressionReason: text("suppression_reason"),
 }, (table) => ({
   sendEmailIdx: index("email_send_recipients_send_email_idx").on(table.sendId, table.email),
+  tenantSendStatusIdx: index("email_send_recipients_tenant_send_status_idx").on(table.tenantDomain, table.sendId, table.status),
 }));
 
 export const insertEmailSendRecipientSchema = createInsertSchema(emailSendRecipients).omit({
@@ -4360,7 +4481,9 @@ export const oauthAuthorizationCodes = pgTable("oauth_authorization_codes", {
   expiresAt: timestamp("expires_at").notNull(),
   used: boolean("used").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantUserExpiresIdx: index("oauth_authorization_codes_tenant_user_expires_idx").on(table.tenantDomain, table.userId, table.expiresAt),
+}));
 
 export const oauthAccessTokens = pgTable("oauth_access_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -4374,7 +4497,9 @@ export const oauthAccessTokens = pgTable("oauth_access_tokens", {
   revokedAt: timestamp("revoked_at"),
   lastUsedAt: timestamp("last_used_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantUserExpiresIdx: index("oauth_access_tokens_tenant_user_expires_idx").on(table.tenantDomain, table.userId, table.expiresAt),
+}));
 
 export const oauthRefreshTokens = pgTable("oauth_refresh_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -4389,7 +4514,9 @@ export const oauthRefreshTokens = pgTable("oauth_refresh_tokens", {
   revokedAt: timestamp("revoked_at"),
   rotatedToId: varchar("rotated_to_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantUserExpiresIdx: index("oauth_refresh_tokens_tenant_user_expires_idx").on(table.tenantDomain, table.userId, table.expiresAt),
+}));
 
 export const oauthApiAudit = pgTable("oauth_api_audit", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -4441,7 +4568,9 @@ export const analyticsConnections = pgTable("analytics_connections", {
   connectedBy: varchar("connected_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketProviderIdx: index("analytics_connections_tenant_market_provider_idx").on(table.tenantDomain, table.marketId, table.provider, table.status),
+}));
 
 export const insertAnalyticsConnectionSchema = createInsertSchema(analyticsConnections).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -4465,7 +4594,9 @@ export const analyticsDaily = pgTable("analytics_daily", {
   // Joined Orbit-attributed metrics (from marketing_link_clicks)
   orbitClicks: integer("orbit_clicks").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketDateIdx: index("analytics_daily_tenant_market_date_idx").on(table.tenantDomain, table.marketId, table.date),
+}));
 
 export type AnalyticsDaily = typeof analyticsDaily.$inferSelect;
 
@@ -4487,7 +4618,9 @@ export const orbitScores = pgTable("orbit_scores", {
   businessType: text("business_type").notNull().default("b2b"),
   sicCode: text("sic_code"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketWeekIdx: index("orbit_scores_tenant_market_week_idx").on(table.tenantDomain, table.marketId, table.weekStart),
+}));
 
 export type OrbitScore = typeof orbitScores.$inferSelect;
 
@@ -4893,6 +5026,7 @@ export const outreachTouches = pgTable("outreach_touches", {
 }, (table) => ({
   prospectIdx: index("outreach_touches_prospect_idx").on(table.prospectId),
   campaignStatusIdx: index("outreach_touches_campaign_status_idx").on(table.campaignId, table.status),
+  tenantCampaignStatusIdx: index("outreach_touches_tenant_campaign_status_idx").on(table.tenantDomain, table.campaignId, table.status),
 }));
 
 export type OutreachResourceType = "product_info" | "scheduler" | "event_details" | "case_study" | "other";
@@ -4912,6 +5046,7 @@ export const outreachCampaignResources = pgTable("outreach_campaign_resources", 
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   campaignIdx: index("outreach_campaign_resources_campaign_idx").on(table.campaignId),
+  tenantCampaignIdx: index("outreach_campaign_resources_tenant_campaign_idx").on(table.tenantDomain, table.campaignId),
 }));
 
 // Per-tenant circuit breakers + caps (§5.6). Defaults ship conservative.

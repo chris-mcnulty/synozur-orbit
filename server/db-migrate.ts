@@ -79,12 +79,39 @@ export function extractDroppedTableNames(sql: string): string[] {
   return [...new Set(names)];
 }
 
+/**
+ * Parse a migration file's SQL for index names in CREATE INDEX statements.
+ * Returns an empty array when none are found.
+ */
+export function extractCreatedIndexNames(sql: string): string[] {
+  // Matches: CREATE [UNIQUE] INDEX [IF NOT EXISTS] "name" ON ...
+  //      or: CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON ...
+  const re =
+    /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?\s+ON\b/gi;
+  const names: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sql)) !== null) {
+    names.push(m[1].toLowerCase());
+  }
+  return [...new Set(names)];
+}
+
 /** Check whether a given table exists in the public schema. */
 async function tableExists(pool: pg.Pool, tableName: string): Promise<boolean> {
   const r = await pool.query(
     `SELECT 1 FROM information_schema.tables
      WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
     [tableName]
+  );
+  return r.rows.length > 0;
+}
+
+/** Check whether a given index exists in the public schema. */
+async function indexExists(pool: pg.Pool, indexName: string): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public' AND indexname = $1 LIMIT 1`,
+    [indexName]
   );
   return r.rows.length > 0;
 }
@@ -150,10 +177,37 @@ export async function computeBackfillPlan(
         toApply.push(filePath);
         continue;
       }
-      // Otherwise the file only has ALTER TABLE / CREATE INDEX / DO blocks (or
-      // its drops already took effect). Assume present: if we're here, users
-      // exists so the DB is established.
-      console.log(`${label} backfill: stamping (no CREATE TABLE, alter-only): ${filename}`);
+
+      // If this file creates indexes, verify each one exists in pg_indexes.
+      // Any missing index means the migration has not been applied — apply it
+      // for real so the indexes are created. This is the correct treatment for
+      // index-only migrations (e.g. 0083, 0084) on an empty ledger.
+      const indexNames = extractCreatedIndexNames(content);
+      if (indexNames.length > 0) {
+        let allIndexesPresent = true;
+        for (const idx of indexNames) {
+          const present = await indexExists(pool, idx);
+          if (!present) {
+            console.log(
+              `${label} backfill: index '${idx}' missing — will apply: ${filename}`
+            );
+            allIndexesPresent = false;
+            break;
+          }
+        }
+        if (!allIndexesPresent) {
+          toApply.push(filePath);
+          continue;
+        }
+        console.log(`${label} backfill: stamping (all indexes present): ${filename}`);
+        toStamp.push(filePath);
+        continue;
+      }
+
+      // Otherwise the file only has ALTER TABLE / DO blocks (or its drops
+      // already took effect). Assume present: if we're here, users exists so
+      // the DB is established.
+      console.log(`${label} backfill: stamping (no CREATE TABLE/INDEX, alter-only): ${filename}`);
       toStamp.push(filePath);
       continue;
     }
