@@ -1699,8 +1699,10 @@ export function registerCompetitorRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const ctxFilter = toContextFilter(ctx);
 
-      const competitorsList = await storage.getCompetitorsByContext(ctxFilter);
-      const companyProfile = await storage.getCompanyProfileByContext(ctxFilter);
+      const [competitorsList, companyProfile] = await Promise.all([
+        storage.getCompetitorsByContext(ctxFilter),
+        storage.getCompanyProfileByContext(ctxFilter),
+      ]);
 
       const eligibleCompetitors = competitorsList.filter(c => !c.excludeFromCrawl);
 

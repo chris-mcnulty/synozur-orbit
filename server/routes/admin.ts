@@ -2688,33 +2688,39 @@ Respond in JSON format:
         isDefaultMarket: market.isDefault,
       };
 
-      // Gather all market data
+      // Gather all market data in parallel — none of these depend on each other
+      const [
+        companyProfiles,
+        competitors,
+        projects,
+        products,
+        marketingPlansData,
+        activityData,
+        assessmentsData,
+        companyBattlecardsData,
+        competitorScoresData,
+      ] = await Promise.all([
+        storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain),
+        storage.getCompetitorsByContext(marketCtx),
+        storage.getClientProjectsByContext(marketCtx),
+        storage.getProductsByContext(marketCtx),
+        storage.getMarketingPlans({ tenantDomain: ctx.tenantDomain, marketId: req.params.marketId }),
+        storage.getActivityByContext(marketCtx),
+        storage.getAssessmentsByContext(marketCtx),
+        storage.getBattlecardsByContext(marketCtx),
+        storage.getCompetitorScoresByContext(marketCtx),
+      ]);
+
       // For default market, include profiles with null marketId (legacy data)
-      const companyProfiles = await storage.getCompanyProfilesByTenantDomain(ctx.tenantDomain);
-      const marketCompanyProfiles = market.isDefault 
+      const marketCompanyProfiles = market.isDefault
         ? companyProfiles.filter(p => p.marketId === req.params.marketId || p.marketId === null)
         : companyProfiles.filter(p => p.marketId === req.params.marketId);
-      const competitors = await storage.getCompetitorsByContext(marketCtx);
-      const projects = await storage.getClientProjectsByContext(marketCtx);
-      const products = await storage.getProductsByContext(marketCtx);
 
       // Build comprehensive markdown
       let md = `# ${market.name} - Complete Market Intelligence Export\n\n`;
       md += `**Tenant:** ${ctx.tenantDomain}\n`;
       md += `**Generated:** ${new Date().toISOString()}\n\n`;
       md += `---\n\n`;
-
-      // Gather marketing plans
-      const marketingPlansData = await storage.getMarketingPlans({ 
-        tenantDomain: ctx.tenantDomain, 
-        marketId: req.params.marketId 
-      });
-
-      // Gather additional data
-      const activityData = await storage.getActivityByContext(marketCtx);
-      const assessmentsData = await storage.getAssessmentsByContext(marketCtx);
-      const companyBattlecardsData = await storage.getBattlecardsByContext(marketCtx);
-      const competitorScoresData = await storage.getCompetitorScoresByContext(marketCtx);
 
       // Table of Contents
       md += `## Table of Contents\n\n`;
@@ -3342,8 +3348,10 @@ Respond in JSON format:
         }
       }
 
-      const activeTenant = activeTenantId ? await storage.getTenant(activeTenantId) : null;
-      const activeMarket = activeMarketId ? await storage.getMarket(activeMarketId) : null;
+      const [activeTenant, activeMarket] = await Promise.all([
+        activeTenantId ? storage.getTenant(activeTenantId) : Promise.resolve(null),
+        activeMarketId ? storage.getMarket(activeMarketId) : Promise.resolve(null),
+      ]);
       
       res.json({
         activeTenantId,
