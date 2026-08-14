@@ -8,10 +8,6 @@
 
 -- ─── Intelligence / Research ──────────────────────────────────────────────
 
--- consultant_access: tenant + status lookup for access checks
-CREATE INDEX IF NOT EXISTS "consultant_access_tenant_status_idx"
-    ON "consultant_access" ("tenant_id", "status");
-
 -- client_projects: getProjectsByTenant → WHERE tenant_domain = ?  [+ optional market_id]
 CREATE INDEX IF NOT EXISTS "client_projects_tenant_market_idx"
     ON "client_projects" ("tenant_domain", "market_id");
@@ -216,10 +212,6 @@ CREATE INDEX IF NOT EXISTS "integration_configs_tenant_idx"
 CREATE INDEX IF NOT EXISTS "tenant_invites_tenant_status_idx"
     ON "tenant_invites" ("tenant_domain", "status", "expires_at");
 
--- billing_events: Stripe event lookup by tenant (nullable)
-CREATE INDEX IF NOT EXISTS "billing_events_tenant_id_idx"
-    ON "billing_events" ("tenant_id", "processed_at");
-
 -- social_accounts: account picker by tenant + platform + status
 CREATE INDEX IF NOT EXISTS "social_accounts_tenant_market_platform_status_idx"
     ON "social_accounts" ("tenant_domain", "market_id", "platform", "status");
@@ -251,10 +243,6 @@ CREATE INDEX IF NOT EXISTS "marketing_links_tenant_campaign_status_idx"
 -- marketing_link_clicks: click log by tenant + link + time
 CREATE INDEX IF NOT EXISTS "marketing_link_clicks_tenant_link_clicked_idx"
     ON "marketing_link_clicks" ("tenant_domain", "link_id", "clicked_at" DESC);
-
--- support_tickets: ticket list by tenant + status + recency
-CREATE INDEX IF NOT EXISTS "support_tickets_tenant_status_created_idx"
-    ON "support_tickets" ("tenant_domain", "status", "created_at" DESC);
 
 -- social_publish_attempts: audit log by tenant + post + status
 CREATE INDEX IF NOT EXISTS "social_publish_attempts_tenant_post_status_idx"
