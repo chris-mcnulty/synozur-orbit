@@ -114,7 +114,7 @@ export default function SendsPage() {
       return r.ok ? r.json() : {};
     },
   });
-  const isAllowed = tenantInfo?.features?.directEmailDelivery === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.directEmailDelivery === true;
 
   const [tab, setTab] = useState<SendsTab>("sends");
   const [drilldownSendId, setDrilldownSendId] = useState<string | null>(null);

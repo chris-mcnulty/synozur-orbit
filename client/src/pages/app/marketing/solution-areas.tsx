@@ -53,7 +53,7 @@ export default function SolutionAreasPage() {
     },
   });
 
-  const isAllowed = tenantInfo?.features?.contentLibrary === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.contentLibrary === true;
 
   const { data: areas = [], isLoading } = useQuery<SolutionArea[]>({
     queryKey: ["/api/solution-areas"],

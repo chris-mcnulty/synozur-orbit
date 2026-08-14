@@ -816,7 +816,7 @@ export default function SocialAccountsPage() {
     },
   });
 
-  const isAllowed = tenantInfo?.features?.socialAccounts === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.socialAccounts === true;
   // LinkedIn direct posting is pending LinkedIn's app review. Until it's
   // approved, show a "coming soon" notice instead of a Connect button.
   const linkedinPublishEnabled = tenantInfo?.linkedinDirectPublishEnabled === true;

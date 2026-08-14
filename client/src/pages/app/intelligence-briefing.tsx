@@ -248,9 +248,9 @@ export default function IntelligenceBriefingPage() {
       return r.ok ? r.json() : {};
     },
   });
-  const isAllowed = tenantInfo?.features?.intelligenceBriefings === true;
-  const podcastAllowed = tenantInfo?.features?.podcastBriefings === true;
-  const scheduledUpdatesAllowed = tenantInfo?.features?.scheduledBriefingUpdates === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.intelligenceBriefings === true;
+  const podcastAllowed = tenantInfo === undefined || tenantInfo?.features?.podcastBriefings === true;
+  const scheduledUpdatesAllowed = tenantInfo === undefined || tenantInfo?.features?.scheduledBriefingUpdates === true;
   const collabAllowed = tenantInfo?.features?.collaboration !== false;
 
   const handleDownloadPdf = async () => {

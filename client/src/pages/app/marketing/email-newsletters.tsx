@@ -478,8 +478,8 @@ export default function EmailNewslettersPage() {
     },
   });
 
-  const isAllowed = tenantInfo?.features?.emailNewsletters === true;
-  const directDeliveryEnabled = tenantInfo?.features?.directEmailDelivery === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.emailNewsletters === true;
+  const directDeliveryEnabled = tenantInfo === undefined || tenantInfo?.features?.directEmailDelivery === true;
   const hasMailingAddress = !!(tenantInfo?.mailingAddress?.trim());
 
   // Font options from the curated list + the tenant's brand body font default.

@@ -195,7 +195,7 @@ export default function ContentLibraryPage() {
     },
   });
 
-  const isAllowed = tenantInfo?.features?.contentLibrary === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.contentLibrary === true;
 
   const [assetPage, setAssetPage] = useState(1);
   const [ASSETS_PAGE_SIZE, setAssetsPageSize] = usePersistedPageSize("content-library");

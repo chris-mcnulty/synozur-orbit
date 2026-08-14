@@ -174,7 +174,7 @@ export default function BrandLibraryPage() {
     },
   });
 
-  const isAllowed = tenantInfo?.features?.brandLibrary === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.brandLibrary === true;
 
   const [assetPage, setAssetPage] = useState(1);
   const [ASSETS_PAGE_SIZE, setAssetsPageSize] = usePersistedPageSize("brand-library");

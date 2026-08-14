@@ -256,7 +256,7 @@ export default function CampaignsPage() {
     },
   });
 
-  const isAllowed = tenantInfo?.features?.campaigns === true;
+  const isAllowed = tenantInfo === undefined || tenantInfo?.features?.campaigns === true;
 
   const [campaignPage, setCampaignPage] = useState(1);
   const [CAMPAIGNS_PAGE_SIZE, setCampaignsPageSize] = usePersistedPageSize("campaigns");
