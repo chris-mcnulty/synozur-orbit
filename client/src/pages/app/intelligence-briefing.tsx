@@ -252,6 +252,10 @@ export default function IntelligenceBriefingPage() {
   const isAllowed = useFeatureFlag("intelligenceBriefings");
   const podcastAllowed = useFeatureFlag("podcastBriefings");
   const scheduledUpdatesAllowed = useFeatureFlag("scheduledBriefingUpdates");
+  // collaboration is an opt-OUT flag: enabled unless explicitly set to false,
+  // so `!== false` (default-true, including while tenant info loads) is
+  // deliberate — it intentionally differs from useFeatureFlag's post-load
+  // `=== true` semantics used for opt-in plan features.
   const collabAllowed = tenantInfo?.features?.collaboration !== false;
 
   const handleDownloadPdf = async () => {

@@ -208,6 +208,13 @@ export function useFeatureAccess(featureKey: string) {
     staleTime: 60_000,
   });
 
+  // `?? true` is deliberate and differs from useFeatureFlag on purpose:
+  // - While /api/tenant/info loads, this is true — but consumers (e.g.
+  //   PageFeatureGate) must check `isLoading` before acting on `isAllowed`,
+  //   which is why this hook exposes it and useFeatureFlag doesn't.
+  // - After load, a feature key ABSENT from the tenant's feature map defaults
+  //   to allowed (legacy tenants without the key keep access); only an
+  //   explicit `false` gates. The backend enforces the real gate regardless.
   const isAllowed = tenantInfo?.features?.[featureKey] ?? true;
   const plan = tenantInfo?.plan ?? "trial";
 

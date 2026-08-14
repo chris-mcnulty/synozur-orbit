@@ -723,6 +723,7 @@ function VoiceProfileDialog({
 function PostingBehaviourCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const socialPostsAllowed = useFeatureFlag("socialPosts");
 
   const { data: tenantInfo } = useQuery<{ socialPostingJitterEnabled?: boolean; features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -757,7 +758,9 @@ function PostingBehaviourCard() {
     onError: (err: Error) => toast({ title: "Couldn't update setting", description: err.message, variant: "destructive" }),
   });
 
-  if (!tenantInfo?.features?.socialPosts) return null;
+  // Loading-aware gate: stays true while /api/tenant/info is in flight so the
+  // card doesn't pop in late, then resolves to features.socialPosts === true.
+  if (!socialPostsAllowed) return null;
 
   return (
     <Card>

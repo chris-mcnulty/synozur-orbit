@@ -1058,6 +1058,10 @@ export default function ContentLibraryPage() {
           >
             <Megaphone className="w-3 h-3" /> Campaign
           </Button>
+          {/* contentRepurposing is an opt-OUT flag: enabled unless explicitly set
+              to false, so `!== false` (default-true, including while tenant info
+              loads) is deliberate — it intentionally differs from useFeatureFlag's
+              post-load `=== true` semantics used for opt-in plan features. */}
           {tenantInfo?.features?.contentRepurposing !== false && (
             <Button
               variant="ghost"
