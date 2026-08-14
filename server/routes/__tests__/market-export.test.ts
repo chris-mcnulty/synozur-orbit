@@ -338,6 +338,147 @@ describe("GET /api/markets/:marketId/export", () => {
     expect(md).toContain("Homepage redesigned");
   });
 
+  it("includes project and product deep-dive subsections with item content", async () => {
+    // Project with deep-dive data
+    storageMock.getClientProjectsByContext.mockResolvedValue([
+      {
+        id: "proj-1",
+        name: "Falcon Analysis",
+        clientName: "Falcon Inc",
+        analysisType: "product",
+        status: "active",
+        description: "Deep-dive project",
+      },
+    ]);
+    storageMock.getProjectProducts.mockResolvedValue([
+      { role: "baseline", productId: "prod-1", product: { name: "Orbit Platform", companyName: "Acme Corp" } },
+      { role: "competitor", productId: "prod-rival", product: { name: "Rival Suite", companyName: "Rival Corp" } },
+    ]);
+    storageMock.getLongFormRecommendationsByProject.mockResolvedValue([
+      {
+        type: "gap_analysis",
+        status: "generated",
+        content: "Gap analysis body: missing SSO support",
+        lastGeneratedAt: new Date("2026-07-01"),
+      },
+      {
+        type: "gtm_plan",
+        status: "generated",
+        content: "GTM plan body: target mid-market first",
+        lastGeneratedAt: new Date("2026-07-02"),
+      },
+      // draft content must NOT appear
+      {
+        type: "strategic_recommendations",
+        status: "draft",
+        content: "Draft strategy content should not render",
+        lastGeneratedAt: null,
+      },
+    ]);
+    storageMock.getProductBattlecardsByProject.mockResolvedValue([
+      {
+        status: "published",
+        competitorProductId: "prod-rival",
+        strengths: ["Deep integrations"],
+        weaknesses: ["Slow releases"],
+        ourAdvantages: ["Faster onboarding"],
+        keyDifferentiators: [{ feature: "Analytics", ours: "Real-time", theirs: "Nightly batch" }],
+        objections: [{ objection: "No references", response: "Pilot program available" }],
+        talkTracks: [{ scenario: "Renewal", script: "Emphasize roadmap velocity" }],
+      },
+    ]);
+
+    // Baseline product with features, roadmap, and AI recommendations
+    storageMock.getProductsByContext.mockResolvedValue([
+      { ...PRODUCT, isBaseline: true },
+    ]);
+    storageMock.getProductFeaturesByProduct.mockResolvedValue([
+      {
+        name: "Single Sign-On",
+        category: "Security",
+        status: "available",
+        priority: "high",
+        description: "SAML and OIDC",
+      },
+    ]);
+    storageMock.getRoadmapItemsByProduct.mockResolvedValue([
+      {
+        title: "Mobile App",
+        quarter: "Q4",
+        year: 2026,
+        status: "in_progress",
+        effort: "L",
+        description: "iOS and Android clients",
+      },
+    ]);
+    storageMock.getFeatureRecommendationsByProduct.mockResolvedValue([
+      {
+        title: "Add usage analytics",
+        type: "opportunity",
+        status: "pending",
+        suggestedPriority: "high",
+        suggestedQuarter: "Q1 2027",
+        explanation: "Competitors ship dashboards",
+      },
+      // non-pending recs must NOT appear
+      { title: "Dismissed idea", type: "gap", status: "dismissed" },
+    ]);
+
+    const app = buildApp();
+    const res = await request(app).get("/api/markets/market-a/export");
+    expect(res.status).toBe(200);
+    const md = res.text;
+
+    // Project section
+    expect(md).toContain("### Falcon Analysis");
+    expect(md).toContain("#### Baseline Product");
+    expect(md).toContain("**Orbit Platform** (Acme Corp)");
+    expect(md).toContain("#### Competitor Products (1)");
+    expect(md).toContain("- Rival Suite (Rival Corp)");
+
+    // Long-form recommendations
+    expect(md).toContain("#### Gap Analysis");
+    expect(md).toContain("Gap analysis body: missing SSO support");
+    expect(md).toContain("#### Go-to-Market Plan");
+    expect(md).toContain("GTM plan body: target mid-market first");
+    expect(md).not.toContain("Draft strategy content should not render");
+    expect(md).not.toContain("#### Strategic Recommendations");
+
+    // Project battlecards
+    expect(md).toContain("#### Battlecards");
+    expect(md).toContain("##### Rival Suite");
+    expect(md).toContain("- Deep integrations");
+    expect(md).toContain("- Slow releases");
+    expect(md).toContain("- Faster onboarding");
+    expect(md).toContain("**Analytics**: Ours: Real-time | Theirs: Nightly batch");
+    expect(md).toContain('*"No references"* → Pilot program available');
+    expect(md).toContain('**Renewal**: "Emphasize roadmap velocity"');
+
+    // Product features
+    expect(md).toContain("#### Features (1)");
+    expect(md).toContain("**Security**");
+    expect(md).toContain("**Single Sign-On** [high]: SAML and OIDC");
+
+    // Roadmap
+    expect(md).toContain("#### Roadmap (1 items)");
+    expect(md).toContain("**Q4 2026**");
+    expect(md).toContain("**Mobile App** [L]: iOS and Android clients");
+
+    // AI recommendations (pending only)
+    expect(md).toContain("#### AI Roadmap Recommendations (1)");
+    expect(md).toContain("**Add usage analytics** [opportunity] (high priority) - Q1 2027");
+    expect(md).toContain("Competitors ship dashboards");
+    expect(md).not.toContain("Dismissed idea");
+
+    // Per-item storage calls received the right ids
+    expect(storageMock.getProjectProducts).toHaveBeenCalledWith("proj-1");
+    expect(storageMock.getLongFormRecommendationsByProject).toHaveBeenCalledWith("proj-1");
+    expect(storageMock.getProductBattlecardsByProject).toHaveBeenCalledWith("proj-1");
+    expect(storageMock.getProductFeaturesByProduct).toHaveBeenCalledWith("prod-1");
+    expect(storageMock.getRoadmapItemsByProduct).toHaveBeenCalledWith("prod-1");
+    expect(storageMock.getFeatureRecommendationsByProduct).toHaveBeenCalledWith("prod-1");
+  });
+
   it("includes null-marketId (legacy) profiles for the default market and excludes other markets' profiles", async () => {
     const app = buildApp();
     const res = await request(app).get("/api/markets/market-a/export");
