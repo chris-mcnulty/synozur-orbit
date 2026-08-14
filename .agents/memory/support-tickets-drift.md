@@ -1,9 +1,16 @@
 ---
-name: support_tickets DB drift
-description: Live support_tickets table diverged from shared/schema.ts (tenant_id vs tenant_domain)
+name: support_tickets tenant scope
+description: Durable decisions - tenant scoping for support_tickets and migration-runner rules learned during the drift fix.
 ---
-The production/dev DB's `support_tickets` table has `tenant_id`, `metadata`, `application_source`, `resolved_at`, `resolved_by` — not the `tenant_domain` shape declared in shared/schema.ts. It was altered outside the migration runner (possibly shared with another app).
 
-**Why:** any Drizzle query on `supportTickets.tenantDomain` fails with "column tenant_domain does not exist"; migration 0085 had to guard its index on whichever tenant column exists.
+# support_tickets tenant scope
 
-**How to apply:** before touching support-ticket code or writing migrations against it, check the live table shape first (`\d support_tickets`); don't trust schema.ts for this table until the drift is reconciled.
+Tickets are tenant-scoped by `tenant_domain` (text) with **no FK to tenants(id)**.
+**Why:** the whole app keys tenant scope by domain string; an id-keyed FK (from an external writer) broke every ticket query.
+**How to apply:** never reintroduce a tenants(id) FK here; new ticket queries filter on tenant_domain.
+
+# Migration runner rules (learned the hard way)
+
+- Never edit a migration file after any environment applied it — the checksum ledger aborts startup. Put fixes in a new migration. Auto-checkpoint commits can capture your edit, so restore "original" files from the base branch commit, not HEAD.
+- First-boot backfill stamps alter-only/DO-block migrations without running them; a reconciliation migration must carry the `-- backfill:always-apply` marker (and be idempotent) to actually execute.
+- `pg_get_serial_sequence()` still returns the owned sequence after `DROP DEFAULT` — detect a missing serial default via `information_schema.columns.column_default IS NULL`, not sequence ownership.

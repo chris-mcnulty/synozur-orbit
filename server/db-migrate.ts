@@ -26,6 +26,13 @@ import pg from "pg";
 const MIGRATIONS_DIR = path.resolve("migrations");
 const BREAKPOINT = "--> statement-breakpoint";
 
+/**
+ * Files containing this marker comment are never backfill-stamped: on a
+ * first boot with an empty _migrations ledger they are applied for real.
+ * Only use it in migrations that are fully idempotent.
+ */
+export const ALWAYS_APPLY_MARKER = "-- backfill:always-apply";
+
 function sha256(content: string): string {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");
 }
@@ -156,6 +163,17 @@ export async function computeBackfillPlan(
   for (const filePath of files) {
     const filename = path.basename(filePath);
     const content = fs.readFileSync(filePath, "utf8");
+
+    // Migrations carrying this marker are always applied for real during
+    // backfill, never stamped. Use it for idempotent reconciliation
+    // migrations (DO-block / ALTER-only) whose effect cannot be probed via
+    // CREATE TABLE / CREATE INDEX presence checks.
+    if (content.includes(ALWAYS_APPLY_MARKER)) {
+      console.log(`${label} backfill: always-apply marker — will apply: ${filename}`);
+      toApply.push(filePath);
+      continue;
+    }
+
     const tableNames = extractCreatedTableNames(content);
 
     if (tableNames.length === 0) {

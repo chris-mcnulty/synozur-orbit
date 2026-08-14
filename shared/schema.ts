@@ -3771,6 +3771,10 @@ export const supportTickets = pgTable("support_tickets", {
   subject: text("subject").notNull(),
   description: text("description").notNull(),
   assignedTo: varchar("assigned_to").references(() => users.id),
+  metadata: jsonb("metadata"),
+  applicationSource: text("application_source").notNull().default("Orbit"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

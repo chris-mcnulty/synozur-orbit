@@ -7,6 +7,7 @@ import {
   computeBackfillPlan,
   extractDroppedTableNames,
   extractCreatedIndexNames,
+  ALWAYS_APPLY_MARKER,
 } from "./db-migrate";
 
 /**
@@ -110,6 +111,39 @@ describe("computeBackfillPlan destructive-migration handling", () => {
     const { toStamp, toApply } = await computeBackfillPlan(pool, [alterFile], "[test]");
     expect(toStamp).toEqual([alterFile]);
     expect(toApply).toEqual([]);
+  });
+
+  it("always applies migrations carrying the always-apply marker, even when their index already exists", async () => {
+    // 0086 pattern: a DO-block reconciliation migration whose CREATE INDEX may
+    // already exist (created by 0085 on a drifted column). Without the marker
+    // the planner would stamp it and skip the rename/default repair work.
+    const reconcileFile = write(
+      "0086_reconcile.sql",
+      [
+        ALWAYS_APPLY_MARKER,
+        `DO $$ BEGIN PERFORM 1; END $$;`,
+        `--> statement-breakpoint`,
+        `CREATE INDEX IF NOT EXISTS "support_tickets_tenant_status_created_idx" ON support_tickets (tenant_domain, status, created_at);`,
+      ].join("\n")
+    );
+    const pool = fakePool(
+      new Set(["users", "support_tickets"]),
+      new Set(["support_tickets_tenant_status_created_idx"])
+    );
+    const { toStamp, toApply } = await computeBackfillPlan(pool, [reconcileFile], "[test]");
+    expect(toApply).toEqual([reconcileFile]);
+    expect(toStamp).toEqual([]);
+  });
+
+  it("always applies marker migrations even when they are alter-only (no CREATE at all)", async () => {
+    const markerAlter = write(
+      "0087_marker_alter_only.sql",
+      `${ALWAYS_APPLY_MARKER}\nALTER TABLE users ADD COLUMN IF NOT EXISTS nickname text;`
+    );
+    const pool = fakePool(new Set(["users"]));
+    const { toStamp, toApply } = await computeBackfillPlan(pool, [markerAlter], "[test]");
+    expect(toApply).toEqual([markerAlter]);
+    expect(toStamp).toEqual([]);
   });
 
   it("still applies create-table migrations whose tables are missing", async () => {
