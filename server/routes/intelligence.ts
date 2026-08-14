@@ -18,7 +18,12 @@ export function registerIntelligenceRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
 
-      const project = await storage.getClientProject(req.params.projectId);
+      // Both reads key off projectId only — fetch in parallel; access is still
+      // validated before anything is returned.
+      const [project, recommendations] = await Promise.all([
+        storage.getClientProject(req.params.projectId),
+        storage.getLongFormRecommendationsByProject(req.params.projectId),
+      ]);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
@@ -28,7 +33,6 @@ export function registerIntelligenceRoutes(app: Express) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
       res.json(recommendations);
     } catch (error: any) {
       if (error instanceof ContextError) {
@@ -44,7 +48,12 @@ export function registerIntelligenceRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
 
-      const project = await storage.getClientProject(req.params.projectId);
+      // Both reads key off request params only — fetch in parallel; access is
+      // still validated before anything is returned.
+      const [project, recommendation] = await Promise.all([
+        storage.getClientProject(req.params.projectId),
+        storage.getLongFormRecommendationByType(req.params.type, req.params.projectId),
+      ]);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
@@ -53,11 +62,6 @@ export function registerIntelligenceRoutes(app: Express) {
       if (!validateResourceContext(project, ctx)) {
         return res.status(403).json({ error: "Access denied" });
       }
-
-      const recommendation = await storage.getLongFormRecommendationByType(
-        req.params.type,
-        req.params.projectId
-      );
       
       if (!recommendation) {
         // Return a placeholder if not generated yet

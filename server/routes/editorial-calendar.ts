@@ -446,53 +446,58 @@ export function registerEditorialCalendarRoutes(app: Express) {
       // Enrich: draft title/category from the produced asset, keyed off the
       // asset's sourceBriefId (the asset owns the brief↔draft link).
       const briefIds = rows.map((b) => b.id);
-      let assetMap = new Map<string, { title: string; categoryId: string | null }>();
-      if (briefIds.length) {
-        const assets = await db
-          .select({ sourceBriefId: contentAssets.sourceBriefId, title: contentAssets.title, categoryId: contentAssets.categoryId })
-          .from(contentAssets)
-          .where(
-            and(
-              inArray(contentAssets.sourceBriefId, briefIds),
-              eq(contentAssets.tenantDomain, ctx.tenantDomain),
-              assetMarketScope(ctx),
-            ),
-          );
-        for (const a of assets) {
-          if (a.sourceBriefId && !assetMap.has(a.sourceBriefId)) {
-            assetMap.set(a.sourceBriefId, { title: a.title, categoryId: a.categoryId });
-          }
-        }
-      }
-
-      // Enrich: which briefs are already in a marketing plan task.
-      const pushedBriefIds = new Set<string>();
-      if (rows.length) {
-        const pushedTasks = await db
-          .select({ sourceBriefId: marketingTasks.sourceBriefId })
-          .from(marketingTasks)
-          .innerJoin(marketingPlans, eq(marketingTasks.planId, marketingPlans.id))
-          .where(
-            and(
-              inArray(marketingTasks.sourceBriefId, rows.map((b) => b.id)),
-              eq(marketingPlans.tenantDomain, ctx.tenantDomain),
-            ),
-          );
-        for (const t of pushedTasks) {
-          if (t.sourceBriefId) pushedBriefIds.add(t.sourceBriefId);
-        }
-      }
-
       // Enrich: campaign status so the client can hide briefs on closed campaigns.
       const uniqueCampaignIds = [...new Set(rows.map((b) => b.campaignId).filter((id): id is string => !!id))];
-      const campaignStatusMap = new Map<string, string>();
-      if (uniqueCampaignIds.length) {
-        const campaignRows = await db
-          .select({ id: campaigns.id, status: campaigns.status })
-          .from(campaigns)
-          .where(inArray(campaigns.id, uniqueCampaignIds));
-        for (const c of campaignRows) campaignStatusMap.set(c.id, c.status);
+
+      // The three enrichment queries only depend on `rows` — run them in parallel.
+      const [assets, pushedTasks, campaignRows] = await Promise.all([
+        briefIds.length
+          ? db
+              .select({ sourceBriefId: contentAssets.sourceBriefId, title: contentAssets.title, categoryId: contentAssets.categoryId })
+              .from(contentAssets)
+              .where(
+                and(
+                  inArray(contentAssets.sourceBriefId, briefIds),
+                  eq(contentAssets.tenantDomain, ctx.tenantDomain),
+                  assetMarketScope(ctx),
+                ),
+              )
+          : Promise.resolve([] as { sourceBriefId: string | null; title: string; categoryId: string | null }[]),
+        // Enrich: which briefs are already in a marketing plan task.
+        rows.length
+          ? db
+              .select({ sourceBriefId: marketingTasks.sourceBriefId })
+              .from(marketingTasks)
+              .innerJoin(marketingPlans, eq(marketingTasks.planId, marketingPlans.id))
+              .where(
+                and(
+                  inArray(marketingTasks.sourceBriefId, rows.map((b) => b.id)),
+                  eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+                ),
+              )
+          : Promise.resolve([] as { sourceBriefId: string | null }[]),
+        uniqueCampaignIds.length
+          ? db
+              .select({ id: campaigns.id, status: campaigns.status })
+              .from(campaigns)
+              .where(inArray(campaigns.id, uniqueCampaignIds))
+          : Promise.resolve([] as { id: string; status: string }[]),
+      ]);
+
+      let assetMap = new Map<string, { title: string; categoryId: string | null }>();
+      for (const a of assets) {
+        if (a.sourceBriefId && !assetMap.has(a.sourceBriefId)) {
+          assetMap.set(a.sourceBriefId, { title: a.title, categoryId: a.categoryId });
+        }
       }
+
+      const pushedBriefIds = new Set<string>();
+      for (const t of pushedTasks) {
+        if (t.sourceBriefId) pushedBriefIds.add(t.sourceBriefId);
+      }
+
+      const campaignStatusMap = new Map<string, string>();
+      for (const c of campaignRows) campaignStatusMap.set(c.id, c.status);
 
       const enriched = rows.map((b) => {
         const asset = assetMap.get(b.id);
@@ -544,48 +549,54 @@ export function registerEditorialCalendarRoutes(app: Express) {
       // title and category so the calendar can show the brief↔draft link and
       // the draft's library category in one place.
       const briefIds = briefs.map((b) => b.id);
+
+      // Both enrichment queries only depend on `briefs` — run them in parallel.
+      // Second query: which briefs have already been pushed into a marketing
+      // plan (via the distribution planner)? The link is
+      // marketing_tasks.source_brief_id. Scope explicitly to this tenant's
+      // plans (join marketing_plans) so the marker can never reflect a task
+      // outside the tenant boundary.
+      const [assets, pushedTasks] = await Promise.all([
+        briefIds.length
+          ? db
+              .select({
+                sourceBriefId: contentAssets.sourceBriefId,
+                title: contentAssets.title,
+                categoryId: contentAssets.categoryId,
+              })
+              .from(contentAssets)
+              .where(
+                and(
+                  inArray(contentAssets.sourceBriefId, briefIds),
+                  eq(contentAssets.tenantDomain, ctx.tenantDomain),
+                  assetMarketScope(ctx),
+                ),
+              )
+          : Promise.resolve([] as { sourceBriefId: string | null; title: string; categoryId: string | null }[]),
+        briefs.length
+          ? db
+              .select({ sourceBriefId: marketingTasks.sourceBriefId })
+              .from(marketingTasks)
+              .innerJoin(marketingPlans, eq(marketingTasks.planId, marketingPlans.id))
+              .where(
+                and(
+                  inArray(marketingTasks.sourceBriefId, briefs.map((b) => b.id)),
+                  eq(marketingPlans.tenantDomain, ctx.tenantDomain),
+                ),
+              )
+          : Promise.resolve([] as { sourceBriefId: string | null }[]),
+      ]);
+
       let assetMap = new Map<string, { title: string; categoryId: string | null }>();
-      if (briefIds.length) {
-        const assets = await db
-          .select({
-            sourceBriefId: contentAssets.sourceBriefId,
-            title: contentAssets.title,
-            categoryId: contentAssets.categoryId,
-          })
-          .from(contentAssets)
-          .where(
-            and(
-              inArray(contentAssets.sourceBriefId, briefIds),
-              eq(contentAssets.tenantDomain, ctx.tenantDomain),
-              assetMarketScope(ctx),
-            ),
-          );
-        for (const a of assets) {
-          if (a.sourceBriefId && !assetMap.has(a.sourceBriefId)) {
-            assetMap.set(a.sourceBriefId, { title: a.title, categoryId: a.categoryId });
-          }
+      for (const a of assets) {
+        if (a.sourceBriefId && !assetMap.has(a.sourceBriefId)) {
+          assetMap.set(a.sourceBriefId, { title: a.title, categoryId: a.categoryId });
         }
       }
 
-      // Which briefs have already been pushed into a marketing plan (via the
-      // distribution planner)? The link is marketing_tasks.source_brief_id.
-      // Scope explicitly to this tenant's plans (join marketing_plans) so the
-      // marker can never reflect a task outside the tenant boundary.
       const pushedBriefIds = new Set<string>();
-      if (briefs.length) {
-        const pushedTasks = await db
-          .select({ sourceBriefId: marketingTasks.sourceBriefId })
-          .from(marketingTasks)
-          .innerJoin(marketingPlans, eq(marketingTasks.planId, marketingPlans.id))
-          .where(
-            and(
-              inArray(marketingTasks.sourceBriefId, briefs.map((b) => b.id)),
-              eq(marketingPlans.tenantDomain, ctx.tenantDomain),
-            ),
-          );
-        for (const t of pushedTasks) {
-          if (t.sourceBriefId) pushedBriefIds.add(t.sourceBriefId);
-        }
+      for (const t of pushedTasks) {
+        if (t.sourceBriefId) pushedBriefIds.add(t.sourceBriefId);
       }
 
       const enriched = briefs.map((b) => {

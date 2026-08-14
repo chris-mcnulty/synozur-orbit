@@ -173,7 +173,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
           )!,
         );
       }
-      const socialRows = await db
+      const socialRowsPromise = db
         .select({
           id: generatedPosts.id,
           platform: generatedPosts.platform,
@@ -202,7 +202,7 @@ export function registerMarketingCalendarRoutes(app: Express) {
       if (campaignId) emailConds.push(eq(generatedEmails.campaignId, campaignId));
       if (solutionAreaId) emailConds.push(eq(generatedEmails.solutionAreaId, solutionAreaId));
       if (conferenceId) emailConds.push(eq(generatedEmails.conferenceId, conferenceId));
-      const emailRows = await db
+      const emailRowsPromise = db
         .select({
           id: generatedEmails.id,
           subject: generatedEmails.subject,
@@ -220,6 +220,48 @@ export function registerMarketingCalendarRoutes(app: Express) {
 
       // Content briefs are managed in the Editorial Calendar — they are specs,
       // not dated deliverables, and do not belong in the Content Calendar backlog.
+
+      // ── Blog post content briefs (all lifecycle stages) ──
+      // Blog posts are tracked from the moment a content brief exists, not just
+      // after being pushed to the website. Lifecycle: websitePostSlug present →
+      // delivered; brief status=approved → approved; otherwise → draft.
+      // When a filter (campaign/theme/event) is active, scope to matching briefs.
+      // When no filter is active, include all briefs for the current market.
+      const blogConds: any[] = [
+        eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+        eq(contentBriefs.format, "blog_post"),
+        ne(contentBriefs.status, "removed"),
+        or(eq(contentBriefs.marketId, ctx.marketId), isNull(contentBriefs.marketId))!,
+      ];
+      if (campaignId) blogConds.push(eq(contentBriefs.campaignId, campaignId));
+      if (solutionAreaId) blogConds.push(eq(contentBriefs.solutionAreaId, solutionAreaId));
+      if (conferenceId) blogConds.push(eq(contentBriefs.conferenceId, conferenceId));
+      const blogRowsPromise = db
+        .select({
+          id: contentBriefs.id,
+          title: contentBriefs.title,
+          format: contentBriefs.format,
+          status: contentBriefs.status,
+          scheduledAt: contentBriefs.scheduledAt,
+          contentAssetId: contentBriefs.contentAssetId,
+          campaignId: contentBriefs.campaignId,
+          solutionAreaId: contentBriefs.solutionAreaId,
+          conferenceId: contentBriefs.conferenceId,
+          websitePostSlug: contentAssets.websitePostSlug,
+          websitePostStatus: contentAssets.websitePostStatus,
+          websiteScheduledFor: contentAssets.websiteScheduledFor,
+        })
+        .from(contentBriefs)
+        .leftJoin(contentAssets, eq(contentAssets.id, contentBriefs.contentAssetId))
+        .where(and(...blogConds))
+        .orderBy(desc(contentBriefs.scheduledAt));
+
+      // The three source queries are independent — run them in parallel.
+      const [socialRows, emailRows, blogRows] = await Promise.all([
+        socialRowsPromise,
+        emailRowsPromise,
+        blogRowsPromise,
+      ]);
 
       const items: any[] = [];
 
@@ -277,41 +319,6 @@ export function registerMarketingCalendarRoutes(app: Express) {
           conferenceId: e.conferenceId,
         });
       }
-
-      // ── Blog post content briefs (all lifecycle stages) ──
-      // Blog posts are tracked from the moment a content brief exists, not just
-      // after being pushed to the website. Lifecycle: websitePostSlug present →
-      // delivered; brief status=approved → approved; otherwise → draft.
-      // When a filter (campaign/theme/event) is active, scope to matching briefs.
-      // When no filter is active, include all briefs for the current market.
-      const blogConds: any[] = [
-        eq(contentBriefs.tenantDomain, ctx.tenantDomain),
-        eq(contentBriefs.format, "blog_post"),
-        ne(contentBriefs.status, "removed"),
-        or(eq(contentBriefs.marketId, ctx.marketId), isNull(contentBriefs.marketId))!,
-      ];
-      if (campaignId) blogConds.push(eq(contentBriefs.campaignId, campaignId));
-      if (solutionAreaId) blogConds.push(eq(contentBriefs.solutionAreaId, solutionAreaId));
-      if (conferenceId) blogConds.push(eq(contentBriefs.conferenceId, conferenceId));
-      const blogRows = await db
-        .select({
-          id: contentBriefs.id,
-          title: contentBriefs.title,
-          format: contentBriefs.format,
-          status: contentBriefs.status,
-          scheduledAt: contentBriefs.scheduledAt,
-          contentAssetId: contentBriefs.contentAssetId,
-          campaignId: contentBriefs.campaignId,
-          solutionAreaId: contentBriefs.solutionAreaId,
-          conferenceId: contentBriefs.conferenceId,
-          websitePostSlug: contentAssets.websitePostSlug,
-          websitePostStatus: contentAssets.websitePostStatus,
-          websiteScheduledFor: contentAssets.websiteScheduledFor,
-        })
-        .from(contentBriefs)
-        .leftJoin(contentAssets, eq(contentAssets.id, contentBriefs.contentAssetId))
-        .where(and(...blogConds))
-        .orderBy(desc(contentBriefs.scheduledAt));
 
       for (const b of blogRows) {
         // Prefer website scheduled date for pushed posts; fall back to brief's scheduled date.
