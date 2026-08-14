@@ -3057,6 +3057,8 @@ export const socialAccountVoiceProfiles = pgTable("social_account_voice_profiles
   onePersonalVoicePerUser: uniqueIndex("voice_profiles_personal_owner_idx")
     .on(table.ownerUserId)
     .where(sql`social_account_id IS NULL AND owner_user_id IS NOT NULL`),
+  // Mirrors the DB index created in migration 0016 (tenant-scoped profile lists).
+  tenantIdx: index("social_account_voice_profiles_tenant_idx").on(table.tenantDomain),
 }));
 
 export const socialAccountVoiceProfilesRelations = relations(socialAccountVoiceProfiles, ({ one }) => ({
