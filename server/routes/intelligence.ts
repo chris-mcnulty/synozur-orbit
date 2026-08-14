@@ -990,38 +990,40 @@ Make this a comprehensive reference document for sales and strategy teams.`;
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Gather all project data
-      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      // Gather all project data (independent fetches in parallel)
+      const [projectProducts, projectScores, recommendations, battlecards] = await Promise.all([
+        storage.getProjectProducts(req.params.projectId),
+        storage.getCompetitorScoresByProject(req.params.projectId),
+        storage.getLongFormRecommendationsByProject(req.params.projectId),
+        storage.getProductBattlecardsByProject(req.params.projectId),
+      ]);
       const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
 
       // Get competitor scores - first try project-level, then fall back to competitor-level
-      let competitorScoresData = await storage.getCompetitorScoresByProject(req.params.projectId);
-      
+      let competitorScoresData = projectScores;
+
       // If no project-specific scores, fetch by competitorId or productId for each competitor product
       if (competitorScoresData.length === 0) {
-        for (const pp of competitorProducts) {
-          // Try competitorId first, then fall back to productId (for standalone products)
-          const scoreId = pp.product?.competitorId || pp.product?.id;
-          if (scoreId) {
-            const score = await storage.getCompetitorScore(scoreId);
-            if (score) {
-              competitorScoresData.push(score);
-            }
+        const fallbackScores = await Promise.all(
+          competitorProducts.map(pp => {
+            // Try competitorId first, then fall back to productId (for standalone products)
+            const scoreId = pp.product?.competitorId || pp.product?.id;
+            return scoreId ? storage.getCompetitorScore(scoreId) : Promise.resolve(undefined);
+          })
+        );
+        for (const score of fallbackScores) {
+          if (score) {
+            competitorScoresData.push(score);
           }
         }
       }
 
-      // Get all long-form recommendations
-      const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
       const gapAnalysis = recommendations.find(r => r.type === "gap_analysis");
       const strategicRecs = recommendations.find(r => r.type === "strategic_recommendations");
       const competitiveSummary = recommendations.find(r => r.type === "competitive_summary");
       const gtmPlan = recommendations.find(r => r.type === "gtm_plan");
       const messagingFramework = recommendations.find(r => r.type === "messaging_framework");
-
-      // Get battlecards
-      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
 
       // Calculate overall analytics
       const totalCompetitors = competitorProducts.length;
@@ -1160,12 +1162,14 @@ Make this a comprehensive reference document for sales and strategy teams.`;
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Gather all project data
-      const projectProducts = await storage.getProjectProducts(req.params.projectId);
+      // Gather all project data (independent fetches in parallel)
+      const [projectProducts, recommendations, battlecards] = await Promise.all([
+        storage.getProjectProducts(req.params.projectId),
+        storage.getLongFormRecommendationsByProject(req.params.projectId),
+        storage.getProductBattlecardsByProject(req.params.projectId),
+      ]);
       const baselineProduct = projectProducts.find(pp => pp.role === "baseline");
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
-      const recommendations = await storage.getLongFormRecommendationsByProject(req.params.projectId);
-      const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
 
       const gapAnalysis = recommendations.find(r => r.type === "gap_analysis");
       const strategicRecs = recommendations.find(r => r.type === "strategic_recommendations");
@@ -1579,12 +1583,14 @@ Generate a messaging framework in markdown format with sections:
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      const user = await storage.getUser(req.session.userId);
+      const [user, project] = await Promise.all([
+        storage.getUser(req.session.userId),
+        storage.getClientProject(req.params.projectId),
+      ]);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      const project = await storage.getClientProject(req.params.projectId);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
