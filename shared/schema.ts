@@ -247,7 +247,9 @@ export const markets = pgTable("markets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   lastVisitedAt: timestamp("last_visited_at"),
-});
+}, (table) => ({
+  tenantIdIdx: index("markets_tenant_id_idx").on(table.tenantId),
+}));
 
 // Consultant access grants - allows consultants to access specific tenants
 export const consultantAccess = pgTable("consultant_access", {
@@ -518,7 +520,10 @@ export const competitors = pgTable("competitors", {
   hubspotOpenDealValue: integer("hubspot_open_deal_value").notNull().default(0), // total amount across open deals (whole units of portal currency)
   hubspotLastSyncAt: timestamp("hubspot_last_sync_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantMarketProjectCreatedIdx: index("competitors_tenant_market_project_created_idx").on(table.tenantDomain, table.marketId, table.projectId, table.createdAt),
+  marketProjectCreatedIdx: index("competitors_market_project_created_idx").on(table.marketId, table.projectId, table.createdAt),
+}));
 
 export const TONE_LABELS = [
   "confident",
@@ -557,6 +562,7 @@ export const activity = pgTable("activity", {
 }, (table) => ({
   competitorAnalyzedIdx: index("activity_competitor_analyzed_idx").on(table.competitorId, table.analyzedAt),
   competitorCreatedIdx: index("activity_competitor_created_idx").on(table.competitorId, table.createdAt),
+  tenantMarketCreatedIdx: index("activity_tenant_market_created_idx").on(table.tenantDomain, table.marketId, table.createdAt),
 }));
 
 export const ENGAGEMENT_PLATFORMS = ["linkedin", "instagram", "twitter", "facebook"] as const;
@@ -1379,7 +1385,9 @@ export const companyProfiles = pgTable("company_profiles", {
   socialCheckFrequency: text("social_check_frequency").notNull().default("daily"), // "hourly", "daily", "weekly"
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  tenantDomainIdx: index("company_profiles_tenant_domain_idx").on(table.tenantDomain),
+}));
 
 export const companyProfilesRelations = relations(companyProfiles, ({ one }) => ({
   user: one(users, {
