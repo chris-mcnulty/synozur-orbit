@@ -113,7 +113,11 @@ export default function CalendarPage() {
   });
   // Calendar API (/api/generated-posts/calendar) is gated by socialPosts on
   // the backend — match it client-side so the UI doesn't render only to 403.
-  const isAllowed = tenantInfo?.features?.socialPosts === true;
+  // Default true while loading — show the page skeleton rather than the paywall.
+  // The paywall only renders once tenantInfo has resolved and socialPosts is
+  // confirmed false. Using === true while undefined flashes "Contact Sales".
+  const isAllowedResolved = tenantInfo !== undefined;
+  const isAllowed = !isAllowedResolved || tenantInfo?.features?.socialPosts === true;
 
   // Campaign names for the filter dropdown.
   const { data: filterOpts } = useQuery<{ campaigns?: { id: string; name: string }[] }>({

@@ -254,7 +254,19 @@ export function PageFeatureGate({ featureKey, label, description, children }: {
   const { isAllowed, isLoading } = useFeatureAccess(featureKey);
   const requiredPlan = FEATURE_REQUIRED_PLAN[featureKey] || "Pro";
 
-  if (isLoading) return null;
+  // While tenant info is loading, render nothing visible but keep the DOM
+  // stable — returning null here caused every gated page to show a black
+  // screen for the full duration of /api/tenant/info (can be 10–80s in prod).
+  if (isLoading) return (
+    <AppLayout>
+      <div className="container mx-auto p-8 flex items-center justify-center min-h-[40vh]">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading…</span>
+        </div>
+      </div>
+    </AppLayout>
+  );
 
   if (!isAllowed) {
     return (
