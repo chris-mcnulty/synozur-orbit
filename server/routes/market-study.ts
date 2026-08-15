@@ -15,7 +15,7 @@ import { db } from "../db";
 import { and, desc, eq } from "drizzle-orm";
 import { marketStudies } from "@shared/schema";
 import { getRequestContext, ContextError } from "../context";
-import { guardFeature, guardManualAction } from "./helpers";
+import { guardFeature, guardManualAction, denyReadOnly } from "./helpers";
 import { startMarketStudy } from "../services/market-model/market-study-service";
 import { STUDY_DEPTHS, type StudyDepth } from "@shared/market-intelligence";
 
@@ -29,11 +29,17 @@ function sendErr(res: Response, err: unknown): void {
   }
 }
 
-async function loadScopedStudy(id: string, tenantDomain: string) {
+async function loadScopedStudy(id: string, tenantDomain: string, marketId: string) {
   const [row] = await db
     .select()
     .from(marketStudies)
-    .where(and(eq(marketStudies.id, id), eq(marketStudies.tenantDomain, tenantDomain)));
+    .where(
+      and(
+        eq(marketStudies.id, id),
+        eq(marketStudies.tenantDomain, tenantDomain),
+        eq(marketStudies.marketId, marketId),
+      ),
+    );
   return row ?? null;
 }
 
@@ -41,13 +47,14 @@ export function registerMarketStudyRoutes(app: Express): void {
   // ── START (metered) ─────────────────────────────────────────────────────────
   app.post("/api/market-studies", async (req: Request, res: Response) => {
     if (!(await guardFeature(req, res, "marketStudyWizard"))) return;
-    if (!(await guardManualAction(req, res, "runMarketStudy"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const inputType = req.body?.inputType === "url" ? "url" : "brief";
       const inputValue = String(req.body?.inputValue ?? "").trim();
       const depth: StudyDepth = VALID_DEPTHS.has(req.body?.depth) ? req.body.depth : "focus";
       if (!inputValue) return res.status(400).json({ error: "A brief or URL is required." });
+      if (!(await guardManualAction(req, res, "runMarketStudy"))) return;
 
       const studyId = await startMarketStudy(
         { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
@@ -81,7 +88,7 @@ export function registerMarketStudyRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketStudyWizard"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const row = await loadScopedStudy(req.params.id, ctx.tenantDomain);
+      const row = await loadScopedStudy(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!row) return res.status(404).json({ error: "Study not found" });
       res.json(row);
     } catch (err) {
@@ -94,7 +101,7 @@ export function registerMarketStudyRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketStudyWizard"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const row = await loadScopedStudy(req.params.id, ctx.tenantDomain);
+      const row = await loadScopedStudy(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!row) return res.status(404).json({ error: "Study not found" });
       res.json({ id: row.id, status: row.status, currentStage: row.currentStage, stages: row.stages, error: row.error });
     } catch (err) {
@@ -107,7 +114,8 @@ export function registerMarketStudyRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketStudyWizard"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const parent = await loadScopedStudy(req.params.id, ctx.tenantDomain);
+      if (denyReadOnly(ctx, res)) return;
+      const parent = await loadScopedStudy(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!parent) return res.status(404).json({ error: "Study not found" });
 
       if (!(await guardManualAction(req, res, "runMarketStudy"))) return;

@@ -28,8 +28,8 @@
 import type { NaicsMatch } from "./naics-crosswalk";
 
 // Most recent CBP vintage. CBP lags ~2 years; bump as new years publish. The
-// NAICS predicate is NAICS2017 for the 2022 vintage.
-const CBP_DEFAULT_YEAR = 2022;
+// NAICS predicate is still NAICS2017 for the 2023 vintage.
+const CBP_DEFAULT_YEAR = 2023;
 const CBP_BASE = "https://api.census.gov/data";
 const CBP_VARIABLES = ["NAICS2017", "NAICS2017_LABEL", "ESTAB", "EMP", "PAYANN"] as const;
 

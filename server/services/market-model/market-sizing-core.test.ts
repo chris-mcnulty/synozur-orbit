@@ -68,6 +68,14 @@ describe("reconcileSizing", () => {
     expect(r.tam).toEqual({ low: 0, mid: 0, high: 0, currency: "USD" });
     expect(r.confidence).toBe("low");
   });
+
+  it("clamps SAM to TAM so a bad SAM>TAM model response can't persist", () => {
+    // Single top-down estimate with SAM larger than TAM (malformed).
+    const r = reconcileSizing(null, { tam: 1000, sam: 5000 });
+    expect(r.sam.low).toBeLessThanOrEqual(r.tam.low);
+    expect(r.sam.mid).toBeLessThanOrEqual(r.tam.mid);
+    expect(r.sam.high).toBeLessThanOrEqual(r.tam.high);
+  });
 });
 
 describe("parseTopDownSizing", () => {

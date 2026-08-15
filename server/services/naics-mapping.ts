@@ -15,6 +15,7 @@
 
 import { AI_FEATURES } from "@shared/schema";
 import { completeForFeature } from "./ai-provider";
+import { logAiUsage } from "./ai-usage-logger";
 import { extractJsonArray } from "./repurpose-core";
 import { lookupNaicsCrosswalk, type NaicsMatch } from "./naics-crosswalk";
 
@@ -62,6 +63,15 @@ export async function resolveNaicsCodes(
       temperature: 0,
       maxTokens: 512,
     });
+    await logAiUsage(
+      { tenantDomain: opts.tenantDomain },
+      "market_sizing",
+      result.provider,
+      result.model,
+      { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens },
+      result.durationMs,
+      { step: "naics_resolution" },
+    );
 
     const parsed = extractJsonArray(result.text);
     const aiMatches: NaicsMatch[] = parsed

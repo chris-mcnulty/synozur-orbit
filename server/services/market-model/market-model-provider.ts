@@ -21,6 +21,9 @@ import type {
   MarketIntelligenceSourceInput,
   MatrixCellScore,
 } from "@shared/market-intelligence";
+// Value import (ESM). `native` imports only types from this module, so there is
+// no runtime import cycle.
+import { NativeMarketModelProvider } from "./native-market-model-provider";
 
 // ─── Inputs ───────────────────────────────────────────────────────────────────
 
@@ -129,13 +132,13 @@ let cached: MarketModelProvider | null = null;
 /**
  * Resolve the active provider. Path A is the default; a future Path B adapter can
  * be selected via env (e.g. MARKET_MODEL_PROVIDER=segmentable) without changing
- * any caller. Kept lazy + cached so the (db-backed) native provider isn't
- * constructed at import time.
+ * any caller. Cached after first construction. `native` imports only *types* from
+ * this module, so the static import below creates no runtime cycle — and unlike
+ * `require()`, it works under ESM ("type":"module").
  */
 export function getMarketModelProvider(): MarketModelProvider {
   if (cached) return cached;
   // Path B would branch here on process.env.MARKET_MODEL_PROVIDER.
-  const { NativeMarketModelProvider } = require("./native-market-model-provider") as typeof import("./native-market-model-provider");
   cached = new NativeMarketModelProvider();
   return cached;
 }

@@ -62,7 +62,7 @@ export function lookupNaicsCrosswalk(industryText: string): NaicsMatch[] {
   const matches: NaicsMatch[] = [];
 
   for (const entry of SEED_CROSSWALK) {
-    const hit = entry.keywords.find((kw) => haystack.includes(kw));
+    const hit = entry.keywords.find((kw) => matchesKeyword(haystack, kw));
     if (hit && !seen.has(entry.code)) {
       seen.add(entry.code);
       matches.push({
@@ -75,4 +75,14 @@ export function lookupNaicsCrosswalk(industryText: string): NaicsMatch[] {
     }
   }
   return matches;
+}
+
+/**
+ * Token-boundary keyword match: `hospital` matches "hospital ward" but NOT
+ * "hospitality". Alphanumeric runs are treated as tokens, so hyphenated/spaced
+ * phrases (e.g. "e-commerce", "it services") still match as whole terms.
+ */
+function matchesKeyword(haystack: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`).test(haystack);
 }

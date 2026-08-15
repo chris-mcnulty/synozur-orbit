@@ -72,7 +72,16 @@ export function reconcileSizing(
   const currency = opts.currency ?? DEFAULT_CURRENCY;
 
   const tam = blendRange([bottomUp?.tam, topDown?.tam], currency);
-  const sam = blendRange([bottomUp?.sam, topDown?.sam], currency);
+  const rawSam = blendRange([bottomUp?.sam, topDown?.sam], currency);
+  // Domain invariant: SAM ⊆ TAM. A malformed model response can report SAM > TAM;
+  // clamp each bound so we never persist/display a serviceable market larger than
+  // the total. (Only meaningful when a TAM bound is present.)
+  const sam = {
+    low: tam.low > 0 ? Math.min(rawSam.low, tam.low) : rawSam.low,
+    mid: tam.mid > 0 ? Math.min(rawSam.mid, tam.mid) : rawSam.mid,
+    high: tam.high > 0 ? Math.min(rawSam.high, tam.high) : rawSam.high,
+    currency,
+  };
 
   let method: SizingMethod;
   let confidence: SizingConfidence;

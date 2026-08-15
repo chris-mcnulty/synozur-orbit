@@ -177,7 +177,8 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     try {
       const r = await generateMatrixForMarket(ctx, { maxSegments: cfg.maxSegments, maxNeeds: cfg.maxNeeds });
       matrix = { cellsCreated: r.cellsCreated, whitespaceCount: r.whitespaceCount };
-      await setStage("matrix", "done", `${matrix.cellsCreated} cells · ${matrix.whitespaceCount} whitespace`);
+      if (r.cellsCreated === 0) await setStage("matrix", "failed", "Scoring produced no cells");
+      else await setStage("matrix", "done", `${matrix.cellsCreated} cells · ${matrix.whitespaceCount} whitespace`);
     } catch (e: any) {
       if (e instanceof NoMatrixWorkError) await setStage("matrix", "skipped", "No segment needs to score");
       else {
@@ -192,12 +193,20 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
       ? await db.select().from(marketSegments).where(inArray(marketSegments.id, segmentIds))
       : [];
     const segNameById = new Map(segs.map((s) => [s.id, s.name]));
-    const topCells = await db
-      .select()
-      .from(opportunityMatrixCells)
-      .where(and(eq(opportunityMatrixCells.tenantDomain, ctx.tenantDomain), eq(opportunityMatrixCells.marketId, ctx.marketId)))
-      .orderBy(desc(opportunityMatrixCells.roiScore))
-      .limit(10);
+    const topCells = segmentIds.length
+      ? await db
+          .select()
+          .from(opportunityMatrixCells)
+          .where(
+            and(
+              eq(opportunityMatrixCells.tenantDomain, ctx.tenantDomain),
+              eq(opportunityMatrixCells.marketId, ctx.marketId),
+              inArray(opportunityMatrixCells.segmentId, segmentIds),
+            ),
+          )
+          .orderBy(desc(opportunityMatrixCells.roiScore))
+          .limit(10)
+      : [];
 
     let executiveSummary: string | null = null;
     try {
@@ -232,10 +241,15 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     }
 
     // ── Finalize ──────────────────────────────────────────────────────────────
+    // Terminal status reflects the critical stages (segments, sizing). A failed
+    // matrix/summary stage stays visible in `stages` but doesn't fail the study,
+    // since the sized segments are still useful output. There is no "partial"
+    // state in the status model, so a critical failure marks the run failed.
+    const criticalFailed = stages.some((s) => (s.key === "segments" || s.key === "sizing") && s.status === "failed");
     await db
       .update(marketStudies)
       .set({
-        status: "completed",
+        status: criticalFailed ? "failed" : "completed",
         completedAt: new Date(),
         executiveSummary,
         resultRefs: { segmentIds, cellCount: matrix.cellsCreated, whitespaceCount: matrix.whitespaceCount },

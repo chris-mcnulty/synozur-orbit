@@ -16,6 +16,11 @@ describe("naics crosswalk (pure fast-path)", () => {
     expect(hits.map((h) => h.code)).toContain("31-33");
   });
 
+  it("matches on token boundaries: 'hospital' hits, 'hospitality' does not", () => {
+    expect(lookupNaicsCrosswalk("regional hospital network").map((h) => h.code)).toContain("622");
+    expect(lookupNaicsCrosswalk("hospitality and travel").map((h) => h.code)).not.toContain("622");
+  });
+
   it("returns [] for empty or unknown input", () => {
     expect(lookupNaicsCrosswalk("")).toEqual([]);
     expect(lookupNaicsCrosswalk("   ")).toEqual([]);
@@ -32,7 +37,7 @@ describe("naics crosswalk (pure fast-path)", () => {
 describe("buildCbpQueryUrl (pure)", () => {
   it("builds a national query with the standard variables and NAICS predicate", () => {
     const url = buildCbpQueryUrl({ naicsCode: "5415", apiKey: "TESTKEY" });
-    expect(url).toContain("/data/2022/cbp?");
+    expect(url).toContain("/data/2023/cbp?");
     expect(url).toContain("NAICS2017=5415");
     expect(url).toContain("for=us");        // us:* (URL-encoded)
     expect(url).toContain("get=NAICS2017");

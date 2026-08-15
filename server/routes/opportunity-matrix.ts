@@ -15,9 +15,9 @@ import { db } from "../db";
 import { and, desc, eq } from "drizzle-orm";
 import { opportunityMatrixCells } from "@shared/schema";
 import { getRequestContext, ContextError } from "../context";
-import { guardFeature, guardManualAction } from "./helpers";
+import { guardFeature, guardManualAction, denyReadOnly } from "./helpers";
 import { computeRoiScore } from "../services/market-model/market-matrix-core";
-import { generateMatrixForMarket, NoMatrixWorkError } from "../services/market-model/opportunity-matrix-service";
+import { generateMatrixForMarket, NoMatrixWorkError, recomputeWhitespace } from "../services/market-model/opportunity-matrix-service";
 
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
   const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
@@ -58,10 +58,11 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
   // ── GENERATE (metered) ───────────────────────────────────────────────────────
   app.post("/api/opportunity-matrix/generate", async (req: Request, res: Response) => {
     if (!(await guardFeature(req, res, "opportunityMatrix"))) return;
-    // Reserve quota up front; a 4xx below (e.g. no needs) leaves it uncommitted.
-    if (!(await guardManualAction(req, res, "generateOpportunityMatrix"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
+      // Reserve quota now; a 4xx below (e.g. no needs) leaves it uncommitted.
+      if (!(await guardManualAction(req, res, "generateOpportunityMatrix"))) return;
       const result = await generateMatrixForMarket(
         { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
         {
@@ -86,6 +87,7 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "opportunityMatrix"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const [cell] = await db
         .select()
         .from(opportunityMatrixCells)
@@ -93,6 +95,7 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
           and(
             eq(opportunityMatrixCells.id, req.params.id),
             eq(opportunityMatrixCells.tenantDomain, ctx.tenantDomain),
+            eq(opportunityMatrixCells.marketId, ctx.marketId),
           ),
         );
       if (!cell) return res.status(404).json({ error: "Cell not found" });
@@ -100,19 +103,20 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
       const b = req.body ?? {};
       const rev = b.revenuePotential !== undefined ? clamp0to100(Number(b.revenuePotential)) : (cell.revenuePotential ?? 0);
       const eff = b.executionEffort !== undefined ? clamp0to100(Number(b.executionEffort)) : (cell.executionEffort ?? 0);
+      const scoreChanged = b.revenuePotential !== undefined || b.executionEffort !== undefined;
       const updates: Record<string, any> = { updatedAt: new Date(), source: "user" };
       if (b.revenuePotential !== undefined) updates.revenuePotential = rev;
       if (b.executionEffort !== undefined) updates.executionEffort = eff;
-      if (b.revenuePotential !== undefined || b.executionEffort !== undefined) {
-        updates.roiScore = computeRoiScore(rev, eff);
-      }
+      if (scoreChanged) updates.roiScore = computeRoiScore(rev, eff);
       if (b.scoreRationale !== undefined) updates.scoreRationale = b.scoreRationale ?? null;
 
-      const [updated] = await db
-        .update(opportunityMatrixCells)
-        .set(updates)
-        .where(eq(opportunityMatrixCells.id, cell.id))
-        .returning();
+      await db.update(opportunityMatrixCells).set(updates).where(eq(opportunityMatrixCells.id, cell.id));
+
+      // A changed ROI shifts the batch-relative whitespace flags — recompute them
+      // across the market so no cell keeps (or misses) a stale whitespace badge.
+      if (scoreChanged) await recomputeWhitespace(ctx.tenantDomain, ctx.marketId);
+
+      const [updated] = await db.select().from(opportunityMatrixCells).where(eq(opportunityMatrixCells.id, cell.id));
       res.json(updated);
     } catch (err) {
       sendErr(res, err);

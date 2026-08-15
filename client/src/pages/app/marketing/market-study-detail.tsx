@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { channelLabel, type StudyStage } from "@shared/market-intelligence";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import {
   ArrowLeft, RefreshCw, Loader2, CheckCircle2, XCircle, MinusCircle, Circle, Trophy, Lightbulb, TrendingUp,
 } from "lucide-react";
@@ -73,7 +74,10 @@ export default function MarketStudyDetailPage() {
 
   const segments = (segIds.length ? allSegments.filter((s) => segIds.includes(s.id)) : allSegments)
     .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
-  const topCells = [...allCells].filter((c) => c.roiScore != null).sort((a, b) => (b.roiScore ?? 0) - (a.roiScore ?? 0)).slice(0, 6);
+  const topCells = [...allCells]
+    .filter((c) => c.roiScore != null && (segIds.length ? segIds.includes(c.segmentId) : true))
+    .sort((a, b) => (b.roiScore ?? 0) - (a.roiScore ?? 0))
+    .slice(0, 6);
 
   const refresh = useMutation({
     mutationFn: async () => (await apiRequest("POST", `/api/market-studies/${id}/refresh`)).json(),
@@ -85,7 +89,10 @@ export default function MarketStudyDetailPage() {
     onError: (e: any) => toast({ title: "Refresh failed", description: e.message, variant: "destructive" }),
   });
 
-  const summaryHtml = study?.executiveSummary ? (marked.parse(study.executiveSummary) as string) : "";
+  // Executive summary is AI/user-influenced markdown; sanitize before rendering.
+  const summaryHtml = study?.executiveSummary
+    ? DOMPurify.sanitize(marked.parse(study.executiveSummary) as string)
+    : "";
 
   return (
     <AppLayout>

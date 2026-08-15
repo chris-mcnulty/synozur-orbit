@@ -23,9 +23,9 @@
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
-import { marketSegments, personas } from "@shared/schema";
+import { marketSegments, marketIntelligenceSources, personas } from "@shared/schema";
 import { getRequestContext, ContextError } from "../context";
-import { guardFeature, guardManualAction } from "./helpers";
+import { guardFeature, guardManualAction, denyReadOnly } from "./helpers";
 import { getMarketModelProvider } from "../services/market-model/market-model-provider";
 import { replaceSources, getSources } from "../services/market-intelligence-sources";
 import {
@@ -39,13 +39,19 @@ import {
 
 /** Load a tenant+market-scoped segment or send 404. Returns null when not found. */
 async function loadScopedSegment(id: string, tenantDomain: string, marketId: string) {
+  // Scope directly by market so a NULL marketId row (left by ON DELETE SET NULL)
+  // is never accessible from an arbitrary active market.
   const [seg] = await db
     .select()
     .from(marketSegments)
-    .where(and(eq(marketSegments.id, id), eq(marketSegments.tenantDomain, tenantDomain)));
-  // Segments are market-partitioned; a cross-market id read is treated as not found.
-  if (!seg || (seg.marketId && marketId && seg.marketId !== marketId)) return null;
-  return seg;
+    .where(
+      and(
+        eq(marketSegments.id, id),
+        eq(marketSegments.tenantDomain, tenantDomain),
+        eq(marketSegments.marketId, marketId),
+      ),
+    );
+  return seg ?? null;
 }
 
 function firmographicsOf(seg: { firmographics: unknown }): Firmographics {
@@ -90,15 +96,27 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const { name, description, firmographics, personaId } = req.body ?? {};
       if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+
+      // Validate personaId belongs to this tenant + market before linking (the DB
+      // FK alone would accept a persona from another tenant/market).
+      const cleanPersonaId = personaId?.trim() || null;
+      if (cleanPersonaId) {
+        const [persona] = await db
+          .select({ id: personas.id })
+          .from(personas)
+          .where(and(eq(personas.id, cleanPersonaId), eq(personas.tenantDomain, ctx.tenantDomain), eq(personas.marketId, ctx.marketId)));
+        if (!persona) return res.status(400).json({ error: "personaId does not reference a persona in this market" });
+      }
 
       const [created] = await db
         .insert(marketSegments)
         .values({
           tenantDomain: ctx.tenantDomain,
           marketId: ctx.marketId,
-          personaId: personaId?.trim() || null,
+          personaId: cleanPersonaId,
           name: name.trim(),
           description: description?.trim() ?? null,
           firmographics: (firmographics as Firmographics) ?? {},
@@ -130,12 +148,17 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!seg) return res.status(404).json({ error: "Segment not found" });
 
       const b = req.body ?? {};
       const updates: Record<string, any> = { updatedAt: new Date() };
-      if (b.name !== undefined) updates.name = String(b.name).trim();
+      if (b.name !== undefined) {
+        const trimmed = String(b.name).trim();
+        if (!trimmed) return res.status(400).json({ error: "name cannot be empty" });
+        updates.name = trimmed;
+      }
       if (b.description !== undefined) updates.description = b.description?.trim() ?? null;
       if (b.firmographics !== undefined) updates.firmographics = b.firmographics as Firmographics;
       if (b.status !== undefined) updates.status = b.status === "archived" ? "archived" : "active";
@@ -170,9 +193,17 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!seg) return res.status(404).json({ error: "Segment not found" });
-      await db.delete(marketSegments).where(eq(marketSegments.id, seg.id));
+      // Matrix cells cascade via FK; provenance sources are polymorphic (no FK),
+      // so remove them here to avoid orphaned rows.
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(marketIntelligenceSources)
+          .where(and(eq(marketIntelligenceSources.tenantDomain, ctx.tenantDomain), eq(marketIntelligenceSources.scopeId, seg.id)));
+        await tx.delete(marketSegments).where(eq(marketSegments.id, seg.id));
+      });
       res.status(204).send();
     } catch (err) {
       sendContextError(res, err);
@@ -184,6 +215,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!seg) return res.status(404).json({ error: "Segment not found" });
 
@@ -248,6 +280,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!seg) return res.status(404).json({ error: "Segment not found" });
 
@@ -277,6 +310,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
       const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!seg) return res.status(404).json({ error: "Segment not found" });
 
@@ -326,6 +360,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
 
       const personaRows = await db
         .select()

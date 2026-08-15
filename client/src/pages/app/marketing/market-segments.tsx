@@ -225,8 +225,8 @@ function SegmentCard({ segment: s, onEdit, onDelete }: { segment: MarketSegment;
           </div>
         </div>
         <div className="flex gap-1">
-          <Button size="sm" variant="ghost" onClick={onEdit} data-testid={`button-edit-${s.id}`}><Pencil className="h-4 w-4" /></Button>
-          <Button size="sm" variant="ghost" onClick={onDelete} data-testid={`button-delete-${s.id}`}><Trash2 className="h-4 w-4" /></Button>
+          <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Edit ${s.name}`} data-testid={`button-edit-${s.id}`}><Pencil className="h-4 w-4" /></Button>
+          <Button size="sm" variant="ghost" onClick={onDelete} aria-label={`Delete ${s.name}`} data-testid={`button-delete-${s.id}`}><Trash2 className="h-4 w-4" /></Button>
         </div>
       </CardContent>
     </Card>
@@ -314,13 +314,19 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
   };
 
   const saveMutation = useMutation({
-    mutationFn: async () =>
-      (await apiRequest("PATCH", `/api/market-segments/${segment.id}`, {
+    mutationFn: async () => {
+      // Only send needsMap / priorityScore when actually edited, so a plain save
+      // doesn't flip AI-authored sources to "user".
+      const payload: Record<string, unknown> = {
         name, description,
         firmographics: { industry: industry || undefined, companySize: companySize || undefined, geography: geography || undefined },
-        needsMap: needs,
-        priorityScore: priority ? Number(priority) : undefined,
-      })).json(),
+      };
+      const needsDirty = JSON.stringify(needs) !== JSON.stringify(segment.needsMap ?? EMPTY_NEEDS);
+      if (needsDirty) payload.needsMap = needs;
+      const priorityDirty = (priority ? Number(priority) : null) !== (segment.priorityScore ?? null);
+      if (priorityDirty && priority) payload.priorityScore = Number(priority);
+      return (await apiRequest("PATCH", `/api/market-segments/${segment.id}`, payload)).json();
+    },
     onSuccess: () => { refresh(); toast({ title: "Saved" }); onClose(); },
     onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
   });
