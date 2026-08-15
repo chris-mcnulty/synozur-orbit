@@ -124,6 +124,26 @@ export function needKeyOf(label: string): string {
     .slice(0, 60) || "need";
 }
 
+// ─── Market Study Wizard (#547) ──────────────────────────────────────────────
+
+export type StudyDepth = "explore" | "focus" | "dominate";
+export type StudyStatus = "pending" | "running" | "completed" | "failed";
+export type StudyStageStatus = "pending" | "running" | "done" | "skipped" | "failed";
+
+/** One named pipeline stage, mirrored to market_studies.stages for the detail page. */
+export interface StudyStage {
+  key: string;
+  label: string;
+  status: StudyStageStatus;
+  detail?: string;
+}
+
+export const STUDY_DEPTHS: ReadonlyArray<{ key: StudyDepth; label: string; blurb: string }> = [
+  { key: "explore", label: "Explore", blurb: "Quick scan — top segments, lighter sizing." },
+  { key: "focus", label: "Focus", blurb: "Balanced — more segments, full sizing + matrix." },
+  { key: "dominate", label: "Dominate", blurb: "Exhaustive — widest coverage and deepest scoring." },
+];
+
 // ─── Constructors / guards ────────────────────────────────────────────────────
 
 export const DEFAULT_CURRENCY = "USD";

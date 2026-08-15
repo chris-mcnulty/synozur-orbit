@@ -1764,6 +1764,8 @@ export const AI_FEATURES = {
   SEGMENT_PRIORITY: 'segment_priority',
   // Task #544
   OPPORTUNITY_MATRIX: 'opportunity_matrix',
+  // Task #547
+  MARKET_STUDY: 'market_study',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1791,6 +1793,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   segment_needs_map: 'Segment Needs Map',
   segment_priority: 'Segment Priority Scoring',
   opportunity_matrix: 'GTM Opportunity Matrix Scoring',
+  market_study: 'Market Study Wizard',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -4101,6 +4104,56 @@ export const insertOpportunityMatrixCellSchema = createInsertSchema(opportunityM
 });
 export type OpportunityMatrixCell = typeof opportunityMatrixCells.$inferSelect;
 export type InsertOpportunityMatrixCell = z.infer<typeof insertOpportunityMatrixCellSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Market Study Wizard — Task #547
+//
+// An end-to-end run that sequences #543 (segment modeling + sizing) and #544
+// (opportunity matrix) into one workflow from a brief/URL. Output-compatible:
+// the pipeline writes into market_segments / opportunity_matrix_cells /
+// market_intelligence_sources like hand-built data — this row is the durable
+// record + provenance of a run. Live stage detail is held in-memory by the
+// orchestrator; `stages` mirrors it for the detail page and after restarts.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const marketStudies = pgTable(
+  "market_studies",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+    inputType: text("input_type").notNull().default("brief"), // brief | url
+    inputValue: text("input_value"),
+    depth: text("depth").notNull().default("focus"), // explore | focus | dominate
+    status: text("status").notNull().default("pending"), // pending | running | completed | failed
+    currentStage: text("current_stage"),
+    // StudyStage[] — { key, label, status, detail? }
+    stages: jsonb("stages").notNull().default(sql`'[]'::jsonb`),
+    executiveSummary: text("executive_summary"),
+    // { segmentIds: string[], cellCount, sourceCount, whitespaceCount }
+    resultRefs: jsonb("result_refs").notNull().default({}),
+    error: text("error"),
+    // Refresh lineage: a re-run points back at the study it refreshed.
+    parentStudyId: varchar("parent_study_id").references((): AnyPgColumn => marketStudies.id, { onDelete: "set null" }),
+    createdBy: varchar("created_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => ({
+    tenantMarketIdx: index("market_studies_tenant_market_idx").on(
+      table.tenantDomain,
+      table.marketId,
+      table.createdAt.desc(),
+    ),
+  }),
+);
+
+export const insertMarketStudySchema = createInsertSchema(marketStudies).omit({
+  id: true, createdAt: true,
+});
+export type MarketStudy = typeof marketStudies.$inferSelect;
+export type InsertMarketStudy = z.infer<typeof insertMarketStudySchema>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Webhook integrations (Slack & Teams) — Task #71
