@@ -65,6 +65,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "leadScoring", label: "Lead Scoring", description: "Rule-based lead scoring with AI-suggested rules, lifecycle stage transitions, and HubSpot score push. Requires Marketing Contacts.", category: "marketing" },
   { key: "marketingWorkflows", label: "Marketing Workflows", description: "Visual multi-step automation engine: enrollment triggers (segment, event, score), email sends, waits, branches, property updates, and notifications.", category: "marketing" },
   { key: "marketSegments", label: "Market Segment Sizing", description: "Promote personas into quantified market segments with AI-estimated TAM/SAM (cited), 1–10 priority scoring, and structured Needs Maps. The strategic-intelligence foundation for the GTM opportunity matrix and market study wizard.", category: "intelligence" },
+  { key: "opportunityMatrix", label: "GTM Opportunity Matrix", description: "Rank where to focus GTM first: a scored grid crossing market segments × buyer needs × channels on revenue potential, execution effort, and derived ROI, with whitespace detection. Requires Market Segments.", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -141,6 +142,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     leadScoring: false,
     marketingWorkflows: false,
     marketSegments: false,
+    opportunityMatrix: false,
   },
   trial: {
     battlecards: true,
@@ -195,6 +197,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     leadScoring: false,
     marketingWorkflows: false,
     marketSegments: false,
+    opportunityMatrix: false,
   },
   pro: {
     battlecards: true,
@@ -249,6 +252,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     leadScoring: false,
     marketingWorkflows: false,
     marketSegments: false,
+    opportunityMatrix: false,
   },
   enterprise: {
     battlecards: true,
@@ -308,6 +312,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     leadScoring: true,
     marketingWorkflows: true,
     marketSegments: true,
+    opportunityMatrix: true,
   },
   unlimited: {
     battlecards: true,
@@ -367,6 +372,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     leadScoring: true,
     marketingWorkflows: true,
     marketSegments: true,
+    opportunityMatrix: true,
   },
 };
 

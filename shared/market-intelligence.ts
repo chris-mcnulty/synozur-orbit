@@ -83,6 +83,47 @@ export interface MarketIntelligenceSourceInput {
   usedForField?: string;
 }
 
+// ─── GTM Opportunity Matrix (#544) ──────────────────────────────────────────────
+
+/** Canonical GTM channels — the matrix's channel axis (comparable across segments). */
+export const CANONICAL_CHANNELS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "outbound", label: "Outbound / SDR" },
+  { key: "content_seo", label: "Content & SEO" },
+  { key: "paid_search", label: "Paid Search" },
+  { key: "paid_social", label: "Paid Social" },
+  { key: "events", label: "Events & Field" },
+  { key: "webinar", label: "Webinars" },
+  { key: "partner", label: "Partnerships / Channel" },
+  { key: "plg", label: "Product-Led / Self-Serve" },
+  { key: "email", label: "Email / Nurture" },
+  { key: "community", label: "Community & Advocacy" },
+];
+
+export type ChannelKey = (typeof CANONICAL_CHANNELS)[number]["key"];
+
+export function channelLabel(key: string): string {
+  return CANONICAL_CHANNELS.find((c) => c.key === key)?.label ?? key;
+}
+
+/** One AI-scored cell (before ROI is derived). */
+export interface MatrixCellScore {
+  channelKey: string;
+  /** 0..100 relative revenue potential. */
+  revenuePotential: number;
+  /** 0..100 relative execution effort/cost (higher = harder). */
+  executionEffort: number;
+  rationale?: string;
+}
+
+/** Stable slug for a free-text need label, so a need is one column across re-runs. */
+export function needKeyOf(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "need";
+}
+
 // ─── Constructors / guards ────────────────────────────────────────────────────
 
 export const DEFAULT_CURRENCY = "USD";

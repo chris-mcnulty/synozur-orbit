@@ -1762,6 +1762,8 @@ export const AI_FEATURES = {
   MARKET_SIZING: 'market_sizing',
   SEGMENT_NEEDS_MAP: 'segment_needs_map',
   SEGMENT_PRIORITY: 'segment_priority',
+  // Task #544
+  OPPORTUNITY_MATRIX: 'opportunity_matrix',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1788,6 +1790,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   market_sizing: 'Market Segment Sizing (TAM/SAM)',
   segment_needs_map: 'Segment Needs Map',
   segment_priority: 'Segment Priority Scoring',
+  opportunity_matrix: 'GTM Opportunity Matrix Scoring',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -4036,6 +4039,68 @@ export const insertMarketIntelligenceSourceSchema = createInsertSchema(marketInt
 });
 export type MarketIntelligenceSource = typeof marketIntelligenceSources.$inferSelect;
 export type InsertMarketIntelligenceSource = z.infer<typeof insertMarketIntelligenceSourceSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GTM Opportunity Matrix — Task #544
+//
+// A ranked, combinatorial grid crossing market segments (#543) × buyer needs ×
+// GTM channels. Each cell scores revenue potential and execution effort; ROI is
+// derived and used to rank. Written by the same MarketModelProvider seam #543
+// uses, so wizard (#547) and hand-built matrices are indistinguishable.
+// tenantDomain + marketId scoped; cells cascade-delete with their segment.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const opportunityMatrixCells = pgTable(
+  "opportunity_matrix_cells",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantDomain: text("tenant_domain").notNull(),
+    marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+    segmentId: varchar("segment_id")
+      .notNull()
+      .references(() => marketSegments.id, { onDelete: "cascade" }),
+    // needKey is a stable slug of the need; needLabel is its display text.
+    needKey: text("need_key").notNull(),
+    needLabel: text("need_label").notNull(),
+    channelKey: text("channel_key").notNull(),
+    // 0..100 relative scores; roiScore is derived (see market-matrix-core.ts).
+    revenuePotential: real("revenue_potential"),
+    executionEffort: real("execution_effort"),
+    roiScore: real("roi_score"),
+    scoreRationale: text("score_rationale"),
+    // High ROI + comparatively uncontested — computed across the batch.
+    isWhitespace: boolean("is_whitespace").notNull().default(false),
+    source: text("source").notNull().default("ai"), // ai | user
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    cellUnique: uniqueIndex("opportunity_matrix_cell_unique").on(
+      table.segmentId,
+      table.needKey,
+      table.channelKey,
+    ),
+    rankIdx: index("opportunity_matrix_rank_idx").on(
+      table.tenantDomain,
+      table.marketId,
+      table.roiScore.desc(),
+    ),
+    segmentIdx: index("opportunity_matrix_segment_idx").on(table.segmentId),
+  }),
+);
+
+export const opportunityMatrixCellsRelations = relations(opportunityMatrixCells, ({ one }) => ({
+  segment: one(marketSegments, {
+    fields: [opportunityMatrixCells.segmentId],
+    references: [marketSegments.id],
+  }),
+}));
+
+export const insertOpportunityMatrixCellSchema = createInsertSchema(opportunityMatrixCells).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type OpportunityMatrixCell = typeof opportunityMatrixCells.$inferSelect;
+export type InsertOpportunityMatrixCell = z.infer<typeof insertOpportunityMatrixCellSchema>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Webhook integrations (Slack & Teams) — Task #71
