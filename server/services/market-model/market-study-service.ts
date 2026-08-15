@@ -3,20 +3,22 @@
  *
  * Sequences #543 (segment modeling + sizing) and #544 (opportunity matrix) into
  * one background pipeline from a brief/URL, then writes an executive summary.
- * Modeled on full-regeneration-service: startMarketStudy() creates the durable
- * market_studies row and fires the pipeline (not awaited); the client polls the
- * study row for staged progress. Output-compatible — segments and matrix cells
- * land in the same tables hand-built data uses, so downstream flows can't tell a
- * wizard run from manual work.
+ * startMarketStudy() creates the durable market_studies row and enqueues the
+ * pipeline on the shared job queue (global concurrency limit + timeout); the
+ * client polls the study row for staged progress. Output-compatible — segments
+ * and matrix cells land in the same tables hand-built data uses, so downstream
+ * flows can't tell a wizard run from manual work.
  *
- * Durability note: progress is persisted to the row at each stage transition, so
- * reads survive restarts. A process killed mid-run leaves the row "running"
- * (same tradeoff as full-regeneration); a stale-sweep is a later enhancement.
+ * Durability: progress is persisted to the row at each stage transition; the
+ * pipeline honors the queue's abort signal at stage boundaries; and any row left
+ * "running" by a restart or hang is reconciled by sweepStaleStudies (startup +
+ * 15-min interval, wired in scheduled-jobs.ts).
  */
 
 import { db } from "../../db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { marketStudies, marketSegments, opportunityMatrixCells, AI_FEATURES } from "@shared/schema";
+import { enqueue } from "../job-queue";
 import {
   type StudyDepth,
   type StudyStage,
@@ -48,7 +50,17 @@ export interface StartStudyOptions {
   parentStudyId?: string;
 }
 
-/** Create the study row and kick off the background pipeline. Returns the study id. */
+// A dominate-depth run does N segments × sizing (each a web search) sequentially
+// plus the matrix fan-out, so give it generous headroom before the queue aborts.
+const STUDY_TIMEOUT_MS = 20 * 60 * 1000;
+
+/**
+ * Create the study row and enqueue the pipeline on the shared job queue. Returns
+ * the study id immediately; the client polls the row for progress. The queue
+ * provides global concurrency limiting/backpressure and a timeout; maxRetries=0
+ * because the pipeline is not idempotent (a retry would re-run AI/Census and
+ * re-insert rows). Restart/hang orphans are reconciled by sweepStaleStudies.
+ */
 export async function startMarketStudy(ctx: StudyContext, opts: StartStudyOptions): Promise<string> {
   const [row] = await db
     .insert(marketStudies)
@@ -65,17 +77,69 @@ export async function startMarketStudy(ctx: StudyContext, opts: StartStudyOption
     })
     .returning({ id: marketStudies.id });
 
-  // Fire-and-forget; the pipeline persists its own progress and terminal state.
-  runStudyInBackground(row.id, ctx, opts).catch((err) =>
-    console.error(`[market-study] uncaught error for ${row.id}:`, err),
-  );
+  // Not awaited — the queue runs it when a slot frees up; the pipeline persists
+  // its own progress and terminal state. The .catch handles queue-level failures
+  // (timeout/abort/unexpected) that bypass the pipeline's own try/catch.
+  enqueue(
+    "analysis",
+    `market-study:${row.id}`,
+    (signal?: AbortSignal) => runStudyInBackground(row.id, ctx, opts, signal),
+    {
+      timeoutMs: STUDY_TIMEOUT_MS,
+      maxRetries: 0,
+      ctx: { tenantDomain: ctx.tenantDomain, targetId: row.id, targetName: (opts.inputValue ?? "Market study").slice(0, 120) },
+    },
+  ).catch((err) => {
+    console.error(`[market-study] queue failure for ${row.id}:`, err?.message ?? err);
+    void failStudyIfRunning(row.id, err?.message ?? "Study did not complete (timed out or was interrupted).");
+  });
+
   return row.id;
 }
 
-async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: StartStudyOptions): Promise<void> {
+/** Mark a study failed only if it is still pending/running (idempotent). */
+export async function failStudyIfRunning(studyId: string, message: string): Promise<void> {
+  try {
+    await db
+      .update(marketStudies)
+      .set({ status: "failed", error: message, completedAt: new Date() })
+      .where(and(eq(marketStudies.id, studyId), inArray(marketStudies.status, ["pending", "running"])));
+  } catch (err: any) {
+    console.error(`[market-study] failStudyIfRunning(${studyId}) error:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Reconcile studies left "running" by a server restart or a hung run (the queue
+ * and pipeline progress are in-memory). Marks any pending/running study older
+ * than maxAgeMs as failed. Returns the number swept. Called on startup and on an
+ * interval by the scheduler.
+ */
+export async function sweepStaleStudies(maxAgeMs = 30 * 60 * 1000): Promise<number> {
+  const cutoff = new Date(Date.now() - maxAgeMs);
+  const stale = await db
+    .select({ id: marketStudies.id, createdAt: marketStudies.createdAt, startedAt: marketStudies.startedAt })
+    .from(marketStudies)
+    .where(inArray(marketStudies.status, ["pending", "running"]));
+
+  const toFail = stale.filter((s) => new Date(s.startedAt ?? s.createdAt) < cutoff);
+  for (const s of toFail) {
+    await failStudyIfRunning(s.id, "Interrupted or unrecorded — swept as stale (server restart or hang).");
+  }
+  if (toFail.length > 0) console.log(`[market-study] swept ${toFail.length} stale study(ies)`);
+  return toFail.length;
+}
+
+async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: StartStudyOptions, signal?: AbortSignal): Promise<void> {
   const cfg = depthConfig(opts.depth);
   const stages = initialStages();
   const provider = getMarketModelProvider();
+
+  // Honor the queue's timeout/abort at stage boundaries so a hung run stops and
+  // is marked failed rather than orphaned.
+  const abortIfCancelled = () => {
+    if (signal?.aborted) throw new Error("Study cancelled — timed out or server shutting down.");
+  };
 
   const setStage = async (key: string, status: StudyStageStatus, detail?: string) => {
     const s = stages.find((x) => x.key === key);
@@ -106,6 +170,7 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     await setStage("input", "done", existing.length ? `${existing.length} existing segment(s)` : "No existing segments — proposing from brief");
 
     // ── Stage: segments — reuse or propose ───────────────────────────────────
+    abortIfCancelled();
     await setStage("segments", "running");
     let segmentIds: string[];
     if (existing.length > 0) {
@@ -139,6 +204,7 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     await setStage("sizing", "running");
     let sized = 0;
     for (const segId of segmentIds) {
+      abortIfCancelled();
       const [seg] = await db.select().from(marketSegments).where(eq(marketSegments.id, segId));
       if (!seg) continue;
       try {
@@ -172,6 +238,7 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     await setStage("sizing", sized > 0 ? "done" : "failed", `Sized ${sized}/${segmentIds.length}`);
 
     // ── Stage: matrix ─────────────────────────────────────────────────────────
+    abortIfCancelled();
     await setStage("matrix", "running");
     let matrix = { cellsCreated: 0, whitespaceCount: 0 };
     try {
@@ -188,6 +255,7 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     }
 
     // ── Stage: summary ────────────────────────────────────────────────────────
+    abortIfCancelled();
     await setStage("summary", "running");
     const segs = segmentIds.length
       ? await db.select().from(marketSegments).where(inArray(marketSegments.id, segmentIds))

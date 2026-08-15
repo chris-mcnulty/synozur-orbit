@@ -2423,6 +2423,21 @@ export function startScheduledJobs(): void {
     runHubspotSyncJob();
   }, 24 * 60 * 60 * 1000);
 
+  // Market study stale-sweep — the study pipeline runs on the in-memory job
+  // queue, so a server restart or a hung run can leave a study row stuck
+  // "running". Reconcile once at startup and every 15 minutes thereafter.
+  import("./market-model/market-study-service")
+    .then(({ sweepStaleStudies }) => sweepStaleStudies().catch((e) => console.warn("[market-study] startup sweep failed:", e?.message)))
+    .catch(() => {});
+  setInterval(async () => {
+    try {
+      const { sweepStaleStudies } = await import("./market-model/market-study-service");
+      await sweepStaleStudies();
+    } catch (e: any) {
+      console.warn("[market-study] stale-sweep tick failed:", e?.message);
+    }
+  }, 15 * 60 * 1000);
+
   // Segment membership refresh — runs every 15 minutes. Each segment's
   // refreshIntervalMinutes gates whether it's actually due; this tick just
   // provides the heartbeat. Uses the primary DB (contact data) which is fine
