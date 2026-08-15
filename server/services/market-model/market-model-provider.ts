@@ -85,6 +85,21 @@ export interface MatrixScoreResult {
   cells: MatrixCellScore[];
 }
 
+/** A candidate segment proposed from a brief when a market has none yet (#547). */
+export interface ProposedSegment {
+  name: string;
+  description?: string;
+  firmographics: Firmographics;
+  pains: string[];
+}
+export interface ProposeSegmentsInput extends MarketModelContext {
+  brief: string;
+  count: number;
+}
+export interface ProposeSegmentsResult {
+  segments: ProposedSegment[];
+}
+
 // ─── The contract ───────────────────────────────────────────────────────────────
 
 export interface MarketModelProvider {
@@ -95,6 +110,8 @@ export interface MarketModelProvider {
   scoreSegmentPriority(input: PriorityInput): Promise<PrioritySuggestion>;
   /** Score every channel for one (segment, need). ROI/whitespace derived downstream. */
   scoreMatrix(input: MatrixScoreInput): Promise<MatrixScoreResult>;
+  /** Propose candidate segments from a brief (used by the study wizard, #547). */
+  proposeSegments(input: ProposeSegmentsInput): Promise<ProposeSegmentsResult>;
 }
 
 /** Thrown by provider methods that #543 has not implemented yet. */

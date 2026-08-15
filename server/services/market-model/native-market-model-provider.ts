@@ -21,6 +21,8 @@ import type {
   PriorityInput,
   MatrixScoreInput,
   MatrixScoreResult,
+  ProposeSegmentsInput,
+  ProposeSegmentsResult,
 } from "./market-model-provider";
 import {
   type PrioritySuggestion,
@@ -51,6 +53,11 @@ import {
   parseMatrixScores,
   MATRIX_SYSTEM_PROMPT,
 } from "./market-matrix-core";
+import {
+  buildProposeSegmentsPrompt,
+  parseProposedSegments,
+  PROPOSE_SEGMENTS_SYSTEM_PROMPT,
+} from "./market-study-core";
 
 export class NativeMarketModelProvider implements MarketModelProvider {
   readonly name = "native";
@@ -213,5 +220,29 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       { segmentName: input.segmentName, need: input.need },
     );
     return { cells: parseMatrixScores(res.text, input.channels.map((c) => c.key)) };
+  }
+
+  async proposeSegments(input: ProposeSegmentsInput): Promise<ProposeSegmentsResult> {
+    const prompt = buildProposeSegmentsPrompt({
+      brief: input.brief,
+      count: input.count,
+      businessType: input.businessType,
+    });
+    const res = await completeForFeature(AI_FEATURES.MARKET_STUDY, prompt, {
+      tenantDomain: input.tenantDomain,
+      systemPrompt: PROPOSE_SEGMENTS_SYSTEM_PROMPT,
+      temperature: 0.4,
+      maxTokens: 2000,
+    });
+    await logAiUsage(
+      { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+      "market_study",
+      res.provider,
+      res.model,
+      { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+      res.durationMs,
+      { step: "propose_segments" },
+    );
+    return { segments: parseProposedSegments(res.text) };
   }
 }
