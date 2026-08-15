@@ -19,6 +19,7 @@ import type {
   PrioritySuggestion,
   Firmographics,
   MarketIntelligenceSourceInput,
+  MatrixCellScore,
 } from "@shared/market-intelligence";
 
 // ─── Inputs ───────────────────────────────────────────────────────────────────
@@ -57,6 +58,15 @@ export interface PriorityInput extends MarketModelContext {
   needsMap?: NeedsMap;
 }
 
+export interface MatrixScoreInput extends MarketModelContext {
+  segmentName: string;
+  samMid?: number;
+  /** The buyer need (one Needs Map item) this row scores channels for. */
+  need: string;
+  /** The channel axis to score (canonical channels). */
+  channels: Array<{ key: string; label: string }>;
+}
+
 // ─── Outputs ───────────────────────────────────────────────────────────────────
 
 /** Results are paired with the citations that justify them, for provenance. */
@@ -70,6 +80,11 @@ export interface NeedsMapResult {
   sources: MarketIntelligenceSourceInput[];
 }
 
+export interface MatrixScoreResult {
+  /** Per-channel scores for one (segment, need) row. ROI is derived downstream. */
+  cells: MatrixCellScore[];
+}
+
 // ─── The contract ───────────────────────────────────────────────────────────────
 
 export interface MarketModelProvider {
@@ -78,6 +93,8 @@ export interface MarketModelProvider {
   estimateSizing(input: SizingInput): Promise<SizingResult>;
   buildNeedsMap(input: NeedsMapInput): Promise<NeedsMapResult>;
   scoreSegmentPriority(input: PriorityInput): Promise<PrioritySuggestion>;
+  /** Score every channel for one (segment, need). ROI/whitespace derived downstream. */
+  scoreMatrix(input: MatrixScoreInput): Promise<MatrixScoreResult>;
 }
 
 /** Thrown by provider methods that #543 has not implemented yet. */

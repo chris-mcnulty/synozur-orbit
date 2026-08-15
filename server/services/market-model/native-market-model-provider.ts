@@ -19,6 +19,8 @@ import type {
   NeedsMapInput,
   NeedsMapResult,
   PriorityInput,
+  MatrixScoreInput,
+  MatrixScoreResult,
 } from "./market-model-provider";
 import {
   type PrioritySuggestion,
@@ -44,6 +46,11 @@ import {
   NEEDS_MAP_SYSTEM_PROMPT,
   PRIORITY_SYSTEM_PROMPT,
 } from "./market-sizing-core";
+import {
+  buildMatrixPrompt,
+  parseMatrixScores,
+  MATRIX_SYSTEM_PROMPT,
+} from "./market-matrix-core";
 
 export class NativeMarketModelProvider implements MarketModelProvider {
   readonly name = "native";
@@ -181,5 +188,30 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       { segmentName: input.segmentName },
     );
     return parsePriority(res.text);
+  }
+
+  async scoreMatrix(input: MatrixScoreInput): Promise<MatrixScoreResult> {
+    const prompt = buildMatrixPrompt({
+      segmentName: input.segmentName,
+      need: input.need,
+      samMid: input.samMid,
+      channels: input.channels,
+    });
+    const res = await completeForFeature(AI_FEATURES.OPPORTUNITY_MATRIX, prompt, {
+      tenantDomain: input.tenantDomain,
+      systemPrompt: MATRIX_SYSTEM_PROMPT,
+      temperature: 0.2,
+      maxTokens: 1500,
+    });
+    await logAiUsage(
+      { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+      "opportunity_matrix",
+      res.provider,
+      res.model,
+      { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+      res.durationMs,
+      { segmentName: input.segmentName, need: input.need },
+    );
+    return { cells: parseMatrixScores(res.text, input.channels.map((c) => c.key)) };
   }
 }
