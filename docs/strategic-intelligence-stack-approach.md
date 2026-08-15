@@ -221,8 +221,9 @@ Model the orchestrator **directly on `full-regeneration-service.ts`**:
 
 - **Phase 0 — Decide & schema. ✅ DONE.** Path A ratified + adapter seam reserved. `market_segments` + `market_intelligence_sources` schema & migration `0087` landed; AI features (`market_sizing`, `segment_needs_map`, `segment_priority`) + `marketSegments` plan flag registered. See §10 for the full pre-#543 foundation checklist.
 - **Phase 1 — #543.** Sizing service (dual-method, web-search grounded, cited), priority scoring, Needs Map, ranked Segments view, persona backfill. *(Foundation in place — see §10; #543 fills the three `NativeMarketModelProvider` methods + routes/UI.)*
-- **Phase 2 — #544.** Matrix tables + `NativeMarketModelProvider.scoreMatrix`, grid UI, ROI ranking, whitespace detection.
-- **Phase 3 — #547.** Wizard orchestrator on the full-regen pattern, depth knobs, study detail page, PDF export, refresh/drift lineage.
+- **Phase 2 — #544. ✅ DONE.** `opportunity_matrix_cells` + migration 0088; `scoreMatrix` on the provider; `generateMatrixForMarket` service (shared with the wizard); ROI ranking, whitespace detection, heatmap UI, cell overrides.
+- **Phase 3 — #547. ✅ DONE (v1).** Wizard orchestrator on the full-regen pattern (`market-studies` + migration 0089), depth knobs, propose-segments-from-brief, staged pipeline (input → segments → sizing → matrix → summary) writing to the shared tables, live-polling detail page, refresh/drift lineage via `parentStudyId`.
+  - **Deferred sub-items:** PDF export of a study (design called for `pdf-generator` + `enqueuePdf`), and autonomous competitor discovery/briefing as pipeline stages (v1 reuses the market's existing competitor data + the brief rather than crawling net-new). Out of scope per the task: streaming progress, auto-publish, and the "Ask Orbit" Market Twin RAG chat.
 
 ---
 
