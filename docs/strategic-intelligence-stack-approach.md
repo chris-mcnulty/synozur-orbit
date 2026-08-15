@@ -135,9 +135,12 @@ Reuse what Orbit already collects — no new ingestion needed for v1:
 - Persist every retrieved source into `market_intelligence_sources`.
 
 ### 3.4 Method 2 — Bottom-up (population × ACV)
-- **Population** — use `discovery-service.discoverProspects` / Apollo web discovery to *count* companies matching segment firmographics (industry + size + geo). This gives a grounded account population instead of a guessed one.
+- **Population** — two grounded sources, cross-checked:
+  - **U.S. Census Bureau CBP** (Dept. of Commerce, free) via `census-market-data-provider.ts` → authoritative establishment counts by NAICS × geography. NAICS resolved from the segment's industry text by `naics-mapping.ts` (crosswalk fast-path → cached AI resolver). This is the *citable* backbone.
+  - **Apollo** (`discovery-service.discoverProspects`) → the *reachable/contactable* subset.
 - **ACV** — median from competitor `pricing-intelligence` tiers (or user-supplied).
 - **TAM ≈ population × ACV**; **SAM ≈ reachable subset** (channels we can actually serve).
+- See §9 for the full data-source catalog (free/gov first).
 
 ### 3.5 Reconcile → range + confidence
 - Present **low/mid/high** = reconciliation of the two methods (e.g. bottom-up as floor, top-down as ceiling, mid = blended).
@@ -216,8 +219,8 @@ Model the orchestrator **directly on `full-regeneration-service.ts`**:
 
 ## 7. Phasing (matches the #543 → #544 → #547 dependency chain)
 
-- **Phase 0 — Decide & schema.** Ratify Path A + adapter seam. Land `market_segments`, `market_intelligence_sources` migrations + schema. Register AI features + plan flags.
-- **Phase 1 — #543.** Sizing service (dual-method, web-search grounded, cited), priority scoring, Needs Map, ranked Segments view, persona backfill.
+- **Phase 0 — Decide & schema. ✅ DONE.** Path A ratified + adapter seam reserved. `market_segments` + `market_intelligence_sources` schema & migration `0087` landed; AI features (`market_sizing`, `segment_needs_map`, `segment_priority`) + `marketSegments` plan flag registered. See §10 for the full pre-#543 foundation checklist.
+- **Phase 1 — #543.** Sizing service (dual-method, web-search grounded, cited), priority scoring, Needs Map, ranked Segments view, persona backfill. *(Foundation in place — see §10; #543 fills the three `NativeMarketModelProvider` methods + routes/UI.)*
 - **Phase 2 — #544.** Matrix tables + `NativeMarketModelProvider.scoreMatrix`, grid UI, ROI ranking, whitespace detection.
 - **Phase 3 — #547.** Wizard orchestrator on the full-regen pattern, depth knobs, study detail page, PDF export, refresh/drift lineage.
 
@@ -232,3 +235,43 @@ Model the orchestrator **directly on `full-regeneration-service.ts`**:
 | Persona/segment data duplication & drift | Single source of truth in `market_segments`; additive `personaId` link + backfill, not a fork |
 | Vendor lock (if Path B chosen later) | Provider interface + MCP adapter modeled on `website-mcp-client`; path-agnostic UI/schema |
 | Matrix combinatorial explosion | Cap dimensions by study depth; whitespace surfacing instead of rendering every cell |
+
+---
+
+## 9. Data-source catalog (free / government first)
+
+Bottom-up sizing leans on free, authoritative U.S. government data; top-down uses web-search over published analyst/press figures. Paid analyst feeds are deliberately deferred.
+
+| Source (agency) | Gives | Fit | Access |
+|---|---|---|---|
+| **Census SUSB** (Commerce) | # firms/establishments, employment, payroll, **receipts** by industry × enterprise size | Revenue-based bottom-up | Free bulk CSV (no live API) — deferred stub |
+| **Census CBP** (Commerce) | # establishments, employment, payroll by NAICS × geography × size | Count-based bottom-up (**wired**) | Live API, free key (`CENSUS_API_KEY`) |
+| **Census Economic Census / Nonemployer** (Commerce) | Detailed receipts; sole-props/B2C | Revenue anchors; B2C/micro | Free API |
+| **BEA** (Commerce) | GDP/value-added by industry; consumer spend (PCE) | Macro industry size; B2C | Free API |
+| **BLS** (QCEW/OES) | Employment & wages by industry & area | Headcount/wage-bill sizing | Free API |
+| **SEC EDGAR** | Public-company revenues | Competitor/market revenue anchors | Free API |
+| **Apollo** (already integrated) | Contactable company population | Reachable SAM subset | Paid (existing) |
+| **completeWithWebSearch** (already integrated) | Published market-size figures | Top-down TAM, cited | Existing AI |
+| Eurostat / UK ONS / StatCan / OECD | Same firm/industry stats ex-US | International markets | Free APIs (future providers) |
+
+**Deferred (not needed for v1):** Statista API, IBISWorld, Gartner/IDC licensed feeds — web-search already surfaces their headline numbers with attribution.
+
+**Limitations to design around:** Census is US-only (international needs the ex-US providers), NAICS granularity may not fit niche segments, data lags ~1–2 years, and B2C needs the spend-side sources (BEA PCE / Census retail) rather than firm counts.
+
+---
+
+## 10. Pre-#543 foundation — status checklist
+
+Everything #543 depends on, so the #543 build is purely the three estimation methods + routes + UI:
+
+- ✅ **Schema** — `market_segments` (TAM/SAM low/mid/high bigint + overrides, priority 1–10 CHECK, needs_map/firmographics jsonb) and `market_intelligence_sources`; migration `0087`.
+- ✅ **Shared type contracts** — `@shared/market-intelligence` (`MoneyRange`, `SegmentSizing`, `NeedsMap`, `Firmographics`, `PrioritySuggestion`, source inputs + constructors/guards) so server, routes, and UI share shapes and output-compatibility is type-enforced.
+- ✅ **Provider seam** — `MarketModelProvider` interface + `getMarketModelProvider()` factory (Path A default, Path B branch reserved) + `NativeMarketModelProvider` skeleton (the three methods #543 implements, currently explicit throws so no placeholder data leaks).
+- ✅ **Data sourcing** — `census-market-data-provider.ts` (CBP live API + pure `buildCbpQueryUrl`) and `naics-mapping.ts` / `naics-crosswalk.ts` (crosswalk → cached AI resolver).
+- ✅ **Provenance persistence** — `market-intelligence-sources.ts` (`recordSources` / `replaceSources` / `getSources`).
+- ✅ **Cost metering** — `runMarketSizing` manual-action quota (high cost tier; enterprise 100 / unlimited unmetered / lower tiers 0) alongside the existing `guardAnalysisLimit`-style guards.
+- ✅ **AI features & plan flag** — `market_sizing` / `segment_needs_map` / `segment_priority`; `marketSegments` gated to enterprise + unlimited.
+- ✅ **Ops** — `CENSUS_API_KEY` documented in `replit.md` (optional; graceful fallback when unset).
+- ✅ **Tests** — pure suites for the crosswalk, CBP URL builder, and shared constructors/guards; `tsc` clean.
+
+**#543 remaining (the actual task):** implement `estimateSizing` (dual-method triangulation + confidence), `buildNeedsMap`, `scoreSegmentPriority`; the `market_segments` CRUD routes + `runMarketSizing` guard wiring; the persona→segment backfill; and the ranked Segments view with TAM/SAM badges, Needs Map editor, and per-figure sources popover.

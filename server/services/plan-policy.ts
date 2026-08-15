@@ -690,7 +690,8 @@ export type ManualActionKey =
   | "generateProspectDossier"
   | "discoverProspects"
   | "enrichProspectContact"
-  | "generateOutreachDraft";
+  | "generateOutreachDraft"
+  | "runMarketSizing";
 
 export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   linkedinRefresh: "LinkedIn Refresh",
@@ -711,6 +712,7 @@ export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   discoverProspects: "Prospect Discovery (web)",
   enrichProspectContact: "Prospect Contact Enrichment",
   generateOutreachDraft: "Outreach Draft Generation",
+  runMarketSizing: "Market Segment Sizing (TAM/SAM)",
 };
 
 export const MANUAL_ACTION_KEYS: ManualActionKey[] = Object.keys(MANUAL_ACTION_LABELS) as ManualActionKey[];
@@ -735,6 +737,8 @@ export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" 
   discoverProspects: "high",
   enrichProspectContact: "high",
   generateOutreachDraft: "medium",
+  // Web-search-grounded TAM/SAM estimation — highest-cost intelligence action.
+  runMarketSizing: "high",
 };
 
 const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
@@ -757,6 +761,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 0,
     enrichProspectContact: 0,
     generateOutreachDraft: 0,
+    runMarketSizing: 0,
   },
   trial: {
     linkedinRefresh: 5,
@@ -777,6 +782,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 0,
     enrichProspectContact: 0,
     generateOutreachDraft: 0,
+    runMarketSizing: 0,
   },
   pro: {
     linkedinRefresh: 25,
@@ -797,6 +803,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 0,
     enrichProspectContact: 0,
     generateOutreachDraft: 0,
+    runMarketSizing: 0,
   },
   enterprise: {
     linkedinRefresh: 100,
@@ -817,6 +824,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 100,
     enrichProspectContact: 100,
     generateOutreachDraft: 200,
+    runMarketSizing: 100,
   },
   unlimited: {
     linkedinRefresh: -1,
@@ -837,6 +845,7 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: -1,
     enrichProspectContact: -1,
     generateOutreachDraft: -1,
+    runMarketSizing: -1,
   },
 };
 

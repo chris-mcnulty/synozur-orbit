@@ -12,6 +12,7 @@ Orbit is an AI-driven platform that centralizes and enhances go-to-market strate
 - **Environment Variables**:
     - `SERP_API_KEY`: Required for SEO tracking.
     - `SESSION_SECRET`: Used for session management and HMAC unsubscribe tokens.
+    - `CENSUS_API_KEY`: Optional. Free key for U.S. Census Bureau (CBP) data used by market-segment TAM/SAM sizing (Strategic Intelligence Stack). Get one at https://api.census.gov/data/key_signup.html. When unset, sizing falls back to Apollo counts + web-search only.
 
 ## Stack
 
