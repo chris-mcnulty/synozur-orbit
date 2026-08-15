@@ -27,6 +27,7 @@ import {
 } from "@shared/market-intelligence";
 import { AI_FEATURES } from "@shared/schema";
 import { completeForFeature, completeWithWebSearch, isWebSearchAvailable } from "../ai-provider";
+import { logAiUsage } from "../ai-usage-logger";
 import { getIndustryStatsForSegment, isCensusAvailable } from "../census-market-data-provider";
 import {
   type RawEstimate,
@@ -99,6 +100,15 @@ export class NativeMarketModelProvider implements MarketModelProvider {
         topDown = parsed.estimate;
         topDownNotes = parsed.notes;
         for (const s of parsed.sources) sources.push({ ...s, usedForField: "tam" });
+        await logAiUsage(
+          { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+          "market_sizing",
+          res.provider,
+          res.model,
+          { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+          res.durationMs,
+          { searchCount: res.searchCount, segmentName: input.segmentName },
+        );
       } catch (err: any) {
         console.warn(`[market-model] top-down sizing failed: ${err?.message ?? err}`);
       }
@@ -137,6 +147,15 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       temperature: 0.3,
       maxTokens: 1024,
     });
+    await logAiUsage(
+      { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+      "segment_needs_map",
+      res.provider,
+      res.model,
+      { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+      res.durationMs,
+      { segmentName: input.segmentName },
+    );
     return { needsMap: parseNeedsMap(res.text), sources: [] };
   }
 
@@ -152,6 +171,15 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       temperature: 0.2,
       maxTokens: 512,
     });
+    await logAiUsage(
+      { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+      "segment_priority",
+      res.provider,
+      res.model,
+      { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+      res.durationMs,
+      { segmentName: input.segmentName },
+    );
     return parsePriority(res.text);
   }
 }

@@ -27,6 +27,8 @@ import type {
 export interface MarketModelContext {
   tenantDomain: string;
   marketId?: string | null;
+  /** Attributes AI usage/cost to the acting user when provided. */
+  userId?: string | null;
   /** b2b vs b2c changes the sizing method and grounding prompts. */
   businessType?: "b2b" | "b2c";
 }

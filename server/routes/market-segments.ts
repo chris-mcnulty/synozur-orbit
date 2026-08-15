@@ -196,6 +196,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
       const { sizing, sources } = await getMarketModelProvider().estimateSizing({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
+        userId: ctx.userId,
         segmentName: seg.name,
         description: seg.description ?? undefined,
         firmographics: firmographicsOf(seg),
@@ -253,6 +254,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
       const { needsMap } = await getMarketModelProvider().buildNeedsMap({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
+        userId: ctx.userId,
         segmentName: seg.name,
         description: seg.description ?? undefined,
         firmographics: firmographicsOf(seg),
@@ -281,6 +283,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
       const { score, rationale } = await getMarketModelProvider().scoreSegmentPriority({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
+        userId: ctx.userId,
         segmentName: seg.name,
         samMid: seg.samMid ?? undefined,
         needsMap: seg.needsMap as NeedsMap,
