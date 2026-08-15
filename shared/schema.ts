@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, serial, boolean, check, index, uniqueIndex, unique, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, bigint, jsonb, serial, boolean, check, index, uniqueIndex, unique, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -1756,6 +1756,12 @@ export const AI_FEATURES = {
   PROSPECT_RESEARCH: 'prospect_research',
   OUTREACH_COMPOSER: 'outreach_composer',
   OUTREACH_VOICE_EXTRACT: 'outreach_voice_extract',
+  // Strategic Intelligence Stack — Task #543 (segment sizing & needs maps).
+  // #544 (opportunity_matrix) and #547 (market_study) register their own
+  // features when those phases land.
+  MARKET_SIZING: 'market_sizing',
+  SEGMENT_NEEDS_MAP: 'segment_needs_map',
+  SEGMENT_PRIORITY: 'segment_priority',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1779,6 +1785,9 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   prospect_research: 'Prospect Research & Scoring',
   outreach_composer: 'Outreach Draft Composer',
   outreach_voice_extract: 'Outbound Voice Extraction',
+  market_sizing: 'Market Segment Sizing (TAM/SAM)',
+  segment_needs_map: 'Segment Needs Map',
+  segment_priority: 'Segment Priority Scoring',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -3913,6 +3922,120 @@ export const insertPersonaSchema = createInsertSchema(personas).omit({
 });
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Strategic Intelligence Stack — Task #543 (Segment Sizing & Needs Maps)
+//
+// Promotes qualitative personas into first-class, quantified market segments:
+// TAM/SAM estimates (stored as low/mid/high ranges with a cited rationale and
+// an optional user override), a 1–10 priority score, and a structured Needs
+// Map. Additive to `personas` (soft-linked via personaId) so persona-grounded
+// flows (brief-interview, editorial-calendar, sales outreach) are untouched.
+//
+// All rows are tenantDomain + marketId scoped, mirroring `personas`. Downstream
+// flows read these tables regardless of whether a row was built by hand (#543)
+// or produced by the Market Study Wizard (#547) — the wizard writes here too,
+// so data origin is invisible to consumers (the output-compatibility rule).
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const marketSegments = pgTable("market_segments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  // Provenance link: the persona this segment was seeded from (nullable — a
+  // segment can be authored directly). Soft link so deleting a persona never
+  // destroys the quantified segment built on top of it.
+  personaId: varchar("persona_id").references(() => personas.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+
+  // ── Sizing ────────────────────────────────────────────────────────────────
+  // Money is stored as whole units of `sizingCurrency` (default USD) in bigint
+  // so multi-billion TAM figures never overflow int4. Each figure is an AI
+  // estimate; the *UserOverride columns hold a manual correction without
+  // clobbering the model's number (both retained for provenance).
+  tamLow: bigint("tam_low", { mode: "number" }),
+  tamMid: bigint("tam_mid", { mode: "number" }),
+  tamHigh: bigint("tam_high", { mode: "number" }),
+  samLow: bigint("sam_low", { mode: "number" }),
+  samMid: bigint("sam_mid", { mode: "number" }),
+  samHigh: bigint("sam_high", { mode: "number" }),
+  tamUserOverride: bigint("tam_user_override", { mode: "number" }),
+  samUserOverride: bigint("sam_user_override", { mode: "number" }),
+  sizingCurrency: text("sizing_currency").notNull().default("USD"),
+  sizingMethod: text("sizing_method"), // top_down | bottom_up | triangulated
+  sizingConfidence: text("sizing_confidence"), // low | medium | high
+  sizingRationale: text("sizing_rationale"), // cited narrative
+  lastEstimatedAt: timestamp("last_estimated_at"),
+
+  // ── Ranking ─────────────────────────────────────────────────────────────
+  priorityScore: integer("priority_score"), // 1..10
+  priorityScoreSource: text("priority_score_source"), // ai | user
+  priorityRationale: text("priority_rationale"),
+
+  // ── Needs Map + firmographics ───────────────────────────────────────────
+  // needsMap: { pains[], triggers[], barriers[], buyingCriteria[] }
+  needsMap: jsonb("needs_map").notNull().default({}),
+  needsMapSource: text("needs_map_source"), // ai | user | mixed
+  // firmographics: { industry, companySize, geography, ... } — drives bottom-up sizing
+  firmographics: jsonb("firmographics").notNull().default({}),
+
+  status: text("status").notNull().default("active"), // active | archived
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  tenantMarketIdx: index("market_segments_tenant_market_idx").on(table.tenantDomain, table.marketId),
+  // Segments view ranks by priority within a market.
+  priorityIdx: index("market_segments_priority_idx").on(table.tenantDomain, table.marketId, table.priorityScore.desc()),
+  personaIdx: index("market_segments_persona_idx").on(table.personaId),
+  // 1..10 priority guard (nullable until first estimate).
+  priorityRange: check(
+    "market_segments_priority_range",
+    sql`${table.priorityScore} IS NULL OR (${table.priorityScore} >= 1 AND ${table.priorityScore} <= 10)`,
+  ),
+}));
+
+export const marketSegmentsRelations = relations(marketSegments, ({ one }) => ({
+  market: one(markets, { fields: [marketSegments.marketId], references: [markets.id] }),
+  persona: one(personas, { fields: [marketSegments.personaId], references: [personas.id] }),
+  createdByUser: one(users, { fields: [marketSegments.createdBy], references: [users.id] }),
+}));
+
+export const insertMarketSegmentSchema = createInsertSchema(marketSegments).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type MarketSegment = typeof marketSegments.$inferSelect;
+export type InsertMarketSegment = z.infer<typeof insertMarketSegmentSchema>;
+
+// Shared provenance store for every AI-derived market figure and narrative.
+// Polymorphic by (scopeType, scopeId) so segment sizing (#543), needs maps,
+// matrix cells (#544), and study runs (#547) all cite into one table — this is
+// the data behind the Study "Source library" panel. Deliberately not a hard FK
+// because it spans multiple parent tables; the writing service handles cleanup.
+export const marketIntelligenceSources = pgTable("market_intelligence_sources", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
+  scopeType: text("scope_type").notNull(), // segment_sizing | needs_map | matrix_cell | study
+  scopeId: varchar("scope_id").notNull(), // id of the segment / cell / study cited
+  usedForField: text("used_for_field"), // tam | sam | pains | ...
+  url: text("url"),
+  title: text("title"),
+  publisher: text("publisher"),
+  excerpt: text("excerpt"),
+  retrievedAt: timestamp("retrieved_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  scopeIdx: index("market_intelligence_sources_scope_idx").on(table.tenantDomain, table.scopeType, table.scopeId),
+  marketIdx: index("market_intelligence_sources_market_idx").on(table.tenantDomain, table.marketId),
+}));
+
+export const insertMarketIntelligenceSourceSchema = createInsertSchema(marketIntelligenceSources).omit({
+  id: true, createdAt: true,
+});
+export type MarketIntelligenceSource = typeof marketIntelligenceSources.$inferSelect;
+export type InsertMarketIntelligenceSource = z.infer<typeof insertMarketIntelligenceSourceSchema>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Webhook integrations (Slack & Teams) — Task #71
