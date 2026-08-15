@@ -183,6 +183,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
         { label: "Messaging Framework", icon: MessageCircle, href: "/app/marketing/messaging-framework", section: "Plan", description: "AI-generated messaging and positioning built from your competitive gaps." },
         { label: "GTM Plan", icon: Rocket, href: "/app/marketing/gtm-plan", section: "Plan", description: "A strategic go-to-market plan derived from your competitive analysis." },
         { label: "Personas", icon: UserCircle, href: "/app/marketing/personas", section: "Plan", description: "Define buyer personas and ICPs to ground content in your audience." },
+        { label: "Market Segments", icon: Gauge, href: "/app/marketing/market-segments", enterprise: true, section: "Plan", description: "Quantified market segments: AI-estimated TAM/SAM, priority ranking, and Needs Maps." },
         { label: "Solution Areas", icon: Layers, href: "/app/marketing/solution-areas", enterprise: true, section: "Plan", description: "Organize messaging and content around your core solution themes." },
         ...(isEnterprise
           ? [{ label: "Marketing Projects", icon: Gem, href: "/app/marketing/projects", enterprise: true, section: "Plan", description: "Strategic, multi-activity marketing plans across 14 categories." }]
