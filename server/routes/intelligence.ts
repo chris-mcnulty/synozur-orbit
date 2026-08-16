@@ -1729,7 +1729,7 @@ Generate a messaging framework in markdown format with sections:
         productScorePairs.map((p, i) => [p.productId, fetchedProductScores[i]])
       );
 
-      const scores = [];
+      const scoreJobs: { payload: Record<string, unknown>; isCompetitor: boolean; name: string }[] = [];
 
       for (const cp of competitorProducts) {
         const product = cp.product;
@@ -1849,16 +1849,40 @@ Generate a messaging framework in markdown format with sections:
           },
         };
 
-        // Use appropriate upsert method based on product type
-        const scoreData = product.competitorId 
-          ? await storage.upsertCompetitorScore(scorePayload)
-          : await storage.upsertProductScore(scorePayload);
-
-        scores.push({
-          ...scoreData,
+        // Collect payload for parallel upsert after the loop
+        scoreJobs.push({
+          payload: scorePayload as Record<string, unknown>,
+          isCompetitor: !!product.competitorId,
           name: product.name,
         });
       }
+
+      // Deduplicate by logical score key so duplicate project_products rows
+      // don't race on the same (competitorId|productId, projectId) slot.
+      const seenScoreKeys = new Set<string>();
+      const dedupedScoreJobs = scoreJobs.filter(job => {
+        const p = job.payload as any;
+        const key = job.isCompetitor
+          ? `competitor:${p.competitorId}:${p.projectId}`
+          : `product:${p.productId}:${p.projectId}`;
+        if (seenScoreKeys.has(key)) return false;
+        seenScoreKeys.add(key);
+        return true;
+      });
+
+      // Run all upsert writes in parallel
+      const scoreResults = await Promise.all(
+        dedupedScoreJobs.map(job =>
+          job.isCompetitor
+            ? storage.upsertCompetitorScore(job.payload as any)
+            : storage.upsertProductScore(job.payload as any)
+        )
+      );
+
+      const scores = scoreResults.map((scoreData, i) => ({
+        ...scoreData,
+        name: dedupedScoreJobs[i].name,
+      }));
 
       res.json({ success: true, scores });
     } catch (error: any) {
