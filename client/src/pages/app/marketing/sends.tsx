@@ -58,6 +58,9 @@ interface EmailSend {
   createdAt: string;
   completedAt: string | null;
   errorMessage: string | null;
+  isExternal?: boolean;
+  hubspotEmailId?: string | null;
+  hubspotEmailUrl?: string | null;
 }
 
 interface EmailSendRecipient {
@@ -395,8 +398,8 @@ export default function SendsPage() {
               <Card
                 key={s.id}
                 data-testid={`card-send-${s.id}`}
-                className="cursor-pointer hover:bg-accent/40 transition-colors"
-                onClick={() => setDrilldownSendId(s.id)}
+                className={s.isExternal ? undefined : "cursor-pointer hover:bg-accent/40 transition-colors"}
+                onClick={() => { if (!s.isExternal) setDrilldownSendId(s.id); }}
               >
                 <CardContent className="py-4">
                   <div className="flex items-start justify-between gap-4">
@@ -413,6 +416,23 @@ export default function SendsPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                      {s.isExternal ? (
+                        <>
+                          <Badge variant="secondary" className="text-[10px]" data-testid={`badge-external-${s.id}`}>External / HubSpot</Badge>
+                          {s.hubspotEmailUrl && (
+                            <a
+                              href={s.hubspotEmailUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary underline underline-offset-2"
+                              onClick={e => e.stopPropagation()}
+                              data-testid={`link-hubspot-${s.id}`}
+                            >
+                              View in HubSpot
+                            </a>
+                          )}
+                        </>
+                      ) : (<>
                       <Badge variant={s.status === "completed" ? "default" : s.status === "failed" ? "destructive" : "secondary"} className="capitalize">{s.status.replace(/_/g, " ")}</Badge>
                       <Badge variant="outline" className="text-[10px]" data-testid={`badge-sent-${s.id}`}>{s.sentCount}/{s.totalRecipients} sent</Badge>
                       {s.deliveredCount > 0 && <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300" data-testid={`badge-delivered-${s.id}`}>{s.deliveredCount} delivered</Badge>}
@@ -422,6 +442,7 @@ export default function SendsPage() {
                       {s.unsubscribeCount > 0 && <Badge variant="outline" className="text-[10px]">{s.unsubscribeCount} unsub</Badge>}
                       {s.spamCount > 0 && <Badge variant="outline" className="text-[10px] text-red-600 border-red-300">{s.spamCount} spam</Badge>}
                       {s.failedCount > 0 && <Badge variant="outline" className="text-[10px] text-red-600 border-red-300">{s.failedCount} failed</Badge>}
+                      </>)}
                     </div>
                   </div>
                 </CardContent>

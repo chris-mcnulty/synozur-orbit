@@ -3455,6 +3455,11 @@ export const generatedEmails = pgTable("generated_emails", {
   // Stable key for a future metrics sync + one-click jump to HubSpot's report.
   hubspotEmailId: text("hubspot_email_id"),
   hubspotEmailUrl: text("hubspot_email_url"),
+  // Explicit provenance flag: true only when a user marked this email as sent
+  // outside Orbit (e.g. via HubSpot). Distinguishes external sends from other
+  // status='sent' paths (SendGrid delivery, calendar handoff) so the Sends
+  // history page can list external sends without duplicating direct sends.
+  sentExternally: boolean("sent_externally").notNull().default(false),
   sourceAssetIds: text("source_asset_ids").array(),
   // Structured optional sections rendered server-side after the main message:
   // case study card, upcoming events, recent blog updates. `sections` stores

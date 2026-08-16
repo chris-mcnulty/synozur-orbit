@@ -71,6 +71,7 @@ import { decryptSecret } from "../utils/encryption";
 import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
 import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
 import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
+import { buildExternalSendRow, mergeSendHistory } from "../services/email-sends-history-core";
 
 /**
  * Resolve the Orbit email subscription type name for a given send so the
@@ -1602,7 +1603,33 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       ))
       .orderBy(desc(emailSends.createdAt))
       .limit(100);
-    res.json(rows);
+    // Externally-sent newsletters (marked sent via HubSpot etc.) carry the
+    // explicit sent_externally provenance flag and have no delivering
+    // email_sends row. Surface them here as synthetic rows so all send
+    // history lives on one page. Exclude any email that has a real
+    // email_sends row (any status) — its history is already listed above and
+    // cancelled/failed rows must not be duplicated as external entries.
+    const externals = await db.select({
+      id: generatedEmails.id,
+      subject: generatedEmails.subject,
+      sentAt: generatedEmails.sentAt,
+      createdAt: generatedEmails.createdAt,
+      hubspotEmailId: generatedEmails.hubspotEmailId,
+      hubspotEmailUrl: generatedEmails.hubspotEmailUrl,
+    }).from(generatedEmails)
+      .where(and(
+        eq(generatedEmails.tenantDomain, ctx.tenantDomain),
+        eq(generatedEmails.marketId, ctx.marketId),
+        eq(generatedEmails.status, "sent"),
+        eq(generatedEmails.sentExternally, true),
+        sql`NOT EXISTS (
+          SELECT 1 FROM email_sends es
+          WHERE es.generated_email_id = ${generatedEmails.id}
+        )`,
+      ))
+      .orderBy(desc(generatedEmails.sentAt))
+      .limit(100);
+    res.json(mergeSendHistory(rows, externals.map(buildExternalSendRow)));
   });
 
   app.get("/api/email-sends/:id", async (req, res) => {
@@ -1823,7 +1850,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         .returning({ id: emailSends.id });
       await db.update(generatedEmails)
         .set({
-          status: "sent", sentAt, updatedAt: new Date(),
+          status: "sent", sentAt, sentExternally: true, updatedAt: new Date(),
           ...(hsId ? { hubspotEmailId: hsId } : {}),
           ...(hsUrl ? { hubspotEmailUrl: hsUrl } : {}),
         })
