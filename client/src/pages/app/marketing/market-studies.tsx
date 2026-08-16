@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +37,7 @@ export default function MarketStudiesPage() {
   const queryClient = useQueryClient();
   const [brief, setBrief] = useState("");
   const [depth, setDepth] = useState<StudyDepth>("focus");
+  const [acv, setAcv] = useState("");
 
   const { data: studies = [], isLoading } = useQuery<Study[]>({
     queryKey: ["/api/market-studies"],
@@ -46,7 +48,9 @@ export default function MarketStudiesPage() {
   const start = useMutation({
     mutationFn: async () => {
       const inputType = /^https?:\/\//i.test(brief.trim()) ? "url" : "brief";
-      return (await apiRequest("POST", "/api/market-studies", { inputType, inputValue: brief.trim(), depth })).json();
+      return (await apiRequest("POST", "/api/market-studies", {
+        inputType, inputValue: brief.trim(), depth, acv: acv ? Number(acv) : undefined,
+      })).json();
     },
     onSuccess: (r: { studyId: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/market-studies"] });
@@ -94,6 +98,19 @@ export default function MarketStudiesPage() {
                   </button>
                 ))}
               </div>
+            </div>
+            <div>
+              <Label className="text-xs">Average contract value (optional, USD)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={acv}
+                onChange={(e) => setAcv(e.target.value)}
+                placeholder="e.g. 25000 — enables Census bottom-up sizing + triangulation"
+                className="mt-1 max-w-sm"
+                data-testid="input-study-acv"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">Without an ACV, sizing uses top-down web-search estimation only.</p>
             </div>
             <div className="flex justify-end">
               <Button onClick={() => start.mutate()} disabled={!brief.trim() || start.isPending} data-testid="button-run-study">

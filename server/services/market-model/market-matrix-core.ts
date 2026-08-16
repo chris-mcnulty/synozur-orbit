@@ -25,9 +25,15 @@ export function computeRoiScore(revenuePotential: number, executionEffort: numbe
 // ─── Whitespace selection ──────────────────────────────────────────────────
 
 /**
- * Flag high-ROI, comparatively uncontested cells. A cell is whitespace when its
- * ROI clears both the batch's ~80th percentile AND an absolute floor (so a batch
- * of uniformly weak cells surfaces none). Pure over the batch of ROI scores.
+ * Flag the batch's top-ROI cells (a cell clears both the ~80th percentile AND an
+ * absolute floor, so a uniformly weak batch surfaces none). Pure over the ROI
+ * scores.
+ *
+ * NOTE: this is a *top-ROI* signal, not a true competition/coverage measure — we
+ * don't yet have per-channel coverage data. It's surfaced in the UI as "top ROI"
+ * (a whitespace proxy). Real whitespace (high ROI + low current coverage) is a
+ * documented follow-up once coverage data exists; the DB column keeps the
+ * `is_whitespace` name to avoid a migration.
  */
 export function computeWhitespaceFlags(roiScores: number[], floor = 50): boolean[] {
   if (roiScores.length === 0) return [];

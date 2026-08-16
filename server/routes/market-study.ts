@@ -53,12 +53,14 @@ export function registerMarketStudyRoutes(app: Express): void {
       const inputType = req.body?.inputType === "url" ? "url" : "brief";
       const inputValue = String(req.body?.inputValue ?? "").trim();
       const depth: StudyDepth = VALID_DEPTHS.has(req.body?.depth) ? req.body.depth : "focus";
+      const acvRaw = Number(req.body?.acv);
+      const acv = Number.isFinite(acvRaw) && acvRaw > 0 ? acvRaw : undefined;
       if (!inputValue) return res.status(400).json({ error: "A brief or URL is required." });
       if (!(await guardManualAction(req, res, "runMarketStudy"))) return;
 
       const studyId = await startMarketStudy(
         { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
-        { inputType, inputValue, depth },
+        { inputType, inputValue, depth, acv },
       );
       res.status(201).json({ studyId });
     } catch (err) {

@@ -63,7 +63,10 @@ export class NativeMarketModelProvider implements MarketModelProvider {
   readonly name = "native";
 
   async estimateSizing(input: SizingInput): Promise<SizingResult> {
-    const currency = input.currency ?? DEFAULT_CURRENCY;
+    // v1 is USD-only: the top-down prompt/parser read tamUsd/samUsd and bottom-up
+    // uses a USD ACV, so honoring a non-USD label would mislabel USD figures.
+    // Multi-currency (with conversion) is a documented follow-up.
+    const currency = DEFAULT_CURRENCY;
     const sources: MarketIntelligenceSourceInput[] = [];
 
     // ── Bottom-up: Census establishment count × ACV ──────────────────────────
@@ -111,9 +114,16 @@ export class NativeMarketModelProvider implements MarketModelProvider {
           maxSearches: 6,
         });
         const parsed = parseTopDownSizing(res.text);
-        topDown = parsed.estimate;
-        topDownNotes = parsed.notes;
-        for (const s of parsed.sources) sources.push({ ...s, usedForField: "tam" });
+        // Enforce the cited-number guarantee: only accept a top-down figure that
+        // comes with at least one usable citation. An uncited estimate is dropped
+        // (we'd rather fall back to bottom-up, or fail, than show an unsourced number).
+        if (parsed.estimate && parsed.sources.length > 0) {
+          topDown = parsed.estimate;
+          topDownNotes = parsed.notes;
+          for (const s of parsed.sources) sources.push({ ...s, usedForField: "tam" });
+        } else if (parsed.estimate) {
+          console.warn("[market-model] top-down estimate discarded — no citations returned");
+        }
         await logAiUsage(
           { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
           "market_sizing",

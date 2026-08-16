@@ -18,6 +18,7 @@ import { getRequestContext, ContextError } from "../context";
 import { guardFeature, guardManualAction, denyReadOnly } from "./helpers";
 import { computeRoiScore } from "../services/market-model/market-matrix-core";
 import { generateMatrixForMarket, NoMatrixWorkError, recomputeWhitespace } from "../services/market-model/opportunity-matrix-service";
+import { enqueue } from "../services/job-queue";
 
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
   const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
@@ -63,11 +64,24 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
       if (denyReadOnly(ctx, res)) return;
       // Reserve quota now; a 4xx below (e.g. no needs) leaves it uncommitted.
       if (!(await guardManualAction(req, res, "generateOpportunityMatrix"))) return;
-      const result = await generateMatrixForMarket(
-        { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+      // Run through the shared job queue so concurrent rebuilds get global
+      // concurrency limiting/backpressure (not one unbounded fan-out per request).
+      // Awaited here; a streaming/polling variant is a documented follow-up.
+      const result = await enqueue(
+        "analysis",
+        `matrix-generate:${ctx.marketId}`,
+        () =>
+          generateMatrixForMarket(
+            { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
+            {
+              maxSegments: clampInt(req.body?.maxSegments, 1, 12, 6),
+              maxNeeds: clampInt(req.body?.maxNeeds, 1, 6, 3),
+            },
+          ),
         {
-          maxSegments: clampInt(req.body?.maxSegments, 1, 12, 6),
-          maxNeeds: clampInt(req.body?.maxNeeds, 1, 6, 3),
+          timeoutMs: 10 * 60 * 1000,
+          maxRetries: 0,
+          ctx: { tenantDomain: ctx.tenantDomain, targetId: ctx.marketId, targetName: "Opportunity matrix" },
         },
       );
       if (result.cellsCreated === 0) {

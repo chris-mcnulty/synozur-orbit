@@ -7,7 +7,7 @@
  */
 
 import { db } from "../../db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { opportunityMatrixCells, marketSegments } from "@shared/schema";
 import { getMarketModelProvider } from "./market-model-provider";
 import { computeRoiScore, computeWhitespaceFlags } from "./market-matrix-core";
@@ -54,27 +54,33 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (t: T, i:
 
 export async function generateMatrixForMarket(
   ctx: MatrixGenContext,
-  opts: { maxSegments?: number; maxNeeds?: number } = {},
+  opts: { maxSegments?: number; maxNeeds?: number; segmentIds?: string[] } = {},
 ): Promise<MatrixGenResult> {
   const maxSegments = clamp(opts.maxSegments, 1, 12, DEFAULT_MAX_SEGMENTS);
   const maxNeeds = clamp(opts.maxNeeds, 1, 6, DEFAULT_MAX_NEEDS);
   const channels = CANONICAL_CHANNELS.map((c) => ({ key: c.key, label: c.label }));
 
-  const segments = (
-    await db
-      .select()
-      .from(marketSegments)
-      .where(
-        and(
-          eq(marketSegments.tenantDomain, ctx.tenantDomain),
-          eq(marketSegments.marketId, ctx.marketId),
-          eq(marketSegments.status, "active"),
-        ),
-      )
-      .orderBy(desc(marketSegments.priorityScore), desc(marketSegments.createdAt))
-  ).slice(0, maxSegments);
+  // When explicit segmentIds are given (the study wizard passes its own set),
+  // score exactly those. Otherwise fall back to the market's top-N by priority.
+  const scopeWhere = and(
+    eq(marketSegments.tenantDomain, ctx.tenantDomain),
+    eq(marketSegments.marketId, ctx.marketId),
+    eq(marketSegments.status, "active"),
+  );
+  const segments = opts.segmentIds?.length
+    ? await db.select().from(marketSegments).where(and(scopeWhere, inArray(marketSegments.id, opts.segmentIds)))
+    : (
+        await db
+          .select()
+          .from(marketSegments)
+          .where(scopeWhere)
+          .orderBy(desc(marketSegments.priorityScore), desc(marketSegments.createdAt))
+      ).slice(0, maxSegments);
 
   const tasks: Array<{ segmentId: string; segmentName: string; samMid: number | undefined; need: string }> = [];
+  // Track the current valid needKeys per segment so reconciliation can drop cells
+  // for needs that were removed/renamed or trimmed by a lower maxNeeds.
+  const currentKeysBySegment = new Map<string, Set<string>>();
   for (const seg of segments) {
     const allPains = (seg.needsMap as NeedsMap | null)?.pains ?? [];
     // Dedupe by generated needKey so two pains that slug to the same key never
@@ -89,6 +95,7 @@ export async function generateMatrixForMarket(
       uniquePains.push(need);
       if (uniquePains.length >= maxNeeds) break;
     }
+    currentKeysBySegment.set(seg.id, seenKeys);
     for (const need of uniquePains) {
       tasks.push({ segmentId: seg.id, segmentName: seg.name, samMid: seg.samMid ?? undefined, need });
     }
@@ -107,6 +114,13 @@ export async function generateMatrixForMarket(
         need: task.need,
         channels,
       });
+      // All-or-nothing per combo: a partial response (some channels missing) would
+      // replace the combo's prior full row set with an incomplete one. Treat it as
+      // a failure so preserve-on-failure keeps the existing cells intact.
+      if (cells.length < channels.length) {
+        console.warn(`[opportunity-matrix] partial scoring for "${task.segmentName}"/"${task.need}" (${cells.length}/${channels.length}) — preserving prior cells`);
+        return [];
+      }
       return cells.map((c) => ({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
@@ -133,13 +147,27 @@ export async function generateMatrixForMarket(
     return { cellsCreated: 0, segmentsProcessed: 0, needsProcessed: tasks.length, whitespaceCount: 0 };
   }
 
-  // Replace at (segment, need) granularity so a combo whose scoring failed keeps
-  // its prior cells (preserve-on-failure) instead of being silently wiped.
-  const combos = new Map<string, { segmentId: string; needKey: string }>();
-  for (const r of rows) combos.set(`${r.segmentId}::${r.needKey}`, { segmentId: r.segmentId, needKey: r.needKey });
+  const succeededCombos = new Map<string, { segmentId: string; needKey: string }>();
+  for (const r of rows) succeededCombos.set(`${r.segmentId}::${r.needKey}`, { segmentId: r.segmentId, needKey: r.needKey });
 
   await db.transaction(async (tx) => {
-    for (const c of combos.values()) {
+    // (1) Drop obsolete cells for each attempted segment — needKeys no longer in
+    //     its current set (need removed/renamed, or trimmed by maxNeeds).
+    for (const [segmentId, keys] of currentKeysBySegment.entries()) {
+      const keyList = Array.from(keys);
+      await tx
+        .delete(opportunityMatrixCells)
+        .where(
+          and(
+            eq(opportunityMatrixCells.tenantDomain, ctx.tenantDomain),
+            eq(opportunityMatrixCells.segmentId, segmentId),
+            keyList.length > 0 ? notInArray(opportunityMatrixCells.needKey, keyList) : undefined,
+          ),
+        );
+    }
+    // (2) Replace only combos that actually produced rows (preserve-on-failure:
+    //     a combo still in currentKeys but with no rows keeps its prior cells).
+    for (const c of succeededCombos.values()) {
       await tx
         .delete(opportunityMatrixCells)
         .where(

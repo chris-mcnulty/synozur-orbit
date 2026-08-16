@@ -236,32 +236,32 @@ export function registerMarketSegmentsRoutes(app: Express): void {
         currency,
       });
 
-      const [updated] = await db
-        .update(marketSegments)
-        .set({
-          tamLow: sizing.tam.low,
-          tamMid: sizing.tam.mid,
-          tamHigh: sizing.tam.high,
-          samLow: sizing.sam.low,
-          samMid: sizing.sam.mid,
-          samHigh: sizing.sam.high,
-          sizingCurrency: sizing.tam.currency,
-          sizingMethod: sizing.method,
-          sizingConfidence: sizing.confidence,
-          sizingRationale: sizing.rationale,
-          lastEstimatedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(marketSegments.id, seg.id))
-        .returning();
-
-      // Replace (not append) so a re-estimate never accumulates stale citations.
-      await replaceSources({
-        tenantDomain: ctx.tenantDomain,
-        marketId: ctx.marketId,
-        scopeType: "segment_sizing",
-        scopeId: seg.id,
-        sources,
+      // Persist the sizing figures and replace citations atomically, so a figure
+      // set is never left paired with the previous run's sources.
+      const updated = await db.transaction(async (tx) => {
+        const [u] = await tx
+          .update(marketSegments)
+          .set({
+            tamLow: sizing.tam.low,
+            tamMid: sizing.tam.mid,
+            tamHigh: sizing.tam.high,
+            samLow: sizing.sam.low,
+            samMid: sizing.sam.mid,
+            samHigh: sizing.sam.high,
+            sizingCurrency: sizing.tam.currency,
+            sizingMethod: sizing.method,
+            sizingConfidence: sizing.confidence,
+            sizingRationale: sizing.rationale,
+            lastEstimatedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(marketSegments.id, seg.id))
+          .returning();
+        await replaceSources(
+          { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, scopeType: "segment_sizing", scopeId: seg.id, sources },
+          tx,
+        );
+        return u;
       });
 
       res.json({ segment: updated, sources });

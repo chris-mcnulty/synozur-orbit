@@ -58,7 +58,7 @@ export default function OpportunityMatrixPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/opportunity-matrix"] });
       toast({
         title: r.cellsCreated > 0 ? `Scored ${r.cellsCreated} cells across ${r.segmentsProcessed} segment(s)` : "Nothing to score",
-        description: r.message ?? (r.whitespaceCount ? `${r.whitespaceCount} whitespace opportunities found.` : undefined),
+        description: r.message ?? (r.whitespaceCount ? `${r.whitespaceCount} top-ROI opportunities flagged.` : undefined),
       });
     },
     onError: (e: any) => toast({ title: "Rebuild failed", description: e.message, variant: "destructive" }),
@@ -121,7 +121,7 @@ export default function OpportunityMatrixPage() {
                   <button key={c.id} onClick={() => setDetail(c)} className="text-left rounded-lg border p-3 hover:border-primary/50 transition-colors" data-testid={`top-opportunity-${c.id}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-lg font-bold tabular-nums">{Math.round(c.roiScore ?? 0)}</span>
-                      {c.isWhitespace && <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400"><Lightbulb className="h-3 w-3 mr-1" />whitespace</Badge>}
+                      {c.isWhitespace && <Badge variant="outline" title="Top-ROI percentile in this market (a whitespace proxy — not a competition measure yet)" className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400"><Lightbulb className="h-3 w-3 mr-1" />top ROI</Badge>}
                     </div>
                     <div className="text-xs font-medium mt-1 truncate">{channelLabel(c.channelKey)}</div>
                     <div className="text-[11px] text-muted-foreground truncate">{segName.get(c.segmentId) ?? "Segment"} · {c.needLabel}</div>
@@ -212,7 +212,7 @@ function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segme
           <div className="flex items-center gap-3">
             <div className="text-3xl font-bold tabular-nums">{Math.round(cell.roiScore ?? 0)}</div>
             <div className="text-xs text-muted-foreground">
-              ROI score{cell.isWhitespace && <span className="ml-2 text-amber-600 dark:text-amber-400">· whitespace</span>}
+              ROI score{cell.isWhitespace && <span className="ml-2 text-amber-600 dark:text-amber-400">· top ROI</span>}
               {cell.source === "user" && <span className="ml-2">· edited</span>}
             </div>
           </div>

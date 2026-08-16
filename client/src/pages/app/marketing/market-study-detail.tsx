@@ -179,7 +179,7 @@ export default function MarketStudyDetailPage() {
                         <div key={c.id} className="rounded-lg border p-3">
                           <div className="flex items-center justify-between">
                             <span className="text-lg font-bold tabular-nums">{Math.round(c.roiScore ?? 0)}</span>
-                            {c.isWhitespace && <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400"><Lightbulb className="h-3 w-3 mr-1" />whitespace</Badge>}
+                            {c.isWhitespace && <Badge variant="outline" title="Top-ROI percentile (a whitespace proxy — not a competition measure yet)" className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400"><Lightbulb className="h-3 w-3 mr-1" />top ROI</Badge>}
                           </div>
                           <div className="text-xs font-medium mt-1">{channelLabel(c.channelKey)}</div>
                           <div className="text-[11px] text-muted-foreground truncate">{c.needLabel}</div>

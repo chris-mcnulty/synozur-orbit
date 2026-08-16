@@ -78,11 +78,12 @@ function confidenceColor(c: string | null): string {
   if (c === "medium") return "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30";
   return "bg-muted text-muted-foreground";
 }
-const linesToArr = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 const arrToLines = (a: string[] | undefined) => (a ?? []).join("\n");
 
 // Module-scoped so it isn't a fresh component type each render (which would
-// remount the textarea and drop focus on every keystroke).
+// remount the textarea and drop focus on every keystroke). Keeps raw line breaks
+// while editing (so pressing Enter creates a new line); trimming/empty-filtering
+// happens only at save time (sanitizeNeeds).
 function NeedsField({ label, value, onChange }: { label: string; value: string[]; onChange: (next: string[]) => void }) {
   return (
     <div>
@@ -90,7 +91,7 @@ function NeedsField({ label, value, onChange }: { label: string; value: string[]
       <Textarea
         rows={3}
         value={arrToLines(value)}
-        onChange={(e) => onChange(linesToArr(e.target.value))}
+        onChange={(e) => onChange(e.target.value.split("\n"))}
         placeholder="One per line"
         className="text-sm"
       />
@@ -292,7 +293,13 @@ function CreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
 function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const cur = segment.sizingCurrency ?? "USD";
+
+  // Live snapshot: seeded from the list row, then updated in place by each AI
+  // action's returned row. Display and dirty-baselines read from `live` so the
+  // dialog reflects new sizing/needs/priority without a close/reopen, and a plain
+  // save doesn't re-send AI-authored fields as user edits.
+  const [live, setLive] = useState<MarketSegment>(segment);
+  const cur = live.sizingCurrency ?? "USD";
 
   const [name, setName] = useState(segment.name);
   const [description, setDescription] = useState(segment.description ?? "");
@@ -302,6 +309,8 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
   const [acv, setAcv] = useState("");
   const [priority, setPriority] = useState(segment.priorityScore?.toString() ?? "");
   const [needs, setNeeds] = useState<NeedsMap>(segment.needsMap ?? EMPTY_NEEDS);
+  const [tamOverride, setTamOverride] = useState(segment.tamUserOverride?.toString() ?? "");
+  const [samOverride, setSamOverride] = useState(segment.samUserOverride?.toString() ?? "");
 
   const { data: sources = [] } = useQuery<SourceRow[]>({
     queryKey: ["/api/market-segments", segment.id, "sources"],
@@ -313,40 +322,49 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
     queryClient.invalidateQueries({ queryKey: ["/api/market-segments", segment.id, "sources"] });
   };
 
+  const sanitizeNeeds = (n: NeedsMap): NeedsMap => ({
+    pains: n.pains.map((x) => x.trim()).filter(Boolean),
+    triggers: n.triggers.map((x) => x.trim()).filter(Boolean),
+    barriers: n.barriers.map((x) => x.trim()).filter(Boolean),
+    buyingCriteria: n.buyingCriteria.map((x) => x.trim()).filter(Boolean),
+  });
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      // Only send needsMap / priorityScore when actually edited, so a plain save
-      // doesn't flip AI-authored sources to "user".
+      // Only send needsMap / priorityScore / overrides when actually edited (vs the
+      // live baseline), so a plain save doesn't flip AI-authored fields to "user".
       const payload: Record<string, unknown> = {
         name, description,
         firmographics: { industry: industry || undefined, companySize: companySize || undefined, geography: geography || undefined },
       };
-      const needsDirty = JSON.stringify(needs) !== JSON.stringify(segment.needsMap ?? EMPTY_NEEDS);
-      if (needsDirty) payload.needsMap = needs;
-      const priorityDirty = (priority ? Number(priority) : null) !== (segment.priorityScore ?? null);
+      const cleanNeeds = sanitizeNeeds(needs);
+      if (JSON.stringify(cleanNeeds) !== JSON.stringify(live.needsMap ?? EMPTY_NEEDS)) payload.needsMap = cleanNeeds;
+      const priorityDirty = (priority ? Number(priority) : null) !== (live.priorityScore ?? null);
       if (priorityDirty && priority) payload.priorityScore = Number(priority);
+      if ((tamOverride ? Number(tamOverride) : null) !== (live.tamUserOverride ?? null) && tamOverride) payload.tamUserOverride = Number(tamOverride);
+      if ((samOverride ? Number(samOverride) : null) !== (live.samUserOverride ?? null) && samOverride) payload.samUserOverride = Number(samOverride);
       return (await apiRequest("PATCH", `/api/market-segments/${segment.id}`, payload)).json();
     },
-    onSuccess: () => { refresh(); toast({ title: "Saved" }); onClose(); },
+    onSuccess: (r: MarketSegment) => { setLive(r); refresh(); toast({ title: "Saved" }); onClose(); },
     onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
   });
 
   const sizeMutation = useMutation({
     mutationFn: async () =>
       (await apiRequest("POST", `/api/market-segments/${segment.id}/size`, { acv: acv ? Number(acv) : undefined })).json(),
-    onSuccess: () => { refresh(); toast({ title: "Sizing updated" }); },
+    onSuccess: (r: { segment: MarketSegment }) => { if (r?.segment) setLive(r.segment); refresh(); toast({ title: "Sizing updated" }); },
     onError: (e: any) => toast({ title: "Sizing failed", description: e.message, variant: "destructive" }),
   });
 
   const needsMutation = useMutation({
     mutationFn: async () => (await apiRequest("POST", `/api/market-segments/${segment.id}/needs-map`)).json(),
-    onSuccess: (r: MarketSegment) => { setNeeds(r.needsMap ?? EMPTY_NEEDS); refresh(); toast({ title: "Needs Map generated" }); },
+    onSuccess: (r: MarketSegment) => { setLive(r); setNeeds(r.needsMap ?? EMPTY_NEEDS); refresh(); toast({ title: "Needs Map generated" }); },
     onError: (e: any) => toast({ title: "Generation failed", description: e.message, variant: "destructive" }),
   });
 
   const priorityMutation = useMutation({
     mutationFn: async () => (await apiRequest("POST", `/api/market-segments/${segment.id}/priority`)).json(),
-    onSuccess: (r: MarketSegment) => { setPriority(r.priorityScore?.toString() ?? ""); refresh(); toast({ title: "Priority suggested" }); },
+    onSuccess: (r: MarketSegment) => { setLive(r); setPriority(r.priorityScore?.toString() ?? ""); refresh(); toast({ title: "Priority suggested" }); },
     onError: (e: any) => toast({ title: "Scoring failed", description: e.message, variant: "destructive" }),
   });
 
@@ -388,20 +406,31 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-xs text-muted-foreground">TAM (low / mid / high)</div>
-                <div className="tabular-nums">{fmtMoney(segment.tamLow, cur)} / <b>{fmtMoney(segment.tamMid, cur)}</b> / {fmtMoney(segment.tamHigh, cur)}</div>
+                <div className="tabular-nums">{fmtMoney(live.tamLow, cur)} / <b>{fmtMoney(live.tamMid, cur)}</b> / {fmtMoney(live.tamHigh, cur)}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">SAM (low / mid / high)</div>
-                <div className="tabular-nums">{fmtMoney(segment.samLow, cur)} / <b>{fmtMoney(segment.samMid, cur)}</b> / {fmtMoney(segment.samHigh, cur)}</div>
+                <div className="tabular-nums">{fmtMoney(live.samLow, cur)} / <b>{fmtMoney(live.samMid, cur)}</b> / {fmtMoney(live.samHigh, cur)}</div>
               </div>
             </div>
-            {segment.sizingMethod && (
+            {live.sizingMethod && (
               <div className="flex items-center gap-2 text-xs">
-                <Badge variant="outline">{segment.sizingMethod.replace("_", " ")}</Badge>
-                <Badge variant="outline" className={confidenceColor(segment.sizingConfidence)}>{segment.sizingConfidence}</Badge>
+                <Badge variant="outline">{live.sizingMethod.replace("_", " ")}</Badge>
+                <Badge variant="outline" className={confidenceColor(live.sizingConfidence)}>{live.sizingConfidence}</Badge>
               </div>
             )}
-            {segment.sizingRationale && <p className="text-xs text-muted-foreground">{segment.sizingRationale}</p>}
+            {live.sizingRationale && <p className="text-xs text-muted-foreground">{live.sizingRationale}</p>}
+            {/* Manual overrides — take precedence over the AI mid on cards/rollups. */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <Label className="text-xs">TAM override ({cur})</Label>
+                <Input type="number" min={0} value={tamOverride} onChange={(e) => setTamOverride(e.target.value)} placeholder="optional" className="h-8" data-testid="input-tam-override" />
+              </div>
+              <div>
+                <Label className="text-xs">SAM override ({cur})</Label>
+                <Input type="number" min={0} value={samOverride} onChange={(e) => setSamOverride(e.target.value)} placeholder="optional" className="h-8" data-testid="input-sam-override" />
+              </div>
+            </div>
             {sources.length > 0 && (
               <div className="text-xs space-y-1">
                 <div className="font-medium text-muted-foreground">Sources</div>

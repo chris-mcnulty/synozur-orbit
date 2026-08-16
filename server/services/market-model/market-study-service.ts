@@ -48,6 +48,9 @@ export interface StartStudyOptions {
   inputValue?: string;
   depth: StudyDepth;
   parentStudyId?: string;
+  /** Optional ACV (whole USD). Enables Census bottom-up + triangulation; without
+   *  it, sizing is top-down (web-search) only. */
+  acv?: number;
 }
 
 // A dominate-depth run does N segments × sizing (each a web search) sequentially
@@ -115,14 +118,25 @@ export async function failStudyIfRunning(studyId: string, message: string): Prom
  * than maxAgeMs as failed. Returns the number swept. Called on startup and on an
  * interval by the scheduler.
  */
-export async function sweepStaleStudies(maxAgeMs = 30 * 60 * 1000): Promise<number> {
-  const cutoff = new Date(Date.now() - maxAgeMs);
-  const stale = await db
-    .select({ id: marketStudies.id, createdAt: marketStudies.createdAt, startedAt: marketStudies.startedAt })
+export async function sweepStaleStudies(
+  runningMaxMs = 30 * 60 * 1000,
+  pendingMaxMs = 60 * 60 * 1000,
+): Promise<number> {
+  const now = Date.now();
+  const rows = await db
+    .select({ id: marketStudies.id, status: marketStudies.status, createdAt: marketStudies.createdAt, startedAt: marketStudies.startedAt })
     .from(marketStudies)
     .where(inArray(marketStudies.status, ["pending", "running"]));
 
-  const toFail = stale.filter((s) => new Date(s.startedAt ?? s.createdAt) < cutoff);
+  // Running: measure from startedAt (past the timeout ⇒ hung/orphaned).
+  // Pending: measure from createdAt with a longer window so a genuinely queued
+  // study behind a backlog isn't failed early. The guarded pending→running
+  // transition in runStudyInBackground makes this safe — a swept row that later
+  // dequeues sees status != pending and aborts instead of resurrecting.
+  const toFail = rows.filter((s) => {
+    if (s.status === "running") return new Date(s.startedAt ?? s.createdAt).getTime() < now - runningMaxMs;
+    return new Date(s.createdAt).getTime() < now - pendingMaxMs;
+  });
   for (const s of toFail) {
     await failStudyIfRunning(s.id, "Interrupted or unrecorded — swept as stale (server restart or hang).");
   }
@@ -152,7 +166,18 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
   };
 
   try {
-    await db.update(marketStudies).set({ status: "running", startedAt: new Date() }).where(eq(marketStudies.id, studyId));
+    // Guarded transition: only start if still pending. If a restart/hang sweep
+    // already failed this row, the (possibly still-enqueued) callback must not
+    // resurrect it — abort instead of overwriting a terminal status.
+    const started = await db
+      .update(marketStudies)
+      .set({ status: "running", startedAt: new Date() })
+      .where(and(eq(marketStudies.id, studyId), eq(marketStudies.status, "pending")))
+      .returning({ id: marketStudies.id });
+    if (started.length === 0) {
+      console.warn(`[market-study] ${studyId} is no longer pending (swept or cancelled) — not running`);
+      return;
+    }
 
     // ── Stage: input — inventory existing segments ──────────────────────────
     await setStage("input", "running");
@@ -203,6 +228,7 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     // ── Stage: sizing — needs map + TAM/SAM + priority per segment ────────────
     await setStage("sizing", "running");
     let sized = 0;
+    const sizedIds: string[] = []; // segments that actually completed sizing
     for (const segId of segmentIds) {
       abortIfCancelled();
       const [seg] = await db.select().from(marketSegments).where(eq(marketSegments.id, segId));
@@ -215,21 +241,24 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
           needsMap = nm.needsMap;
           await db.update(marketSegments).set({ needsMap, needsMapSource: "ai" }).where(eq(marketSegments.id, segId));
         }
-        const { sizing, sources } = await provider.estimateSizing({ ...ctx, segmentName: seg.name, description: seg.description ?? undefined, firmographics: firmo });
-        await db
-          .update(marketSegments)
-          .set({
-            tamLow: sizing.tam.low, tamMid: sizing.tam.mid, tamHigh: sizing.tam.high,
-            samLow: sizing.sam.low, samMid: sizing.sam.mid, samHigh: sizing.sam.high,
-            sizingCurrency: sizing.tam.currency, sizingMethod: sizing.method,
-            sizingConfidence: sizing.confidence, sizingRationale: sizing.rationale, lastEstimatedAt: new Date(),
-          })
-          .where(eq(marketSegments.id, segId));
-        await replaceSources({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, scopeType: "segment_sizing", scopeId: segId, sources });
+        const { sizing, sources } = await provider.estimateSizing({ ...ctx, segmentName: seg.name, description: seg.description ?? undefined, firmographics: firmo, acv: opts.acv });
+        await db.transaction(async (tx) => {
+          await tx
+            .update(marketSegments)
+            .set({
+              tamLow: sizing.tam.low, tamMid: sizing.tam.mid, tamHigh: sizing.tam.high,
+              samLow: sizing.sam.low, samMid: sizing.sam.mid, samHigh: sizing.sam.high,
+              sizingCurrency: sizing.tam.currency, sizingMethod: sizing.method,
+              sizingConfidence: sizing.confidence, sizingRationale: sizing.rationale, lastEstimatedAt: new Date(),
+            })
+            .where(eq(marketSegments.id, segId));
+          await replaceSources({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, scopeType: "segment_sizing", scopeId: segId, sources }, tx);
+        });
 
         const pr = await provider.scoreSegmentPriority({ ...ctx, segmentName: seg.name, samMid: sizing.sam.mid || undefined, needsMap });
         await db.update(marketSegments).set({ priorityScore: pr.score, priorityScoreSource: "ai", priorityRationale: pr.rationale }).where(eq(marketSegments.id, segId));
         sized++;
+        sizedIds.push(segId);
         await setStage("sizing", "running", `Sized ${sized}/${segmentIds.length}`);
       } catch (e: any) {
         console.warn(`[market-study] sizing failed for segment ${segId}: ${e?.message ?? e}`);
@@ -237,31 +266,37 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     }
     await setStage("sizing", sized > 0 ? "done" : "failed", `Sized ${sized}/${segmentIds.length}`);
 
-    // ── Stage: matrix ─────────────────────────────────────────────────────────
+    // ── Stage: matrix — over exactly the segments this study sized ────────────
     abortIfCancelled();
     await setStage("matrix", "running");
     let matrix = { cellsCreated: 0, whitespaceCount: 0 };
-    try {
-      const r = await generateMatrixForMarket(ctx, { maxSegments: cfg.maxSegments, maxNeeds: cfg.maxNeeds });
-      matrix = { cellsCreated: r.cellsCreated, whitespaceCount: r.whitespaceCount };
-      if (r.cellsCreated === 0) await setStage("matrix", "failed", "Scoring produced no cells");
-      else await setStage("matrix", "done", `${matrix.cellsCreated} cells · ${matrix.whitespaceCount} whitespace`);
-    } catch (e: any) {
-      if (e instanceof NoMatrixWorkError) await setStage("matrix", "skipped", "No segment needs to score");
-      else {
-        console.warn(`[market-study] matrix failed: ${e?.message ?? e}`);
-        await setStage("matrix", "failed", e?.message);
+    if (sizedIds.length === 0) {
+      await setStage("matrix", "skipped", "No sized segments to score");
+    } else {
+      try {
+        // Pass the study's own sized segments so a priority reshuffle during
+        // sizing can't swap in unrelated top-N segments.
+        const r = await generateMatrixForMarket(ctx, { maxNeeds: cfg.maxNeeds, segmentIds: sizedIds });
+        matrix = { cellsCreated: r.cellsCreated, whitespaceCount: r.whitespaceCount };
+        if (r.cellsCreated === 0) await setStage("matrix", "failed", "Scoring produced no cells");
+        else await setStage("matrix", "done", `${matrix.cellsCreated} cells · ${matrix.whitespaceCount} whitespace`);
+      } catch (e: any) {
+        if (e instanceof NoMatrixWorkError) await setStage("matrix", "skipped", "No segment needs to score");
+        else {
+          console.warn(`[market-study] matrix failed: ${e?.message ?? e}`);
+          await setStage("matrix", "failed", e?.message);
+        }
       }
     }
 
     // ── Stage: summary ────────────────────────────────────────────────────────
     abortIfCancelled();
     await setStage("summary", "running");
-    const segs = segmentIds.length
-      ? await db.select().from(marketSegments).where(inArray(marketSegments.id, segmentIds))
+    const segs = sizedIds.length
+      ? await db.select().from(marketSegments).where(inArray(marketSegments.id, sizedIds))
       : [];
     const segNameById = new Map(segs.map((s) => [s.id, s.name]));
-    const topCells = segmentIds.length
+    const topCells = sizedIds.length
       ? await db
           .select()
           .from(opportunityMatrixCells)
@@ -269,7 +304,7 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
             and(
               eq(opportunityMatrixCells.tenantDomain, ctx.tenantDomain),
               eq(opportunityMatrixCells.marketId, ctx.marketId),
-              inArray(opportunityMatrixCells.segmentId, segmentIds),
+              inArray(opportunityMatrixCells.segmentId, sizedIds),
             ),
           )
           .orderBy(desc(opportunityMatrixCells.roiScore))
@@ -314,13 +349,17 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     // since the sized segments are still useful output. There is no "partial"
     // state in the status model, so a critical failure marks the run failed.
     const criticalFailed = stages.some((s) => (s.key === "segments" || s.key === "sizing") && s.status === "failed");
+    // Final abort gate: if the queue timed out during the summary call, don't
+    // write "completed" over a run the queue already failed.
+    abortIfCancelled();
     await db
       .update(marketStudies)
       .set({
         status: criticalFailed ? "failed" : "completed",
         completedAt: new Date(),
         executiveSummary,
-        resultRefs: { segmentIds, cellCount: matrix.cellsCreated, whitespaceCount: matrix.whitespaceCount },
+        // Only segments this study actually sized — never the unsized ones.
+        resultRefs: { segmentIds: sizedIds, cellCount: matrix.cellsCreated, whitespaceCount: matrix.whitespaceCount },
         stages,
       })
       .where(eq(marketStudies.id, studyId));
