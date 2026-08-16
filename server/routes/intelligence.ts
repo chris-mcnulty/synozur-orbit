@@ -5,6 +5,7 @@ import { toContextFilter, validateResourceContext, logAiUsage, computeLatestSour
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { formatPersonaContextForPrompt } from "../services/strategic-context";
+import { buildMarketIntelligenceContext } from "../services/market-intelligence-context";
 import { hasCrossTenantReadAccess } from "./helpers";
 
 export function registerIntelligenceRoutes(app: Express) {
@@ -132,6 +133,14 @@ export function registerIntelligenceRoutes(app: Express) {
       }
       const isB2C = businessType === "b2c";
 
+      // Strategic Intelligence Stack: segments, opportunity matrix, market
+      // study. Empty string when the tenant/market has none (behavior
+      // unchanged). Prefer the project's market, fall back to context market.
+      const marketIntelligenceContext = await buildMarketIntelligenceContext(
+        ctx.tenantDomain,
+        project.marketId || ctx.marketId,
+      );
+
       const b2cGuidance = isB2C ? `
 IMPORTANT: This is a B2C (Business-to-Consumer) market. Tailor the entire plan for consumer audiences:
 - Focus on consumer acquisition channels: social media, influencer partnerships, content creators, retail/e-commerce, app stores
@@ -148,7 +157,7 @@ Project: ${project.name}
 Client: ${project.clientName}
 Business Model: ${isB2C ? "B2C (Business-to-Consumer)" : "B2B (Business-to-Business)"}
 ${productContext}
-${personaContext ? `\n${personaContext}\n` : ""}
+${personaContext ? `\n${personaContext}\n` : ""}${marketIntelligenceContext ? `\n${marketIntelligenceContext}\n` : ""}
 User Guidance:
 - Target Roles/Personas: ${targetRoles || "Not specified - use the buyer personas above if available, otherwise suggest appropriate targets"}
 - Distribution Channels: ${distributionChannels || "Not specified - recommend optimal channels based on persona preferred channels if available"}

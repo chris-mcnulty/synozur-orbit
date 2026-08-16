@@ -10,6 +10,7 @@ import { monitorCompanyProfileSocialMedia } from "./social-monitoring";
 import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } from "./promise-pool";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { buildMarketIntelligenceContext } from "./market-intelligence-context";
 
 export type DeliverableLaneKey = "battlecards" | "gtm" | "messaging" | "marketingTasks";
 export type DeliverableLaneStatus = "pending" | "running" | "done" | "skipped" | "failed";
@@ -557,6 +558,14 @@ Return ONLY valid JSON.`;
             analysisContext += `\n- ${gap.area}: ${gap.observation} (Impact: ${gap.impact})`;
           }
         }
+
+        // Strategic Intelligence Stack (segments / opportunity matrix / market
+        // study). Empty string when the tenant/market has none.
+        const marketIntelligenceContext = await buildMarketIntelligenceContext(
+          tenantDomain,
+          marketId || companyProfile.marketId,
+        );
+
         const gtmPrompt = isB2C
           ? `You are an expert go-to-market strategist specializing in B2C consumer brands. Create a comprehensive GTM plan in markdown format.
 
@@ -565,7 +574,7 @@ Website: ${companyProfile.websiteUrl}
 Description: ${companyProfile.description || "N/A"}
 Business Type: B2C (Business-to-Consumer)
 ${competitorContext}
-${analysisContext}
+${analysisContext}${marketIntelligenceContext ? "\n" + marketIntelligenceContext + "\n" : ""}
 
 This is a B2C company selling directly to consumers. Create a detailed, actionable Go-To-Market plan focused on consumer acquisition, brand engagement, and direct-to-consumer growth with the following sections:
 
@@ -630,7 +639,7 @@ Company: ${companyProfile.companyName}
 Website: ${companyProfile.websiteUrl}
 Description: ${companyProfile.description || "N/A"}
 ${competitorContext}
-${analysisContext}
+${analysisContext}${marketIntelligenceContext ? "\n" + marketIntelligenceContext + "\n" : ""}
 
 Create a detailed, actionable Go-To-Market plan with the following sections:
 
