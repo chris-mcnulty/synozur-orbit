@@ -8,21 +8,19 @@ const _dnsResolve4 = promisify(dns.resolve4);
 const _dnsResolve6 = promisify(dns.resolve6);
 
 /**
- * Install a Puppeteer request interceptor that aborts any navigation
- * (including redirects) whose destination resolves to a private/loopback IP.
- * Must be called BEFORE page.goto().
+ * Install a Puppeteer request interceptor that aborts any HTTP(S) request
+ * (navigation OR subresource: images, scripts, iframes, XHR, fetch, etc.)
+ * whose destination is a private/loopback/reserved IP address.
+ *
+ * Must be called BEFORE page.goto(). Checking all request types (not only
+ * navigation) prevents a hostile page from exfiltrating data via subresource
+ * requests to internal services.
  */
 async function setupNavigationSsrfGuard(page: Page): Promise<void> {
   await page.setRequestInterception(true);
   page.on("request", (request) => {
-    // Only gate document-level navigations; pass through everything else
-    if (!request.isNavigationRequest()) {
-      request.continue().catch(() => {});
-      return;
-    }
-
     const rawUrl = request.url();
-    // Allow data: / about:blank used by Puppeteer internals
+    // Allow data:, blob:, and about:blank used by Puppeteer/page internals.
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
       request.continue().catch(() => {});
       return;
@@ -36,11 +34,16 @@ async function setupNavigationSsrfGuard(page: Page): Promise<void> {
       return;
     }
 
-    // Synchronously block bare IP addresses that are private
-    if (checkIsIpAddress(hostname)) {
-      const cleanIP = hostname.replace(/^\[|\]$/g, "");
-      if (checkIsPrivateIp(cleanIP)) {
-        console.warn(`[Headless SSRF] Blocked navigation to private IP ${rawUrl}`);
+    // Strip IPv6 bracket notation.
+    const cleanHostname = hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
+
+    // Synchronously block bare IP addresses (including IPv4-mapped IPv6) that
+    // are private/loopback/reserved.
+    if (checkIsIpAddress(cleanHostname)) {
+      if (checkIsPrivateIp(cleanHostname)) {
+        console.warn(`[Headless SSRF] Blocked request to private IP ${rawUrl}`);
         request.abort("addressunreachable").catch(() => {});
         return;
       }
@@ -48,21 +51,22 @@ async function setupNavigationSsrfGuard(page: Page): Promise<void> {
       return;
     }
 
-    // Resolve hostname async and abort if any resolved IP is private
+    // Resolve hostname async and abort if any resolved IP is private.
+    // Applies to navigation redirects AND subresource hostnames.
     Promise.all([
-      _dnsResolve4(hostname).catch(() => [] as string[]),
-      _dnsResolve6(hostname).catch(() => [] as string[]),
+      _dnsResolve4(cleanHostname).catch(() => [] as string[]),
+      _dnsResolve6(cleanHostname).catch(() => [] as string[]),
     ]).then(([v4, v6]) => {
       const all = [...v4, ...v6];
       if (all.length === 0) {
-        // Fail closed: cannot verify an unresolvable hostname
-        console.warn(`[Headless SSRF] Blocked navigation to unresolvable host ${rawUrl}`);
+        // Fail closed: cannot verify an unresolvable hostname.
+        console.warn(`[Headless SSRF] Blocked request to unresolvable host ${rawUrl}`);
         request.abort("namenotresolved").catch(() => {});
         return;
       }
       const blocked = all.some((ip) => checkIsPrivateIp(ip));
       if (blocked) {
-        console.warn(`[Headless SSRF] Blocked redirect to private IP via ${rawUrl}`);
+        console.warn(`[Headless SSRF] Blocked request to private IP via ${rawUrl}`);
         request.abort("addressunreachable").catch(() => {});
       } else {
         request.continue().catch(() => {});
@@ -417,6 +421,10 @@ async function _fetchPageHeadlessInner(
 
         page.setDefaultNavigationTimeout(timeout);
         page.setDefaultTimeout(timeout);
+
+        // Install SSRF guard before navigation so all redirects (including
+        // public-to-private redirects) are blocked inside the headless browser.
+        await setupNavigationSsrfGuard(page);
 
         await page.goto(url, {
           waitUntil: "load",

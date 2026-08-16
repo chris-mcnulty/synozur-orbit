@@ -1,5 +1,6 @@
 import { fetchPageHeadless, isHeadlessAvailable } from "./headless-crawler";
 import { isValidUrl, normalizeUrl } from "../utils/url-normalization";
+import { validateUrlWithDnsCheck } from "../utils/url-validator";
 
 interface CrawlResult {
   url: string;
@@ -76,6 +77,55 @@ async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Follow an HTTP redirect chain manually, validating each destination against
+ * the SSRF-safe URL policy before issuing the next request. Returns the final
+ * URL after all redirects, or null if any hop fails validation or the chain
+ * exceeds the hop limit.
+ *
+ * Each hop is validated with validateUrlWithDnsCheck (fail-closed: rejects
+ * unresolvable hosts and hosts that resolve to private/reserved IPs). The
+ * validation is performed immediately before each fetch call to minimise the
+ * TOCTOU window. A residual DNS-rebinding window remains (the attacker can
+ * change DNS between our resolution and Node's internal resolution for the
+ * actual TCP connect). Full mitigation would require pinning the resolved IP
+ * and dialling it directly; that is outside the scope of this crawler.
+ */
+async function followRedirectsSafe(
+  startUrl: string,
+  headers: Record<string, string>,
+  maxHops = 10,
+): Promise<{ html: string; finalUrl: string } | null> {
+  let currentUrl = startUrl;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    // Fail-closed DNS check immediately before each request.
+    const check = await validateUrlWithDnsCheck(currentUrl);
+    if (!check.isValid) {
+      console.warn(`[Web Crawler] SSRF guard blocked redirect hop to ${currentUrl}: ${check.error}`);
+      return null;
+    }
+    const response = await fetch(currentUrl, { headers, redirect: "manual" });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) return null;
+      // Resolve relative redirects against the current URL.
+      try {
+        currentUrl = new URL(location, currentUrl).href;
+      } catch {
+        return null;
+      }
+      continue;
+    }
+    if (response.status === 403 || response.status === 429) return null;
+    if (!response.ok) return null;
+    const html = await response.text();
+    return { html, finalUrl: currentUrl };
+  }
+  // Exceeded hop limit.
+  console.warn(`[Web Crawler] Redirect chain for ${startUrl} exceeded ${maxHops} hops`);
+  return null;
+}
+
 async function fetchPageHttp(url: string, retries = 2): Promise<{ html: string; finalUrl: string } | null> {
   const userAgent = getRandomUserAgent();
   const headers = getBrowserHeaders(userAgent);
@@ -86,20 +136,12 @@ async function fetchPageHttp(url: string, retries = 2): Promise<{ html: string; 
         await delay(1000 + Math.random() * 2000);
       }
       
-      const response = await fetch(url, {
-        headers,
-        redirect: "follow",
-      });
-      
-      if (response.status === 403 || response.status === 429) {
-        console.warn(`Blocked (${response.status}) fetching ${url}, attempt ${attempt + 1}/${retries + 1}`);
+      const result = await followRedirectsSafe(url, headers);
+      if (!result) {
         if (attempt < retries) continue;
         return null;
       }
-      
-      if (!response.ok) return null;
-      const html = await response.text();
-      return { html, finalUrl: response.url };
+      return result;
     } catch (error) {
       console.error(`Failed to fetch ${url} (attempt ${attempt + 1}):`, error);
       if (attempt < retries) continue;

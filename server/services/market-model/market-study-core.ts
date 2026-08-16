@@ -164,20 +164,32 @@ export function buildCompetitorDiscoveryPrompt(input: {
   inputType: "url" | "brief";
   inputValue: string;
   count: number;
+  /** Optional crawled website content summary (~3000 chars). Only passed when inputType === "url". */
+  websiteContent?: string;
 }): string {
   const label =
     input.inputType === "url"
       ? `Company URL: ${input.inputValue}`
       : `Company / market description:\n"""${input.inputValue}"""`;
-  return [
-    label,
+  const parts: string[] = [label];
+  if (input.websiteContent) {
+    parts.push(
+      "",
+      `## Website Content Summary (crawled from ${input.inputValue}):`,
+      input.websiteContent,
+      "",
+      "Use the website content above to understand what this company actually does and identify the correct competitive landscape.",
+    );
+  }
+  parts.push(
     "",
     `Identify up to ${input.count} direct competitors for this company or market.`,
     "Return ONLY a JSON array (no other text):",
     '[{ "name": "Competitor Name", "url": "https://competitor.com" }]',
     "- url must be a valid https:// URL pointing to the competitor's main website",
     "- name: official company name",
-  ].join("\n");
+  );
+  return parts.join("\n");
 }
 
 export function parseCompetitorSuggestions(text: string): CompetitorSuggestion[] {

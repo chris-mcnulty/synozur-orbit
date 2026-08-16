@@ -16,6 +16,8 @@
  */
 
 import { db } from "../../db";
+import { crawlCompetitorWebsite } from "../web-crawler";
+import { validateUrlWithDnsCheck } from "../../utils/url-validator";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { marketStudies, marketSegments, opportunityMatrixCells, AI_FEATURES } from "@shared/schema";
 import { enqueue } from "../job-queue";
@@ -75,10 +77,44 @@ async function discoverCompetitorsForStudy(opts: {
 }): Promise<number> {
   if (!opts.inputValue.trim()) return 0;
 
+  // When the input is a URL, crawl it first so the AI has real page content
+  // (titles, offering text, descriptions) rather than just a bare URL string.
+  // This mirrors the auto-build pipeline (auto-build-service.ts ~L220-256).
+  // Crawl failures are non-fatal — we fall back to URL-only discovery.
+  let websiteContent: string | undefined;
+  if (opts.inputType === "url") {
+    try {
+      // SSRF guard: fail-closed DNS validation before crawling. Rejects direct
+      // private addresses, unresolvable hosts, and hosts that resolve to private
+      // IPs. The HTTP fallback in the crawler also re-validates each redirect hop
+      // with the same check. A residual TOCTOU window exists (DNS may change
+      // between our check and Node's internal TCP resolution), documented in
+      // followRedirectsSafe in web-crawler.ts.
+      const urlCheck = await validateUrlWithDnsCheck(opts.inputValue);
+      if (!urlCheck.isValid) {
+        console.warn(`[market-study] URL crawl skipped — SSRF guard rejected ${opts.inputValue}: ${urlCheck.error}`);
+      } else {
+        const crawlResult = await crawlCompetitorWebsite(opts.inputValue);
+        if (crawlResult) {
+          const pages = Array.isArray(crawlResult.pages) ? crawlResult.pages : [];
+          if (pages.length > 0) {
+            websiteContent = pages
+              .map((p: any) => `Page: ${p.title || p.url}\n${(p.content || p.text || "").substring(0, 500)}`)
+              .join("\n---\n")
+              .substring(0, 3000);
+          }
+        }
+      }
+    } catch (crawlErr: any) {
+      console.warn(`[market-study] URL crawl for discovery failed (non-critical): ${crawlErr?.message ?? crawlErr}`);
+    }
+  }
+
   const prompt = buildCompetitorDiscoveryPrompt({
     inputType: opts.inputType,
     inputValue: opts.inputValue,
     count: opts.count,
+    websiteContent,
   });
   const res = await completeForFeature(AI_FEATURES.MARKET_STUDY, prompt, {
     tenantDomain: opts.tenantDomain,

@@ -40,8 +40,38 @@ function ipToNumber(ip: string): number {
 }
 
 function isPrivateIP(ip: string): boolean {
-  if (ip.includes(":")) {
-    return ip === "::1" || ip.startsWith("fe80:") || ip.startsWith("fc00:") || ip.startsWith("fd00:");
+  const h = ip.trim().toLowerCase();
+
+  // IPv4-mapped IPv6 (::ffff:…) — unwrap the embedded IPv4 and re-check.
+  // Node.js URL parser normalises the mixed notation [::ffff:127.0.0.1] to
+  // the all-hex form [::ffff:7f00:1], so we must handle both:
+  //   - dotted-decimal remainder: "::ffff:127.0.0.1"
+  //   - two 16-bit hex groups:    "::ffff:7f00:1"  (= 0x7f00<<16 | 0x0001)
+  if (/^::ffff:/i.test(h)) {
+    const rest = h.replace(/^::ffff:/i, "");
+    // Dotted-decimal form — re-check directly.
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(rest)) {
+      return isPrivateIP(rest);
+    }
+    // Hex two-group form (each up to 4 hex digits = 16 bits) → convert to IPv4.
+    const m = rest.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+    if (m) {
+      const hi = parseInt(m[1], 16);
+      const lo = parseInt(m[2], 16);
+      return isPrivateIP(`${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`);
+    }
+    // Unrecognised mapping form — fail closed.
+    return true;
+  }
+
+  if (h.includes(":")) {
+    // Loopback (::1), unspecified (::), expanded forms
+    if (h === "::1" || h === "::" || h === "0:0:0:0:0:0:0:1" || h === "0:0:0:0:0:0:0:0") return true;
+    // Link-local fe80::/10
+    if (/^fe[89ab]/i.test(h)) return true;
+    // Unique local fc00::/7
+    if (/^f[cd]/i.test(h)) return true;
+    return false;
   }
 
   const ipNum = ipToNumber(ip);
