@@ -4245,6 +4245,7 @@ export type InsertIntegrationConfig = z.infer<typeof insertIntegrationConfigSche
 // HubSpot CRM connections (Task #100) — per-tenant OAuth
 // ═══════════════════════════════════════════════════════════════════════════
 
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 export const HUBSPOT_OAUTH_SCOPES = [
   "oauth",
   "crm.objects.companies.read",
@@ -5106,7 +5107,7 @@ export const insertManualActionBonusSchema = createInsertSchema(manualActionBonu
 export type InsertManualActionBonus = z.infer<typeof insertManualActionBonusSchema>;
 export type ManualActionBonus = typeof manualActionBonuses.$inferSelect;
 
-// ============================================================================
+// ────────────────────────────────────────────────────────────────────────────
 // Sales Outreach Campaigns (Phase 0 — schema foundation)
 //
 // A goal-driven 1:1 outbound system: prospect -> score -> draft in the
@@ -5114,7 +5115,7 @@ export type ManualActionBonus = typeof manualActionBonuses.$inferSelect;
 // every send in Outlook. Translates the Cowork sales-harness-bundle (where
 // "the MD file is the prospect") into relational tables + a state machine.
 // See docs/sales-outreach-campaign-plan.md.
-// ============================================================================
+// ────────────────────────────────────────────────────────────────────────────
 
 /** The campaign brief captured by the onboarding interview wizard. */
 export interface OutreachInterview {

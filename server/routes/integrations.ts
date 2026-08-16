@@ -146,6 +146,7 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 export function registerIntegrationRoutes(app: Express) {
   // List webhooks for the current tenant (URLs never returned).
   app.get("/api/integrations/webhooks", async (req: Request, res: Response) => {

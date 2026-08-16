@@ -448,6 +448,7 @@ function SendDeliverabilityPreview({ listId }: { listId: string }) {
 
 const EMAIL_STATUS_FILTER_KEY = "orbit:email-newsletters:statusFilter";
 
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 export default function EmailNewslettersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -3532,3 +3533,4 @@ function TokenPicker({ onInsert }: { onInsert: (token: string) => void }) {
     </div>
   );
 }
+

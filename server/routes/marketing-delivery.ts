@@ -827,6 +827,7 @@ function escapeHtml(s: string): string {
 
 // ─── authenticated routes ────────────────────────────────────────────────────
 
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 export function registerMarketingDeliveryRoutes(app: Express) {
   // ───── Social OAuth Connect ─────
   app.post("/api/social-accounts/:id/oauth/connect", async (req, res) => {

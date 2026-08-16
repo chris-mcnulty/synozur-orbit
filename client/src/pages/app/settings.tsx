@@ -1858,9 +1858,9 @@ export default function Settings() {
   );
 }
 
-// =====================================================================
+// ─────────────────────────────────────────────────────────────────────
 // Webhook Integrations (Slack & Teams)
-// =====================================================================
+// ─────────────────────────────────────────────────────────────────────
 
 interface WebhookConfig {
   id: string;
@@ -1884,9 +1884,13 @@ const EVENT_CATEGORY_OPTIONS: Array<{ value: string; label: string; description:
 
 interface HubspotStatus {
   connected: boolean;
+
   oauthConfigured: boolean;
+
   outboundAllowed: boolean;
+
   needsReauth: boolean;
+
   connection: null | {
     tenantDomain: string;
     hubspotPortalId: string | null;
@@ -2176,6 +2180,33 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
           )}
         </div>
       </div>
+
+      {status?.connected && !status?.needsReauth && status?.connection?.marketingEmailScopesReady === false && (
+        <div
+          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm flex items-start justify-between gap-4 dark:border-amber-800/60 dark:bg-amber-950/30"
+          data-testid="banner-hubspot-stats-reauth"
+        >
+          <div className="space-y-0.5">
+            <p className="font-medium text-amber-800 dark:text-amber-300">Re-authorize to see HubSpot email statistics</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              This connection was authorized before marketing-email statistics were added. Re-authorize to grant the
+              new marketing-email read scope so open/click results for newsletters sent from HubSpot appear in Orbit.
+              Everything else keeps working until you do.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-amber-400 text-amber-800 hover:bg-amber-100 dark:text-amber-200"
+            onClick={() => connectMutation.mutate()}
+            disabled={!status?.oauthConfigured || connectMutation.isPending}
+            data-testid="button-hubspot-stats-reauth"
+          >
+            {connectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : null}
+            Re-authorize
+          </Button>
+        </div>
+      )}
 
       {status?.connected && status?.needsReauth && (
         <div
