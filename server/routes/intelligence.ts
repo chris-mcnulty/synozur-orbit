@@ -301,6 +301,13 @@ Make this practical and actionable. Use bullet points and clear formatting.`;
       }
       const isB2C = businessType === "b2c";
 
+      // Strategic Intelligence Stack: segments, opportunity matrix, market
+      // study. Empty string when the tenant/market has none (behavior unchanged).
+      const marketIntelligenceContext = await buildMarketIntelligenceContext(
+        ctx.tenantDomain,
+        project.marketId || ctx.marketId,
+      );
+
       const b2cGuidance = isB2C ? `
 IMPORTANT: This is a B2C (Business-to-Consumer) market. Tailor the entire framework for consumer audiences:
 - Position the brand around lifestyle, emotion, aspiration, and experience rather than ROI or business outcomes
@@ -317,7 +324,7 @@ Project: ${project.name}
 Client: ${project.clientName}
 Business Model: ${isB2C ? "B2C (Business-to-Consumer)" : "B2B (Business-to-Business)"}
 ${productContext}
-${personaContext ? `\n${personaContext}\n` : ""}
+${personaContext ? `\n${personaContext}\n` : ""}${marketIntelligenceContext ? `\n${marketIntelligenceContext}\n` : ""}
 User Guidance:
 - Target Audience: ${targetAudience || "Not specified - use the buyer personas above if available, otherwise identify appropriate audiences"}
 - Tone of Voice: ${toneOfVoice || "Not specified - recommend appropriate tone based on persona preferences if available"}

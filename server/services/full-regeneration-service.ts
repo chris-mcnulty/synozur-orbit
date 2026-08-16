@@ -742,6 +742,13 @@ Make this practical and actionable for the team.`;
       }
       setLaneRunning("messaging");
       try {
+        // Strategic Intelligence Stack (segments / opportunity matrix / market
+        // study). Empty string when the tenant/market has none.
+        const messagingMarketIntelligenceContext = await buildMarketIntelligenceContext(
+          tenantDomain,
+          marketId || companyProfile.marketId,
+        );
+
         const messagingPrompt = isB2C
           ? `You are an expert consumer brand strategist. Create a comprehensive messaging and positioning framework in markdown format.
 
@@ -749,7 +756,7 @@ Company: ${companyProfile.companyName}
 Website: ${companyProfile.websiteUrl}
 Description: ${companyProfile.description || "N/A"}
 Business Type: B2C (Business-to-Consumer)
-
+${messagingMarketIntelligenceContext ? "\n" + messagingMarketIntelligenceContext + "\n" : ""}
 This is a B2C (business-to-consumer) company. Create a consumer-focused messaging framework with these sections:
 
 # Messaging & Positioning Framework: ${companyProfile.companyName}
@@ -793,7 +800,7 @@ Make this practical and ready to use across consumer marketing channels.`
 Company: ${companyProfile.companyName}
 Website: ${companyProfile.websiteUrl}
 Description: ${companyProfile.description || "N/A"}
-
+${messagingMarketIntelligenceContext ? "\n" + messagingMarketIntelligenceContext + "\n" : ""}
 Create a messaging framework with these sections:
 
 # Messaging Framework: ${companyProfile.companyName}
