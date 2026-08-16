@@ -32,6 +32,7 @@ import {
   createTask,
   updateTask,
   getTask,
+  deleteTask,
   buildAssignmentsPayload,
   type PlannerTask,
 } from "./planner-graph-client";
@@ -81,7 +82,20 @@ const PRIORITY_MAP: Record<string, number> = {
 };
 
 const NOT_STARTED_STATUSES = new Set(["suggested", "planned", "accepted"]);
-const PRESERVED_STATUSES = new Set(["cancelled", "removed"]);
+const PRESERVED_STATUSES = new Set(["cancelled", "removed", "dismissed"]);
+
+/**
+ * Approval gate: AI-suggested tasks never leave Orbit until a user accepts
+ * them. Human-created tasks always sync; AI-generated ones require a durable
+ * acceptance stamp (`acceptedAt`, recorded server-side on the accepted
+ * transition) — later lifecycle statuses can never substitute for consent.
+ */
+export function isPlannerSyncEligible(task: Pick<MarketingTask, "aiGenerated" | "status" | "acceptedAt">): boolean {
+  if (task.status === "dismissed") return false;
+  if (!task.aiGenerated) return true;
+  if (task.status === "suggested") return false;
+  return task.acceptedAt != null;
+}
 
 function percentToStatus(percent: number, currentStatus: string | null | undefined): string | null {
   if (percent >= 100) return "completed";
@@ -307,6 +321,10 @@ export async function syncMarketingPlanToPlanner(
 
   for (const task of orbitTasks) {
     if (!task.plannerTaskId) continue;
+    // Approval gate: never reconcile Planner state into an unapproved AI
+    // suggestion — Planner-side progress must not be able to substitute for a
+    // user's acceptance. The push phase retracts these from Planner.
+    if (!isPlannerSyncEligible(task)) continue;
     const pt = plannerTaskMap.get(task.plannerTaskId);
     if (!pt) continue;
 
@@ -350,6 +368,57 @@ export async function syncMarketingPlanToPlanner(
   // STEP 2: Push (Orbit → Planner) — Orbit wins, log loser's previous Planner state
   // ---------------------------------------------------------------
   for (const task of tasks) {
+    // Approval gate: suggested (unaccepted) AI tasks and dismissed tasks are
+    // never pushed to Planner. If such a task is already linked (e.g. it was
+    // synced before the gate existed, or was dismissed after syncing), retract
+    // it from Planner and clear the linkage.
+    if (!isPlannerSyncEligible(task)) {
+      if (task.plannerTaskId) {
+        try {
+          const existing = await getTask(token, task.plannerTaskId);
+          if (existing && existing.etag) {
+            await deleteTask(token, task.plannerTaskId, existing.etag);
+          }
+          // If the Planner task was already deleted on the Planner side, that
+          // deletion counts as a dismissal of the AI suggestion.
+          const plannerDeleted = !existing && task.aiGenerated;
+          await db.update(marketingTasks)
+            .set({
+              plannerTaskId: null,
+              plannerEtag: null,
+              ...(plannerDeleted ? { status: "dismissed" } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(marketingTasks.id, task.id));
+          await logSync({
+            planId: plan.id,
+            taskId: task.id,
+            plannerTaskId: task.plannerTaskId,
+            direction: "push",
+            fields: {
+              retracted: {
+                previous: { plannerTaskId: task.plannerTaskId },
+                applied: plannerDeleted ? { status: "dismissed" } : null,
+                winner: plannerDeleted ? "planner" : "orbit",
+              },
+            },
+            success: true,
+          });
+        } catch (err: any) {
+          console.error(`[Planner] Failed to retract unapproved task ${task.id} from Planner:`, err.message);
+          await logSync({
+            planId: plan.id,
+            taskId: task.id,
+            plannerTaskId: task.plannerTaskId,
+            direction: "push",
+            success: false,
+            errorMessage: `Retract failed: ${err.message}`,
+          });
+        }
+      }
+      result.skipped += 1;
+      continue;
+    }
     try {
       const dueIso = toGraphDateTime(task.dueDate);
       const priority = toPlannerPriority(task.priority);
@@ -400,7 +469,32 @@ export async function syncMarketingPlanToPlanner(
         continue;
       }
       if (!existing) {
-        // Task disappeared on Planner — recreate.
+        // Task disappeared on Planner. If it was AI-generated, the deletion is
+        // treated as a dismissal — mark it dismissed instead of recreating it,
+        // so it stays out of Planner and feeds the dedup filter.
+        if (task.aiGenerated) {
+          await db.update(marketingTasks)
+            .set({
+              status: "dismissed",
+              plannerTaskId: null,
+              plannerEtag: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(marketingTasks.id, task.id));
+          result.updated += 1;
+          await logSync({
+            planId: plan.id,
+            taskId: task.id,
+            plannerTaskId: task.plannerTaskId,
+            direction: "push",
+            fields: {
+              status: { previous: task.status, applied: "dismissed", winner: "planner" },
+            },
+            success: true,
+          });
+          continue;
+        }
+        // Human-created task — recreate.
         const assignments = assigneeOid
           ? { [assigneeOid]: { "@odata.type": "#microsoft.graph.plannerAssignment", orderHint: " !" } }
           : null;
@@ -542,11 +636,24 @@ export async function pullAndReconcileTask(
   if (!token) return { matched: true, updated: false, error: "Planner token unavailable" };
 
   try {
-    const pt = await getTask(token, plannerTaskId);
-    if (!pt) {
-      // Task deleted on Planner — clear linkage so next push recreates it
+    // Approval gate: an unapproved AI suggestion must never reconcile Planner
+    // state (Planner progress cannot substitute for user acceptance). If it is
+    // somehow linked, retract it from Planner and clear the linkage, keeping
+    // its review status intact.
+    if (!isPlannerSyncEligible(orbitTask)) {
+      const pt = await getTask(token, plannerTaskId);
+      if (pt && pt.etag) {
+        await deleteTask(token, plannerTaskId, pt.etag);
+      }
+      // Planner-side deletion of an AI suggestion counts as a dismissal.
+      const plannerDeleted = !pt && orbitTask.aiGenerated;
       await db.update(marketingTasks)
-        .set({ plannerTaskId: null, plannerEtag: null, updatedAt: new Date() })
+        .set({
+          plannerTaskId: null,
+          plannerEtag: null,
+          ...(plannerDeleted ? { status: "dismissed" } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(marketingTasks.id, orbitTask.id));
       await logSync({
         planId: plan.id,
@@ -554,7 +661,38 @@ export async function pullAndReconcileTask(
         plannerTaskId,
         direction: "webhook",
         fields: {
-          deleted: { previous: { plannerTaskId, etag: orbitTask.plannerEtag }, applied: null, winner: "planner" },
+          retracted: {
+            previous: { plannerTaskId },
+            applied: plannerDeleted ? { status: "dismissed" } : null,
+            winner: plannerDeleted ? "planner" : "orbit",
+          },
+        },
+        success: true,
+      });
+      return { matched: true, updated: true };
+    }
+
+    const pt = await getTask(token, plannerTaskId);
+    if (!pt) {
+      // Task deleted on Planner. AI-generated tasks are marked dismissed
+      // (so they are never recreated and feed the dedup filter); human
+      // tasks just get their linkage cleared so the next push recreates them.
+      const updates: Record<string, unknown> = {
+        plannerTaskId: null,
+        plannerEtag: null,
+        updatedAt: new Date(),
+      };
+      if (orbitTask.aiGenerated) updates.status = "dismissed";
+      await db.update(marketingTasks)
+        .set(updates)
+        .where(eq(marketingTasks.id, orbitTask.id));
+      await logSync({
+        planId: plan.id,
+        taskId: orbitTask.id,
+        plannerTaskId,
+        direction: "webhook",
+        fields: {
+          deleted: { previous: { plannerTaskId, etag: orbitTask.plannerEtag }, applied: orbitTask.aiGenerated ? { status: "dismissed" } : null, winner: "planner" },
         },
         success: true,
       });

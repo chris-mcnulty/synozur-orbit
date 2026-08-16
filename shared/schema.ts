@@ -1992,9 +1992,16 @@ export const marketingTasks = pgTable("marketing_tasks", {
   activityGroup: text("activity_group").notNull(), // Themes, Digital, Outbound, Partners, Events
   timeframe: text("timeframe").notNull(), // Ongoing, Q1, Q2, Q3, Q4, Future
   priority: text("priority").notNull().default("Medium"), // High, Medium, Low
-  status: text("status").notNull().default("suggested"), // suggested, accepted, in_progress, completed, removed
+  status: text("status").notNull().default("suggested"), // suggested, accepted, planned, in_progress, completed, cancelled, removed, dismissed
   aiGenerated: boolean("ai_generated").notNull().default(true),
   sourceRecommendationId: varchar("source_recommendation_id").references(() => recommendations.id, { onDelete: "set null" }),
+  // Which generation run / briefing produced this AI-suggested task ("why suggested")
+  sourceGenerationId: text("source_generation_id"),
+  sourceGenerationLabel: text("source_generation_label"),
+  // Durable acceptance proof: stamped server-side when a user accepts an AI
+  // suggestion. Planner sync eligibility for AI tasks requires this, so later
+  // lifecycle changes (in_progress/completed) can never substitute for consent.
+  acceptedAt: timestamp("accepted_at"),
   sourceBriefId: varchar("source_brief_id").references(() => contentBriefs.id, { onDelete: "set null" }),
   assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: "set null" }),
   dueDate: timestamp("due_date"),

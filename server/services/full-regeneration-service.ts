@@ -11,6 +11,7 @@ import { runWithConcurrency, AI_CONCURRENCY, aiLimiter, runLanesInParallel } fro
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { buildMarketIntelligenceContext } from "./market-intelligence-context";
+import { filterDuplicateTasks } from "./marketing-task-dedup";
 
 export type DeliverableLaneKey = "battlecards" | "gtm" | "messaging" | "marketingTasks";
 export type DeliverableLaneStatus = "pending" | "running" | "done" | "skipped" | "failed";
@@ -1051,11 +1052,20 @@ Only use these timeframe values: ${periods.join(", ")}`;
               }
             }
 
-            for (const task of generatedTasks) {
-              if (!task.title || !task.activityGroup || !task.timeframe) continue;
-              if (!categories.includes(task.activityGroup)) continue;
-              if (!periods.includes(task.timeframe)) continue;
+            // Server-side dedup: filter AI output against every existing task
+            // for the plan (accepted / in-progress / dismissed included) using
+            // normalized-title + similarity matching before inserting.
+            const validCandidates = generatedTasks.filter(
+              (task: any) =>
+                task.title && task.activityGroup && task.timeframe &&
+                categories.includes(task.activityGroup) && periods.includes(task.timeframe)
+            );
+            const { unique, duplicates } = filterDuplicateTasks(validCandidates, existingTasks);
+            if (duplicates.length > 0) {
+              console.log(`Full regen: Dedup filtered ${duplicates.length} near-duplicate task(s) for plan "${mPlan.name}"`);
+            }
 
+            for (const task of unique) {
               const created = await storage.createMarketingTask({
                 planId: mPlan.id,
                 title: task.title,
@@ -1066,13 +1076,15 @@ Only use these timeframe values: ${periods.join(", ")}`;
                 status: "suggested",
                 aiGenerated: true,
                 sourceRecommendationId: null,
+                sourceGenerationId: jobId,
+                sourceGenerationLabel: `Full intelligence regeneration (${new Date().toISOString().slice(0, 10)})`,
               }, marketingCtx);
               if (created) {
                 results.marketingTasksGenerated++;
               }
             }
 
-            console.log(`Full regen: Generated ${generatedTasks.length} marketing tasks for plan "${mPlan.name}"`);
+            console.log(`Full regen: Generated ${unique.length} marketing tasks for plan "${mPlan.name}" (${duplicates.length} duplicates skipped)`);
           } catch (planError) {
             marketingTasksFailed = true;
             console.error(`Full regen: Failed to generate tasks for marketing plan "${mPlan.name}":`, planError);

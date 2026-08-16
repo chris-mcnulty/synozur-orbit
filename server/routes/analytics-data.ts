@@ -4,6 +4,8 @@ import { storage } from "../storage";
 import { getRequestContext, ContextError } from "../context";
 import { toContextFilter, validateResourceContext, hasAdminAccess, hasContentAccess, logAiUsage, guardFeature, guardManualAction } from "./helpers";
 import { monitorCompetitorNews, monitorMultipleCompetitorsNews, type NewsMonitoringResult } from "../services/news-monitoring";
+import { filterDuplicateTasks } from "../services/marketing-task-dedup";
+import { isAllowedStatusTransition, deleteActionForTask, isInReviewState } from "../services/marketing-task-review-policy";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Competitor } from "@shared/schema";
 
@@ -373,7 +375,8 @@ export function registerAnalyticsDataRoutes(app: Express) {
         activityGroup,
         timeframe,
         priority: priority || "Medium",
-        status: "suggested",
+        // Human-created tasks skip the suggestion review queue.
+        status: aiGenerated ? "suggested" : "planned",
         aiGenerated: aiGenerated ?? false,
         sourceRecommendationId: sourceRecommendationId || null,
       }, toContextFilter(ctx));
@@ -402,11 +405,31 @@ export function registerAnalyticsDataRoutes(app: Express) {
       }
       
       const { title, description, activityGroup, timeframe, priority, status, assignedTo, dueDate } = req.body;
-      
+
+      // Approval-gate state machine: an AI task in a review state (suggested /
+      // dismissed) can only move between review states or to accepted — it can
+      // never jump straight to a lifecycle status (planned, in_progress, ...),
+      // which would make it Planner-sync eligible without a recorded acceptance.
+      let acceptedAt: Date | undefined;
+      if (status !== undefined) {
+        const existingTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+        const current = existingTasks.find(t => t.id === req.params.taskId);
+        if (!current) {
+          return res.status(404).json({ error: "Task not found" });
+        }
+        if (!isAllowedStatusTransition(current, status)) {
+          return res.status(400).json({ error: "A suggested AI task must be accepted or dismissed before it can move to another status" });
+        }
+        // Durable acceptance proof — stamped server-side, never client-supplied.
+        if (status === "accepted" && current.aiGenerated && !current.acceptedAt) {
+          acceptedAt = new Date();
+        }
+      }
+
       const updated = await storage.updateMarketingTask(
         req.params.taskId,
         plan.id,
-        { title, description, activityGroup, timeframe, priority, status, assignedTo, dueDate },
+        { title, description, activityGroup, timeframe, priority, status, assignedTo, dueDate, ...(acceptedAt ? { acceptedAt } : {}) },
         toContextFilter(ctx)
       );
       
@@ -415,6 +438,50 @@ export function registerAnalyticsDataRoutes(app: Express) {
       }
       
       res.json(updated);
+    } catch (error: any) {
+      if (error instanceof ContextError) {
+        return res.status(error.status).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Bulk status update — powers the suggested-task review queue's
+  // "accept all" / "dismiss all" actions.
+  app.post("/api/marketing-plans/:planId/tasks/bulk-status", async (req, res) => {
+    if (!await guardFeature(req, res, "marketingPlanner")) return;
+    try {
+      const ctx = await getRequestContext(req);
+
+      const plan = await storage.getMarketingPlan(req.params.planId, toContextFilter(ctx));
+      if (!plan) {
+        return res.status(404).json({ error: "Marketing plan not found" });
+      }
+
+      const { taskIds, status } = req.body as { taskIds?: string[]; status?: string };
+      const ALLOWED_BULK_STATUSES = new Set(["accepted", "dismissed"]);
+      if (!Array.isArray(taskIds) || taskIds.length === 0 || !status || !ALLOWED_BULK_STATUSES.has(status)) {
+        return res.status(400).json({ error: "taskIds (non-empty array) and status (accepted or dismissed) are required" });
+      }
+
+      // Only AI tasks currently in a review state (suggested / dismissed) are
+      // valid bulk targets — this route exists solely for the review queue.
+      const planTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+      const eligibleIds = new Set(planTasks.filter(t => isInReviewState(t)).map(t => t.id));
+
+      let updatedCount = 0;
+      for (const taskId of taskIds) {
+        if (!eligibleIds.has(taskId)) continue;
+        const updated = await storage.updateMarketingTask(
+          taskId,
+          plan.id,
+          { status, ...(status === "accepted" ? { acceptedAt: new Date() } : {}) },
+          toContextFilter(ctx)
+        );
+        if (updated) updatedCount++;
+      }
+
+      res.json({ success: true, updated: updatedCount });
     } catch (error: any) {
       if (error instanceof ContextError) {
         return res.status(error.status).json({ error: error.message });
@@ -433,6 +500,20 @@ export function registerAnalyticsDataRoutes(app: Express) {
         return res.status(404).json({ error: "Marketing plan not found" });
       }
       
+      // AI suggestions in a review state are never hard-deleted: "delete"
+      // means dismiss, so the record persists as dedup history and the same
+      // idea is not re-generated later.
+      const planTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+      const current = planTasks.find(t => t.id === req.params.taskId);
+      if (!current) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      if (deleteActionForTask(current) === "dismiss") {
+        await storage.updateMarketingTask(req.params.taskId, plan.id, { status: "dismissed" }, toContextFilter(ctx));
+        return res.json({ success: true, dismissed: true });
+      }
+
       const deleted = await storage.deleteMarketingTask(req.params.taskId, plan.id, toContextFilter(ctx));
       if (!deleted) {
         return res.status(404).json({ error: "Task not found" });
@@ -466,14 +547,16 @@ export function registerAnalyticsDataRoutes(app: Express) {
 
       // Handle data cleanup if requested
       if (deleteExisting) {
-        // Delete all tasks for this plan
+        // Delete tasks for this plan — but keep dismissed suggestions so they
+        // continue to feed the dedup filter (a dismissed idea must not come back).
         const existingTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
         for (const task of existingTasks) {
+          if (task.status === "dismissed") continue;
           await storage.deleteMarketingTask(task.id, plan.id, toContextFilter(ctx));
         }
       }
 
-      // Get existing tasks to avoid duplicates (will be empty if deleteExisting was true)
+      // Get existing tasks to avoid duplicates (dismissed ones intentionally included)
       const existingTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
       
       // Get competitive intelligence context
@@ -735,28 +818,42 @@ Only use these timeframe values: ${periods.join(", ")}`;
         return res.status(500).json({ error: "Failed to parse AI suggestions. Please try again." });
       }
 
-      // Create the tasks in the database
+      // Server-side dedup: filter AI output against every existing task in the
+      // plan (accepted, in-progress, and dismissed alike) before inserting.
+      const validCandidates = generatedTasks.filter(
+        (task: any) => task.title && categories.includes(task.activityGroup) && periods.includes(task.timeframe)
+      );
+      const currentTasks = await storage.getMarketingTasks(plan.id, toContextFilter(ctx));
+      const { unique, duplicates } = filterDuplicateTasks(validCandidates, currentTasks);
+      if (duplicates.length > 0) {
+        console.log(`[Tasks] Dedup filtered ${duplicates.length} near-duplicate suggestion(s) for plan ${plan.id}`);
+      }
+
+      // Stamp each inserted task with a generation-run identifier for provenance/idempotency.
+      const generationId = `gen_${plan.id}_${Date.now()}`;
+      const generationLabel = `On-demand task generation (${new Date().toISOString().slice(0, 10)})`;
+
       let tasksCreated = 0;
-      for (const task of generatedTasks) {
-        if (task.title && categories.includes(task.activityGroup) && periods.includes(task.timeframe)) {
-          await storage.createMarketingTask({
-            planId: plan.id,
-            title: task.title,
-            description: task.description || null,
-            activityGroup: task.activityGroup,
-            priority: task.priority || "Medium",
-            status: "suggested",
-            timeframe: task.timeframe,
-            aiGenerated: true,
-          }, toContextFilter(ctx));
-          tasksCreated++;
-        }
+      for (const task of unique) {
+        await storage.createMarketingTask({
+          planId: plan.id,
+          title: task.title,
+          description: task.description || null,
+          activityGroup: task.activityGroup,
+          priority: task.priority || "Medium",
+          status: "suggested",
+          timeframe: task.timeframe,
+          aiGenerated: true,
+          sourceGenerationId: generationId,
+          sourceGenerationLabel: generationLabel,
+        }, toContextFilter(ctx));
+        tasksCreated++;
       }
 
       // Log AI usage
       await logAiUsage(ctx, "generate_marketing_tasks", "anthropic", "claude-sonnet-4-5", message.usage);
 
-      res.json({ success: true, tasksCreated });
+      res.json({ success: true, tasksCreated, duplicatesSkipped: duplicates.length });
     } catch (error: any) {
       console.error("Generate tasks error:", error);
       if (error instanceof ContextError) {

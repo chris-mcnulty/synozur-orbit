@@ -58,6 +58,7 @@ const PRIORITY_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = [
+  { value: "accepted", label: "Accepted", icon: CheckCircle },
   { value: "planned", label: "Planned", icon: Clock },
   { value: "in_progress", label: "In Progress", icon: Loader2 },
   { value: "completed", label: "Completed", icon: CheckCircle },
@@ -77,6 +78,8 @@ interface MarketingTask {
   aiGenerated: boolean;
   createdAt: string;
   plannerTaskId?: string | null;
+  sourceGenerationId?: string | null;
+  sourceGenerationLabel?: string | null;
 }
 
 interface PlannerStatus {
@@ -180,6 +183,7 @@ export default function MarketingPlanDetail() {
   const [filterTimeframe, setFilterTimeframe] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"list" | "matrix">("list");
+  const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<string[]>([]);
   const [selectedTask, setSelectedTask] = useState<MarketingTask | null>(null);
   const [editingTask, setEditingTask] = useState<MarketingTask | null>(null);
   const [editForm, setEditForm] = useState({
@@ -543,6 +547,33 @@ export default function MarketingPlanDetail() {
     },
   });
 
+  const bulkUpdateStatus = useMutation({
+    mutationFn: async ({ taskIds, status }: { taskIds: string[]; status: string }) => {
+      const response = await fetch(`/api/marketing-plans/${id}/tasks/bulk-status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ taskIds, status }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update tasks");
+      }
+      return response.json() as Promise<{ updated: number }>;
+    },
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/tasks`] });
+      setSelectedSuggestionIds([]);
+      toast({
+        title: vars.status === "accepted" ? "Suggestions accepted" : "Suggestions dismissed",
+        description: `${data.updated} task${data.updated === 1 ? "" : "s"} ${vars.status === "accepted" ? "accepted" : "dismissed"}.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteTask = useMutation({
     mutationFn: async (taskId: string) => {
       const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}`, {
@@ -624,7 +655,11 @@ export default function MarketingPlanDetail() {
     setSelectedCategories([]);
   };
 
-  const filteredTasks = tasks.filter(task => {
+  // AI suggestions awaiting review live in their own queue, not the main views.
+  const suggestedTasks = tasks.filter(t => t.aiGenerated && t.status === "suggested");
+  const visibleTasks = tasks.filter(t => !(t.aiGenerated && (t.status === "suggested" || t.status === "dismissed")));
+
+  const filteredTasks = visibleTasks.filter(task => {
     if (filterCategory !== "all" && task.activityGroup !== filterCategory) return false;
     if (filterTimeframe !== "all" && task.timeframe !== filterTimeframe) return false;
     if (filterPriority !== "all" && task.priority?.toLowerCase() !== filterPriority.toLowerCase()) return false;
@@ -656,7 +691,7 @@ export default function MarketingPlanDetail() {
   const matrixData = ACTIVITY_CATEGORIES.filter(cat => selectedCategories.includes(cat.value)).map(cat => {
     const row: Record<string, MarketingTask[]> = {};
     matrixColumns.forEach(q => {
-      row[q.value] = tasks.filter(t => t.activityGroup === cat.value && t.timeframe === q.value);
+      row[q.value] = visibleTasks.filter(t => t.activityGroup === cat.value && t.timeframe === q.value);
     });
     return { category: cat, tasks: row };
   });
@@ -1104,15 +1139,15 @@ export default function MarketingPlanDetail() {
                   acc[cat.value] = cat.label;
                   return acc;
                 }, {} as Record<string, string>);
-                const csvItems: CSVExportItem[] = tasks.map(task => ({
+                const csvItems: CSVExportItem[] = visibleTasks.map(task => ({
                   title: task.title,
                   description: task.description || "",
                   category: categoryLookup[task.activityGroup] || task.activityGroup,
                 }));
                 exportToCSV(csvItems, `${plan.name}_marketing_plan`);
-                toast({ title: "Exported", description: `${tasks.length} tasks exported to CSV.` });
+                toast({ title: "Exported", description: `${visibleTasks.length} tasks exported to CSV.` });
               }}
-              disabled={tasks.length === 0}
+              disabled={visibleTasks.length === 0}
               data-testid="button-export-csv"
             >
               <FileDown className="w-4 h-4 mr-2" />
@@ -1399,6 +1434,125 @@ export default function MarketingPlanDetail() {
           </Card>
         )}
 
+        {suggestedTasks.length > 0 && (
+          <Card className="border-primary/40" data-testid="card-suggested-queue">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    Suggested Tasks
+                    <Badge variant="secondary">{suggestedTasks.length}</Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    AI-generated suggestions awaiting your review. Only accepted tasks sync to Microsoft Planner.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={bulkUpdateStatus.isPending}
+                    onClick={() => bulkUpdateStatus.mutate({
+                      taskIds: selectedSuggestionIds.length > 0 ? selectedSuggestionIds : suggestedTasks.map(t => t.id),
+                      status: "accepted",
+                    })}
+                    data-testid="button-bulk-accept"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    Accept {selectedSuggestionIds.length > 0 ? `(${selectedSuggestionIds.length})` : "All"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={bulkUpdateStatus.isPending}
+                    onClick={() => bulkUpdateStatus.mutate({
+                      taskIds: selectedSuggestionIds.length > 0 ? selectedSuggestionIds : suggestedTasks.map(t => t.id),
+                      status: "dismissed",
+                    })}
+                    data-testid="button-bulk-dismiss"
+                  >
+                    <X className="w-4 h-4 mr-1" />
+                    Dismiss {selectedSuggestionIds.length > 0 ? `(${selectedSuggestionIds.length})` : "All"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {suggestedTasks.map(task => (
+                  <div
+                    key={task.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-card"
+                    data-testid={`suggested-task-${task.id}`}
+                  >
+                    <Checkbox
+                      className="mt-1"
+                      checked={selectedSuggestionIds.includes(task.id)}
+                      onCheckedChange={(checked) => {
+                        setSelectedSuggestionIds(prev =>
+                          checked ? [...prev, task.id] : prev.filter(x => x !== task.id)
+                        );
+                      }}
+                      data-testid={`checkbox-suggestion-${task.id}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-medium">{task.title}</span>
+                        {getPriorityBadge(task.priority)}
+                        {task.timeframe && <Badge variant="outline">{task.timeframe.toUpperCase()}</Badge>}
+                        <Badge variant="outline" className="text-xs">
+                          {ACTIVITY_CATEGORIES.find(c => c.value === task.activityGroup)?.label || task.activityGroup}
+                        </Badge>
+                      </div>
+                      {task.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1" data-testid={`text-why-suggested-${task.id}`}>
+                        <Sparkles className="w-3 h-3 inline mr-1" />
+                        Suggested by {task.sourceGenerationLabel || "AI task generation"}
+                        {task.createdAt ? ` on ${new Date(task.createdAt).toLocaleDateString()}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-primary"
+                        disabled={updateTaskStatus.isPending}
+                        onClick={() => updateTaskStatus.mutate({ taskId: task.id, status: "accepted" })}
+                        data-testid={`button-accept-task-${task.id}`}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Accept
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                        onClick={() => openEditDialog(task)}
+                        data-testid={`button-edit-suggestion-${task.id}`}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        disabled={updateTaskStatus.isPending}
+                        onClick={() => updateTaskStatus.mutate({ taskId: task.id, status: "dismissed" })}
+                        data-testid={`button-dismiss-task-${task.id}`}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center border rounded-lg p-1">
             <Button
@@ -1465,7 +1619,7 @@ export default function MarketingPlanDetail() {
             </>
           )}
           <span className="text-sm text-muted-foreground ml-auto">
-            {viewMode === "list" ? `${filteredTasks.length} of ${tasks.length}` : tasks.length} task{tasks.length !== 1 ? "s" : ""}
+            {viewMode === "list" ? `${filteredTasks.length} of ${visibleTasks.length}` : visibleTasks.length} task{visibleTasks.length !== 1 ? "s" : ""}
           </span>
           {isGenerating && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">

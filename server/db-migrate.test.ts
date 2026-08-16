@@ -135,6 +135,24 @@ describe("computeBackfillPlan destructive-migration handling", () => {
     expect(toStamp).toEqual([]);
   });
 
+  it("applies the real 0092/0093 marketing-task migrations on an established schema (empty ledger) instead of stamping them", async () => {
+    // Regression: alter-only migrations without the marker were stamped on
+    // ledger-backfill, so provenance/accepted_at columns never reached
+    // established databases while the app schema selected them.
+    const files = [
+      "0092_marketing_task_suggestions.sql",
+      "0093_marketing_task_accepted_at.sql",
+    ].map((name) => {
+      const real = fs.readFileSync(path.join(process.cwd(), "migrations", name), "utf8");
+      expect(real.includes(ALWAYS_APPLY_MARKER)).toBe(true);
+      return write(name, real);
+    });
+    const pool = fakePool(new Set(["marketing_tasks"]));
+    const { toStamp, toApply } = await computeBackfillPlan(pool, files, "[test]");
+    expect(toApply).toEqual(files);
+    expect(toStamp).toEqual([]);
+  });
+
   it("always applies marker migrations even when they are alter-only (no CREATE at all)", async () => {
     const markerAlter = write(
       "0087_marker_alter_only.sql",
