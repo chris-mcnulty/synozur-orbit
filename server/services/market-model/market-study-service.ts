@@ -369,13 +369,44 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
           await replaceSources({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, scopeType: "segment_sizing", scopeId: segId, sources }, tx);
         });
 
-        const pr = await provider.scoreSegmentPriority({ ...ctx, segmentName: seg.name, samMid: sizing.sam.mid || undefined, needsMap });
-        await db.update(marketSegments).set({ priorityScore: pr.score, priorityScoreSource: "ai", priorityRationale: pr.rationale }).where(eq(marketSegments.id, segId));
         sized++;
         sizedIds.push(segId);
         await setStage("sizing", "running", `Sized ${sized}/${segmentIds.length}`);
       } catch (e: any) {
         console.warn(`[market-study] sizing failed for segment ${segId}: ${e?.message ?? e}`);
+      }
+    }
+
+    // Priority is scored comparatively across ALL sized segments in one call:
+    // per-segment isolated scoring clusters at 7-8 and carries no ordering.
+    if (sizedIds.length > 0) {
+      try {
+        const sizedSegs = await db
+          .select()
+          .from(marketSegments)
+          .where(and(
+            inArray(marketSegments.id, sizedIds),
+            eq(marketSegments.tenantDomain, ctx.tenantDomain),
+            eq(marketSegments.marketId, ctx.marketId),
+          ));
+        const scores = await provider.scoreSegmentPriorities({
+          ...ctx,
+          segments: sizedSegs.map((s) => ({
+            id: s.id,
+            name: s.name,
+            samMid: s.samMid ?? undefined,
+            needsMap: s.needsMap as NeedsMap,
+            firmographics: (s.firmographics as Firmographics) ?? undefined,
+          })),
+        });
+        for (const [segId, pr] of scores) {
+          await db
+            .update(marketSegments)
+            .set({ priorityScore: pr.score, priorityScoreSource: "ai", priorityRationale: pr.rationale })
+            .where(and(eq(marketSegments.id, segId), eq(marketSegments.tenantDomain, ctx.tenantDomain)));
+        }
+      } catch (e: any) {
+        console.warn(`[market-study] batch priority ranking failed: ${e?.message ?? e}`);
       }
     }
     await setStage("sizing", sized > 0 ? "done" : "failed", `Sized ${sized}/${segmentIds.length}`);

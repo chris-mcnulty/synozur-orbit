@@ -112,6 +112,7 @@ export function buildAreas({ isEnterprise, isAdminUser, isGlobalAdmin }: BuildAr
       inHeader: false,
       items: [
         { label: "Home", icon: Home, href: "/app", description: "Your company at a glance: signals, summary, and what needs attention." },
+        { label: "Executive Briefing", icon: Sparkles, href: "/app/executive-briefing", description: "One unified summary across market position, strategy, marketing, and sales." },
         { label: "Needs Attention", icon: Inbox, href: "/app/inbox", description: "Approvals and alerts that need you, across Marketing, Sales, and Research." },
         { label: "Getting Started", icon: Rocket, href: "/app/getting-started" },
       ],

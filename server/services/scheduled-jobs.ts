@@ -1608,6 +1608,30 @@ export async function sendDigestNowForUser(userId: string): Promise<{ success: b
   }
 }
 
+async function runScheduledExecSummaryJob(): Promise<void> {
+  const { getDueAutoSummaryTenants, stampAutoRun, generateExecutiveSummary } = await import(
+    "./unified-exec-summary-service"
+  );
+  const due = await getDueAutoSummaryTenants();
+  for (const tenantDomain of due) {
+    try {
+      const tenant = await storage.getTenantByDomain(tenantDomain);
+      if (!tenant || tenant.status !== "active") continue;
+      // Auto-runs require BOTH the base feature and the auto add-on.
+      const baseGate = await checkFeatureAccessAsync(tenant.plan, "executiveSummary");
+      const autoGate = await checkFeatureAccessAsync(tenant.plan, "executiveSummaryAuto");
+      if (!baseGate.allowed || !autoGate.allowed) continue;
+      // Stamp BEFORE generating so a failing tenant retries next week, not hourly.
+      await stampAutoRun(tenantDomain);
+      const runId = await generateExecutiveSummary({ tenantDomain, trigger: "scheduled" });
+      if (runId) console.log(`[Exec Summary] scheduled summary generated for ${tenantDomain}`);
+      else console.log(`[Exec Summary] skipped ${tenantDomain} — a run is already in flight`);
+    } catch (err: any) {
+      console.error(`[Exec Summary] scheduled run failed for ${tenantDomain}:`, err?.message || err);
+    }
+  }
+}
+
 async function runScheduledBriefingJob(): Promise<void> {
   if (jobStatus.scheduledBriefing?.isRunning) {
     console.log("[Scheduled Job] Scheduled briefing already running, skipping...");
@@ -2542,6 +2566,15 @@ export function startScheduledJobs(): void {
       .then(({ cleanupExpiredBuckets }) => cleanupExpiredBuckets())
       .catch((err) => console.error("[rate-limiter] cleanup error:", err?.message || err));
   }, 6 * 60 * 60 * 1000);
+
+  // Unified Executive Summary auto-runs — hourly tick; each enabled tenant is
+  // gated to a ~7-day interval inside the job (lastAutoRunAt stamp) and to the
+  // executiveSummaryAuto plan feature.
+  setInterval(() => {
+    runScheduledExecSummaryJob().catch((err) =>
+      console.error("[Exec Summary] scheduled run error:", err?.message || err),
+    );
+  }, 60 * 60 * 1000);
 
   // WS5: stale social-draft cleanup (archive unscheduled, purge old) — daily.
   setInterval(() => {

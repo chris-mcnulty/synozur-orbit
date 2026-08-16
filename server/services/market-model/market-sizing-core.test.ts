@@ -8,6 +8,9 @@ import {
   parsePriority,
   buildSizingRationale,
   buildTopDownSizingPrompt,
+  buildPriorityPrompt,
+  buildPriorityBatchPrompt,
+  parsePriorityBatch,
   DEFAULT_SAM_REACHABLE_FRACTION,
 } from "./market-sizing-core";
 
@@ -124,5 +127,43 @@ describe("prompt + rationale builders", () => {
   it("rationale reflects the method", () => {
     expect(buildSizingRationale({ bottomUp: { tam: 1, sam: 1 }, topDown: { tam: 1, sam: 1 }, method: "triangulated", confidence: "high" })).toContain("Triangulated");
     expect(buildSizingRationale({ bottomUp: null, topDown: { tam: 1, sam: 1 }, method: "top_down", confidence: "low" })).toContain("Top-down");
+  });
+});
+
+describe("comparative priority batch", () => {
+  it("batch prompt lists every segment and enforces differentiation rules", () => {
+    const p = buildPriorityBatchPrompt([
+      { id: "a", name: "Mid-market wealth managers", samMid: 5_000_000, needsMap: { pains: ["manual reporting"] } as any },
+      { id: "b", name: "Boutique RIAs" },
+    ]);
+    expect(p).toContain("Mid-market wealth managers");
+    expect(p).toContain("Boutique RIAs");
+    expect(p).toContain("id=a");
+    expect(p).toContain("id=b");
+    expect(p).toContain("At most two segments may share a score");
+    expect(p).toContain('"scores"');
+  });
+
+  it("parsePriorityBatch keys by id, clamps, and ignores unknown/duplicate ids", () => {
+    const out = parsePriorityBatch(
+      '```json\n{ "scores": [ {"id":"a","score":9,"rationale":"large SAM"}, {"id":"a","score":2}, {"id":"b","score":15,"rationale":"x"}, {"id":"zzz","score":5} ] }\n```',
+      ["a", "b"],
+    );
+    expect(out.get("a")).toEqual({ score: 9, rationale: "large SAM" });
+    expect(out.get("b")).toEqual({ score: 10, rationale: "x" });
+    expect(out.has("zzz")).toBe(false);
+    expect(out.size).toBe(2);
+  });
+
+  it("parsePriorityBatch returns empty map on garbage", () => {
+    expect(parsePriorityBatch("not json", ["a"]).size).toBe(0);
+  });
+
+  it("single-segment prompt includes sibling calibration when provided", () => {
+    const p = buildPriorityPrompt({
+      segmentName: "Boutique RIAs",
+      siblings: [{ name: "Mid-market wealth managers", score: 8 }],
+    });
+    expect(p).toContain("Mid-market wealth managers: 8/10");
   });
 });

@@ -252,6 +252,8 @@ export interface PriorityPromptInput {
   firmographics?: Firmographics;
   /** Competitive/solution-fit context assembled by the caller. */
   grounding?: string;
+  /** Already-scored sibling segments for calibration on single re-scores. */
+  siblings?: Array<{ name: string; score: number }>;
 }
 
 export function buildPriorityPrompt(input: PriorityPromptInput): string {
@@ -261,12 +263,77 @@ export function buildPriorityPrompt(input: PriorityPromptInput): string {
     input.firmographics?.industry ? `Industry: ${input.firmographics.industry}` : "",
     input.needsMap ? `Needs Map: ${JSON.stringify(input.needsMap)}` : "",
     input.grounding ? `\nContext:\n${input.grounding}` : "",
+    input.siblings?.length
+      ? `\nOther segments in this market already scored (for calibration — your score must be consistent relative to these):\n${input.siblings
+          .map((s) => `- ${s.name}: ${s.score}/10`)
+          .join("\n")}`
+      : "",
     "",
     "Weigh: opportunity size (SAM), strategic/solution fit, competitive intensity, and reachability.",
+    "Use the full 1-10 range — a middling segment is a 5, not an 8. Reserve 8+ for standout opportunities.",
     'Return ONLY this JSON: { "score": <integer 1-10>, "rationale": "one or two sentences" }',
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+// ─── Comparative (batch) priority ranking ─────────────────────────────────────
+//
+// Scoring segments one at a time invites LLM central tendency: nearly every
+// plausible segment lands on 7-8, producing a rating instead of a ranking.
+// The batch prompt scores all segments of a market in ONE call and forces
+// differentiation so the scores carry ordering information.
+
+export interface PriorityBatchSegment {
+  /** Stable id echoed back so scores can be applied to the right rows. */
+  id: string;
+  name: string;
+  samMid?: number;
+  needsMap?: NeedsMap;
+  firmographics?: Firmographics;
+}
+
+export function buildPriorityBatchPrompt(segments: PriorityBatchSegment[], grounding?: string): string {
+  const lines = segments.map((s) => {
+    const bits = [
+      `id=${s.id}`,
+      `name="${s.name.slice(0, 120)}"`,
+      s.samMid ? `SAM midpoint ~$${s.samMid.toLocaleString("en-US")}` : "SAM unknown",
+      s.firmographics?.industry ? `industry: ${String(s.firmographics.industry).slice(0, 80)}` : "",
+      s.needsMap?.pains?.length ? `top pains: ${s.needsMap.pains.slice(0, 3).map((p) => String(p).slice(0, 120)).join("; ")}` : "",
+    ].filter(Boolean);
+    return `- ${bits.join(" | ")}`;
+  });
+  return [
+    `Rank the go-to-market priority of these ${segments.length} market segments against each other, scoring each 1 (deprioritize) to 10 (pursue first).`,
+    "",
+    "Segments:",
+    ...lines,
+    grounding ? `\nContext:\n${grounding.slice(0, 2000)}` : "",
+    "",
+    "Weigh: opportunity size (SAM), strategic/solution fit, competitive intensity, and reachability.",
+    "These are COMPARATIVE scores: you must differentiate. At most two segments may share a score,",
+    "the best and worst segment must differ by at least 3 points, and use the full 1-10 range.",
+    'Return ONLY this JSON: { "scores": [ { "id": "<id>", "score": <integer 1-10>, "rationale": "one or two sentences" } ] }',
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function parsePriorityBatch(
+  text: string,
+  expectedIds: string[],
+): Map<string, { score: number; rationale: string }> {
+  const out = new Map<string, { score: number; rationale: string }>();
+  const obj = parseJsonObject(text);
+  const rows = Array.isArray(obj?.scores) ? obj.scores : [];
+  const expected = new Set(expectedIds);
+  for (const row of rows) {
+    const id = str(row?.id);
+    if (!id || !expected.has(id) || out.has(id)) continue;
+    out.set(id, { score: clampPriorityScore(Number(row.score)), rationale: str(row.rationale) ?? "" });
+  }
+  return out;
 }
 
 // ─── Parsers ──────────────────────────────────────────────────────────────────

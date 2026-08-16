@@ -19,6 +19,8 @@ import type {
   NeedsMapInput,
   NeedsMapResult,
   PriorityInput,
+  PriorityBatchInput,
+  PriorityBatchResult,
   MatrixScoreInput,
   MatrixScoreResult,
   PresenceInput,
@@ -46,6 +48,8 @@ import {
   parseNeedsMap,
   buildPriorityPrompt,
   parsePriority,
+  buildPriorityBatchPrompt,
+  parsePriorityBatch,
   TOP_DOWN_SYSTEM_PROMPT,
   NEEDS_MAP_SYSTEM_PROMPT,
   PRIORITY_SYSTEM_PROMPT,
@@ -193,6 +197,7 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       segmentName: input.segmentName,
       samMid: input.samMid,
       needsMap: input.needsMap,
+      siblings: input.siblings,
     });
     const res = await completeForFeature(AI_FEATURES.SEGMENT_PRIORITY, prompt, {
       tenantDomain: input.tenantDomain,
@@ -210,6 +215,40 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       { segmentName: input.segmentName },
     );
     return parsePriority(res.text);
+  }
+
+  async scoreSegmentPriorities(input: PriorityBatchInput): Promise<PriorityBatchResult> {
+    if (input.segments.length === 0) return new Map();
+    // A single segment has nothing to be ranked against — use the solo path.
+    if (input.segments.length === 1) {
+      const s = input.segments[0];
+      const one = await this.scoreSegmentPriority({
+        tenantDomain: input.tenantDomain,
+        marketId: input.marketId,
+        userId: input.userId,
+        segmentName: s.name,
+        samMid: s.samMid,
+        needsMap: s.needsMap,
+      });
+      return new Map([[s.id, one]]);
+    }
+    const prompt = buildPriorityBatchPrompt(input.segments);
+    const res = await completeForFeature(AI_FEATURES.SEGMENT_PRIORITY, prompt, {
+      tenantDomain: input.tenantDomain,
+      systemPrompt: PRIORITY_SYSTEM_PROMPT,
+      temperature: 0.2,
+      maxTokens: 2048,
+    });
+    await logAiUsage(
+      { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+      "segment_priority",
+      res.provider,
+      res.model,
+      { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+      res.durationMs,
+      { batch: input.segments.length },
+    );
+    return parsePriorityBatch(res.text, input.segments.map((s) => s.id));
   }
 
   async scoreMatrix(input: MatrixScoreInput): Promise<MatrixScoreResult> {

@@ -1766,6 +1766,8 @@ export const AI_FEATURES = {
   OPPORTUNITY_MATRIX: 'opportunity_matrix',
   // Task #547
   MARKET_STUDY: 'market_study',
+  // Unified cross-area executive summary ("Briefing Room").
+  EXECUTIVE_SUMMARY: 'executive_summary',
 } as const;
 
 export type AIFeature = typeof AI_FEATURES[keyof typeof AI_FEATURES];
@@ -1794,6 +1796,7 @@ export const AI_FEATURE_LABELS: Record<AIFeature, string> = {
   segment_priority: 'Segment Priority Scoring',
   opportunity_matrix: 'GTM Opportunity Matrix Scoring',
   market_study: 'Market Study Wizard',
+  executive_summary: 'Unified Executive Summary',
 };
 
 export const AI_MODELS: Record<string, readonly string[]> = {
@@ -5946,3 +5949,56 @@ export const marketingWorkflowStepRunsRelations = relations(marketingWorkflowSte
     references: [marketingWorkflowSteps.id],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Unified Executive Summary ("Briefing Room") — one cross-area, tenant-level
+// AI-synthesized report spanning Research, Strategy, Marketing, and Sales.
+// Runs are persisted so summaries can be compared period-over-period.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface UnifiedExecSummarySection {
+  key: string;    // market_position | where_to_play | marketing_execution | sales_development | executive_actions
+  title: string;
+  body: string;   // markdown
+  /** Short bullet highlights surfaced above the narrative. */
+  highlights?: string[];
+}
+
+export interface UnifiedExecSummaryData {
+  headline: string;
+  sections: UnifiedExecSummarySection[];
+  /** Raw collector facts the synthesis saw — kept for transparency/debugging. */
+  facts?: Record<string, unknown>;
+}
+
+export const unifiedExecSummaries = pgTable("unified_exec_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  status: text("status").notNull().default("generating"), // generating | completed | failed
+  trigger: text("trigger").notNull().default("manual"), // manual | scheduled
+  summaryData: jsonb("summary_data").$type<UnifiedExecSummaryData>(),
+  error: text("error"),
+  generatedBy: varchar("generated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, (table) => ({
+  tenantCreatedIdx: index("unified_exec_summaries_tenant_created_idx").on(table.tenantDomain, table.createdAt.desc()),
+}));
+
+export const insertUnifiedExecSummarySchema = createInsertSchema(unifiedExecSummaries).omit({
+  id: true,
+  createdAt: true,
+});
+export type UnifiedExecSummary = typeof unifiedExecSummaries.$inferSelect;
+export type InsertUnifiedExecSummary = z.infer<typeof insertUnifiedExecSummarySchema>;
+
+// Per-tenant auto-run preference for the unified executive summary.
+export const unifiedExecSummarySettings = pgTable("unified_exec_summary_settings", {
+  tenantDomain: text("tenant_domain").primaryKey(),
+  autoEnabled: boolean("auto_enabled").notNull().default(false),
+  frequency: text("frequency").notNull().default("weekly"), // weekly
+  lastAutoRunAt: timestamp("last_auto_run_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export type UnifiedExecSummarySettings = typeof unifiedExecSummarySettings.$inferSelect;

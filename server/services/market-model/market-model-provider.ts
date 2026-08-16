@@ -60,7 +60,25 @@ export interface PriorityInput extends MarketModelContext {
   /** The segment's SAM midpoint drives the opportunity component of the score. */
   samMid?: number;
   needsMap?: NeedsMap;
+  /** Already-scored sibling segments, so a single re-score stays calibrated. */
+  siblings?: Array<{ name: string; score: number }>;
 }
+
+/** One segment in a comparative batch-ranking call. */
+export interface PriorityBatchInputSegment {
+  id: string;
+  name: string;
+  samMid?: number;
+  needsMap?: NeedsMap;
+  firmographics?: Firmographics;
+}
+
+export interface PriorityBatchInput extends MarketModelContext {
+  segments: PriorityBatchInputSegment[];
+}
+
+/** Map of segment id → suggestion; segments the model skipped are absent. */
+export type PriorityBatchResult = Map<string, PrioritySuggestion>;
 
 export interface MatrixScoreInput extends MarketModelContext {
   segmentName: string;
@@ -125,6 +143,8 @@ export interface MarketModelProvider {
   estimateSizing(input: SizingInput): Promise<SizingResult>;
   buildNeedsMap(input: NeedsMapInput): Promise<NeedsMapResult>;
   scoreSegmentPriority(input: PriorityInput): Promise<PrioritySuggestion>;
+  /** Comparatively rank ALL segments of a market in one call (forced spread). */
+  scoreSegmentPriorities(input: PriorityBatchInput): Promise<PriorityBatchResult>;
   /** Score every channel for one (segment, need). ROI/whitespace derived downstream. */
   scoreMatrix(input: MatrixScoreInput): Promise<MatrixScoreResult>;
   /** Assess real competitor presence per channel for one (segment, need) (#749). */

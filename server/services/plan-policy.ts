@@ -67,6 +67,8 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "marketSegments", label: "Market Segment Sizing", description: "Promote personas into quantified market segments with AI-estimated TAM/SAM (cited), 1–10 priority scoring, and structured Needs Maps. The strategic-intelligence foundation for the GTM opportunity matrix and market study wizard.", category: "intelligence" },
   { key: "opportunityMatrix", label: "GTM Opportunity Matrix", description: "Rank where to focus GTM first: a scored grid crossing market segments × buyer needs × channels on revenue potential, execution effort, and derived ROI, with whitespace detection. Requires Market Segments.", category: "intelligence" },
   { key: "marketStudyWizard", label: "Market Study Wizard", description: "End-to-end market study from a brief or URL: models segments, sizes TAM/SAM, builds the GTM opportunity matrix, and writes an executive summary — one guided run, saved and refreshable. Requires Market Segments + Opportunity Matrix.", category: "intelligence" },
+  { key: "executiveSummary", label: "Unified Executive Summary", description: "On-demand AI-synthesized company briefing spanning market position, where to play, marketing execution, sales development, and recommended executive actions.", category: "intelligence" },
+  { key: "executiveSummaryAuto", label: "Scheduled Executive Summary", description: "Automatic weekly generation of the unified executive summary. Requires Unified Executive Summary.", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -145,6 +147,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketSegments: false,
     opportunityMatrix: false,
     marketStudyWizard: false,
+    executiveSummary: false,
+    executiveSummaryAuto: false,
   },
   trial: {
     battlecards: true,
@@ -201,6 +205,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketSegments: false,
     opportunityMatrix: false,
     marketStudyWizard: false,
+    executiveSummary: false,
+    executiveSummaryAuto: false,
   },
   pro: {
     battlecards: true,
@@ -257,6 +263,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketSegments: false,
     opportunityMatrix: false,
     marketStudyWizard: false,
+    executiveSummary: true,
+    executiveSummaryAuto: true,
   },
   enterprise: {
     battlecards: true,
@@ -318,6 +326,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketSegments: true,
     opportunityMatrix: true,
     marketStudyWizard: true,
+    executiveSummary: true,
+    executiveSummaryAuto: true,
   },
   unlimited: {
     battlecards: true,
@@ -379,6 +389,8 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketSegments: true,
     opportunityMatrix: true,
     marketStudyWizard: true,
+    executiveSummary: true,
+    executiveSummaryAuto: true,
   },
 };
 

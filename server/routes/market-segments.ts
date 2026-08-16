@@ -355,6 +355,21 @@ export function registerMarketSegmentsRoutes(app: Express): void {
       const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!seg) return res.status(404).json({ error: "Segment not found" });
 
+      // Include already-scored siblings so a single re-score stays calibrated
+      // against the rest of the market instead of drifting back to 7-8.
+      const siblings = (
+        await db
+          .select({ name: marketSegments.name, priorityScore: marketSegments.priorityScore })
+          .from(marketSegments)
+          .where(and(
+            eq(marketSegments.tenantDomain, ctx.tenantDomain),
+            eq(marketSegments.marketId, ctx.marketId),
+            eq(marketSegments.status, "active"),
+          ))
+      )
+        .filter((s) => s.name !== seg.name && typeof s.priorityScore === "number")
+        .map((s) => ({ name: s.name, score: s.priorityScore as number }));
+
       const { score, rationale } = await getMarketModelProvider().scoreSegmentPriority({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
@@ -362,6 +377,7 @@ export function registerMarketSegmentsRoutes(app: Express): void {
         segmentName: seg.name,
         samMid: seg.samMid ?? undefined,
         needsMap: seg.needsMap as NeedsMap,
+        siblings,
       });
 
       const [updated] = await db
