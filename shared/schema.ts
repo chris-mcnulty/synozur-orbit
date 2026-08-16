@@ -4267,11 +4267,10 @@ export const HUBSPOT_OAUTH_SCOPES = [
   // `hasHubspotListScopes()` gates the browse-by-list path gracefully.
   "crm.lists.read",
   "crm.lists.write",
-  // Marketing Email API (v3): read marketing email objects and their statistics
-  // so Orbit can pull open/click rates for newsletters sent via HubSpot.
-  // Connections created before this scope was added will be missing it;
-  // `hasHubspotMarketingEmailScopes()` gates the stats-fetch path gracefully.
-  "marketing-email",
+  // marketing-email (Marketing Email API v3) is intentionally excluded from
+  // this list. HubSpot restricts it to marketplace-approved apps — requesting
+  // it blocks the OAuth consent screen for all other tenants. Stats are gated
+  // by `hasHubspotMarketingEmailScopes()` and degrade gracefully when absent.
 ] as const;
 
 // The subset of scopes required for the marketing-email sync layer. A
