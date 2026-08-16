@@ -17,7 +17,7 @@ import {
   getValidGraphToken,
   renewGraphSubscription,
 } from "./planner-graph-client";
-import { tickMarketingPublishWorker, sweepMissedPosts } from "./marketing-publish-worker";
+import { tickMarketingPublishWorker, sweepMissedPosts, preflightImageCheck } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { tickAbTestEvaluationWorker } from "./email-ab-test";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
@@ -2637,6 +2637,12 @@ export function startScheduledJobs(): void {
     const runPublishTick = () => {
       tickMarketingPublishWorker().catch(err => {
         console.error("[Marketing Publish Worker] Tick error:", err?.message || err);
+      });
+      // Task #777: pre-flight image validation for posts due soon — flags
+      // broken/missing images ahead of the send window so operators can fix
+      // them instead of discovering the problem via failed publishes.
+      preflightImageCheck().catch(err => {
+        console.error("[Image Preflight] Sweep error:", err?.message || err);
       });
     };
     runPublishTick();

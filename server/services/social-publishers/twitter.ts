@@ -27,6 +27,7 @@ import { socialAccounts } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getPlatformCredentials, isDirectPublishEnabled } from "../platform-credentials-service";
 import { GraphClient } from "../sharepoint-graph-client.js";
+import { fetchImageBytes } from "./image-retrieval";
 
 const AUTH_HOST = "https://twitter.com";
 const API_HOST = "https://api.twitter.com";
@@ -359,7 +360,9 @@ export class TwitterPublisher implements SocialPublisher {
         }
         return {
           success: false,
-          errorCode: "image_upload_failed",
+          // Preserve typed image codes (image_not_found / image_forbidden /
+          // image_fetch_failed) so the worker can pick the right retry policy.
+          errorCode: uploadError?.code ?? "image_upload_failed",
           errorMessage: uploadError?.message ?? `Image could not be fetched from Orbit storage for upload to X. This is a server-side issue — use the Retry button to try again. If it keeps failing, use the Change Image button (🖼) on the post to replace the graphic.`,
         };
       }
@@ -437,12 +440,15 @@ export class TwitterPublisher implements SocialPublisher {
   private async uploadMedia(accessToken: string, imageUrl: string): Promise<string | null> {
     try {
       // 1. Download the image bytes.
-      // Three cases in priority order:
+      // Two cases in priority order:
       //   a) SharePoint/SPE URL — requires authenticated Graph API access;
       //      plain fetch() returns 403 even though the file exists.
-      //   b) /public-objects/ URL — rewrite to localhost to avoid unreliable
-      //      self-requests through the public domain in production.
-      //   c) Everything else (external article images etc.) — fetch as-is.
+      //   b) Everything else — the shared image-retrieval helper. Own-storage
+      //      images (/public-objects/) are read in-process from object storage
+      //      (no HTTP self-request); external URLs are fetched with fast
+      //      in-place retries for transient failures. Throws typed
+      //      ImageRetrievalError codes (image_not_found / image_forbidden /
+      //      image_fetch_failed) so the worker can classify retries.
       let imageBuffer: Buffer;
       let contentType: string;
 
@@ -456,35 +462,9 @@ export class TwitterPublisher implements SocialPublisher {
           return null;
         }
       } else {
-        const absoluteUrl = (() => {
-          if (imageUrl.startsWith("/")) {
-            return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
-          }
-          try {
-            const parsed = new URL(imageUrl);
-            if (parsed.pathname.startsWith("/public-objects/")) {
-              return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
-            }
-          } catch { /* not a valid URL — fall through */ }
-          return imageUrl;
-        })();
-
-        const imgResp = await fetch(absoluteUrl);
-        if (!imgResp.ok) {
-          console.warn("[Twitter] Failed to fetch image for upload:", absoluteUrl, imgResp.status);
-          const err: any = new Error(
-            `Image fetch from Orbit storage failed with HTTP ${imgResp.status} for ${imageUrl}. ` +
-            (imgResp.status === 401 || imgResp.status === 403
-              ? "The image lives behind an auth-gated path — use Change Image (🖼) to pick or re-upload the graphic so it lands in public storage."
-              : imgResp.status === 404
-                ? "The image no longer exists at that path — use Change Image (🖼) to replace the graphic."
-                : "Use the Retry button to try again."),
-          );
-          err.code = "image_fetch_failed";
-          throw err;
-        }
-        imageBuffer = Buffer.from(await imgResp.arrayBuffer());
-        contentType = imgResp.headers.get("content-type") ?? "image/jpeg";
+        const retrieved = await fetchImageBytes(imageUrl);
+        imageBuffer = retrieved.buffer;
+        contentType = retrieved.contentType;
       }
 
       // 2. Upload to X via the v2 media endpoint (multipart/form-data).

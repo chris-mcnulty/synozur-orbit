@@ -3671,7 +3671,12 @@ export function registerSaturnMarketingRoutes(app: Express) {
         }
       }
       if (publishedUrl !== undefined) updateFields.publishedUrl = publishedUrl || null;
-      if (overrideImageUrl !== undefined) updateFields.overrideImageUrl = overrideImageUrl || null;
+      if (overrideImageUrl !== undefined) {
+        updateFields.overrideImageUrl = overrideImageUrl || null;
+        // Changing the image clears any flagged image problem (Task #777).
+        updateFields.imageIssue = null;
+        updateFields.imageCheckedAt = null;
+      }
       if (overrideBrandAssetId !== undefined) {
         if (overrideBrandAssetId) {
           // Tenant boundary: only allow referencing brand assets this tenant owns.

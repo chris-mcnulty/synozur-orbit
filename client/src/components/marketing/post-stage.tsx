@@ -8,7 +8,7 @@
  */
 import { Badge } from "@/components/ui/badge";
 import {
-  CheckCircle, XCircle, AlertCircle, FileDown, Calendar, Zap, Pencil,
+  CheckCircle, XCircle, AlertCircle, FileDown, Calendar, Zap, Pencil, ImageOff,
 } from "lucide-react";
 
 export interface StageablePost {
@@ -17,6 +17,8 @@ export interface StageablePost {
   publishError?: string | null;
   scheduledDate?: string | null;
   deliveryMode?: string | null;
+  /** Typed image error code set by pre-flight or a failed publish (Task #777). */
+  imageIssue?: string | null;
 }
 
 export function getPostStage(post: StageablePost) {
@@ -24,6 +26,13 @@ export function getPostStage(post: StageablePost) {
     return { label: "Posted via Orbit", cls: "bg-green-600 text-white border-green-600", Icon: CheckCircle };
   if (post.status === "rejected")
     return { label: "Rejected", cls: "text-orange-600 border-orange-300", Icon: XCircle };
+  // Image problems get their own recognizable badge so triage is a glance,
+  // not error-string reading. Failed = image killed the publish; approved =
+  // pre-flight caught it before the send window.
+  if (post.imageIssue && (post.status === "publish_failed" || post.publishError))
+    return { label: "Image problem — post failed", cls: "text-red-600 border-red-300", Icon: ImageOff };
+  if (post.imageIssue && post.status === "approved")
+    return { label: "Image problem — fix before send", cls: "text-amber-600 border-amber-300", Icon: ImageOff };
   if (post.status === "publish_failed" || post.publishError)
     return { label: "Orbit: post failed", cls: "text-red-600 border-red-300", Icon: AlertCircle };
   if (post.status === "exported" || post.status === "scheduled_external")

@@ -3372,6 +3372,13 @@ export const generatedPosts = pgTable("generated_posts", {
   publishError: text("publish_error"),
   publishAttemptCount: integer("publish_attempt_count").notNull().default(0),
   publishNextAttemptAt: timestamp("publish_next_attempt_at"),
+  // Task #777: image pre-flight / publish-time image failures.
+  // imageIssue holds a typed image error code (image_not_found /
+  // image_forbidden / image_fetch_failed) when the post's image is known to
+  // be broken; null = no known problem. Cleared on successful publish or a
+  // passing pre-flight check. imageCheckedAt = last pre-flight verification.
+  imageIssue: text("image_issue"),
+  imageCheckedAt: timestamp("image_checked_at"),
   // Per-post delivery mode override. null = follow campaign autoPublish setting
   // (or standalone auto); "csv" = reserved for CSV export only — the
   // auto-publish worker will never touch this post even if autoPublish is on.

@@ -361,6 +361,10 @@ export function registerMarketingPostsRoutes(app: Express) {
         updateFields.overrideImageUrl = overrideImageUrl || null;
         // A raw image URL set on its own supersedes any brand-asset selection.
         if (overrideBrandAssetId === undefined) updateFields.overrideBrandAssetId = null;
+        // Changing the image clears any flagged image problem — preflight
+        // will re-verify the new image before the send window.
+        updateFields.imageIssue = null;
+        updateFields.imageCheckedAt = null;
       }
       if (overrideBrandAssetId !== undefined) {
         if (overrideBrandAssetId !== null && typeof overrideBrandAssetId !== "string") {
@@ -532,7 +536,7 @@ export function registerMarketingPostsRoutes(app: Express) {
       });
 
       const [row] = await db.update(generatedPosts)
-        .set({ overrideImageUrl: saved.fileUrl, overrideBrandAssetId: null, updatedAt: new Date() })
+        .set({ overrideImageUrl: saved.fileUrl, overrideBrandAssetId: null, imageIssue: null, imageCheckedAt: null, updatedAt: new Date() })
         .where(eq(generatedPosts.id, post.id))
         .returning();
       res.json(row);

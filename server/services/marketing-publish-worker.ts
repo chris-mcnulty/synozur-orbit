@@ -63,6 +63,19 @@ const PERMANENT_ERROR_CODES = new Set([
   "session_failed",
 ]);
 
+// Image-related error codes (Task #777). Confirmed-permanent image errors
+// (missing from own storage, auth-gated path) are non-retryable — the image
+// must be replaced. Transient image errors keep retrying but on a faster
+// early backoff so a healthy image publishes within minutes, not hours.
+// image_required: the platform (Instagram) mandates an image and the post has
+// none — retrying can never succeed until the user sets one.
+const PERMANENT_IMAGE_ERROR_CODES = new Set(["image_not_found", "image_forbidden", "image_required"]);
+const TRANSIENT_IMAGE_ERROR_CODES = new Set(["image_fetch_failed", "image_upload_failed"]);
+const IMAGE_ERROR_CODES = new Set([...PERMANENT_IMAGE_ERROR_CODES, ...TRANSIENT_IMAGE_ERROR_CODES]);
+
+// Faster early backoff for transient image errors (minutes).
+const IMAGE_RETRY_BACKOFF_MINUTES = [2, 5, 15, 60, 240];
+
 /** Error codes that indicate the stored credentials are no longer valid. */
 const AUTH_ERROR_CODES = new Set([
   "not_connected",
@@ -372,6 +385,7 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
             publishedUrl: result.publishedUrl ?? null,
             publishError: null,
             publishNextAttemptAt: null,
+            imageIssue: null,
             publishAttemptCount: (post.publishAttemptCount ?? 0) + 1,
             updatedAt: new Date(),
           }).where(eq(generatedPosts.id, post.id));
@@ -441,11 +455,20 @@ async function markFailed(
 ) {
   const newAttemptCount = prevAttempts + 1;
   const errorCode = result.errorCode ?? null;
-  const isPermanent = errorCode ? PERMANENT_ERROR_CODES.has(errorCode) : false;
+  const isPermanentImageError = errorCode ? PERMANENT_IMAGE_ERROR_CODES.has(errorCode) : false;
+  const isImageError = errorCode ? IMAGE_ERROR_CODES.has(errorCode) : false;
+  const isPermanent =
+    (errorCode ? PERMANENT_ERROR_CODES.has(errorCode) : false) || isPermanentImageError;
   const shouldRetry = !isPermanent && newAttemptCount < MAX_ATTEMPTS;
+  // Stamp the typed image code on the post so the UI can show a distinct
+  // "Image problem" badge instead of a generic publish failure.
+  const imageIssuePatch = isImageError ? { imageIssue: errorCode } : {};
 
   if (shouldRetry) {
-    const backoffMins = RETRY_BACKOFF_MINUTES[Math.min(newAttemptCount - 1, RETRY_BACKOFF_MINUTES.length - 1)];
+    // Transient image errors use a faster early backoff: a momentary storage
+    // or network blip should never push a healthy image hours out.
+    const schedule = isImageError ? IMAGE_RETRY_BACKOFF_MINUTES : RETRY_BACKOFF_MINUTES;
+    const backoffMins = schedule[Math.min(newAttemptCount - 1, schedule.length - 1)];
     const nextAttemptAt = new Date(Date.now() + backoffMins * 60_000);
     await db.update(generatedPosts).set({
       // keep status as 'approved' so the worker re-picks it up after backoff
@@ -453,14 +476,18 @@ async function markFailed(
       publishError: result.errorMessage ?? "Publish failed",
       publishAttemptCount: newAttemptCount,
       publishNextAttemptAt: nextAttemptAt,
+      ...imageIssuePatch,
       updatedAt: new Date(),
     }).where(eq(generatedPosts.id, postId));
   } else {
     await db.update(generatedPosts).set({
       status: "publish_failed",
-      publishError: result.errorMessage ?? "Publish failed",
+      publishError: isPermanentImageError
+        ? (result.errorMessage ?? "The post's image is broken — replace the image, then retry.")
+        : (result.errorMessage ?? "Publish failed"),
       publishAttemptCount: newAttemptCount,
       publishNextAttemptAt: null,
+      ...imageIssuePatch,
       updatedAt: new Date(),
     }).where(eq(generatedPosts.id, postId));
   }
@@ -567,6 +594,7 @@ export async function publishPostNow(
       publishedUrl: result.publishedUrl ?? null,
       publishError: null,
       publishNextAttemptAt: null,
+      imageIssue: null,
       publishAttemptCount: (post.publishAttemptCount ?? 0) + 1,
       updatedAt: new Date(),
     }).where(eq(generatedPosts.id, post.id));
@@ -595,6 +623,162 @@ export async function publishPostNow(
   }
   await markFailed(post.id, account.id, post.platform, post.tenantDomain, result, post.publishAttemptCount ?? 0);
   return { success: false, errorMessage: result.errorMessage };
+}
+
+/**
+ * Pre-flight image validation (Task #777) — runs alongside the publish tick.
+ *
+ * Looks ahead at approved posts due within the next PREFLIGHT_LOOKAHEAD_HOURS
+ * and verifies each post's image (single, override, and carousel slides)
+ * actually resolves. Posts with broken/missing images are flagged with a
+ * typed `imageIssue` code and an audit-log entry so operators fix them
+ * before the send window — instead of discovering the problem via failed
+ * publishes at the scheduled time.
+ *
+ * For Instagram, this also serves as the public-reachability pre-flight:
+ * its Graph API fetches images itself, so a post whose image is missing
+ * from public storage (or is a relative URL with no public base URL to
+ * absolutize against) is flagged too.
+ */
+const PREFLIGHT_LOOKAHEAD_HOURS = Number(process.env.MARKETING_IMAGE_PREFLIGHT_LOOKAHEAD_HOURS || 24);
+const PREFLIGHT_RECHECK_MINUTES = 30;
+const PREFLIGHT_MAX_POSTS_PER_TICK = 20;
+
+export async function preflightImageCheck(): Promise<{ checked: number; flagged: number; cleared: number }> {
+  const { checkImageResolvable } = await import("./social-publishers/image-retrieval");
+  const now = new Date();
+  const horizon = new Date(now.getTime() + PREFLIGHT_LOOKAHEAD_HOURS * 3_600_000);
+  const recheckBefore = new Date(now.getTime() - PREFLIGHT_RECHECK_MINUTES * 60_000);
+
+  const rows = await db
+    .select({ post: generatedPosts })
+    .from(generatedPosts)
+    .where(
+      and(
+        eq(generatedPosts.status, "approved"),
+        isNotNull(generatedPosts.scheduledDate),
+        lte(generatedPosts.scheduledDate, horizon),
+        gte(generatedPosts.scheduledDate, new Date(now.getTime() - 7 * 24 * 3_600_000)),
+        or(
+          isNull(generatedPosts.deliveryMode),
+          ne(generatedPosts.deliveryMode, "csv"),
+        ),
+        // Skip posts checked recently (unless never checked).
+        or(
+          isNull(generatedPosts.imageCheckedAt),
+          lte(generatedPosts.imageCheckedAt, recheckBefore),
+        ),
+      ),
+    )
+    .limit(PREFLIGHT_MAX_POSTS_PER_TICK);
+
+  let checked = 0;
+  let flagged = 0;
+  let cleared = 0;
+
+  for (const { post } of rows) {
+    // Collect every image the publish path will need — platform-aware, so
+    // preflight validates exactly what the publisher will use.
+    const urls: string[] = [];
+    const isCarousel = (post as any).postFormat === "carousel";
+    if (post.platform === "instagram") {
+      // Instagram's publisher uses ONLY overrideImageUrl (leadImageUrl is
+      // never consulted) and requires one.
+      const u = (post as any).overrideImageUrl ?? null;
+      if (u) urls.push(u);
+    } else if (isCarousel && Array.isArray((post as any).carouselSlides)) {
+      for (const s of (post as any).carouselSlides as Array<{ imageUrl?: string | null }>) {
+        if (typeof s.imageUrl === "string" && s.imageUrl.length > 0) urls.push(s.imageUrl);
+      }
+    } else {
+      const u = (post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null;
+      if (u) urls.push(u);
+    }
+
+    let issue: { code: string; message: string; url: string } | null = null;
+    let sawTransient = false;
+
+    // Instagram-specific pre-flight: the Graph API fetches the image itself,
+    // so a post without an overrideImageUrl (or a relative URL with no public
+    // base to absolutize against) is guaranteed to fail at publish time.
+    if (post.platform === "instagram") {
+      const u = urls[0];
+      if (!u) {
+        issue = {
+          code: "image_required",
+          message: "Instagram requires an image. Set an image on the post (Change Image 🖼) before its scheduled time.",
+          url: "",
+        };
+      } else if (u.startsWith("/")) {
+        const hasPublicBase = Boolean(
+          process.env.PUBLIC_APP_URL || process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN,
+        );
+        if (!hasPublicBase) {
+          issue = {
+            code: "image_forbidden",
+            message: "Instagram requires a publicly reachable image URL, but no public app URL is configured to absolutize this image path.",
+            url: u,
+          };
+        }
+      }
+    }
+
+    if (!issue) {
+      for (const url of urls) {
+        const res = await checkImageResolvable(url);
+        if (!res.ok) {
+          if (res.transient) {
+            // Storage/network hiccup during preflight — don't flag; recheck
+            // next sweep. Leave imageCheckedAt untouched so it retries soon.
+            sawTransient = true;
+            break;
+          }
+          issue = { code: res.code ?? "image_fetch_failed", message: res.message ?? "Image did not resolve", url };
+          break;
+        }
+      }
+    }
+
+    if (sawTransient) continue;
+    checked += 1;
+
+    if (issue) {
+      // Only audit-log on transition to flagged (avoid log spam on rechecks).
+      const alreadyFlagged = (post as any).imageIssue === issue.code;
+      await db.update(generatedPosts).set({
+        imageIssue: issue.code,
+        imageCheckedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(generatedPosts.id, post.id));
+      if (!alreadyFlagged) {
+        await db.insert(marketingAuditLog).values({
+          tenantDomain: post.tenantDomain,
+          marketId: null,
+          userId: null,
+          action: "image_preflight",
+          entityType: "generated_post",
+          entityId: post.id,
+          status: "warning",
+          message: `Image problem detected before scheduled publish: ${issue.message}`,
+          details: { platform: post.platform, errorCode: issue.code, imageUrl: issue.url },
+        });
+        flagged += 1;
+        console.warn(`[Image Preflight] Post ${post.id} flagged (${issue.code}): ${issue.url}`);
+      }
+    } else {
+      const patch: Record<string, unknown> = { imageCheckedAt: new Date(), updatedAt: new Date() };
+      if ((post as any).imageIssue) {
+        patch.imageIssue = null; // image was fixed — clear the flag
+        cleared += 1;
+      }
+      await db.update(generatedPosts).set(patch).where(eq(generatedPosts.id, post.id));
+    }
+  }
+
+  if (flagged > 0 || cleared > 0) {
+    console.log(`[Image Preflight] checked=${checked} flagged=${flagged} cleared=${cleared}`);
+  }
+  return { checked, flagged, cleared };
 }
 
 /**

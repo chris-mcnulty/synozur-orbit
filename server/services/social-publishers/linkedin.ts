@@ -30,6 +30,7 @@ import { getPlatformCredentials, isLinkedInDirectPublishEnabled } from "../platf
 import { GraphClient } from "../sharepoint-graph-client.js";
 import { isLinkedInMcpConfigured } from "../linkedin-provider";
 import { callLinkedInTool, extractText } from "../linkedin-mcp-client";
+import { fetchImageBytes, ImageRetrievalError } from "./image-retrieval";
 
 const NOT_APPROVED_MESSAGE =
   "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. " +
@@ -396,20 +397,17 @@ export class LinkedInPublisher implements SocialPublisher {
 
       // --- Attempt 1: PDF document upload (full-screen swipeable) ---
       // Download all slide images for the PDF stitch.
+      // Slides load through the shared image-retrieval helper: own-storage
+      // images are read in-process from object storage (no HTTP self-request)
+      // with fast retries for transient failures. A slide that still fails is
+      // skipped — the carousel degrades to the remaining slides as before.
       const slideBuffers: ArrayBuffer[] = [];
       for (const url of slideUrls) {
-        const absUrl = url.startsWith("/")
-          ? `http://localhost:${process.env.PORT ?? 5000}${url}`
-          : url;
         try {
-          const imgResp = await fetch(absUrl);
-          if (imgResp.ok) {
-            slideBuffers.push(await imgResp.arrayBuffer());
-          } else {
-            console.warn("[LinkedIn] Carousel slide fetch failed:", absUrl, imgResp.status);
-          }
+          const { buffer } = await fetchImageBytes(url);
+          slideBuffers.push(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
         } catch (err: any) {
-          console.warn("[LinkedIn] Carousel slide fetch error:", absUrl, err.message);
+          console.warn("[LinkedIn] Carousel slide fetch failed:", url, err.message);
         }
       }
 
@@ -425,8 +423,13 @@ export class LinkedInPublisher implements SocialPublisher {
       if (!documentAssetUrn) {
         console.log("[LinkedIn] Document upload unavailable — falling back to multiImage carousel.");
         for (const url of slideUrls) {
-          const urn = await this.uploadImageAsset(accessToken, account.authorUrn, url);
-          if (urn) multiImageUrns.push(urn);
+          try {
+            const urn = await this.uploadImageAsset(accessToken, account.authorUrn, url);
+            if (urn) multiImageUrns.push(urn);
+          } catch (err: any) {
+            // Per-slide image failure — skip the slide, keep the rest.
+            console.warn("[LinkedIn] multiImage slide upload failed:", url, err.message);
+          }
         }
         if (multiImageUrns.length === 0) {
           return {
@@ -448,7 +451,26 @@ export class LinkedInPublisher implements SocialPublisher {
       : ((post as any).overrideImageUrl ?? (post as any).leadImageUrl ?? null);
     let imageAssetUrn: string | null = null;
     if (imageUrl) {
-      imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
+      let imageError: ImageRetrievalError | null = null;
+      try {
+        imageAssetUrn = await this.uploadImageAsset(accessToken, account.authorUrn, imageUrl);
+      } catch (err: any) {
+        if (err instanceof ImageRetrievalError) {
+          imageError = err;
+        } else {
+          throw err;
+        }
+      }
+      if (imageError && (post as any).overrideImageUrl) {
+        // User explicitly chose this image — fail with the typed image code
+        // so the worker's retry policy can classify it (permanent 404 vs
+        // transient fetch failure) and the UI shows a distinct image badge.
+        return {
+          success: false,
+          errorCode: imageError.code,
+          errorMessage: imageError.message,
+        };
+      }
       if (!imageAssetUrn) {
         // If the user explicitly set an override image, failing silently produces a
         // text-only post with no indication something went wrong. Return an error
@@ -596,25 +618,13 @@ export class LinkedInPublisher implements SocialPublisher {
           return null;
         }
       } else {
-        const absoluteUrl = (() => {
-          if (imageUrl.startsWith("/")) {
-            return `http://localhost:${process.env.PORT ?? 5000}${imageUrl}`;
-          }
-          try {
-            const parsed = new URL(imageUrl);
-            if (parsed.pathname.startsWith("/public-objects/")) {
-              return `http://localhost:${process.env.PORT ?? 5000}${parsed.pathname}${parsed.search}`;
-            }
-          } catch { /* not a valid URL — fall through */ }
-          return imageUrl;
-        })();
-        const imgResp = await fetch(absoluteUrl);
-        if (!imgResp.ok) {
-          console.warn("[LinkedIn] Failed to fetch image:", absoluteUrl, imgResp.status);
-          return null;
-        }
-        imageBytes = Buffer.from(await imgResp.arrayBuffer());
-        imageMime = imgResp.headers.get("content-type") ?? "image/jpeg";
+        // Shared helper: own-storage images read in-process from object
+        // storage; external URLs fetched with fast in-place retries.
+        // ImageRetrievalError propagates so the caller can surface a typed
+        // image error (or degrade to text-only for non-override images).
+        const retrieved = await fetchImageBytes(imageUrl);
+        imageBytes = retrieved.buffer;
+        imageMime = retrieved.contentType;
       }
 
       // 1. Initialize upload via the current LinkedIn Images API.
@@ -661,6 +671,9 @@ export class LinkedInPublisher implements SocialPublisher {
       console.log("[LinkedIn] Image uploaded successfully:", imageUrn);
       return imageUrn;
     } catch (err: any) {
+      // Typed image-retrieval failures propagate so callers can surface a
+      // distinct image error (or degrade to text-only where appropriate).
+      if (err instanceof ImageRetrievalError) throw err;
       console.warn("[LinkedIn] uploadImageAsset error:", err.message);
       return null;
     }
