@@ -1693,6 +1693,26 @@ Generate a messaging framework in markdown format with sections:
         uniqueCompetitorIds.map((id, i) => [id, fetchedCompetitors[i]])
       );
 
+      // Pre-fetch all existing scores in parallel before the loop
+      const competitorScorePairs = competitorProducts
+        .filter(cp => cp.product?.competitorId)
+        .map(cp => ({ competitorId: cp.product!.competitorId as string, projectId: req.params.projectId }));
+      const productScorePairs = competitorProducts
+        .filter(cp => cp.product && !cp.product.competitorId)
+        .map(cp => ({ productId: cp.product!.id, projectId: req.params.projectId }));
+
+      const [fetchedCompetitorScores, fetchedProductScores] = await Promise.all([
+        Promise.all(competitorScorePairs.map(p => storage.getCompetitorScore(p.competitorId, p.projectId))),
+        Promise.all(productScorePairs.map(p => storage.getProductScore(p.productId, p.projectId))),
+      ]);
+
+      const competitorScoreMap = new Map(
+        competitorScorePairs.map((p, i) => [p.competitorId, fetchedCompetitorScores[i]])
+      );
+      const productScoreMap = new Map(
+        productScorePairs.map((p, i) => [p.productId, fetchedProductScores[i]])
+      );
+
       const scores = [];
 
       for (const cp of competitorProducts) {
@@ -1777,11 +1797,10 @@ Generate a messaging framework in markdown format with sections:
           (pricingScore * 0.10)
         );
 
-        // Get previous score for trend calculation
-        // Use product score lookup for standalone products, competitor score for linked products
-        const existingScore = product.competitorId 
-          ? await storage.getCompetitorScore(product.competitorId, req.params.projectId)
-          : await storage.getProductScore(product.id, req.params.projectId);
+        // Get previous score for trend calculation from pre-fetched maps
+        const existingScore = product.competitorId
+          ? (competitorScoreMap.get(product.competitorId) ?? null)
+          : (productScoreMap.get(product.id) ?? null);
         const previousScore = existingScore?.overallScore || null;
         const trendDelta = previousScore !== null ? overallScore - previousScore : 0;
         const trendDirection = trendDelta > 5 ? "rising" : trendDelta < -5 ? "falling" : "stable";
