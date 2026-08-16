@@ -48,6 +48,19 @@ export async function logAiUsage(
   }
 }
 
+/**
+ * Read-only roles (Consultant) may view but not mutate tenant data. Returns true
+ * and sends a 403 when the caller is read-only — callers `return` on true.
+ * Mirrors the pattern in server/routes/collaboration.ts.
+ */
+export function denyReadOnly(ctx: RequestContext, res: Response): boolean {
+  if (ctx.userRole === "Consultant") {
+    res.status(403).json({ error: "Read-only role cannot perform this action" });
+    return true;
+  }
+  return false;
+}
+
 export function hasCrossTenantReadAccess(role: string): boolean {
   return role === "Global Admin" || role === "Consultant";
 }

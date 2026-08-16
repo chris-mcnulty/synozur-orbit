@@ -64,6 +64,9 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: "marketingContacts", label: "Marketing Contacts", description: "First-party contact database with lifecycle stages and activity timeline — the spine for segmentation, nurture, and attribution.", category: "marketing" },
   { key: "leadScoring", label: "Lead Scoring", description: "Rule-based lead scoring with AI-suggested rules, lifecycle stage transitions, and HubSpot score push. Requires Marketing Contacts.", category: "marketing" },
   { key: "marketingWorkflows", label: "Marketing Workflows", description: "Visual multi-step automation engine: enrollment triggers (segment, event, score), email sends, waits, branches, property updates, and notifications.", category: "marketing" },
+  { key: "marketSegments", label: "Market Segment Sizing", description: "Promote personas into quantified market segments with AI-estimated TAM/SAM (cited), 1–10 priority scoring, and structured Needs Maps. The strategic-intelligence foundation for the GTM opportunity matrix and market study wizard.", category: "intelligence" },
+  { key: "opportunityMatrix", label: "GTM Opportunity Matrix", description: "Rank where to focus GTM first: a scored grid crossing market segments × buyer needs × channels on revenue potential, execution effort, and derived ROI, with whitespace detection. Requires Market Segments.", category: "intelligence" },
+  { key: "marketStudyWizard", label: "Market Study Wizard", description: "End-to-end market study from a brief or URL: models segments, sizes TAM/SAM, builds the GTM opportunity matrix, and writes an executive summary — one guided run, saved and refreshable. Requires Market Segments + Opportunity Matrix.", category: "intelligence" },
 ];
 
 export const FEATURE_CATEGORIES = [
@@ -139,6 +142,9 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketingContacts: false,
     leadScoring: false,
     marketingWorkflows: false,
+    marketSegments: false,
+    opportunityMatrix: false,
+    marketStudyWizard: false,
   },
   trial: {
     battlecards: true,
@@ -192,6 +198,9 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketingContacts: false,
     leadScoring: false,
     marketingWorkflows: false,
+    marketSegments: false,
+    opportunityMatrix: false,
+    marketStudyWizard: false,
   },
   pro: {
     battlecards: true,
@@ -245,6 +254,9 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketingContacts: false,
     leadScoring: false,
     marketingWorkflows: false,
+    marketSegments: false,
+    opportunityMatrix: false,
+    marketStudyWizard: false,
   },
   enterprise: {
     battlecards: true,
@@ -303,6 +315,9 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketingContacts: true,
     leadScoring: true,
     marketingWorkflows: true,
+    marketSegments: true,
+    opportunityMatrix: true,
+    marketStudyWizard: true,
   },
   unlimited: {
     battlecards: true,
@@ -361,6 +376,9 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     marketingContacts: true,
     leadScoring: true,
     marketingWorkflows: true,
+    marketSegments: true,
+    opportunityMatrix: true,
+    marketStudyWizard: true,
   },
 };
 
@@ -684,7 +702,10 @@ export type ManualActionKey =
   | "generateProspectDossier"
   | "discoverProspects"
   | "enrichProspectContact"
-  | "generateOutreachDraft";
+  | "generateOutreachDraft"
+  | "runMarketSizing"
+  | "generateOpportunityMatrix"
+  | "runMarketStudy";
 
 export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   linkedinRefresh: "LinkedIn Refresh",
@@ -705,6 +726,9 @@ export const MANUAL_ACTION_LABELS: Record<ManualActionKey, string> = {
   discoverProspects: "Prospect Discovery (web)",
   enrichProspectContact: "Prospect Contact Enrichment",
   generateOutreachDraft: "Outreach Draft Generation",
+  runMarketSizing: "Market Segment Sizing (TAM/SAM)",
+  generateOpportunityMatrix: "GTM Opportunity Matrix Generation",
+  runMarketStudy: "Market Study Wizard Run",
 };
 
 export const MANUAL_ACTION_KEYS: ManualActionKey[] = Object.keys(MANUAL_ACTION_LABELS) as ManualActionKey[];
@@ -729,6 +753,12 @@ export const MANUAL_ACTION_COST_TIERS: Record<ManualActionKey, "low" | "medium" 
   discoverProspects: "high",
   enrichProspectContact: "high",
   generateOutreachDraft: "medium",
+  // Web-search-grounded TAM/SAM estimation — highest-cost intelligence action.
+  runMarketSizing: "high",
+  // Fans out AI scoring across segments × needs × channels.
+  generateOpportunityMatrix: "high",
+  // End-to-end pipeline: segment modeling + sizing + matrix + summary.
+  runMarketStudy: "high",
 };
 
 const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
@@ -751,6 +781,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 0,
     enrichProspectContact: 0,
     generateOutreachDraft: 0,
+    runMarketSizing: 0,
+    generateOpportunityMatrix: 0,
+    runMarketStudy: 0,
   },
   trial: {
     linkedinRefresh: 5,
@@ -771,6 +804,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 0,
     enrichProspectContact: 0,
     generateOutreachDraft: 0,
+    runMarketSizing: 0,
+    generateOpportunityMatrix: 0,
+    runMarketStudy: 0,
   },
   pro: {
     linkedinRefresh: 25,
@@ -791,6 +827,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 0,
     enrichProspectContact: 0,
     generateOutreachDraft: 0,
+    runMarketSizing: 0,
+    generateOpportunityMatrix: 0,
+    runMarketStudy: 0,
   },
   enterprise: {
     linkedinRefresh: 100,
@@ -811,6 +850,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: 100,
     enrichProspectContact: 100,
     generateOutreachDraft: 200,
+    runMarketSizing: 100,
+    generateOpportunityMatrix: 50,
+    runMarketStudy: 25,
   },
   unlimited: {
     linkedinRefresh: -1,
@@ -831,6 +873,9 @@ const MANUAL_ACTION_QUOTAS: Record<string, Record<ManualActionKey, number>> = {
     discoverProspects: -1,
     enrichProspectContact: -1,
     generateOutreachDraft: -1,
+    runMarketSizing: -1,
+    generateOpportunityMatrix: -1,
+    runMarketStudy: -1,
   },
 };
 

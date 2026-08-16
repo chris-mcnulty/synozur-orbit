@@ -57,6 +57,9 @@ import { registerMarketingContactsRoutes } from "./routes/marketing-contacts";
 import { registerLeadScoringRoutes } from "./routes/lead-scoring";
 import { registerTestHelperRoutes } from "./routes/test-helpers";
 import { registerMarketingSegmentsRoutes } from "./routes/marketing-segments";
+import { registerMarketSegmentsRoutes } from "./routes/market-segments";
+import { registerOpportunityMatrixRoutes } from "./routes/opportunity-matrix";
+import { registerMarketStudyRoutes } from "./routes/market-study";
 import { registerMarketingWorkflowRoutes } from "./routes/marketing-workflows";
 
 export async function registerRoutes(
@@ -148,6 +151,9 @@ export async function registerRoutes(
   registerMarketingContactsRoutes(app);
   registerLeadScoringRoutes(app);
   registerMarketingSegmentsRoutes(app);
+  registerMarketSegmentsRoutes(app);
+  registerOpportunityMatrixRoutes(app);
+  registerMarketStudyRoutes(app);
   registerMarketingWorkflowRoutes(app);
   registerSalesOutreachRoutes(app);
   registerTestHelperRoutes(app);

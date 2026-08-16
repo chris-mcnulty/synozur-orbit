@@ -79,6 +79,10 @@ import SubscriptionTypesPage from "@/pages/app/marketing/subscription-types";
 import QueuePage from "@/pages/app/marketing/queue";
 import BrowserExtensionPage from "@/pages/app/marketing/browser-extension";
 import PersonasPage from "@/pages/app/marketing/personas";
+import MarketSegmentsPage from "@/pages/app/marketing/market-segments";
+import OpportunityMatrixPage from "@/pages/app/marketing/opportunity-matrix";
+import MarketStudiesPage from "@/pages/app/marketing/market-studies";
+import MarketStudyDetailPage from "@/pages/app/marketing/market-study-detail";
 import ContactsPage from "@/pages/app/marketing/contacts";
 import RefreshCenter from "@/pages/app/refresh-center";
 import ActionItems from "@/pages/app/action-items";
@@ -220,6 +224,10 @@ function Router() {
       <Route path="/app/marketing/sends" component={SendsPage} />
       <Route path="/app/marketing/browser-extension" component={BrowserExtensionPage} />
       <Route path="/app/marketing/personas">{() => <PageFeatureGate featureKey="personaBuilder" label="Persona & ICP Builder" description="Define buyer personas and inject audience context. Upgrade to unlock this feature."><PersonasPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/market-segments">{() => <PageFeatureGate featureKey="marketSegments" label="Market Segments" description="Quantified market segments with AI-estimated TAM/SAM, priority ranking, and Needs Maps. Upgrade to unlock this feature."><MarketSegmentsPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/opportunity-matrix">{() => <PageFeatureGate featureKey="opportunityMatrix" label="GTM Opportunity Matrix" description="Rank where to focus GTM first: segments × needs × channels scored on ROI, with whitespace detection. Upgrade to unlock this feature."><OpportunityMatrixPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/market-studies/:id">{() => <PageFeatureGate featureKey="marketStudyWizard" label="Market Study Wizard" description="End-to-end market study from a brief or URL: segments, TAM/SAM, opportunity matrix, and executive summary. Upgrade to unlock this feature."><MarketStudyDetailPage /></PageFeatureGate>}</Route>
+      <Route path="/app/marketing/market-studies">{() => <PageFeatureGate featureKey="marketStudyWizard" label="Market Study Wizard" description="End-to-end market study from a brief or URL: segments, TAM/SAM, opportunity matrix, and executive summary. Upgrade to unlock this feature."><MarketStudiesPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/contacts">{() => <PageFeatureGate featureKey="marketingContacts" label="Marketing Contacts" description="First-party contact database with lifecycle stages and activity timeline. Upgrade to unlock this feature."><ContactsPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/lead-scoring">{() => <PageFeatureGate featureKey="marketingContacts" label="Lead Scoring" description="Rule-based lead scoring with lifecycle stage transitions. Upgrade to unlock this feature."><LeadScoringPage /></PageFeatureGate>}</Route>
       <Route path="/app/marketing/segments">{() => <PageFeatureGate featureKey="marketingContacts" label="Contact Segments" description="Rule-based contact segments that recompute automatically. Upgrade to unlock this feature."><SegmentsPage /></PageFeatureGate>}</Route>
