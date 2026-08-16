@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
-import { useFeatureFlag } from "@/hooks/useFeatureFlag";
+import { useFeatureFlag, useFeatureFlagWithLoading } from "@/hooks/useFeatureFlag";
 import { useSearch, useLocation } from "wouter";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, type StalenessLevel } from "@/lib/staleness";
 import {
@@ -250,8 +250,8 @@ export default function IntelligenceBriefingPage() {
     },
   });
   const isAllowed = useFeatureFlag("intelligenceBriefings");
-  const podcastAllowed = useFeatureFlag("podcastBriefings");
-  const scheduledUpdatesAllowed = useFeatureFlag("scheduledBriefingUpdates");
+  const { enabled: podcastAllowed, isLoading: podcastFlagLoading } = useFeatureFlagWithLoading("podcastBriefings");
+  const { enabled: scheduledUpdatesAllowed, isLoading: scheduledFlagLoading } = useFeatureFlagWithLoading("scheduledBriefingUpdates");
   // collaboration is an opt-OUT flag: enabled unless explicitly set to false,
   // so `!== false` (default-true, including while tenant info loads) is
   // deliberate — it intentionally differs from useFeatureFlag's post-load
@@ -524,7 +524,7 @@ export default function IntelligenceBriefingPage() {
       if (!res.ok) return { podcastStatus: "none", podcastAudioUrl: null };
       return res.json();
     },
-    enabled: !!activeBriefingId && podcastAllowed,
+    enabled: !!activeBriefingId && !podcastFlagLoading && podcastAllowed,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data?.podcastStatus === "generating") return 5000;
@@ -539,7 +539,7 @@ export default function IntelligenceBriefingPage() {
       if (!res.ok) return { enabled: false, frequency: "weekly" };
       return res.json();
     },
-    enabled: scheduledUpdatesAllowed,
+    enabled: !scheduledFlagLoading && scheduledUpdatesAllowed,
   });
 
   const { data: scheduledConfig } = useQuery<{ enabled: boolean; frequency: string; id?: string }>({
@@ -549,7 +549,7 @@ export default function IntelligenceBriefingPage() {
       if (!res.ok) return { enabled: false, frequency: "weekly" };
       return res.json();
     },
-    enabled: scheduledUpdatesAllowed && isAdmin,
+    enabled: !scheduledFlagLoading && scheduledUpdatesAllowed && isAdmin,
   });
 
   const scheduledConfigMutation = useMutation({
@@ -802,7 +802,9 @@ export default function IntelligenceBriefingPage() {
             </p>
           </div>
 
-          {scheduledUpdatesAllowed && (
+          {scheduledFlagLoading ? (
+            <Skeleton className="h-9 w-36 rounded-md" />
+          ) : scheduledUpdatesAllowed && (
             <div className="flex items-center gap-2">
               {isAdmin && (
                 <TooltipProvider>
@@ -1200,7 +1202,9 @@ export default function IntelligenceBriefingPage() {
               </CardContent>
             </Card>
 
-            {podcastAllowed && (
+            {podcastFlagLoading ? (
+              <Skeleton className="h-24 rounded-xl" />
+            ) : podcastAllowed && (
               <Card data-testid="card-podcast-player">
                 <CardContent className="pt-4 pb-4 px-4">
                   {podcastStatus?.podcastStatus === "ready" && podcastStatus.podcastAudioUrl ? (

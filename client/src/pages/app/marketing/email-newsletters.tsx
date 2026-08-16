@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { EmailListSkeleton } from "@/components/ui/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -42,7 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
-import { useFeatureFlag } from "@/hooks/useFeatureFlag";
+import { useFeatureFlag, useFeatureFlagWithLoading } from "@/hooks/useFeatureFlag";
 import { useSearch, useLocation } from "wouter";
 
 interface ContentAsset {
@@ -480,7 +481,7 @@ export default function EmailNewslettersPage() {
   });
 
   const isAllowed = useFeatureFlag("emailNewsletters");
-  const directDeliveryEnabled = useFeatureFlag("directEmailDelivery");
+  const { enabled: directDeliveryEnabled, isLoading: directDeliveryFlagLoading } = useFeatureFlagWithLoading("directEmailDelivery");
   const hasMailingAddress = !!(tenantInfo?.mailingAddress?.trim());
 
   // Font options from the curated list + the tenant's brand body font default.
@@ -526,7 +527,7 @@ export default function EmailNewslettersPage() {
       const r = await fetch("/api/integrations/hubspot/status", { credentials: "include" });
       return r.ok ? r.json() : {};
     },
-    enabled: directDeliveryEnabled,
+    enabled: !directDeliveryFlagLoading && directDeliveryEnabled,
   });
 
   // Pre-populate the prospect-exclusion checkbox from the tenant-level default
@@ -544,7 +545,7 @@ export default function EmailNewslettersPage() {
       const r = await fetch("/api/email-recipient-lists", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
-    enabled: isAllowed && directDeliveryEnabled,
+    enabled: isAllowed && !directDeliveryFlagLoading && directDeliveryEnabled,
   });
 
   const { data: senderIdentities = [] } = useQuery<Array<{ id: string; name: string; email: string; replyToEmail: string | null; isDefault: boolean }>>({
@@ -553,7 +554,7 @@ export default function EmailNewslettersPage() {
       const r = await fetch("/api/email-sender-identities", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
-    enabled: isAllowed && directDeliveryEnabled,
+    enabled: isAllowed && !directDeliveryFlagLoading && directDeliveryEnabled,
   });
 
   const { data: subscriptionTypes = [] } = useQuery<Array<{ id: string; name: string; isTransactional: boolean }>>({
@@ -562,7 +563,7 @@ export default function EmailNewslettersPage() {
       const r = await fetch("/api/email-subscription-types", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
-    enabled: isAllowed && directDeliveryEnabled,
+    enabled: isAllowed && !directDeliveryFlagLoading && directDeliveryEnabled,
   });
 
   const { data: marketingSegments = [] } = useQuery<Array<{ id: string; name: string; memberCount: number }>>({
@@ -571,7 +572,7 @@ export default function EmailNewslettersPage() {
       const r = await fetch("/api/marketing-segments", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
-    enabled: isAllowed && directDeliveryEnabled,
+    enabled: isAllowed && !directDeliveryFlagLoading && directDeliveryEnabled,
   });
 
   type HubspotAudienceList = {
@@ -594,7 +595,7 @@ export default function EmailNewslettersPage() {
       const r = await fetch("/api/marketing/hubspot-lists", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
-    enabled: isAllowed && directDeliveryEnabled && hubspotConnected && sendMode === "hubspot" && !!sendDialogEmail,
+    enabled: isAllowed && !directDeliveryFlagLoading && directDeliveryEnabled && hubspotConnected && sendMode === "hubspot" && !!sendDialogEmail,
     // Poll while an import/sync is running so status + counts stay live.
     refetchInterval: (query) =>
       (query.state.data ?? []).some(l => ["pending", "syncing"].includes(l.linkedSegment?.syncStatus ?? ""))
@@ -1668,7 +1669,9 @@ export default function EmailNewslettersPage() {
                           <Download className="w-3.5 h-3.5" />
                         </Button>
                       )}
-                      {directDeliveryEnabled && (
+                      {directDeliveryFlagLoading ? (
+                        <Skeleton className="h-8 w-8 rounded-md" />
+                      ) : directDeliveryEnabled && (
                         <Button
                           variant="ghost"
                           size="sm"
