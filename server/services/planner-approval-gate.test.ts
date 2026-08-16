@@ -219,3 +219,137 @@ describe("webhook reconcile — linked suggested AI task with Planner progress",
     expect(dbUpdateCalls.some(c => c.set.plannerTaskId === null && c.set.plannerEtag === null)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dismissed AI tasks — push path
+// ---------------------------------------------------------------------------
+
+describe("dismissed AI task — push path", () => {
+  it("skips a dismissed AI task that has no Planner linkage (never pushed)", async () => {
+    mockState.orbitTask.status = "dismissed";
+    mockState.orbitTask.aiGenerated = true;
+    mockState.orbitTask.acceptedAt = null;
+    mockState.orbitTask.plannerTaskId = null;
+    mockState.orbitTask.plannerEtag = null;
+
+    const result = await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
+
+    expect(graphMocks.createTask).not.toHaveBeenCalled();
+    expect(graphMocks.updateTask).not.toHaveBeenCalled();
+    expect(graphMocks.deleteTask).not.toHaveBeenCalled();
+    expect(result.skipped).toBeGreaterThanOrEqual(1);
+  });
+
+  it("retracts a dismissed AI task that is still linked to Planner", async () => {
+    mockState.orbitTask.status = "dismissed";
+    mockState.orbitTask.aiGenerated = true;
+    mockState.orbitTask.acceptedAt = null;
+    // plannerTaskId is "pt-1" from makeState()
+
+    await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
+
+    expect(graphMocks.deleteTask).toHaveBeenCalledWith("token", "pt-1", "etag-new");
+    expect(graphMocks.createTask).not.toHaveBeenCalled();
+    expect(graphMocks.updateTask).not.toHaveBeenCalled();
+    expect(dbUpdateCalls.some(c => c.set.plannerTaskId === null && c.set.plannerEtag === null)).toBe(true);
+  });
+
+  it("webhook reconcile retracts a dismissed AI task still linked to Planner", async () => {
+    mockState.orbitTask.status = "dismissed";
+    mockState.orbitTask.aiGenerated = true;
+    mockState.orbitTask.acceptedAt = null;
+
+    const res = await pullAndReconcileTask("pt-1");
+
+    expect(res.matched).toBe(true);
+    expect(graphMocks.deleteTask).toHaveBeenCalledWith("token", "pt-1", "etag-new");
+    expect(dbUpdateCalls.some(c => c.set.plannerTaskId === null && c.set.plannerEtag === null)).toBe(true);
+    // status must NOT be promoted by Planner progress
+    for (const call of dbUpdateCalls) {
+      expect(call.set.status).not.toBe("in_progress");
+      expect(call.set.status).not.toBe("completed");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Human tasks — must sync normally, never dismissed when deleted from Planner
+// ---------------------------------------------------------------------------
+
+describe("human task — full sync push path", () => {
+  beforeEach(() => {
+    mockState.orbitTask.aiGenerated = false;
+    mockState.orbitTask.status = "planned";
+    mockState.orbitTask.acceptedAt = null;
+  });
+
+  it("creates a Planner task for an unlinked human task", async () => {
+    mockState.orbitTask.plannerTaskId = null;
+    mockState.orbitTask.plannerEtag = null;
+
+    const result = await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
+
+    expect(graphMocks.createTask).toHaveBeenCalledOnce();
+    expect(graphMocks.deleteTask).not.toHaveBeenCalled();
+    expect(result.created).toBe(1);
+    // DB linkage written with the new Planner task id
+    expect(dbUpdateCalls.some(c => c.set.plannerTaskId === "new")).toBe(true);
+  });
+
+  it("updates Planner when orbit is the newer side for a linked human task", async () => {
+    // Make orbit clearly newer than the Planner task's lastModifiedDateTime
+    mockState.orbitTask.updatedAt = new Date("2026-08-01T00:00:00Z");
+    // Planner percentComplete (50) differs from orbit status "planned" (0) → update triggered
+
+    await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
+
+    expect(graphMocks.updateTask).toHaveBeenCalledOnce();
+    expect(graphMocks.deleteTask).not.toHaveBeenCalled();
+    expect(graphMocks.createTask).not.toHaveBeenCalled();
+  });
+
+  it("recreates (not dismisses) a human task if Planner deleted it", async () => {
+    (graphMocks.listPlanTasks as any).mockResolvedValueOnce([]);
+    (graphMocks.getTask as any).mockResolvedValue(null);
+
+    const result = await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
+
+    // Human task recreated; never marked dismissed
+    expect(graphMocks.createTask).toHaveBeenCalledOnce();
+    expect(dbUpdateCalls.some(c => c.set.status === "dismissed")).toBe(false);
+    expect(result.created).toBe(1);
+  });
+});
+
+describe("human task — webhook reconcile path", () => {
+  beforeEach(() => {
+    mockState.orbitTask.aiGenerated = false;
+    mockState.orbitTask.status = "planned";
+    mockState.orbitTask.acceptedAt = null;
+  });
+
+  it("clears linkage (not dismissed) when Planner deletes a human task", async () => {
+    (graphMocks.getTask as any).mockResolvedValue(null);
+
+    const res = await pullAndReconcileTask("pt-1");
+
+    expect(res.matched).toBe(true);
+    expect(res.updated).toBe(true);
+    // Status must NOT be set to dismissed
+    expect(dbUpdateCalls.some(c => c.set.status === "dismissed")).toBe(false);
+    // Linkage cleared so the next push can recreate it
+    expect(dbUpdateCalls.some(c => c.set.plannerTaskId === null && c.set.plannerEtag === null)).toBe(true);
+  });
+
+  it("does not retract or dismiss a human task when Planner shows progress", async () => {
+    // Planner is newer — webhook reconcile applies the update, no retraction
+    mockState.orbitTask.updatedAt = new Date("2026-01-01T00:00:00Z");
+    // plannerTask.lastModifiedDateTime = "2026-06-01" → planner is newer
+
+    const res = await pullAndReconcileTask("pt-1");
+
+    expect(res.matched).toBe(true);
+    expect(graphMocks.deleteTask).not.toHaveBeenCalled();
+    expect(dbUpdateCalls.some(c => c.set.status === "dismissed")).toBe(false);
+  });
+});
