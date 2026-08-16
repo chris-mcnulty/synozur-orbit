@@ -29,11 +29,10 @@ export function computeRoiScore(revenuePotential: number, executionEffort: numbe
  * absolute floor, so a uniformly weak batch surfaces none). Pure over the ROI
  * scores.
  *
- * NOTE: this is a *top-ROI* signal, not a true competition/coverage measure — we
- * don't yet have per-channel coverage data. It's surfaced in the UI as "top ROI"
- * (a whitespace proxy). Real whitespace (high ROI + low current coverage) is a
- * documented follow-up once coverage data exists; the DB column keeps the
- * `is_whitespace` name to avoid a migration.
+ * This is the *top-ROI* component of whitespace. When competitor-presence data
+ * exists (Task #749) the full signal is high ROI AND low presence — see
+ * computeWhitespaceFlagsWithPresence. Cells without presence data fall back to
+ * this proxy alone.
  */
 export function computeWhitespaceFlags(roiScores: number[], floor = 50): boolean[] {
   if (roiScores.length === 0) return [];
@@ -42,6 +41,30 @@ export function computeWhitespaceFlags(roiScores: number[], floor = 50): boolean
   const percentileCut = sorted[idx];
   const cut = Math.max(percentileCut, floor);
   return roiScores.map((s) => s >= cut && s > 0);
+}
+
+/**
+ * A cell with presence at or above this value is considered contested — a
+ * competitor already owns the segment×need×channel space — and never whitespace.
+ */
+export const PRESENCE_WHITESPACE_MAX = 40;
+
+/**
+ * True whitespace (Task #749): high ROI (top-percentile + floor, same as the
+ * proxy) AND low competitor presence. Cells with `presence: null` (no tracked
+ * competitors, or the assessment failed) keep the pure top-ROI proxy behavior
+ * so the matrix degrades gracefully when Research data is absent.
+ */
+export function computeWhitespaceFlagsWithPresence(
+  cells: Array<{ roiScore: number; competitorPresence: number | null }>,
+  floor = 50,
+): boolean[] {
+  const roiFlags = computeWhitespaceFlags(cells.map((c) => c.roiScore), floor);
+  return cells.map((c, i) => {
+    if (!roiFlags[i]) return false;
+    if (c.competitorPresence == null) return true; // proxy fallback
+    return c.competitorPresence <= PRESENCE_WHITESPACE_MAX;
+  });
 }
 
 // ─── Prompt ─────────────────────────────────────────────────────────────────
@@ -76,6 +99,83 @@ export function buildMatrixPrompt(input: MatrixPromptInput): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+// ─── Competitor presence (Task #749) ────────────────────────────────────────
+
+export const PRESENCE_SYSTEM_PROMPT =
+  "You are a competitive-intelligence analyst. Given real competitor profiles " +
+  "(names, positioning, crawled website/social content), assess how strongly " +
+  "competitors already occupy each GTM channel for a specific buyer segment and " +
+  "need. Base your scores ONLY on the supplied competitor evidence — do not " +
+  "invent competitors. Be discriminating. Return only the requested JSON.";
+
+export interface CompetitorContext {
+  name: string;
+  url?: string;
+  /** Compact positioning/content summary drawn from Research-area crawl data. */
+  summary?: string;
+}
+
+export interface PresencePromptInput {
+  segmentName: string;
+  need: string;
+  channels: Array<{ key: string; label: string }>;
+  competitors: CompetitorContext[];
+}
+
+export function buildPresencePrompt(input: PresencePromptInput): string {
+  const channelList = input.channels.map((c) => `- ${c.key}: ${c.label}`).join("\n");
+  const competitorList = input.competitors
+    .map((c) => `- ${c.name}${c.url ? ` (${c.url})` : ""}${c.summary ? `: ${c.summary}` : ""}`)
+    .join("\n");
+  return [
+    `Segment: "${input.segmentName}"`,
+    `Buyer need: "${input.need}"`,
+    "",
+    "Tracked competitors (with intelligence gathered from their websites/socials):",
+    competitorList,
+    "",
+    "For EACH of these GTM channels, score how strongly these competitors already",
+    "occupy the channel for this segment and need (competitorPresence 0-100;",
+    "0 = no competitor visible there, 100 = channel saturated by competitors):",
+    channelList,
+    "",
+    "Name the competitors driving the score in topCompetitors (only names from the list above).",
+    "Return ONLY a JSON array using the exact channel keys above:",
+    '[{ "channelKey": "outbound", "competitorPresence": 0-100, "topCompetitors": ["Name"], "rationale": "" }]',
+  ].join("\n");
+}
+
+export interface PresenceScore {
+  channelKey: string;
+  /** 0..100 — how strongly competitors already occupy this channel for this cell. */
+  competitorPresence: number;
+  topCompetitors: string[];
+  rationale?: string;
+}
+
+/** Parse per-channel presence scores; clamps, filters to allowed channels, dedupes. */
+export function parsePresenceScores(text: string, allowedChannelKeys: string[]): PresenceScore[] {
+  const arr = extractJsonArray(text);
+  const allowed = new Set(allowedChannelKeys);
+  const seen = new Set<string>();
+  const out: PresenceScore[] = [];
+  for (const raw of arr) {
+    if (!raw || typeof raw.channelKey !== "string") continue;
+    const key = raw.channelKey.trim();
+    if (!allowed.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      channelKey: key,
+      competitorPresence: clamp0to100(Number(raw.competitorPresence)),
+      topCompetitors: Array.isArray(raw.topCompetitors)
+        ? raw.topCompetitors.filter((n: unknown) => typeof n === "string" && n.trim()).map((n: string) => n.trim())
+        : [],
+      rationale: typeof raw.rationale === "string" ? raw.rationale.trim() : undefined,
+    });
+  }
+  return out;
 }
 
 // ─── Parser ─────────────────────────────────────────────────────────────────

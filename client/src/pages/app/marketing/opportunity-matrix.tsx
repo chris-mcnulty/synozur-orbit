@@ -24,8 +24,17 @@ interface Cell {
   executionEffort: number | null;
   roiScore: number | null;
   scoreRationale: string | null;
+  competitorPresence: number | null;
+  presenceRationale: string | null;
   isWhitespace: boolean;
   source: string;
+}
+
+/** Tooltip for the whitespace badge — real competition measure when assessed. */
+function whitespaceTooltip(c: Cell): string {
+  return c.competitorPresence != null
+    ? `Whitespace: top-ROI cell with low competitor presence (${Math.round(c.competitorPresence)}/100, assessed from your tracked competitors' intelligence)`
+    : "Top-ROI percentile in this market (no tracked competitors assessed — add competitors in Research for a true competition measure)";
 }
 interface Segment { id: string; name: string; priorityScore: number | null }
 
@@ -121,7 +130,7 @@ export default function OpportunityMatrixPage() {
                   <button key={c.id} onClick={() => setDetail(c)} className="text-left rounded-lg border p-3 hover:border-primary/50 transition-colors" data-testid={`top-opportunity-${c.id}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-lg font-bold tabular-nums">{Math.round(c.roiScore ?? 0)}</span>
-                      {c.isWhitespace && <Badge variant="outline" title="Top-ROI percentile in this market (a whitespace proxy — not a competition measure yet)" className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400"><Lightbulb className="h-3 w-3 mr-1" />top ROI</Badge>}
+                      {c.isWhitespace && <Badge variant="outline" title={whitespaceTooltip(c)} className="text-[10px] border-amber-500/40 text-amber-600 dark:text-amber-400"><Lightbulb className="h-3 w-3 mr-1" />{c.competitorPresence != null ? "whitespace" : "top ROI"}</Badge>}
                     </div>
                     <div className="text-xs font-medium mt-1 truncate">{channelLabel(c.channelKey)}</div>
                     <div className="text-[11px] text-muted-foreground truncate">{segName.get(c.segmentId) ?? "Segment"} · {c.needLabel}</div>
@@ -159,7 +168,7 @@ export default function OpportunityMatrixPage() {
                                     onClick={() => setDetail(cell)}
                                     style={heat(cell.roiScore)}
                                     className={`w-full h-9 tabular-nums hover:ring-2 hover:ring-primary/50 ${cell.isWhitespace ? "ring-2 ring-amber-400/70" : ""}`}
-                                    title={`ROI ${Math.round(cell.roiScore ?? 0)} · rev ${cell.revenuePotential} / effort ${cell.executionEffort}`}
+                                    title={`ROI ${Math.round(cell.roiScore ?? 0)} · rev ${cell.revenuePotential} / effort ${cell.executionEffort}${cell.competitorPresence != null ? ` · competitor presence ${Math.round(cell.competitorPresence)}` : ""}`}
                                     data-testid={`cell-${cell.id}`}
                                   >
                                     {Math.round(cell.roiScore ?? 0)}
@@ -212,11 +221,17 @@ function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segme
           <div className="flex items-center gap-3">
             <div className="text-3xl font-bold tabular-nums">{Math.round(cell.roiScore ?? 0)}</div>
             <div className="text-xs text-muted-foreground">
-              ROI score{cell.isWhitespace && <span className="ml-2 text-amber-600 dark:text-amber-400">· top ROI</span>}
+              ROI score{cell.isWhitespace && <span className="ml-2 text-amber-600 dark:text-amber-400" title={whitespaceTooltip(cell)}>· {cell.competitorPresence != null ? "whitespace" : "top ROI"}</span>}
               {cell.source === "user" && <span className="ml-2">· edited</span>}
             </div>
           </div>
           {cell.scoreRationale && <p className="text-sm text-muted-foreground">{cell.scoreRationale}</p>}
+          {cell.competitorPresence != null && (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">Competitor presence: {Math.round(cell.competitorPresence)}/100.</span>
+              {cell.presenceRationale ? ` ${cell.presenceRationale}` : ""}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div><Label className="text-xs">Revenue potential (0–100)</Label><Input type="number" min={0} max={100} value={rev} onChange={(e) => setRev(e.target.value)} data-testid="input-revenue" /></div>
             <div><Label className="text-xs">Execution effort (0–100)</Label><Input type="number" min={0} max={100} value={eff} onChange={(e) => setEff(e.target.value)} data-testid="input-effort" /></div>

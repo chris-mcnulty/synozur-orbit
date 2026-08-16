@@ -21,6 +21,8 @@ import type {
   PriorityInput,
   MatrixScoreInput,
   MatrixScoreResult,
+  PresenceInput,
+  PresenceResult,
   ProposeSegmentsInput,
   ProposeSegmentsResult,
 } from "./market-model-provider";
@@ -52,6 +54,9 @@ import {
   buildMatrixPrompt,
   parseMatrixScores,
   MATRIX_SYSTEM_PROMPT,
+  buildPresencePrompt,
+  parsePresenceScores,
+  PRESENCE_SYSTEM_PROMPT,
 } from "./market-matrix-core";
 import {
   buildProposeSegmentsPrompt,
@@ -230,6 +235,31 @@ export class NativeMarketModelProvider implements MarketModelProvider {
       { segmentName: input.segmentName, need: input.need },
     );
     return { cells: parseMatrixScores(res.text, input.channels.map((c) => c.key)) };
+  }
+
+  async assessCompetitorPresence(input: PresenceInput): Promise<PresenceResult> {
+    const prompt = buildPresencePrompt({
+      segmentName: input.segmentName,
+      need: input.need,
+      channels: input.channels,
+      competitors: input.competitors,
+    });
+    const res = await completeForFeature(AI_FEATURES.OPPORTUNITY_MATRIX, prompt, {
+      tenantDomain: input.tenantDomain,
+      systemPrompt: PRESENCE_SYSTEM_PROMPT,
+      temperature: 0.2,
+      maxTokens: 1500,
+    });
+    await logAiUsage(
+      { tenantDomain: input.tenantDomain, marketId: input.marketId, userId: input.userId },
+      "opportunity_matrix",
+      res.provider,
+      res.model,
+      { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+      res.durationMs,
+      { step: "competitor_presence", segmentName: input.segmentName, need: input.need, competitorCount: input.competitors.length },
+    );
+    return { scores: parsePresenceScores(res.text, input.channels.map((c) => c.key)) };
   }
 
   async proposeSegments(input: ProposeSegmentsInput): Promise<ProposeSegmentsResult> {

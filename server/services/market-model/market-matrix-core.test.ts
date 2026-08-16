@@ -2,8 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   computeRoiScore,
   computeWhitespaceFlags,
+  computeWhitespaceFlagsWithPresence,
   buildMatrixPrompt,
   parseMatrixScores,
+  buildPresencePrompt,
+  parsePresenceScores,
+  PRESENCE_WHITESPACE_MAX,
 } from "./market-matrix-core";
 
 describe("computeRoiScore", () => {
@@ -29,6 +33,60 @@ describe("computeWhitespaceFlags", () => {
   });
   it("handles empty input", () => {
     expect(computeWhitespaceFlags([])).toEqual([]);
+  });
+});
+
+describe("computeWhitespaceFlagsWithPresence", () => {
+  it("suppresses whitespace for high-ROI cells with high competitor presence", () => {
+    const flags = computeWhitespaceFlagsWithPresence([
+      { roiScore: 90, competitorPresence: 85 }, // top ROI but contested
+      { roiScore: 90, competitorPresence: 10 }, // top ROI + uncontested → whitespace
+      { roiScore: 20, competitorPresence: 0 }, // low ROI → never whitespace
+    ]);
+    expect(flags).toEqual([false, true, false]);
+  });
+  it("falls back to the ROI proxy when presence is null", () => {
+    const flags = computeWhitespaceFlagsWithPresence([
+      { roiScore: 90, competitorPresence: null },
+      { roiScore: 10, competitorPresence: null },
+    ]);
+    expect(flags).toEqual([true, false]);
+  });
+  it("treats presence at the threshold as still whitespace", () => {
+    const flags = computeWhitespaceFlagsWithPresence([
+      { roiScore: 90, competitorPresence: PRESENCE_WHITESPACE_MAX },
+      { roiScore: 90, competitorPresence: PRESENCE_WHITESPACE_MAX + 1 },
+    ]);
+    expect(flags).toEqual([true, false]);
+  });
+  it("handles empty input", () => {
+    expect(computeWhitespaceFlagsWithPresence([])).toEqual([]);
+  });
+});
+
+describe("buildPresencePrompt / parsePresenceScores", () => {
+  it("includes competitors and channels in the prompt", () => {
+    const p = buildPresencePrompt({
+      segmentName: "RevOps",
+      need: "manual data hygiene",
+      channels: [{ key: "outbound", label: "Outbound / SDR" }],
+      competitors: [{ name: "Acme", url: "https://acme.com", summary: "Data hygiene platform" }],
+    });
+    expect(p).toContain("Acme");
+    expect(p).toContain("https://acme.com");
+    expect(p).toContain("outbound");
+    expect(p).toContain("competitorPresence");
+  });
+  it("parses, clamps, filters channels, and normalizes topCompetitors", () => {
+    const text =
+      '[{"channelKey":"outbound","competitorPresence":150,"topCompetitors":["Acme"," Beta "],"rationale":"crowded"},' +
+      '{"channelKey":"bogus","competitorPresence":50,"topCompetitors":[]}]';
+    const scores = parsePresenceScores(text, ["outbound", "content_seo"]);
+    expect(scores).toHaveLength(1);
+    expect(scores[0]).toMatchObject({ channelKey: "outbound", competitorPresence: 100, topCompetitors: ["Acme", "Beta"], rationale: "crowded" });
+  });
+  it("returns [] on garbage", () => {
+    expect(parsePresenceScores("nope", ["outbound"])).toEqual([]);
   });
 });
 

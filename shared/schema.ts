@@ -4071,7 +4071,13 @@ export const opportunityMatrixCells = pgTable(
     executionEffort: real("execution_effort"),
     roiScore: real("roi_score"),
     scoreRationale: text("score_rationale"),
-    // High ROI + comparatively uncontested — computed across the batch.
+    // 0..100 competitor presence in this segment×need×channel cell, assessed
+    // from Research-area competitor intelligence (Task #749). Null = unassessed
+    // (no competitors tracked or assessment failed) → whitespace falls back to
+    // the top-ROI proxy for that cell.
+    competitorPresence: real("competitor_presence"),
+    presenceRationale: text("presence_rationale"),
+    // High ROI + low competitor presence — computed across the batch.
     isWhitespace: boolean("is_whitespace").notNull().default(false),
     source: text("source").notNull().default("ai"), // ai | user
     createdAt: timestamp("created_at").notNull().defaultNow(),

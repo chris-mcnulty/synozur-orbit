@@ -21,6 +21,7 @@ import type {
   MarketIntelligenceSourceInput,
   MatrixCellScore,
 } from "@shared/market-intelligence";
+import type { CompetitorContext, PresenceScore } from "./market-matrix-core";
 // Value import (ESM). `native` imports only types from this module, so there is
 // no runtime import cycle.
 import { NativeMarketModelProvider } from "./native-market-model-provider";
@@ -70,6 +71,14 @@ export interface MatrixScoreInput extends MarketModelContext {
   channels: Array<{ key: string; label: string }>;
 }
 
+/** Assess competitor presence for one (segment, need) across channels (#749). */
+export interface PresenceInput extends MarketModelContext {
+  segmentName: string;
+  need: string;
+  channels: Array<{ key: string; label: string }>;
+  competitors: CompetitorContext[];
+}
+
 // ─── Outputs ───────────────────────────────────────────────────────────────────
 
 /** Results are paired with the citations that justify them, for provenance. */
@@ -86,6 +95,11 @@ export interface NeedsMapResult {
 export interface MatrixScoreResult {
   /** Per-channel scores for one (segment, need) row. ROI is derived downstream. */
   cells: MatrixCellScore[];
+}
+
+export interface PresenceResult {
+  /** Per-channel competitor-presence scores for one (segment, need) row. */
+  scores: PresenceScore[];
 }
 
 /** A candidate segment proposed from a brief when a market has none yet (#547). */
@@ -113,6 +127,8 @@ export interface MarketModelProvider {
   scoreSegmentPriority(input: PriorityInput): Promise<PrioritySuggestion>;
   /** Score every channel for one (segment, need). ROI/whitespace derived downstream. */
   scoreMatrix(input: MatrixScoreInput): Promise<MatrixScoreResult>;
+  /** Assess real competitor presence per channel for one (segment, need) (#749). */
+  assessCompetitorPresence(input: PresenceInput): Promise<PresenceResult>;
   /** Propose candidate segments from a brief (used by the study wizard, #547). */
   proposeSegments(input: ProposeSegmentsInput): Promise<ProposeSegmentsResult>;
 }
