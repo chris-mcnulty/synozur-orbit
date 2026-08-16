@@ -12,8 +12,8 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { and, desc, eq } from "drizzle-orm";
-import { opportunityMatrixCells } from "@shared/schema";
+import { and, desc, eq, max, or, isNull, sql } from "drizzle-orm";
+import { opportunityMatrixCells, competitors, markets } from "@shared/schema";
 import { getRequestContext, ContextError } from "../context";
 import { guardFeature, guardManualAction, denyReadOnly } from "./helpers";
 import { computeRoiScore } from "../services/market-model/market-matrix-core";
@@ -50,7 +50,52 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
           ),
         )
         .orderBy(desc(opportunityMatrixCells.roiScore));
-      res.json(rows);
+
+      // ── Staleness check ───────────────────────────────────────────────────
+      // Compare the newest competitor event (added or freshly crawled) against
+      // markets.matrixLastRebuiltAt — an explicit timestamp written only after a
+      // successful generateMatrixForMarket() run. This is unaffected by user
+      // cell edits or partial generation and survives all-user-override states.
+      let isStale = false;
+      let staleReason: string | undefined;
+      if (rows.length > 0) {
+        const [market] = await db
+          .select({ matrixLastRebuiltAt: markets.matrixLastRebuiltAt })
+          .from(markets)
+          .where(eq(markets.id, ctx.marketId));
+        const lastBuiltAt = market?.matrixLastRebuiltAt ?? null;
+
+        // Pre-migration matrices have no anchor yet — treat them as stale so
+        // users are prompted to rebuild and establish a known baseline.
+        if (!lastBuiltAt) {
+          isStale = true;
+          staleReason = "Competitor assessment baseline not yet established. Rebuild to start tracking staleness.";
+        } else if (lastBuiltAt) {
+          // Max of createdAt and lastFullCrawl per competitor row — covers both
+          // newly added competitors and re-crawled existing ones.
+          const [compMeta] = await db
+            .select({
+              newestEvent: max(
+                sql<Date>`GREATEST(${competitors.createdAt}, COALESCE(${competitors.lastFullCrawl}, ${competitors.createdAt}))`,
+              ),
+            })
+            .from(competitors)
+            .where(
+              and(
+                eq(competitors.tenantDomain, ctx.tenantDomain),
+                eq(competitors.status, "Active"),
+                or(eq(competitors.marketId, ctx.marketId), isNull(competitors.marketId)),
+              ),
+            );
+          const newestEvent = compMeta?.newestEvent ?? null;
+          if (newestEvent && new Date(newestEvent) > new Date(lastBuiltAt)) {
+            isStale = true;
+            staleReason = "Competitor data has changed since the matrix was last built. Rebuild for an accurate whitespace assessment.";
+          }
+        }
+      }
+
+      res.json({ cells: rows, isStale, staleReason });
     } catch (err) {
       sendErr(res, err);
     }

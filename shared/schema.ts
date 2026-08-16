@@ -251,6 +251,10 @@ export const markets = pgTable("markets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   lastVisitedAt: timestamp("last_visited_at"),
+  // Stamped by generateMatrixForMarket() after every successful rebuild so the
+  // staleness check in GET /api/opportunity-matrix has a reliable anchor that
+  // is unaffected by user cell edits.
+  matrixLastRebuiltAt: timestamp("matrix_last_rebuilt_at"),
 }, (table) => ({
   tenantIdIdx: index("markets_tenant_id_idx").on(table.tenantId),
 }));

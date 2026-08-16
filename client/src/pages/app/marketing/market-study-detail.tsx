@@ -90,11 +90,12 @@ export default function MarketStudyDetailPage() {
     queryFn: async () => (await apiRequest("GET", "/api/market-segments")).json(),
     enabled: done,
   });
-  const { data: allCells = [] } = useQuery<Cell[]>({
+  const { data: matrixResp } = useQuery<{ cells: Cell[]; isStale: boolean }>({
     queryKey: ["/api/opportunity-matrix"],
     queryFn: async () => (await apiRequest("GET", "/api/opportunity-matrix")).json(),
     enabled: done,
   });
+  const allCells = matrixResp?.cells ?? [];
 
   const segments = (segIds.length ? allSegments.filter((s) => segIds.includes(s.id)) : allSegments)
     .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));

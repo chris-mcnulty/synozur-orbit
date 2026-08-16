@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { CANONICAL_CHANNELS, channelLabel } from "@shared/market-intelligence";
-import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb } from "lucide-react";
+import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle } from "lucide-react";
 
 interface Cell {
   id: string;
@@ -50,10 +50,14 @@ export default function OpportunityMatrixPage() {
   const queryClient = useQueryClient();
   const [detail, setDetail] = useState<Cell | null>(null);
 
-  const { data: cells = [], isLoading } = useQuery<Cell[]>({
+  interface MatrixResponse { cells: Cell[]; isStale: boolean; staleReason?: string }
+  const { data: matrixData, isLoading } = useQuery<MatrixResponse>({
     queryKey: ["/api/opportunity-matrix"],
     queryFn: async () => (await apiRequest("GET", "/api/opportunity-matrix")).json(),
   });
+  const cells = matrixData?.cells ?? [];
+  const isStale = matrixData?.isStale ?? false;
+  const staleReason = matrixData?.staleReason;
   const { data: segments = [] } = useQuery<Segment[]>({
     queryKey: ["/api/market-segments"],
     queryFn: async () => (await apiRequest("GET", "/api/market-segments")).json(),
@@ -106,6 +110,22 @@ export default function OpportunityMatrixPage() {
             <span className="ml-2">Rebuild matrix</span>
           </Button>
         </div>
+
+        {isStale && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400" data-testid="matrix-stale-banner">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              {staleReason ?? "Competitor data has changed since the matrix was last built."}{" "}
+              <button
+                className="font-medium underline underline-offset-2 hover:no-underline"
+                onClick={() => rebuild.mutate()}
+                disabled={rebuild.isPending}
+              >
+                Rebuild matrix
+              </button>
+            </span>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>

@@ -8,7 +8,7 @@
 
 import { db } from "../../db";
 import { and, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
-import { opportunityMatrixCells, marketSegments, competitors, type Competitor } from "@shared/schema";
+import { opportunityMatrixCells, marketSegments, competitors, markets, type Competitor } from "@shared/schema";
 import { getMarketModelProvider } from "./market-model-provider";
 import { computeRoiScore, computeWhitespaceFlagsWithPresence, type CompetitorContext, type PresenceScore } from "./market-matrix-core";
 import { replaceSources } from "../market-intelligence-sources";
@@ -233,6 +233,23 @@ export async function generateMatrixForMarket(
 
   // Whitespace is market-relative — recompute across all cells, not just this batch.
   const whitespaceCount = await recomputeWhitespace(ctx.tenantDomain, ctx.marketId);
+
+  // Stamp the explicit rebuild timestamp only when every requested segment×need
+  // combination succeeded. Partial generation (preserve-on-failure) keeps old
+  // cells for failed combos, so their competitor-presence data is still stale —
+  // advancing the anchor there would mask real staleness from the UI.
+  const isCompleteRebuild = succeededCombos.size === tasks.length;
+  if (ctx.marketId && isCompleteRebuild) {
+    try {
+      await db
+        .update(markets)
+        .set({ matrixLastRebuiltAt: new Date() })
+        .where(eq(markets.id, ctx.marketId));
+    } catch (err: any) {
+      console.warn(`[opportunity-matrix] failed to stamp matrixLastRebuiltAt: ${err?.message ?? err}`);
+    }
+  }
+
   const segmentIds = Array.from(new Set(rows.map((r) => r.segmentId)));
   return {
     cellsCreated: rows.length,
