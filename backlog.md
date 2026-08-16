@@ -307,6 +307,41 @@ Generate competitive battlecards for sales enablement:
 - [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
 - [x] `competitorAlerts` plan feature gates Pro / Enterprise access
 
+### Strategic Intelligence Stack ✅
+**Status**: Implemented (August 2026)
+- [x] Market Segments: AI-proposed segments with TAM/SAM/SOM sizing (Census CBP + web research), needs maps, priority ranking, persona backfill, and user overrides
+- [x] Opportunity Matrix: segment × need × channel GTM heatmap with ROI scoring, top-ROI whitespace-proxy flags, top-opportunities ranking, and cell overrides
+- [x] Market Study Wizard: staged background pipeline (input → competitor discovery → segments → sizing → matrix → executive summary) at Explore/Focus/Dominate depths with live progress
+- [x] Autonomous competitor discovery — study-discovered competitors created as real competitor records
+- [x] Branded PDF export of completed studies (cover, executive summary, ranked segments, top opportunities)
+- [x] Study refresh (linked re-run)
+
+### Master Marketing Calendar & Planning Hub ✅
+**Status**: Implemented (July 2026)
+- [x] Unified calendar across social posts, emails, and content briefs with lifecycle coloring and backlog rail
+- [x] Content Advisor with time-of-day recommendations, scoped to active filters
+- [x] Campaign & Theme Planning Hub aggregating each campaign's full content footprint
+- [x] Deep links land on the exact item (scroll + highlight + auto-open), including undated backlog posts
+
+### Email Newsletter Execution ✅
+**Status**: Implemented (July-August 2026)
+- [x] Section-based composition (content assets, case studies, events, General Information) with fluid-hybrid responsive rendering and 16px font floor
+- [x] A/B testing with holdback cohorts and per-variant open/click results
+- [x] List & segment sends via SendGrid with CAN-SPAM mailing-address enforcement and webhook-driven opt-out stamping
+- [x] HubSpot per-category subscription mapping and paste-safe HTML export
+
+### Direct Social Publishing ✅
+**Status**: Implemented (July-August 2026)
+- [x] Global shared OAuth apps for X/Facebook/Instagram/LinkedIn — one-click tenant connections
+- [x] Direct X publishing with images (v2 media pipeline, hardened token rotation)
+- [x] Unified Social Post Editor across queue, calendar, pipeline, and campaign detail (with link preview editing)
+- [x] Content-to-post multi-channel fan-out (native verbatim + AI-tailored variants)
+
+### Website Content Import & Repurposing ✅
+**Status**: Implemented (July 2026)
+- [x] Import blog posts, events, and case studies from the live website (MCP) with image/category/summary enrichment
+- [x] Multi-format repurposer: one asset → social posts, carousels with rendered graphics, and long-form content briefs
+
 ### CRM Integration - HubSpot (Q2) ✅
 **Status**: Implemented (two-way). `@hubspot/api-client` wired via `hubspot-service.ts` / `hubspot-integration.ts` / `hubspot-timeline.ts` / `hubspot-email-sync.ts`.
 - [x] OAuth connect/callback/disconnect + status (`/api/integrations/hubspot/*`)

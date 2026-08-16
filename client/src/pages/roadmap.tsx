@@ -22,95 +22,108 @@ interface RoadmapSection {
 
 const roadmap: RoadmapSection[] = [
   {
-    title: "Completed",
-    timeline: "Already Available",
-    icon: <CheckCircle2 className="w-5 h-5" />,
+    title: "Recently Shipped",
+    timeline: "Summer 2026",
+    icon: <Rocket className="w-5 h-5" />,
     items: [
       {
-        title: "Microsoft Entra ID SSO",
-        description: "Enterprise single sign-on integration",
+        title: "Strategic Intelligence Stack",
+        description: "Quantified market strategy: ranked segments, GTM heatmap, and end-to-end market studies",
+        status: "completed",
+        items: [
+          "Market Segments with Census-grounded TAM/SAM/SOM sizing, needs maps, and priority ranking",
+          "Opportunity Matrix — segment × need × channel heatmap with ROI scores and whitespace flags",
+          "Market Study Wizard with autonomous competitor discovery and branded PDF export"
+        ]
+      },
+      {
+        title: "Master Marketing Calendar",
+        description: "One calendar across social, email, and briefs — with an AI Content Advisor",
         status: "completed"
       },
       {
-        title: "Multi-Tenant Architecture",
-        description: "Secure tenant isolation with role-based access",
+        title: "Direct Social Publishing",
+        description: "One-click social connections and direct X publishing with images",
+        status: "completed",
+        items: ["Unified post editor across all surfaces", "Multi-channel fan-out from a single draft"]
+      },
+      {
+        title: "Email Newsletters with A/B Testing",
+        description: "Section-based responsive composition, list/segment sends, and compliance guardrails",
         status: "completed"
       },
       {
-        title: "AI-Powered Analysis",
-        description: "Claude-powered competitive analysis and recommendations",
-        status: "completed"
-      },
-      {
-        title: "Document Upload",
-        description: "PDF and DOCX support for grounding documents",
-        status: "completed"
-      },
-      {
-        title: "Dark/Light Mode",
-        description: "Theme toggle with system preference support",
+        title: "Website Content Import & Repurposing",
+        description: "Pull blog posts, events, and case studies from your site; repurpose any asset into a batch of formats",
         status: "completed"
       }
     ]
   },
   {
-    title: "Coming Soon",
-    timeline: "Q1 2026",
-    icon: <Rocket className="w-5 h-5" />,
+    title: "Completed Foundations",
+    timeline: "Already Available",
+    icon: <CheckCircle2 className="w-5 h-5" />,
     items: [
       {
-        title: "PDF Report Generation",
-        description: "Export branded PDF reports for stakeholders",
-        status: "in-progress",
-        items: ["Synozur-branded templates", "Analysis summaries", "Recommendation exports"]
+        title: "Value-Chain Navigation & Home",
+        description: "Research → Product → Marketing → Sales areas with a global Home page and Orbit Score",
+        status: "completed"
       },
       {
-        title: "Web Crawling Service",
-        description: "Automated competitor website monitoring",
-        status: "in-progress",
-        items: ["Homepage, about, and product page crawling", "Scheduled updates", "Change detection"]
+        title: "Competitive Intelligence Core",
+        description: "Competitor monitoring, web crawling, change alerts, AI analysis, battlecards, and branded PDF reports",
+        status: "completed"
       },
       {
-        title: "Competitor Change Alerts",
-        description: "Get notified when competitors update their messaging",
-        status: "planned",
-        items: ["Daily/weekly monitoring", "AI-powered change summaries", "Activity log integration"]
+        title: "Content Execution Stack",
+        description: "Editorial Calendar with AI briefs, multi-format copywriter, SEO/AEO optimizer, and Content Pipeline board",
+        status: "completed"
       },
       {
-        title: "Trial & Feature Gating",
-        description: "14-day free trial with tier-based features",
-        status: "planned"
+        title: "Conference Social Promotion",
+        description: "Anchor and per-session posts with composited hero graphics",
+        status: "completed"
+      },
+      {
+        title: "Marketing Performance",
+        description: "Closed-loop report tying content to conversions via tracked links and GA4",
+        status: "completed"
+      },
+      {
+        title: "Enterprise Platform",
+        description: "Microsoft Entra ID SSO, multi-tenant isolation, HubSpot two-way integration, Microsoft Planner sync, support ticketing",
+        status: "completed"
       }
     ]
   },
   {
     title: "On the Horizon",
-    timeline: "Q2-Q4 2026",
+    timeline: "Late 2026",
     icon: <Target className="w-5 h-5" />,
     items: [
       {
-        title: "Competitive Battlecards",
-        description: "Generate sales enablement battlecards with Harvey Ball scoring",
+        title: "Deeper Market Study Research",
+        description: "Study-time website crawling and per-competitor enrichment for richer discovery",
+        status: "in-progress"
+      },
+      {
+        title: "Source Library & Provenance",
+        description: "Scored source library with claim-level citations across intelligence artifacts",
         status: "planned"
       },
       {
-        title: "Email Notifications",
-        description: "Automated alerts for competitor changes and trial updates",
-        status: "planned"
-      },
-      {
-        title: "Team Collaboration",
+        title: "Collaboration Features",
         description: "Shared annotations, comments, and team workspaces",
         status: "planned"
       },
       {
-        title: "HubSpot Integration",
-        description: "Sync competitors and push insights to your CRM",
+        title: "Outcome Metrics & ROI Dashboard",
+        description: "Google Analytics integration, Orbit Index, and industry benchmarks",
         status: "planned"
       },
       {
-        title: "Google SSO",
-        description: "Additional single sign-on option for Google Workspace users",
+        title: "Billing Integration",
+        description: "Self-serve plan management and payment processing",
         status: "planned"
       }
     ]

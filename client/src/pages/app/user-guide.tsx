@@ -22,6 +22,14 @@ export default function UserGuidePage() {
       });
   }, []);
 
+  // GitHub-style heading slugs so TOC links like #user-roles--permissions resolve
+  const slugify = (text: string) =>
+    text
+      .trim()
+      .toLowerCase()
+      .replace(/\s/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+
   const renderMarkdown = (md: string) => {
     const lines = md.split("\n");
     const elements: React.ReactElement[] = [];
@@ -72,18 +80,35 @@ export default function UserGuidePage() {
           if (linkMatch.index! > 0) {
             parts.push(<span key={key++}>{remaining.slice(0, linkMatch.index)}</span>);
           }
-          parts.push(
-            <a
-              key={key++}
-              href={linkMatch[2]}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline inline-flex items-center gap-1"
-            >
-              {linkMatch[1]}
-              <ExternalLink size={12} />
-            </a>
-          );
+          const href = linkMatch[2];
+          if (href.startsWith("#")) {
+            parts.push(
+              <a
+                key={key++}
+                href={href}
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById(href.slice(1))?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="text-primary hover:underline"
+              >
+                {linkMatch[1]}
+              </a>
+            );
+          } else {
+            parts.push(
+              <a
+                key={key++}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1"
+              >
+                {linkMatch[1]}
+                <ExternalLink size={12} />
+              </a>
+            );
+          }
           remaining = remaining.slice(linkMatch.index! + linkMatch[0].length);
         } else {
           parts.push(<span key={key++}>{remaining}</span>);
@@ -100,21 +125,21 @@ export default function UserGuidePage() {
       if (line.startsWith("# ")) {
         flushList();
         elements.push(
-          <h1 key={i} className="text-3xl font-bold text-foreground mb-2">
+          <h1 key={i} id={slugify(line.slice(2))} className="text-3xl font-bold text-foreground mb-2">
             {line.slice(2)}
           </h1>
         );
       } else if (line.startsWith("## ")) {
         flushList();
         elements.push(
-          <h2 key={i} className="text-2xl font-semibold text-foreground mt-8 mb-4">
+          <h2 key={i} id={slugify(line.slice(3))} className="text-2xl font-semibold text-foreground mt-8 mb-4">
             {line.slice(3)}
           </h2>
         );
       } else if (line.startsWith("### ")) {
         flushList();
         elements.push(
-          <h3 key={i} className="text-xl font-semibold text-foreground mt-6 mb-3">
+          <h3 key={i} id={slugify(line.slice(4))} className="text-xl font-semibold text-foreground mt-6 mb-3">
             {line.slice(4)}
           </h3>
         );

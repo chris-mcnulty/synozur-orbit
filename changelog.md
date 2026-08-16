@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-08-16
+
+### Added
+
+- **Strategic Intelligence Stack — Market Segments** (`/app/marketing/market-segments`): Define and rank the market segments that matter for your go-to-market. AI proposes segments from your strategic context, sizes each one (TAM / SAM / SOM ranges with confidence levels, grounded in US Census County Business Patterns data plus live web research), builds a needs map per segment, and scores segment priority. Every AI figure is user-overridable, and personas can be backfilled onto segments in one click.
+
+- **Strategic Intelligence Stack — Opportunity Matrix** (`/app/marketing/opportunity-matrix`): A segment × need × channel GTM heatmap. The scoring engine rates expected ROI for each cell, flags top-ROI cells (highest ROI percentile — a whitespace proxy, not yet a competition measure), and surfaces the top opportunities as a ranked list. Individual cells accept manual overrides that survive regeneration.
+
+- **Strategic Intelligence Stack — Market Study Wizard** (`/app/marketing/market-studies`): Run an end-to-end market study from a single URL or written brief. Choose a depth (Explore / Focus / Dominate) and the staged pipeline runs in the background — input analysis → autonomous competitor discovery → segment modeling → sizing → opportunity matrix → executive summary — with live per-stage progress. Discovered competitors are created as real competitor records in your market. Completed studies can be refreshed (re-run, linked to the original) and exported as a Synozur/Orbit-branded PDF with the executive summary, ranked segments, and top GTM opportunities.
+
+- **Master Marketing Calendar** (`/app/marketing/marketing-calendar`): One unified calendar across social posts, scheduled emails, and content briefs, with lifecycle-stage coloring, campaign/type filters, and a backlog rail for undated items. The built-in Content Advisor recommends what to schedule next — including time-of-day suggestions — scoped to your active filters.
+
+- **Campaign & Theme Planning Hub**: A per-campaign / per-theme view aggregating every associated social post, email, and content brief, so a campaign's full content footprint is visible in one place. Manually created content participates in the same calendar and pipeline flows.
+
+- **Section-based email newsletters**: Compose newsletters from structured sections — curated content assets, case studies, upcoming events, and a General Information section (sign-off + About block) — rendered server-side with fluid-hybrid responsive HTML that holds up in Outlook. A 16-px minimum font floor is enforced, images are auto-published and absolutized at send time, and sections carry forward when re-editing a saved email.
+
+- **Email A/B testing**: Send subject-line or content variants to test cohorts with a holdback, then see open/click results per variant. Cohorts are immutable once drawn; recipient eligibility (opt-outs, suppression) is re-checked at delivery time.
+
+- **List & segment email sends with compliance guardrails**: Send to mirrored HubSpot lists or Orbit-built segments through SendGrid. CAN-SPAM enforcement blocks any list/segment send until a tenant mailing address is configured (checked at dispatch and again at delivery), and SendGrid unsubscribe/spam webhooks now stamp opt-outs automatically.
+
+- **HubSpot per-category subscription mapping & paste-safe export**: Map each Orbit subscription type to a HubSpot subscription ID for consent-accurate syncing, and copy generated emails as paste-safe HTML fragments that survive the HubSpot editor (with explicit case-study CTA links).
+
+- **Direct social publishing — X (Twitter) with media**: Publish posts with images straight to X via the v2 media pipeline, with hardened token rotation (single-use refresh tokens are persisted immediately and publishes are serialized per account) and typed, actionable error messages when a publish fails.
+
+- **One-click social connections (global OAuth apps)**: X, Facebook, Instagram, and LinkedIn now use a single Synozur-managed OAuth app each — tenants connect an account in one click with no per-tenant developer-app setup. Global Admins manage platform credentials centrally.
+
+- **Unified Social Post Editor**: The same full-featured editor (copy, hashtags, image, link preview with server-validated URL/label) now opens from the queue, the calendar, the Content Pipeline board, and campaign detail — replacing four divergent edit dialogs.
+
+- **Content-to-post multi-channel fan-out**: Convert a LinkedIn/X content draft into scheduled posts for multiple platforms at once — the native channel keeps the copy verbatim while additional channels get AI-tailored variants.
+
+- **Website content import**: Import blog posts, events, and case studies from your live website (via the website MCP connection) directly into the Content Library — with automatic lead-image capture, category assignment, async AI summaries, and an upcoming-only/all-events toggle for events.
+
+- **Multi-format content repurposer**: Turn one content asset into a batch of formats in a single run — LinkedIn posts and carousels flow into the social pipeline with auto-rendered branded graphics (one per carousel slide), while long-form outputs (blog post, newsletter, whitepaper, podcast outline, video script) land as drafted content briefs.
+
+- **One-click Finalize**: Approve a content brief and activate its linked draft in one atomic action.
+
+- **Blog post drafts — subtitle, overview & tags**: Blog-format drafts now generate a subtitle, an overview/abstract, and suggested tags alongside the body.
+
+- **Competitor News Mentions via GNews**: The News Mentions tab now scans all competitors through the GNews API (relevance-ranked, phrase-matched) instead of fragile web scraping.
+
+- **Marketing deep links**: Notifications and cross-page links now land on the exact item — briefs, emails, and posts auto-scroll, highlight, and open on arrival, including undated posts in the calendar backlog.
+
+### Changed
+
+- **Content Library ordering**: Assets now sort by content date (publish date or event start date) with stable pagination, and the library list shows how many emails each asset has appeared in.
+- **Home page performance**: Tenant-scoped indexes and parallelized queries cut multi-second page loads (10+ s worst case) down to sub-second across Home, markets, and admin endpoints.
+- **Feature gating consistency**: All gated widgets are loading-aware, eliminating the flash of premium UI before a disabled feature check resolves.
+
+### Fixed
+
+- **X (Twitter) account disconnections**: Concurrent token refreshes were revoking the grant (X refresh tokens are single-use). Rotated tokens are now persisted immediately, refreshes start 60 s early, and per-account serialization prevents the race.
+- **Email image rendering**: Images in generated emails are published to tenant-owned storage and absolutized at send; tracking-wrapper rewrites of `img src` (which broke images in some clients) are excluded.
+- **Website import events**: Events from the website MCP were returning empty and blog retrieval could hang forever — both fixed, with MCP errors now surfaced as a banner in Settings and the import dialog.
+- **Category filter in the email generator**: The dropdown was querying the wrong endpoint and always came back empty.
+
+---
+
 ## [3.0.0] - 2026-06-13
 
 ### Added

@@ -1,4 +1,4 @@
-# Synozur Orbit User Guide — v3.0
+# Synozur Orbit User Guide — v3.1
 
 ## Table of Contents
 1. [Overview](#overview)
@@ -22,16 +22,18 @@
 19. [Content Pipeline](#content-pipeline)
 20. [Conference Social Promotion](#conference-social-promotion)
 21. [Marketing Performance](#marketing-performance)
-22. [Intelligence Briefings](#intelligence-briefings)
-23. [Action Items](#action-items)
-24. [Intelligence Health](#intelligence-health)
-25. [Support Tickets](#support-tickets)
-26. [Saturn Capture Browser Extension](#saturn-capture-browser-extension)
-27. [What's New & Changelog](#whats-new--changelog)
-28. [Team Management](#team-management)
-29. [Settings & Configuration](#settings--configuration)
-30. [Administrator Guide](#administrator-guide)
-31. [Troubleshooting & FAQs](#troubleshooting--faqs)
+22. [Master Marketing Calendar](#master-marketing-calendar)
+23. [Strategic Intelligence Stack](#strategic-intelligence-stack)
+24. [Intelligence Briefings](#intelligence-briefings)
+25. [Action Items](#action-items)
+26. [Intelligence Health](#intelligence-health)
+27. [Support Tickets](#support-tickets)
+28. [Saturn Capture Browser Extension](#saturn-capture-browser-extension)
+29. [What's New & Changelog](#whats-new--changelog)
+30. [Team Management](#team-management)
+31. [Settings & Configuration](#settings--configuration)
+32. [Administrator Guide](#administrator-guide)
+33. [Troubleshooting & FAQs](#troubleshooting--faqs)
 
 ---
 
@@ -1599,6 +1601,74 @@ The performance report connects:
 
 ---
 
+## Master Marketing Calendar
+
+### Overview
+
+The Master Marketing Calendar (**Marketing → Master Calendar**, `/app/marketing/marketing-calendar`) is a single unified calendar across every scheduled marketing item — social posts, email sends, and content briefs — so you can see your entire content footprint for any week or month in one view.
+
+### What It Shows
+
+- **Social posts** (all platforms), colored by lifecycle stage (draft, approved, scheduled, published, failed)
+- **Scheduled and sent emails**
+- **Content briefs** with due dates from the Editorial Calendar
+- A **backlog rail** of undated items you can review and schedule
+
+### Filters & Navigation
+
+- Filter by content type, campaign, or theme
+- Click any item to open it in its full editor
+- Links from notifications and other pages land on the exact item — it scrolls into view, highlights, and opens automatically (including undated posts in the backlog)
+
+### Content Advisor
+
+The built-in Content Advisor reviews what's on the calendar and recommends what to schedule next — including suggested days and times of day — scoped to whatever filters you have active. Use it to spot gaps (e.g., a quiet week on LinkedIn) before they happen.
+
+### Campaign & Theme Planning Hub
+
+From a campaign or theme, open its **Planning Hub** to see every associated social post, email, and content brief aggregated in one place. Content created manually participates in the same calendar and pipeline flows as generated content.
+
+---
+
+## Strategic Intelligence Stack
+
+The Strategic Intelligence Stack (Marketing area) turns Orbit's competitive and strategic context into quantified market strategy: which segments to pursue, where the whitespace is, and what the numbers look like.
+
+### Market Segments
+
+**Marketing → Market Segments** is your ranked list of addressable market segments.
+
+- **Propose with AI**: Orbit proposes segments from your strategic context (company profile, ICP, personas, competitors)
+- **Sizing**: Each segment gets TAM / SAM / SOM ranges with a confidence level, grounded in US Census County Business Patterns data plus live web research
+- **Needs map**: AI builds a per-segment map of the needs that drive buying decisions
+- **Priority score**: Segments are scored and ranked so the team agrees on where to focus
+- **Overrides**: Every AI-generated figure can be manually overridden; overrides survive regeneration
+- **Personas**: Backfill your buyer personas onto segments in one click
+
+### Opportunity Matrix
+
+**Marketing → Opportunity Matrix** renders a segment × need × channel heatmap of go-to-market opportunities.
+
+- Each cell is scored for expected ROI
+- **Top-ROI flags** (★) mark cells in the highest ROI percentile — a whitespace proxy (not yet a competition measure)
+- The **Top Opportunities** list ranks the best cells across the whole matrix
+- Cells accept manual overrides
+
+### Market Study Wizard
+
+**Marketing → Market Studies** runs a complete market study from a single input.
+
+1. **Start a study**: Provide a URL (e.g., a company or product page) or a written brief, and choose a depth — *Explore* (quick scan), *Focus* (balanced), or *Dominate* (exhaustive)
+2. **Staged pipeline**: The study runs in the background through visible stages — input analysis → **competitor discovery** → segment modeling → sizing → opportunity matrix → executive summary — with live per-stage progress
+3. **Competitor discovery**: Competitors found during the study are created as real competitor records in your market, ready for monitoring and analysis
+4. **Results**: A completed study shows the executive summary, ranked segments, and top opportunities, all linked to the Market Segments and Opportunity Matrix pages
+5. **Refresh**: Re-run a completed study (linked to the original) to update it with current data
+6. **Export PDF**: Download a Synozur/Orbit-branded PDF with the cover page, executive summary, ranked segment table (TAM/SAM/priority/confidence), and top GTM opportunities
+
+**Note:** The Strategic Intelligence Stack features are feature-gated; contact your administrator if you don't see them in the Marketing area.
+
+---
+
 ## Intelligence Briefings
 
 ### Overview
@@ -2636,6 +2706,6 @@ Synozur Orbit empowers your team with AI-driven competitive intelligence, enabli
 
 ---
 
-*Document Version: 2.0*  
-*Last Updated: March 2026*  
+*Document Version: 3.1*  
+*Last Updated: August 2026*  
 *For the latest updates, see changelog.md*

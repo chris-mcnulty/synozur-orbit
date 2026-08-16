@@ -371,34 +371,34 @@ export default function Landing() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
-                icon: Share2,
-                title: "Marketing Assets — Social Posts",
-                desc: "AI-generated social content with platform-specific formatting for LinkedIn, Twitter/X, and Facebook. Choose your tone and extract Saturn-parity content automatically."
-              },
-              {
-                icon: Mail,
-                title: "Marketing Assets — Email Newsletters",
-                desc: "Platform-targeted email generation for Outlook, Dynamics 365, HubSpot Marketing, and HubSpot 1:1. Includes tone control, CTA fields, and platform-specific coaching tips."
-              },
-              {
-                icon: HardDrive,
-                title: "SharePoint Embedded Support",
-                desc: "Enterprise data residency via SharePoint Embedded containers through Microsoft Graph API. Keep your sensitive data within your own tenant."
-              },
-              {
                 icon: Cpu,
-                title: "Microsoft Azure AI Foundry",
-                desc: "Multi-model support including GPT-5.4 via Azure OpenAI, plus Claude, Mistral, Cohere, Llama, and other models via Foundry's Model-as-a-Service inference API."
-              },
-              {
-                icon: Handshake,
-                title: "Consortia ID / Partner Program",
-                desc: "Microsoft Content AI Partner Program membership and consortia-level identification for enterprise customers and partners."
+                title: "Market Study Wizard",
+                desc: "Run an end-to-end AI market study from a URL or brief — competitor discovery, segment modeling, TAM/SAM sizing, opportunity matrix, and executive summary, exported as a branded PDF."
               },
               {
                 icon: Activity,
-                title: "Insight Analytics",
-                desc: "AI usage tracking dashboard with tenant-level cost attribution and page-level engagement analytics. Understand how your organization uses AI."
+                title: "Market Segments & Opportunity Matrix",
+                desc: "AI-ranked market segments with Census-grounded TAM/SAM/SOM sizing and needs maps, plus a segment × need × channel GTM heatmap with ROI scores and top-opportunity highlights."
+              },
+              {
+                icon: Share2,
+                title: "Direct Social Publishing",
+                desc: "One-click social connections for X, LinkedIn, Facebook, and Instagram — with direct X publishing including images, and a unified post editor across queue, calendar, and pipeline."
+              },
+              {
+                icon: Mail,
+                title: "Newsletters with A/B Testing",
+                desc: "Section-based responsive email composition with A/B variant testing, list and segment sends via SendGrid, HubSpot subscription mapping, and built-in CAN-SPAM guardrails."
+              },
+              {
+                icon: HardDrive,
+                title: "Master Marketing Calendar",
+                desc: "One calendar across social posts, emails, and content briefs — with a Content Advisor recommending what to schedule next, down to the time of day."
+              },
+              {
+                icon: Handshake,
+                title: "Website Content Import & Repurposing",
+                desc: "Import blog posts, events, and case studies from your live website, then repurpose any asset into a batch of social posts, carousels, and long-form drafts with branded graphics."
               }
             ].map((feature, i) => (
               <div key={i} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all" data-testid={`card-whats-new-${i}`}>

@@ -6,6 +6,69 @@ import { ArrowLeft, CheckCircle2, Plus, Sparkles, Wrench, AlertTriangle, Shield 
 
 const changelogEntries = [
   {
+    version: "3.1.0",
+    date: "August 16, 2026",
+    sections: [
+      {
+        type: "added",
+        items: [
+          {
+            category: "Strategic Intelligence Stack",
+            features: [
+              "Market Segments with AI TAM/SAM/SOM sizing (Census-grounded), needs maps, and priority ranking",
+              "Opportunity Matrix — segment × need × channel GTM heatmap with ROI scores and whitespace flags",
+              "Market Study Wizard — staged AI pipeline with autonomous competitor discovery and branded PDF export"
+            ]
+          },
+          {
+            category: "Marketing Execution",
+            features: [
+              "Master Marketing Calendar unifying social, email, and briefs with an AI Content Advisor",
+              "Campaign & Theme Planning Hub aggregating each campaign's full content footprint",
+              "Multi-format content repurposer and website content import (blogs, events, case studies)"
+            ]
+          },
+          {
+            category: "Social & Email Publishing",
+            features: [
+              "One-click social connections (X, LinkedIn, Facebook, Instagram) via shared OAuth apps",
+              "Direct X publishing with images and a unified post editor across all surfaces",
+              "Section-based responsive newsletters with A/B testing, list/segment sends, and CAN-SPAM guardrails"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    version: "3.0.0",
+    date: "June 13, 2026",
+    sections: [
+      {
+        type: "added",
+        items: [
+          {
+            category: "Platform",
+            features: [
+              "Value-chain navigation: Research → Product → Marketing → Sales areas with a global Home page",
+              "Orbit Score with trend, area scorecards, and needs-attention signals",
+              "Sales Hub with deliverable staleness indicators"
+            ]
+          },
+          {
+            category: "Content Execution",
+            features: [
+              "Editorial Calendar with AI content briefs and multi-format copywriter",
+              "Content Pipeline kanban board across posts, emails, and briefs",
+              "Conference Social Promotion with composited hero graphics",
+              "Closed-loop Marketing Performance report and Microsoft Planner sync"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
     version: "0.1.0",
     date: "January 17, 2026",
     sections: [
