@@ -1678,6 +1678,21 @@ Generate a messaging framework in markdown format with sections:
       const competitorProducts = projectProducts.filter(pp => pp.role === "competitor");
       const battlecards = await storage.getProductBattlecardsByProject(req.params.projectId);
 
+      // Pre-fetch all linked competitors in parallel before the scoring loop
+      const uniqueCompetitorIds = [
+        ...new Set(
+          competitorProducts
+            .map(cp => cp.product?.competitorId)
+            .filter((id): id is string => !!id)
+        ),
+      ];
+      const fetchedCompetitors = await Promise.all(
+        uniqueCompetitorIds.map(id => storage.getCompetitor(id))
+      );
+      const competitorMap = new Map(
+        uniqueCompetitorIds.map((id, i) => [id, fetchedCompetitors[i]])
+      );
+
       const scores = [];
 
       for (const cp of competitorProducts) {
@@ -1694,11 +1709,10 @@ Generate a messaging framework in markdown format with sections:
         let contentActivityScore = 50;
         let socialEngagementScore = 50;
 
-        // Get linked competitor data if available
-        let competitor = null;
-        if (product.competitorId) {
-          competitor = await storage.getCompetitor(product.competitorId);
-        }
+        // Get linked competitor data if available (from pre-fetched map)
+        const competitor = product.competitorId
+          ? (competitorMap.get(product.competitorId) ?? null)
+          : null;
 
         // Adjust based on competitor analysis data (if linked)
         if (competitor?.analysisData) {
