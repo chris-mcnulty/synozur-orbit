@@ -66,8 +66,10 @@ const STUDY_TIMEOUT_MS = 20 * 60 * 1000;
 /**
  * Discover competitors from the study's brief/URL, create them in the market, and
  * return the count of newly-persisted records. Non-fatal: caller catches all errors.
+ *
+ * Exported for unit testing only — not part of the public API.
  */
-async function discoverCompetitorsForStudy(opts: {
+export async function discoverCompetitorsForStudy(opts: {
   tenantDomain: string;
   marketId: string;
   userId: string;
