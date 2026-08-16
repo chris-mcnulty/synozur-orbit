@@ -10,7 +10,7 @@
  */
 
 import { db } from "../db";
-import { and, desc, eq, gte, inArray, isNotNull, sql as dsql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql as dsql } from "drizzle-orm";
 import {
   AI_FEATURES,
   unifiedExecSummaries,
@@ -75,7 +75,7 @@ async function collectWhereToPlay(tenantDomain: string): Promise<Facts | null> {
         priorityRationale: marketSegments.priorityRationale,
       })
       .from(marketSegments)
-      .where(and(eq(marketSegments.tenantDomain, tenantDomain), eq(marketSegments.status, "active")))
+      .where(and(eq(marketSegments.tenantDomain, tenantDomain), isNull(marketSegments.marketId), eq(marketSegments.status, "active")))
       .orderBy(desc(marketSegments.priorityScore))
       .limit(6);
 
@@ -88,7 +88,7 @@ async function collectWhereToPlay(tenantDomain: string): Promise<Facts | null> {
         segmentId: opportunityMatrixCells.segmentId,
       })
       .from(opportunityMatrixCells)
-      .where(and(eq(opportunityMatrixCells.tenantDomain, tenantDomain), isNotNull(opportunityMatrixCells.roiScore)))
+      .where(and(eq(opportunityMatrixCells.tenantDomain, tenantDomain), isNull(opportunityMatrixCells.marketId), isNotNull(opportunityMatrixCells.roiScore)))
       .orderBy(desc(opportunityMatrixCells.roiScore))
       .limit(8);
 
@@ -98,7 +98,7 @@ async function collectWhereToPlay(tenantDomain: string): Promise<Facts | null> {
         executiveSummary: marketStudies.executiveSummary,
       })
       .from(marketStudies)
-      .where(and(eq(marketStudies.tenantDomain, tenantDomain), eq(marketStudies.status, "completed")))
+      .where(and(eq(marketStudies.tenantDomain, tenantDomain), isNull(marketStudies.marketId), eq(marketStudies.status, "completed")))
       .orderBy(desc(marketStudies.createdAt))
       .limit(1);
 
