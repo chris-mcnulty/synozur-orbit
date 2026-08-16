@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown, RefreshCw, Link2, Link2Off } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus, Trash2, Calendar, CheckCircle, Clock, AlertCircle, Loader2, GripVertical, Sparkles, Settings, ListChecks, LayoutGrid, List, X, Edit2, FileDown, RefreshCw, Link2, Link2Off, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -195,6 +195,7 @@ export default function MarketingPlanDetail() {
     dueDate: "",
   });
   const [plannerDialogOpen, setPlannerDialogOpen] = useState(false);
+  const [dismissedOpen, setDismissedOpen] = useState(false);
   // Stable label derived from plan id so the queued/running state survives
   // reloads, other tabs, and scheduled background sweeps.
   const plannerSyncJobLabel = id ? `planner-sync:${id}` : null;
@@ -589,6 +590,44 @@ export default function MarketingPlanDetail() {
     },
   });
 
+  const restoreTask = useMutation({
+    mutationFn: async (taskId: string) => {
+      const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "suggested" }),
+      });
+      if (!response.ok) throw new Error("Failed to restore task");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/tasks`] });
+      toast({ title: "Task restored", description: "The suggestion is back in the review queue." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const permanentDeleteTask = useMutation({
+    mutationFn: async (taskId: string) => {
+      const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}?permanent=true`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete task");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/marketing-plans/${id}/tasks`] });
+      toast({ title: "Task permanently deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const updateTask = useMutation({
     mutationFn: async ({ taskId, data }: { taskId: string; data: typeof editForm }) => {
       const response = await fetch(`/api/marketing-plans/${id}/tasks/${taskId}`, {
@@ -657,6 +696,7 @@ export default function MarketingPlanDetail() {
 
   // AI suggestions awaiting review live in their own queue, not the main views.
   const suggestedTasks = tasks.filter(t => t.aiGenerated && t.status === "suggested");
+  const dismissedTasks = tasks.filter(t => t.aiGenerated && t.status === "dismissed");
   const visibleTasks = tasks.filter(t => !(t.aiGenerated && (t.status === "suggested" || t.status === "dismissed")));
 
   const filteredTasks = visibleTasks.filter(task => {
@@ -1431,6 +1471,108 @@ export default function MarketingPlanDetail() {
             <CardContent className="pt-4">
               <p className="text-muted-foreground">{plan.description}</p>
             </CardContent>
+          </Card>
+        )}
+
+        {dismissedTasks.length > 0 && (
+          <Card className="border-muted" data-testid="card-dismissed-queue">
+            <CardHeader
+              className="pb-2 cursor-pointer select-none"
+              onClick={() => setDismissedOpen(o => !o)}
+            >
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2 text-muted-foreground">
+                  {dismissedOpen
+                    ? <ChevronDown className="w-4 h-4" />
+                    : <ChevronRight className="w-4 h-4" />}
+                  Dismissed
+                  <Badge variant="outline" className="text-xs">{dismissedTasks.length}</Badge>
+                </CardTitle>
+                <span className="text-xs text-muted-foreground">Click to {dismissedOpen ? "collapse" : "expand"}</span>
+              </div>
+            </CardHeader>
+            {dismissedOpen && (
+              <CardContent>
+                <div className="space-y-2">
+                  {dismissedTasks.map(task => (
+                    <div
+                      key={task.id}
+                      className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30"
+                      data-testid={`dismissed-task-${task.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="font-medium text-muted-foreground">{task.title}</span>
+                          {getPriorityBadge(task.priority)}
+                          {task.timeframe && <Badge variant="outline">{task.timeframe.toUpperCase()}</Badge>}
+                          <Badge variant="outline" className="text-xs">
+                            {ACTIVITY_CATEGORIES.find(c => c.value === task.activityGroup)?.label || task.activityGroup}
+                          </Badge>
+                        </div>
+                        {task.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          <Sparkles className="w-3 h-3 inline mr-1" />
+                          Suggested by {task.sourceGenerationLabel || "AI task generation"}
+                          {task.createdAt ? ` on ${new Date(task.createdAt).toLocaleDateString()}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-primary"
+                                disabled={restoreTask.isPending}
+                                onClick={() => restoreTask.mutate(task.id)}
+                                data-testid={`button-restore-task-${task.id}`}
+                              >
+                                <RotateCcw className="w-4 h-4 mr-1" />
+                                Restore
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Move back to Suggested queue</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              disabled={permanentDeleteTask.isPending}
+                              data-testid={`button-permanent-delete-task-${task.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Permanently delete this suggestion?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will remove the suggestion permanently. It may be re-generated the next time you run AI task generation.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => permanentDeleteTask.mutate(task.id)}
+                              >
+                                Delete permanently
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            )}
           </Card>
         )}
 

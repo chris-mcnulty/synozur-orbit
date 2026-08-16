@@ -510,8 +510,15 @@ export function registerAnalyticsDataRoutes(app: Express) {
       }
 
       if (deleteActionForTask(current) === "dismiss") {
-        await storage.updateMarketingTask(req.params.taskId, plan.id, { status: "dismissed" }, toContextFilter(ctx));
-        return res.json({ success: true, dismissed: true });
+        const permanent = req.query.permanent === "true";
+        // Hard-delete is only permitted for a task that is already dismissed —
+        // active suggestions (status="suggested") must always be soft-dismissed
+        // so their dedup history is preserved regardless of the ?permanent flag.
+        if (!permanent || current.status !== "dismissed") {
+          await storage.updateMarketingTask(req.params.taskId, plan.id, { status: "dismissed" }, toContextFilter(ctx));
+          return res.json({ success: true, dismissed: true });
+        }
+        // Fall through to hard-delete — only reached for dismissed + permanent=true.
       }
 
       const deleted = await storage.deleteMarketingTask(req.params.taskId, plan.id, toContextFilter(ctx));
