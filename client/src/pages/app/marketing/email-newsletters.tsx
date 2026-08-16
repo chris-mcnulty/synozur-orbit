@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import DOMPurify from "dompurify";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import AppLayout from "@/components/layout/AppLayout";
@@ -46,6 +46,61 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag, useFeatureFlagWithLoading } from "@/hooks/useFeatureFlag";
 import { useSearch, useLocation } from "wouter";
+
+// ── HubSpot stats mini-panel ──────────────────────────────────────────────
+interface HubspotStats {
+  sent: number; delivered: number; opens: number; uniqueOpens: number;
+  clicks: number; uniqueClicks: number; unsubscribes: number;
+  openRate: number; clickRate: number;
+}
+
+function HubspotStatsPanel({ emailId }: { emailId: string }) {
+  const { data, isLoading, isError, error } = useQuery<HubspotStats, { error: string; needsReauth?: boolean }>({
+    queryKey: [`/api/generated-emails/${emailId}/hubspot-stats`],
+    retry: false,
+    staleTime: 5 * 60 * 1000, // 5 min — stats don't update that often
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex gap-4 mt-1" aria-label="Loading HubSpot stats">
+        {[1, 2, 3].map(i => <div key={i} className="h-7 w-16 rounded bg-muted animate-pulse" />)}
+      </div>
+    );
+  }
+  if (isError) {
+    const msg = (error as any)?.error ?? String(error);
+    const needsReauth = (error as any)?.needsReauth;
+    return (
+      <p className="text-[10px] text-muted-foreground mt-1" data-testid={`hubspot-stats-error-${emailId}`}>
+        {needsReauth
+          ? "Re-authorize HubSpot in Settings → Connections to enable open/click stats."
+          : `Stats unavailable: ${msg}`}
+      </p>
+    );
+  }
+  if (!data) return null;
+
+  const fmt = (n: number) => n.toLocaleString();
+  const pct = (r: number) => `${(r * 100).toFixed(1)}%`;
+
+  const cols: { label: string; value: string; testId: string }[] = [
+    { label: "Delivered", value: fmt(data.delivered || data.sent), testId: "delivered" },
+    { label: "Unique opens", value: `${fmt(data.uniqueOpens)} (${pct(data.openRate)})`, testId: "opens" },
+    { label: "Unique clicks", value: `${fmt(data.uniqueClicks)} (${pct(data.clickRate)})`, testId: "clicks" },
+    { label: "Unsubscribes", value: fmt(data.unsubscribes), testId: "unsubs" },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1" data-testid={`hubspot-stats-${emailId}`}>
+      {cols.map(c => (
+        <span key={c.label} className="text-[10px] text-muted-foreground" data-testid={`hubspot-stat-${c.testId}-${emailId}`}>
+          <span className="font-medium text-foreground">{c.value}</span>{" "}{c.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 interface ContentAsset {
   id: string;
@@ -1634,6 +1689,9 @@ export default function EmailNewslettersPage() {
                           >
                             View in HubSpot ↗
                           </a>
+                        )}
+                        {email.hubspotEmailId && (
+                          <HubspotStatsPanel emailId={email.id} />
                         )}
                         {email.scheduledAt && email.status !== "sent" && (
                           <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700 gap-1" data-testid={`badge-scheduled-${email.id}`}>

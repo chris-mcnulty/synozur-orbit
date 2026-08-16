@@ -236,6 +236,83 @@ export function hasHubspotListScopes(connection: Pick<HubspotConnection, "scopes
   return granted.has("crm.lists.read");
 }
 
+/**
+ * Whether a connection has the `marketing-email` scope required to read
+ * marketing email objects and statistics via the v3 API. Connections created
+ * before this scope was added will be missing it until the tenant re-consents.
+ */
+export function hasHubspotMarketingEmailScopes(connection: Pick<HubspotConnection, "scopes">): boolean {
+  const granted = new Set((connection.scopes ?? []).map((s) => s.trim()));
+  return granted.has("marketing-email");
+}
+
+/**
+ * Fetch aggregate send statistics for a single HubSpot marketing email by its
+ * numeric email ID. Uses the v3 Marketing Email API — requires the
+ * `marketing-email` scope (check `hasHubspotMarketingEmailScopes` first).
+ *
+ * Returns null when the email is not found or stats are unavailable rather
+ * than throwing so callers can degrade gracefully.
+ */
+export async function fetchHubspotEmailStats(
+  tenantDomain: string,
+  hubspotEmailId: string,
+): Promise<{
+  sent: number;
+  delivered: number;
+  opens: number;
+  uniqueOpens: number;
+  clicks: number;
+  uniqueClicks: number;
+  unsubscribes: number;
+  openRate: number;
+  clickRate: number;
+} | null> {
+  const { accessToken } = await getTenantAccessToken(tenantDomain);
+  // The v3 Marketing Email API returns the email object with an embedded
+  // `statistics` object when the `marketing-email` scope is granted.
+  const res = await fetch(
+    `${HUBSPOT_API_HOST}/marketing/v3/emails/${encodeURIComponent(hubspotEmailId)}?properties=statistics`,
+    { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } },
+  );
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    const body = await res.text().catch(() => "");
+    throw new Error(`HubSpot email stats fetch failed (${res.status}): ${body.slice(0, 200)}`);
+  }
+  const data = await res.json() as {
+    statistics?: {
+      counters?: {
+        sent?: number;
+        delivered?: number;
+        open?: number;
+        openNew?: number;
+        click?: number;
+        clickNew?: number;
+        unsubscribed?: number;
+      };
+      ratios?: {
+        openRatio?: number;
+        clickRatio?: number;
+      };
+    };
+  };
+  const c = data.statistics?.counters ?? {};
+  const r = data.statistics?.ratios ?? {};
+  // Some counters use older names — tolerate both spellings.
+  const sent        = c.sent          ?? 0;
+  const delivered   = c.delivered     ?? 0;
+  const opens       = c.open          ?? 0;
+  const uniqueOpens = c.openNew       ?? opens;
+  const clicks      = c.click         ?? 0;
+  const uniqueClicks= c.clickNew      ?? clicks;
+  const unsubscribes= c.unsubscribed  ?? 0;
+  const base        = delivered || sent || 1;
+  const openRate    = r.openRatio  != null ? r.openRatio  : opens / base;
+  const clickRate   = r.clickRatio != null ? r.clickRatio : clicks / base;
+  return { sent, delivered, opens, uniqueOpens, clicks, uniqueClicks, unsubscribes, openRate, clickRate };
+}
+
 export const HUBSPOT_REST_HOST = HUBSPOT_API_HOST;
 
 // ─────────────────────────────────────────────────────────────────────────

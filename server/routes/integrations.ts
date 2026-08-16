@@ -325,6 +325,7 @@ export function registerIntegrationRoutes(app: Express) {
       // false on an otherwise-connected portal, the UI shows a re-authorize
       // banner — the scopes were added after this tenant last connected.
       emailSyncReady: hubspot.hasHubspotEmailScopes(c),
+      marketingEmailScopesReady: hubspot.hasHubspotMarketingEmailScopes(c),
     };
   }
 
@@ -340,7 +341,7 @@ export function registerIntegrationRoutes(app: Express) {
         outboundAllowed: hubspot.isHubspotOutboundAllowed(ctx.plan),
         // True when a connection exists but predates the marketing-email
         // scopes — the tenant must re-authorize before sync activates.
-        needsReauth: conn ? !hubspot.hasHubspotEmailScopes(conn) : false,
+        needsReauth: conn ? (!hubspot.hasHubspotEmailScopes(conn) || !hubspot.hasHubspotMarketingEmailScopes(conn)) : false,
         connection: conn ? publicConnectionView(conn) : null,
       });
     } catch (err) {

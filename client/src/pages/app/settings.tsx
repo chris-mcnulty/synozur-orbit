@@ -1902,6 +1902,7 @@ interface HubspotStatus {
     lastSyncError: string | null;
     lastSyncStats: any;
     emailSyncReady: boolean;
+    marketingEmailScopesReady: boolean;
   };
 }
 
@@ -2182,11 +2183,11 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
           data-testid="banner-hubspot-reauth"
         >
           <div className="space-y-0.5">
-            <p className="font-medium text-amber-800 dark:text-amber-300">Re-authorize to enable marketing-email sync</p>
+            <p className="font-medium text-amber-800 dark:text-amber-300">Re-authorize HubSpot to unlock new features</p>
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              This connection was authorized before marketing-email sync was added. Re-authorize to grant the new
-              timeline and subscription scopes so engagement and unsubscribes sync to HubSpot. Your existing CRM
-              enrichment keeps working until you do.
+              New capabilities have been added since this connection was last authorized: engagement and unsubscribe
+              sync to HubSpot timelines, and open/click statistics for newsletters sent via HubSpot. Re-authorize to
+              grant the required scopes. Your existing CRM enrichment keeps working until you do.
             </p>
           </div>
           <Button

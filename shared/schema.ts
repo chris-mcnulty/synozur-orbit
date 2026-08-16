@@ -4254,6 +4254,11 @@ export const HUBSPOT_OAUTH_SCOPES = [
   // `hasHubspotListScopes()` gates the browse-by-list path gracefully.
   "crm.lists.read",
   "crm.lists.write",
+  // Marketing Email API (v3): read marketing email objects and their statistics
+  // so Orbit can pull open/click rates for newsletters sent via HubSpot.
+  // Connections created before this scope was added will be missing it;
+  // `hasHubspotMarketingEmailScopes()` gates the stats-fetch path gracefully.
+  "marketing-email",
 ] as const;
 
 // The subset of scopes required for the marketing-email sync layer. A
@@ -4264,6 +4269,9 @@ export const HUBSPOT_EMAIL_SYNC_SCOPES = [
   "communication_preferences.read_write",
   "timeline",
 ] as const;
+
+// Scope required to read marketing email objects + statistics via the v3 API.
+export const HUBSPOT_MARKETING_EMAIL_SCOPES = ["marketing-email"] as const;
 
 // Per-tenant connection to the Synozur Insights website ("www") MCP server.
 // Stores the MCP endpoint and an encrypted mcp.write key so Orbit can post

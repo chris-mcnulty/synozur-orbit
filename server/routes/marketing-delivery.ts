@@ -1835,6 +1835,39 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     }
   });
 
+  // ── Fetch HubSpot open/click stats for a linked email ────────────────────
+  app.get("/api/generated-emails/:id/hubspot-stats", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [email] = await db.select({
+        id: generatedEmails.id,
+        hubspotEmailId: generatedEmails.hubspotEmailId,
+        tenantDomain: generatedEmails.tenantDomain,
+      }).from(generatedEmails)
+        .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+      if (!email) return res.status(404).json({ error: "Email not found" });
+      if (!email.hubspotEmailId) return res.status(400).json({ error: "No HubSpot email ID is linked to this newsletter." });
+
+      const { fetchHubspotEmailStats, hasHubspotMarketingEmailScopes } = await import("../services/hubspot-integration");
+      const { storage } = await import("../storage");
+      const conn = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!conn) return res.status(400).json({ error: "HubSpot is not connected for this account." });
+      if (!hasHubspotMarketingEmailScopes(conn)) {
+        return res.status(403).json({
+          error: "This HubSpot connection needs to be re-authorized to read email statistics. Go to Settings → Connections and reconnect HubSpot.",
+          needsReauth: true,
+        });
+      }
+      const stats = await fetchHubspotEmailStats(ctx.tenantDomain, email.hubspotEmailId);
+      if (!stats) return res.status(404).json({ error: "HubSpot could not find statistics for this email. It may still be sending." });
+      res.json(stats);
+    } catch (err: any) {
+      console.error("[hubspot-stats]", err.message);
+      res.status(500).json({ error: err.message || "Failed to fetch HubSpot stats" });
+    }
+  });
+
   app.post("/api/generated-emails/:id/send", async (req, res) => {
     if (!await guardFeature(req, res, "directEmailDelivery")) return;
     const ctx = await getRequestContext(req);
