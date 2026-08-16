@@ -1,4 +1,3 @@
--- backfill:always-apply
 -- Link a generated email to the HubSpot marketing email it was sent as, so
 -- campaign history can jump straight to HubSpot's performance report (and a
 -- future metrics sync has a stable key).
