@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Plus, Trash2, Lock, Pencil, Link as LinkIcon, Unlink, AlertTriangle, CheckCircle2, Mic, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useFeatureFlag } from "@/hooks/useFeatureFlag";
+import { useFeatureFlag, useFeatureFlagWithLoading } from "@/hooks/useFeatureFlag";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -723,7 +724,10 @@ function VoiceProfileDialog({
 function PostingBehaviourCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const socialPostsAllowed = useFeatureFlag("socialPosts");
+  // Use the loading-aware variant so the card never appears then disappears for
+  // tenants without the socialPosts feature. While loading we show a skeleton;
+  // once resolved we either show the card or nothing.
+  const { enabled: socialPostsAllowed, isLoading: flagLoading } = useFeatureFlagWithLoading("socialPosts");
 
   const { data: tenantInfo } = useQuery<{ socialPostingJitterEnabled?: boolean; features?: Record<string, boolean> }>({
     queryKey: ["/api/tenant/info"],
@@ -758,8 +762,30 @@ function PostingBehaviourCard() {
     onError: (err: Error) => toast({ title: "Couldn't update setting", description: err.message, variant: "destructive" }),
   });
 
-  // Loading-aware gate: stays true while /api/tenant/info is in flight so the
-  // card doesn't pop in late, then resolves to features.socialPosts === true.
+  // While /api/tenant/info is in flight, show a skeleton card so the layout is
+  // stable — the card never pops in and then disappears for tenants without the
+  // socialPosts feature.
+  if (flagLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-64 mt-1" />
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1 flex-1">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-full mt-1" />
+              <Skeleton className="h-3 w-3/4" />
+            </div>
+            <Skeleton className="h-6 w-11 rounded-full shrink-0" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!socialPostsAllowed) return null;
 
   return (
