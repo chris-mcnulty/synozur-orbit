@@ -18,7 +18,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
   Gauge, Plus, Pencil, Trash2, Sparkles, Loader2, Download, TrendingUp, Target, ExternalLink,
+  RefreshCw, AlertTriangle, User,
 } from "lucide-react";
+import {
+  Tooltip, TooltipContent, TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // ─── types (mirror server market_segments row) ──────────────────────────────
 
@@ -34,11 +38,25 @@ interface NeedsMap {
   barriers: string[];
   buyingCriteria: string[];
 }
+/** Persona fields that were seeded into the segment at backfill time. Present
+ *  only when the segment has a personaId and the persona still exists. */
+interface PersonaSnapshot {
+  name: string | null;
+  role: string | null;
+  industry: string | null;
+  companySize: string | null;
+  painPoints: string[] | null;
+  goals: string[] | null;
+  objections: string[] | null;
+}
 interface MarketSegment {
   id: string;
   name: string;
   description: string | null;
   personaId: string | null;
+  /** Populated server-side by a left-join on personas. Null when the persona was
+   *  deleted after the segment was seeded (personaId becomes null via SET NULL). */
+  persona: PersonaSnapshot | null;
   firmographics: Firmographics | null;
   needsMap: NeedsMap | null;
   needsMapSource: string | null;
@@ -79,6 +97,30 @@ function confidenceColor(c: string | null): string {
   return "bg-muted text-muted-foreground";
 }
 const arrToLines = (a: string[] | undefined) => (a ?? []).join("\n");
+
+// ─── divergence detection ────────────────────────────────────────────────────
+
+/** Normalise a string for loose comparison (trim + lower). */
+function norm(s: string | null | undefined): string { return (s ?? "").trim().toLowerCase(); }
+
+/** Sort and serialise a string array for order-insensitive comparison. */
+function normArr(a: string[] | null | undefined): string { return [...(a ?? [])].map(norm).sort().join("\n"); }
+
+/**
+ * Returns true when the segment's key fields have drifted from its source
+ * persona since backfill. Only checks the fields that backfill seeds:
+ *   industry, companySize, pains (painPoints), barriers (objections), buyingCriteria (goals).
+ */
+function isDiverged(s: MarketSegment): boolean {
+  const p = s.persona;
+  if (!p) return false; // no persona link → nothing to compare
+  const industryDiff = norm(s.firmographics?.industry) !== norm(p.industry);
+  const sizeDiff = norm(s.firmographics?.companySize) !== norm(p.companySize);
+  const painsDiff = normArr(s.needsMap?.pains) !== normArr(p.painPoints);
+  const barriersDiff = normArr(s.needsMap?.barriers) !== normArr(p.objections);
+  const criteriaDiff = normArr(s.needsMap?.buyingCriteria) !== normArr(p.goals);
+  return industryDiff || sizeDiff || painsDiff || barriersDiff || criteriaDiff;
+}
 
 // Module-scoped so it isn't a fresh component type each render (which would
 // remount the textarea and drop focus on every keystroke). Keeps raw line breaks
@@ -192,6 +234,7 @@ export default function MarketSegmentsPage() {
 
 function SegmentCard({ segment: s, onEdit, onDelete }: { segment: MarketSegment; onEdit: () => void; onDelete: () => void }) {
   const cur = s.sizingCurrency ?? "USD";
+  const diverged = isDiverged(s);
   return (
     <Card className="hover:border-primary/40 transition-colors" data-testid={`card-segment-${s.id}`}>
       <CardContent className="py-4 flex items-center gap-4 flex-wrap">
@@ -202,7 +245,38 @@ function SegmentCard({ segment: s, onEdit, onDelete }: { segment: MarketSegment;
         <div className="flex-1 min-w-[180px]">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">{s.name}</span>
-            {s.personaId && <Badge variant="outline" className="text-[10px]">from persona</Badge>}
+            {s.persona?.name && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-[10px] cursor-default flex items-center gap-1">
+                    <User className="h-2.5 w-2.5" />
+                    {s.persona.name}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[220px]">
+                  Seeded from persona "{s.persona.name}"
+                  {s.persona.role ? ` (${s.persona.role})` : ""}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {diverged && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] cursor-default flex items-center gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    data-testid={`badge-diverged-${s.id}`}
+                  >
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    diverged
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[260px]">
+                  This segment's industry, company size, or needs map no longer match its source persona.
+                  Open the segment to re-sync from the persona.
+                </TooltipContent>
+              </Tooltip>
+            )}
             {s.sizingConfidence && (
               <Badge variant="outline" className={`text-[10px] ${confidenceColor(s.sizingConfidence)}`}>
                 {s.sizingConfidence} confidence
@@ -293,6 +367,7 @@ function CreateDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
 function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [confirmSync, setConfirmSync] = useState(false);
 
   // Live snapshot: seeded from the list row, then updated in place by each AI
   // action's returned row. Display and dirty-baselines read from `live` so the
@@ -368,15 +443,66 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
     onError: (e: any) => toast({ title: "Scoring failed", description: e.message, variant: "destructive" }),
   });
 
+  const syncMutation = useMutation({
+    mutationFn: async () =>
+      (await apiRequest("POST", `/api/market-segments/${segment.id}/sync-from-persona`)).json() as Promise<MarketSegment>,
+    onSuccess: (r: MarketSegment) => {
+      setLive(r);
+      // Refresh local editing state from the synced values.
+      setIndustry(r.firmographics?.industry ?? "");
+      setCompanySize(r.firmographics?.companySize ?? "");
+      setNeeds(r.needsMap ?? EMPTY_NEEDS);
+      setConfirmSync(false);
+      refresh();
+      toast({ title: "Synced from persona", description: "Industry, company size, and needs map updated." });
+    },
+    onError: (e: any) => { setConfirmSync(false); toast({ title: "Sync failed", description: e.message, variant: "destructive" }); },
+  });
+
   const busy = sizeMutation.isPending || needsMutation.isPending || priorityMutation.isPending;
+  const diverged = isDiverged(live);
 
   return (
+    <>
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{segment.name}</DialogTitle>
-          <DialogDescription>Profile, size, and prioritize this segment.</DialogDescription>
+          <DialogDescription>
+            Profile, size, and prioritize this segment.
+            {live.persona?.name && (
+              <span className="ml-1 text-muted-foreground">
+                · Source persona: <span className="font-medium text-foreground">{live.persona.name}</span>
+                {live.persona.role ? ` (${live.persona.role})` : ""}
+              </span>
+            )}
+          </DialogDescription>
         </DialogHeader>
+
+        {/* Divergence banner — shown when segment fields no longer match the source persona */}
+        {diverged && live.persona?.name && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm" data-testid="panel-diverged">
+            <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-amber-700 dark:text-amber-400">Segment has drifted from its persona</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Industry, company size, or needs map no longer match persona "{live.persona.name}".
+                Re-syncing will overwrite those fields with current persona values but will not affect sizing or priority.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+              onClick={() => setConfirmSync(true)}
+              disabled={syncMutation.isPending}
+              data-testid="button-sync-from-persona"
+            >
+              {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <span className="ml-2">Re-sync from persona</span>
+            </Button>
+          </div>
+        )}
 
         <div className="space-y-5">
           {/* Basics */}
@@ -492,5 +618,34 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Sync confirmation — separate AlertDialog so it layers above the edit dialog */}
+    <AlertDialog open={confirmSync} onOpenChange={(o) => !o && setConfirmSync(false)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Re-sync from persona?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will overwrite the segment's <strong>industry</strong>, <strong>company size</strong>,
+            and <strong>needs map</strong> (pains, barriers, buying criteria) with the current values
+            from persona "{live.persona?.name}".
+            <br /><br />
+            Sizing (TAM/SAM), geography, and priority are not affected. This action cannot be undone automatically —
+            save the dialog after syncing if you want to keep the result.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={syncMutation.isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => { e.preventDefault(); syncMutation.mutate(); }}
+            disabled={syncMutation.isPending}
+            data-testid="button-confirm-sync"
+          >
+            {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Re-sync
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

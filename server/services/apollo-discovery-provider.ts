@@ -7,6 +7,31 @@
  *
  * Requires: APOLLO_API_KEY secret.
  * Endpoint:  POST https://api.apollo.io/v1/mixed_people/search
+ *
+ * ── Targeting source decision ──────────────────────────────────────────────
+ * Apollo targeting is intentionally derived from persona / campaign ICP
+ * criteria (role, industry, companySize, target overrides) — NOT from
+ * market_segments firmographics. The rationale:
+ *
+ *   • Personas are the authoritative qualitative record for who to reach.
+ *     market_segments layer on top of personas with quantitative sizing
+ *     (TAM/SAM), priority scores, and a Needs Map — all useful for GTM
+ *     prioritization but not granular enough to replace role/title filters.
+ *
+ *   • market_segments.firmographics captures industry + company size, which
+ *     map onto personas.industry / personas.companySize. Since backfill seeds
+ *     those fields directly from the persona, targeting from the persona
+ *     produces equivalent Apollo filters while avoiding a second code path.
+ *
+ *   • If a segment has diverged from its source persona (user or AI edits),
+ *     the divergence is surfaced in the UI (see market-segments.tsx) and the
+ *     user can one-click re-sync; discovery then picks up the updated persona
+ *     fields automatically on the next run.
+ *
+ *   • Future option: expose an optional `useSegmentFirmographics` flag on
+ *     DiscoverySearchInput that substitutes segment firmographics for
+ *     persona.industry + persona.companySize when set. Not implemented yet
+ *     because no campaign workflow sends a segmentId into the discovery call.
  */
 
 import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provider-core";

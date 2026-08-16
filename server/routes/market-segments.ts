@@ -4,16 +4,17 @@
  * CRUD for strategic market segments (personas promoted to quantified segments)
  * plus the three AI actions: sizing (TAM/SAM), needs-map, and priority scoring.
  *
- *   GET    /api/market-segments               list (ranked by priority) for tenant+market
- *   POST   /api/market-segments               create
- *   GET    /api/market-segments/:id           get one
- *   PATCH  /api/market-segments/:id           update (incl. user overrides)
- *   DELETE /api/market-segments/:id           delete
- *   POST   /api/market-segments/:id/size      AI TAM/SAM sizing  (metered: runMarketSizing)
- *   POST   /api/market-segments/:id/needs-map AI Needs Map
- *   POST   /api/market-segments/:id/priority  AI priority score
- *   GET    /api/market-segments/:id/sources   provenance citations
- *   POST   /api/market-segments/backfill      seed segments from existing personas
+ *   GET    /api/market-segments                        list (ranked by priority) for tenant+market
+ *   POST   /api/market-segments                        create
+ *   GET    /api/market-segments/:id                    get one
+ *   PATCH  /api/market-segments/:id                    update (incl. user overrides)
+ *   DELETE /api/market-segments/:id                    delete
+ *   POST   /api/market-segments/:id/size               AI TAM/SAM sizing  (metered: runMarketSizing)
+ *   POST   /api/market-segments/:id/needs-map          AI Needs Map
+ *   POST   /api/market-segments/:id/priority           AI priority score
+ *   GET    /api/market-segments/:id/sources            provenance citations
+ *   POST   /api/market-segments/:id/sync-from-persona  one-click re-seed from source persona
+ *   POST   /api/market-segments/backfill               seed segments from existing personas
  *
  * All routes gated by the `marketSegments` feature flag and scoped to
  * tenantDomain + marketId. NOT to be confused with /api/marketing-segments
@@ -76,8 +77,18 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     try {
       const ctx = await getRequestContext(req);
       const rows = await db
-        .select()
+        .select({
+          seg: marketSegments,
+          personaName: personas.name,
+          personaIndustry: personas.industry,
+          personaCompanySize: personas.companySize,
+          personaPainPoints: personas.painPoints,
+          personaGoals: personas.goals,
+          personaObjections: personas.objections,
+          personaRole: personas.role,
+        })
         .from(marketSegments)
+        .leftJoin(personas, eq(marketSegments.personaId, personas.id))
         .where(
           and(
             eq(marketSegments.tenantDomain, ctx.tenantDomain),
@@ -85,7 +96,12 @@ export function registerMarketSegmentsRoutes(app: Express): void {
           ),
         )
         .orderBy(desc(marketSegments.priorityScore), desc(marketSegments.createdAt));
-      res.json(rows);
+      res.json(rows.map(({ seg, personaName, personaIndustry, personaCompanySize, personaPainPoints, personaGoals, personaObjections, personaRole }) => ({
+        ...seg,
+        persona: seg.personaId
+          ? { name: personaName, industry: personaIndustry, companySize: personaCompanySize, painPoints: personaPainPoints, goals: personaGoals, objections: personaObjections, role: personaRole }
+          : null,
+      })));
     } catch (err) {
       sendContextError(res, err);
     }
@@ -135,9 +151,34 @@ export function registerMarketSegmentsRoutes(app: Express): void {
     if (!(await guardFeature(req, res, "marketSegments"))) return;
     try {
       const ctx = await getRequestContext(req);
-      const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
-      if (!seg) return res.status(404).json({ error: "Segment not found" });
-      res.json(seg);
+      const [row] = await db
+        .select({
+          seg: marketSegments,
+          personaName: personas.name,
+          personaIndustry: personas.industry,
+          personaCompanySize: personas.companySize,
+          personaPainPoints: personas.painPoints,
+          personaGoals: personas.goals,
+          personaObjections: personas.objections,
+          personaRole: personas.role,
+        })
+        .from(marketSegments)
+        .leftJoin(personas, eq(marketSegments.personaId, personas.id))
+        .where(
+          and(
+            eq(marketSegments.id, req.params.id),
+            eq(marketSegments.tenantDomain, ctx.tenantDomain),
+            eq(marketSegments.marketId, ctx.marketId),
+          ),
+        );
+      if (!row) return res.status(404).json({ error: "Segment not found" });
+      const { seg, personaName, personaIndustry, personaCompanySize, personaPainPoints, personaGoals, personaObjections, personaRole } = row;
+      res.json({
+        ...seg,
+        persona: seg.personaId
+          ? { name: personaName, industry: personaIndustry, companySize: personaCompanySize, painPoints: personaPainPoints, goals: personaGoals, objections: personaObjections, role: personaRole }
+          : null,
+      });
     } catch (err) {
       sendContextError(res, err);
     }
@@ -348,6 +389,66 @@ export function registerMarketSegmentsRoutes(app: Express): void {
       if (!seg) return res.status(404).json({ error: "Segment not found" });
       const sources = await getSources(ctx.tenantDomain, "segment_sizing", seg.id);
       res.json(sources);
+    } catch (err) {
+      sendContextError(res, err);
+    }
+  });
+
+  // ── SYNC SEGMENT FROM ITS SOURCE PERSONA ────────────────────────────────────
+  // One-click re-seed: copies persona's industry/companySize into firmographics
+  // and painPoints/objections/goals into the Needs Map. Never overwrites
+  // AI-generated sizing or user-set priority. The caller confirms intent in the UI.
+  app.post("/api/market-segments/:id/sync-from-persona", async (req: Request, res: Response) => {
+    if (!(await guardFeature(req, res, "marketSegments"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
+      const seg = await loadScopedSegment(req.params.id, ctx.tenantDomain, ctx.marketId);
+      if (!seg) return res.status(404).json({ error: "Segment not found" });
+      if (!seg.personaId) return res.status(400).json({ error: "Segment has no linked persona to sync from" });
+
+      // Load the source persona (tenant-scoped for safety).
+      const [persona] = await db
+        .select()
+        .from(personas)
+        .where(and(eq(personas.id, seg.personaId), eq(personas.tenantDomain, ctx.tenantDomain)));
+      if (!persona) return res.status(404).json({ error: "Linked persona no longer exists — cannot sync" });
+
+      const updatedFirmographics: Firmographics = {
+        ...(seg.firmographics as Firmographics ?? {}),
+        industry: persona.industry ?? undefined,
+        companySize: persona.companySize ?? undefined,
+      };
+      const updatedNeedsMap: NeedsMap = {
+        pains: persona.painPoints ?? [],
+        triggers: [],
+        barriers: persona.objections ?? [],
+        buyingCriteria: persona.goals ?? [],
+      };
+
+      const [updated] = await db
+        .update(marketSegments)
+        .set({
+          firmographics: updatedFirmographics,
+          needsMap: updatedNeedsMap,
+          needsMapSource: "mixed",
+          updatedAt: new Date(),
+        })
+        .where(eq(marketSegments.id, seg.id))
+        .returning();
+
+      res.json({
+        ...updated,
+        persona: {
+          name: persona.name,
+          industry: persona.industry,
+          companySize: persona.companySize,
+          painPoints: persona.painPoints,
+          goals: persona.goals,
+          objections: persona.objections,
+          role: persona.role,
+        },
+      });
     } catch (err) {
       sendContextError(res, err);
     }
