@@ -1776,6 +1776,65 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     }
   });
 
+  // ── Mark an email as sent externally (e.g. via HubSpot) ───────────────────
+  app.post("/api/generated-emails/:id/mark-sent", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [email] = await db.select().from(generatedEmails)
+        .where(and(eq(generatedEmails.id, req.params.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+      if (!email) return res.status(404).json({ error: "Email not found" });
+      const { sentAt: sentAtRaw, hubspotEmailId, hubspotEmailUrl } = req.body ?? {};
+      const sentAt = sentAtRaw ? new Date(sentAtRaw) : (email.sentAt ?? new Date());
+      // Optional link to the HubSpot marketing email this was sent as.
+      // Accept a pasted URL and/or a raw numeric id; derive the id from the
+      // URL when possible (e.g. .../marketing-email/12345/... or ?emailId=).
+      let hsId: string | null = typeof hubspotEmailId === "string" && /^\d{1,20}$/.test(hubspotEmailId.trim()) ? hubspotEmailId.trim() : null;
+      // Server-side URL validation: only persist HTTPS links on HubSpot-owned
+      // hosts. A pasted javascript:/data: URL must never reach an <a href>.
+      let hsUrl: string | null = null;
+      if (typeof hubspotEmailUrl === "string" && hubspotEmailUrl.trim()) {
+        try {
+          const u = new URL(hubspotEmailUrl.trim());
+          const hostOk = u.hostname === "hubspot.com" || u.hostname.endsWith(".hubspot.com");
+          if (u.protocol !== "https:" || !hostOk) {
+            return res.status(400).json({ error: "The HubSpot link must be an https:// URL on a hubspot.com domain." });
+          }
+          hsUrl = u.toString().slice(0, 2000);
+        } catch {
+          return res.status(400).json({ error: "The HubSpot link is not a valid URL." });
+        }
+      }
+      if (!hsId && hsUrl) {
+        const m = hsUrl.match(/(?:marketing-email|email)\/(?:[a-z-]+\/)?(\d{5,})/i) ?? hsUrl.match(/[?&]emailId=(\d+)/i);
+        if (m) hsId = m[1];
+      }
+      // Cancel any not-yet-delivered Orbit (SendGrid) sends for this email so an
+      // external "already sent via HubSpot" flag can't race a queued delivery
+      // into a duplicate. In-flight ("sending") rows are left alone — they are
+      // already being delivered and terminalize on their own.
+      const cancelled = await db.update(emailSends)
+        .set({ status: "failed", errorMessage: "Cancelled — email was marked as sent externally (e.g. via HubSpot).", completedAt: new Date() })
+        .where(and(
+          eq(emailSends.generatedEmailId, email.id),
+          eq(emailSends.tenantDomain, ctx.tenantDomain),
+          inArray(emailSends.status, ["pending", "queued"]),
+        ))
+        .returning({ id: emailSends.id });
+      await db.update(generatedEmails)
+        .set({
+          status: "sent", sentAt, updatedAt: new Date(),
+          ...(hsId ? { hubspotEmailId: hsId } : {}),
+          ...(hsUrl ? { hubspotEmailUrl: hsUrl } : {}),
+        })
+        .where(and(eq(generatedEmails.id, email.id), eq(generatedEmails.tenantDomain, ctx.tenantDomain)));
+      res.json({ ok: true, sentAt: sentAt.toISOString(), cancelledQueuedSends: cancelled.length });
+    } catch (err: any) {
+      console.error("[mark-sent]", err.message);
+      res.status(500).json({ error: err.message || "Failed to mark email as sent" });
+    }
+  });
+
   app.post("/api/generated-emails/:id/send", async (req, res) => {
     if (!await guardFeature(req, res, "directEmailDelivery")) return;
     const ctx = await getRequestContext(req);

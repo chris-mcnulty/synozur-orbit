@@ -3451,6 +3451,10 @@ export const generatedEmails = pgTable("generated_emails", {
   solutionAreaId: varchar("solution_area_id").references((): AnyPgColumn => solutionAreas.id, { onDelete: "set null" }),
   conferenceId: varchar("conference_id").references((): AnyPgColumn => conferences.id, { onDelete: "set null" }),
   sentAt: timestamp("sent_at"),
+  // Link to the HubSpot marketing email this was sent as (external send).
+  // Stable key for a future metrics sync + one-click jump to HubSpot's report.
+  hubspotEmailId: text("hubspot_email_id"),
+  hubspotEmailUrl: text("hubspot_email_url"),
   sourceAssetIds: text("source_asset_ids").array(),
   // Structured optional sections rendered server-side after the main message:
   // case study card, upcoming events, recent blog updates. `sections` stores

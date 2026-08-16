@@ -98,10 +98,10 @@ describe("discoverCompetitorsForStudy — crawl failure path", () => {
   it("still returns a positive competitor count when crawlCompetitorWebsite throws", async () => {
     vi.mocked(crawlCompetitorWebsite).mockRejectedValue(new Error("connection refused"));
 
-    const count = await discoverCompetitorsForStudy(OPTS_BASE);
+    const result = await discoverCompetitorsForStudy(OPTS_BASE);
 
     // Two competitors from the mocked AI response should be persisted.
-    expect(count).toBe(2);
+    expect(result.count).toBe(2);
     // The AI was still called even though the crawl failed.
     expect(completeForFeature).toHaveBeenCalledOnce();
   });
@@ -128,9 +128,9 @@ describe("discoverCompetitorsForStudy — crawl success path", () => {
       ],
     } as any);
 
-    const count = await discoverCompetitorsForStudy(OPTS_BASE);
+    const result = await discoverCompetitorsForStudy(OPTS_BASE);
 
-    expect(count).toBe(2);
+    expect(result.count).toBe(2);
 
     expect(buildCompetitorDiscoveryPrompt).toHaveBeenCalledOnce();
     const callArg = vi.mocked(buildCompetitorDiscoveryPrompt).mock.calls[0][0];
@@ -144,19 +144,19 @@ describe("discoverCompetitorsForStudy — crawl success path", () => {
   });
 
   it("returns 0 when inputValue is blank regardless of crawl", async () => {
-    const count = await discoverCompetitorsForStudy({ ...OPTS_BASE, inputValue: "   " });
-    expect(count).toBe(0);
+    const result = await discoverCompetitorsForStudy({ ...OPTS_BASE, inputValue: "   " });
+    expect(result.count).toBe(0);
     expect(crawlCompetitorWebsite).not.toHaveBeenCalled();
   });
 
   it("skips crawl and passes no websiteContent for brief inputType", async () => {
-    const count = await discoverCompetitorsForStudy({
+    const result = await discoverCompetitorsForStudy({
       ...OPTS_BASE,
       inputType: "brief",
       inputValue: "We sell RevOps software to mid-market companies",
     });
 
-    expect(count).toBe(2);
+    expect(result.count).toBe(2);
     expect(crawlCompetitorWebsite).not.toHaveBeenCalled();
 
     const callArg = vi.mocked(buildCompetitorDiscoveryPrompt).mock.calls[0][0];
@@ -169,9 +169,9 @@ describe("discoverCompetitorsForStudy — DNS/SSRF guard", () => {
   it("skips crawl and falls back to URL-only when DNS validation fails", async () => {
     vi.mocked(validateUrlWithDnsCheck).mockResolvedValue({ isValid: false, error: "private IP" });
 
-    const count = await discoverCompetitorsForStudy(OPTS_BASE);
+    const result = await discoverCompetitorsForStudy(OPTS_BASE);
 
-    expect(count).toBe(2); // still returns AI-based competitors
+    expect(result.count).toBe(2); // still returns AI-based competitors
     expect(crawlCompetitorWebsite).not.toHaveBeenCalled();
 
     const callArg = vi.mocked(buildCompetitorDiscoveryPrompt).mock.calls[0][0];

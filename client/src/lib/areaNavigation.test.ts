@@ -14,8 +14,8 @@ describe("buildAreas — top-nav inHeader flags", () => {
     });
   }
 
-  it("home area has inHeader: false (sanity check)", () => {
-    expect(byId["home"].inHeader).toBe(false);
+  it("home area has inHeader: true — it must be a constant nav anchor (sessions resume on the last screen, so Home is otherwise never seen)", () => {
+    expect(byId["home"].inHeader).toBe(true);
   });
 
   it("settings area has inHeader: false (sanity check)", () => {

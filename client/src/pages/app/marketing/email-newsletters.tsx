@@ -31,6 +31,7 @@ import {
   Plus,
   Library,
   Check,
+  CheckCircle,
   X,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -83,6 +84,9 @@ interface SavedEmail {
   coachingTips?: string[];
   sourceAssetIds?: string[] | null;
   scheduledAt?: string | null;
+  sentAt?: string | null;
+  hubspotEmailId?: string | null;
+  hubspotEmailUrl?: string | null;
   sections?: {
     caseStudyAssetId?: string | null;
     eventIds?: string[];
@@ -471,6 +475,9 @@ export default function EmailNewslettersPage() {
   const [sendSubscriptionTypeIds, setSendSubscriptionTypeIds] = useState<string[]>([]);
   const [rescheduleEmail, setRescheduleEmail] = useState<SavedEmail | null>(null);
   const [rescheduleDateTime, setRescheduleDateTime] = useState<string>("");
+  const [markSentDialogEmail, setMarkSentDialogEmail] = useState<SavedEmail | null>(null);
+  const [markSentDate, setMarkSentDate] = useState<string>("");
+  const [markSentHubspotUrl, setMarkSentHubspotUrl] = useState<string>("");
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean>; mailingAddress?: string | null }>({
     queryKey: ["/api/tenant/info"],
@@ -1047,6 +1054,27 @@ export default function EmailNewslettersPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const markSentMutation = useMutation({
+    mutationFn: async ({ emailId, sentAt, hubspotEmailUrl }: { emailId: string; sentAt?: string; hubspotEmailUrl?: string }) => {
+      const r = await fetch(`/api/generated-emails/${emailId}/mark-sent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sentAt, hubspotEmailUrl }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/saved"] });
+      setMarkSentDialogEmail(null);
+      setMarkSentDate("");
+      setMarkSentHubspotUrl("");
+      toast({ title: "Marked as sent", description: "This email is now in your sent history." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const uniqueLabels = [...new Set(savedEmails.map(e => e.label).filter(Boolean))] as string[];
 
   const filteredEmails = savedEmails.filter(e => {
@@ -1589,7 +1617,25 @@ export default function EmailNewslettersPage() {
                             <span>Based on {email.sourceAssetIds.length} asset{email.sourceAssetIds.length !== 1 ? "s" : ""}</span>
                           </Badge>
                         )}
-                        {email.scheduledAt && (
+                        {email.status === "sent" && email.sentAt && (
+                          <Badge variant="outline" className="text-[10px] text-green-700 border-green-400 bg-green-50 dark:bg-green-950/30 dark:text-green-400 dark:border-green-700 gap-1" data-testid={`badge-sent-${email.id}`}>
+                            <CheckCircle className="w-2.5 h-2.5" />
+                            Sent {format(new Date(email.sentAt), "MMM d, yyyy")}
+                          </Badge>
+                        )}
+                        {email.hubspotEmailUrl && (
+                          <a
+                            href={email.hubspotEmailUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="text-[10px] text-primary underline underline-offset-2 hover:text-primary/80"
+                            data-testid={`link-hubspot-email-${email.id}`}
+                          >
+                            View in HubSpot ↗
+                          </a>
+                        )}
+                        {email.scheduledAt && email.status !== "sent" && (
                           <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700 gap-1" data-testid={`badge-scheduled-${email.id}`}>
                             <Calendar className="w-2.5 h-2.5" />
                             Scheduled for {format(new Date(email.scheduledAt), "MMM d, yyyy")}
@@ -1686,6 +1732,21 @@ export default function EmailNewslettersPage() {
                           data-testid={`button-send-email-${email.id}`}
                         >
                           <Send className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      {email.status !== "sent" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Mark as sent via HubSpot or another tool"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setMarkSentDialogEmail(email);
+                            setMarkSentDate(new Date().toISOString().slice(0, 16));
+                          }}
+                          data-testid={`button-mark-sent-email-${email.id}`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
                         </Button>
                       )}
                       <Button
@@ -2249,6 +2310,64 @@ export default function EmailNewslettersPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Mark as Sent (via HubSpot or external tool) ── */}
+        <Dialog open={!!markSentDialogEmail} onOpenChange={v => { if (!v) { setMarkSentDialogEmail(null); setMarkSentDate(""); } }}>
+          <DialogContent className="sm:max-w-[400px]" data-testid="dialog-mark-sent-email">
+            <DialogHeader>
+              <DialogTitle>Mark as Sent</DialogTitle>
+              <DialogDescription>
+                Flag this email as sent via HubSpot or another tool so it moves out of drafts and into your campaign history.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="mark-sent-date">Date sent</Label>
+                <Input
+                  id="mark-sent-date"
+                  type="datetime-local"
+                  value={markSentDate}
+                  onChange={e => setMarkSentDate(e.target.value)}
+                  data-testid="input-mark-sent-date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mark-sent-hubspot-url">HubSpot email link <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  id="mark-sent-hubspot-url"
+                  type="url"
+                  placeholder="Paste the HubSpot email URL for one-click access to its report"
+                  value={markSentHubspotUrl}
+                  onChange={e => setMarkSentHubspotUrl(e.target.value)}
+                  data-testid="input-mark-sent-hubspot-url"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                This records the email as sent in Orbit. It does not trigger a delivery — use this after sending through HubSpot or another platform.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button variant="outline" onClick={() => { setMarkSentDialogEmail(null); setMarkSentDate(""); setMarkSentHubspotUrl(""); }} data-testid="button-cancel-mark-sent">
+                Cancel
+              </Button>
+              <Button
+                disabled={markSentMutation.isPending}
+                onClick={() => {
+                  if (markSentDialogEmail) {
+                    markSentMutation.mutate({
+                      emailId: markSentDialogEmail.id,
+                      sentAt: markSentDate ? new Date(markSentDate).toISOString() : undefined,
+                      hubspotEmailUrl: markSentHubspotUrl.trim() || undefined,
+                    });
+                  }
+                }}
+                data-testid="button-confirm-mark-sent"
+              >
+                {markSentMutation.isPending ? "Saving..." : "Mark as Sent"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
