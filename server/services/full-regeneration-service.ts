@@ -14,6 +14,107 @@ import { buildMarketIntelligenceContext } from "./market-intelligence-context";
 import { filterDuplicateTasks } from "./marketing-task-dedup";
 
 export type DeliverableLaneKey = "battlecards" | "gtm" | "messaging" | "marketingTasks";
+
+/**
+ * Builds the messaging-framework prompt string used by the full-regeneration
+ * messaging task. Exported so tests can verify the SIS block injection without
+ * invoking the full regeneration pipeline.
+ */
+export function buildRegenMessagingPrompt(opts: {
+  companyName: string;
+  websiteUrl?: string | null;
+  description?: string | null;
+  isB2C: boolean;
+  marketIntelligenceContext: string;
+}): string {
+  const { companyName, websiteUrl, description, isB2C, marketIntelligenceContext } = opts;
+  const sisBlock = marketIntelligenceContext ? "\n" + marketIntelligenceContext + "\n" : "";
+  if (isB2C) {
+    return `You are an expert consumer brand strategist. Create a comprehensive messaging and positioning framework in markdown format.
+
+Company: ${companyName}
+Website: ${websiteUrl}
+Description: ${description || "N/A"}
+Business Type: B2C (Business-to-Consumer)
+${sisBlock}
+This is a B2C (business-to-consumer) company. Create a consumer-focused messaging framework with these sections:
+
+# Messaging & Positioning Framework: ${companyName}
+
+## Brand Positioning Statement
+Consumer-facing positioning that differentiates in the market — focus on how the brand fits into the consumer's life
+
+## Brand Promise
+The emotional and functional promise to consumers
+
+## Value Propositions
+### Primary Value Proposition (consumer benefit)
+### Secondary Value Propositions
+
+## Key Messages by Consumer Segment
+### Primary Consumer (core audience)
+### Secondary Consumer (growth audience)
+### Influencer / Advocate (word-of-mouth drivers)
+
+## Brand Story
+The narrative arc — origin, mission, and what makes the brand human and relatable
+
+## Elevator Pitch
+30-second and 60-second versions suitable for consumers
+
+## Tagline Options
+3-5 tagline options that resonate with consumers
+
+## Social Proof & Trust Signals
+Reviews, testimonials, awards, press, user-generated content
+
+## Competitive Differentiators
+What sets us apart in the consumer's mind
+
+## Brand Voice & Tone
+Guidelines for consistent consumer-facing messaging across social, email, packaging, and in-store
+
+Make this practical and ready to use across consumer marketing channels.`;
+  }
+  return `You are an expert marketing strategist. Create a comprehensive messaging framework in markdown format.
+
+Company: ${companyName}
+Website: ${websiteUrl}
+Description: ${description || "N/A"}
+${sisBlock}
+Create a messaging framework with these sections:
+
+# Messaging Framework: ${companyName}
+
+## Brand Positioning Statement
+Core positioning that differentiates in the market
+
+## Value Propositions
+### Primary Value Proposition
+### Secondary Value Propositions
+
+## Key Messages by Audience
+### C-Suite / Executives
+### Technical Decision Makers
+### End Users / Practitioners
+
+## Elevator Pitch
+30-second and 60-second versions
+
+## Tagline Options
+3-5 tagline options
+
+## Proof Points
+Evidence and social proof
+
+## Competitive Differentiators
+What sets us apart
+
+## Brand Voice & Tone
+Guidelines for consistent messaging
+
+Make this practical and ready to use in marketing materials.`;
+}
 export type DeliverableLaneStatus = "pending" | "running" | "done" | "skipped" | "failed";
 
 export interface DeliverableLaneState {
@@ -749,90 +850,13 @@ Make this practical and actionable for the team.`;
           marketId || companyProfile.marketId,
         );
 
-        const messagingPrompt = isB2C
-          ? `You are an expert consumer brand strategist. Create a comprehensive messaging and positioning framework in markdown format.
-
-Company: ${companyProfile.companyName}
-Website: ${companyProfile.websiteUrl}
-Description: ${companyProfile.description || "N/A"}
-Business Type: B2C (Business-to-Consumer)
-${messagingMarketIntelligenceContext ? "\n" + messagingMarketIntelligenceContext + "\n" : ""}
-This is a B2C (business-to-consumer) company. Create a consumer-focused messaging framework with these sections:
-
-# Messaging & Positioning Framework: ${companyProfile.companyName}
-
-## Brand Positioning Statement
-Consumer-facing positioning that differentiates in the market — focus on how the brand fits into the consumer's life
-
-## Brand Promise
-The emotional and functional promise to consumers
-
-## Value Propositions
-### Primary Value Proposition (consumer benefit)
-### Secondary Value Propositions
-
-## Key Messages by Consumer Segment
-### Primary Consumer (core audience)
-### Secondary Consumer (growth audience)
-### Influencer / Advocate (word-of-mouth drivers)
-
-## Brand Story
-The narrative arc — origin, mission, and what makes the brand human and relatable
-
-## Elevator Pitch
-30-second and 60-second versions suitable for consumers
-
-## Tagline Options
-3-5 tagline options that resonate with consumers
-
-## Social Proof & Trust Signals
-Reviews, testimonials, awards, press, user-generated content
-
-## Competitive Differentiators
-What sets us apart in the consumer's mind
-
-## Brand Voice & Tone
-Guidelines for consistent consumer-facing messaging across social, email, packaging, and in-store
-
-Make this practical and ready to use across consumer marketing channels.`
-          : `You are an expert marketing strategist. Create a comprehensive messaging framework in markdown format.
-
-Company: ${companyProfile.companyName}
-Website: ${companyProfile.websiteUrl}
-Description: ${companyProfile.description || "N/A"}
-${messagingMarketIntelligenceContext ? "\n" + messagingMarketIntelligenceContext + "\n" : ""}
-Create a messaging framework with these sections:
-
-# Messaging Framework: ${companyProfile.companyName}
-
-## Brand Positioning Statement
-Core positioning that differentiates in the market
-
-## Value Propositions
-### Primary Value Proposition
-### Secondary Value Propositions
-
-## Key Messages by Audience
-### C-Suite / Executives
-### Technical Decision Makers
-### End Users / Practitioners
-
-## Elevator Pitch
-30-second and 60-second versions
-
-## Tagline Options
-3-5 tagline options
-
-## Proof Points
-Evidence and social proof
-
-## Competitive Differentiators
-What sets us apart
-
-## Brand Voice & Tone
-Guidelines for consistent messaging
-
-Make this practical and ready to use in marketing materials.`;
+        const messagingPrompt = buildRegenMessagingPrompt({
+          companyName: companyProfile.companyName,
+          websiteUrl: companyProfile.websiteUrl,
+          description: companyProfile.description,
+          isB2C,
+          marketIntelligenceContext: messagingMarketIntelligenceContext,
+        });
 
         const anthropic = new Anthropic({
           apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
