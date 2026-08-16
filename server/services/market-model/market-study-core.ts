@@ -33,6 +33,7 @@ export function depthConfig(depth: StudyDepth): DepthConfig {
 
 export const STUDY_STAGE_PLAN: ReadonlyArray<{ key: string; label: string }> = [
   { key: "input", label: "Reviewing input & existing data" },
+  { key: "discovery", label: "Discovering competitors" },
   { key: "segments", label: "Modeling segments" },
   { key: "sizing", label: "Sizing TAM/SAM & needs" },
   { key: "matrix", label: "Scoring GTM opportunity matrix" },
@@ -146,6 +147,48 @@ export function buildExecSummaryPrompt(input: {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+// ─── Competitor discovery ─────────────────────────────────────────────────────
+
+export const COMPETITOR_DISCOVERY_SYSTEM_PROMPT =
+  "You are a market researcher. Given a company description or URL, identify the most " +
+  "important direct competitors. Be specific and realistic. Return only valid JSON.";
+
+export interface CompetitorSuggestion {
+  name: string;
+  url: string;
+}
+
+export function buildCompetitorDiscoveryPrompt(input: {
+  inputType: "url" | "brief";
+  inputValue: string;
+  count: number;
+}): string {
+  const label =
+    input.inputType === "url"
+      ? `Company URL: ${input.inputValue}`
+      : `Company / market description:\n"""${input.inputValue}"""`;
+  return [
+    label,
+    "",
+    `Identify up to ${input.count} direct competitors for this company or market.`,
+    "Return ONLY a JSON array (no other text):",
+    '[{ "name": "Competitor Name", "url": "https://competitor.com" }]',
+    "- url must be a valid https:// URL pointing to the competitor's main website",
+    "- name: official company name",
+  ].join("\n");
+}
+
+export function parseCompetitorSuggestions(text: string): CompetitorSuggestion[] {
+  const arr = extractJsonArray(text);
+  const out: CompetitorSuggestion[] = [];
+  for (const raw of arr) {
+    if (!raw || typeof raw.name !== "string" || !raw.name.trim()) continue;
+    if (typeof raw.url !== "string" || !/^https?:\/\//i.test(raw.url.trim())) continue;
+    out.push({ name: raw.name.trim().slice(0, 120), url: raw.url.trim() });
+  }
+  return out;
 }
 
 // ─── local helpers (no deps) ─────────────────────────────────────────────────

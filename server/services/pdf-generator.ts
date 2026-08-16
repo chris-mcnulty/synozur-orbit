@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import type { Competitor, CompanyProfile, Report, Battlecard, IntelligenceBriefing, RelationshipReport } from "@shared/schema";
+import { channelLabel } from "@shared/market-intelligence";
 import { format } from "date-fns";
 import { calculateScores } from "./scoring-service";
 import * as fs from "fs";
@@ -3560,4 +3561,207 @@ export async function generateSeoReportPdf(
   reportProgress?.({ phase: "Finalising", percent: 98 });
   console.log(`[SEO PDF] Generated in ${Date.now() - startTime}ms`);
   return { pdfBuffer: Buffer.from(pdfBuffer) };
+}
+
+// ─── Market Study PDF ──────────────────────────────────────────────────────────
+
+interface MarketStudySegmentRow {
+  name: string;
+  priorityScore: number | null;
+  tamMid: number | null;
+  samMid: number | null;
+  sizingCurrency: string | null;
+  sizingConfidence: string | null;
+}
+
+interface MarketStudyOpportunityRow {
+  segmentName: string;
+  needLabel: string;
+  channelKey: string;
+  roiScore: number | null;
+  isWhitespace: boolean;
+}
+
+export interface MarketStudyPdfData {
+  generatedAt: Date;
+  tenantDomain: string;
+  marketName?: string;
+  author: string;
+  inputValue: string | null;
+  depth: string;
+  executiveSummary: string | null;
+  segments: MarketStudySegmentRow[];
+  topOpportunities: MarketStudyOpportunityRow[];
+}
+
+function fmtMoney(n: number | null | undefined, currency = "USD"): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "n/a";
+  const s = currency === "USD" ? "$" : `${currency} `;
+  if (n >= 1e9) return `${s}${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${s}${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${s}${(n / 1e3).toFixed(0)}K`;
+  return `${s}${n}`;
+}
+
+/** Minimal server-side markdown → HTML (headers, bold, bullets). */
+function mdToHtml(text: string): string {
+  return text
+    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^### (.+)$/gm, "<h4>$1</h4>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>(\n)?)+/gs, (m) => `<ul>${m}</ul>`)
+    .replace(/\n{2,}/g, "</p><p>")
+    .replace(/\n/g, "<br>");
+}
+
+function generateMarketStudyHtml(data: MarketStudyPdfData): string {
+  const synozurLogo = getSynozurLogoBase64();
+  const orbitLogo = getOrbitLogoBase64();
+  const fontFaces = getFontFacesCss();
+  const dateStr = format(data.generatedAt, "MMMM d, yyyy");
+  const depthLabel = data.depth.charAt(0).toUpperCase() + data.depth.slice(1);
+
+  const headerLogo = orbitLogo && synozurLogo
+    ? `<div style="display:flex;align-items:center;gap:12px;"><img src="${synozurLogo}" alt="Synozur" style="height:22px;width:auto;"><span style="color:#94A3B8;font-size:18px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height:28px;width:auto;"></div>`
+    : orbitLogo
+      ? `<img src="${orbitLogo}" alt="Orbit" style="height:28px;width:auto;">`
+      : `<span style="font-size:22px;font-weight:700;color:#1E293B;">Orbit</span>`;
+
+  const coverLogo = orbitLogo && synozurLogo
+    ? `<div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;"><img src="${synozurLogo}" alt="Synozur" style="height:44px;width:auto;"><span style="color:#94A3B8;font-size:26px;">|</span><img src="${orbitLogo}" alt="Orbit" style="height:52px;width:auto;"></div>`
+    : orbitLogo ? `<div style="margin-bottom:24px;"><img src="${orbitLogo}" alt="Orbit" style="height:52px;width:auto;"></div>` : "";
+
+  const segmentRows = data.segments.map((s, i) => `
+    <tr>
+      <td style="padding:8px 10px;font-weight:700;color:#2563EB;">${i + 1}</td>
+      <td style="padding:8px 10px;font-weight:600;">${escapeHtml(s.name)}</td>
+      <td style="padding:8px 10px;text-align:right;">${fmtMoney(s.tamMid, s.sizingCurrency ?? "USD")}</td>
+      <td style="padding:8px 10px;text-align:right;">${fmtMoney(s.samMid, s.sizingCurrency ?? "USD")}</td>
+      <td style="padding:8px 10px;text-align:center;">${s.priorityScore ?? "—"}</td>
+      <td style="padding:8px 10px;text-align:center;font-size:11px;color:#64748B;">${escapeHtml(s.sizingConfidence ?? "—")}</td>
+    </tr>`).join("");
+
+  const oppRows = data.topOpportunities.map((o, i) => `
+    <tr>
+      <td style="padding:8px 10px;font-weight:700;color:#2563EB;">${i + 1}</td>
+      <td style="padding:8px 10px;">${escapeHtml(o.segmentName)}</td>
+      <td style="padding:8px 10px;">${escapeHtml(o.needLabel)}</td>
+      <td style="padding:8px 10px;">${escapeHtml(channelLabel(o.channelKey))}</td>
+      <td style="padding:8px 10px;text-align:center;font-weight:600;">${o.roiScore != null ? Math.round(o.roiScore) : "—"}</td>
+      <td style="padding:8px 10px;text-align:center;">${o.isWhitespace ? "★" : ""}</td>
+    </tr>`).join("");
+
+  const summaryHtml = data.executiveSummary
+    ? `<p>${mdToHtml(escapeHtml(data.executiveSummary).replace(/&amp;/g, "&"))}</p>`
+    : "<p style='color:#94A3B8;font-style:italic;'>Executive summary not available.</p>";
+
+  const ORBIT_FOOTER = `
+    <div style="text-align:center;padding:12px 0;border-top:1px solid #E2E8F0;margin-top:40px;font-size:10px;color:#64748B;">
+      <div style="margin-bottom:4px;">Orbit · orbit.synozur.com</div>
+      <div>Published by The Synozur Alliance LLC · www.synozur.com · © 2026 All Rights Reserved</div>
+      <div style="margin-top:4px;">Confidential — ${escapeHtml(data.tenantDomain)} | Generated ${dateStr}</div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+${fontFaces}
+@page { size: A4; margin: 20mm 15mm 30mm 15mm; }
+* { box-sizing: border-box; }
+body { font-family: 'Avenir Next LT Pro','Avenir Next',Avenir,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#fff; color:#1E293B; margin:0; padding:0; line-height:1.6; font-size:14px; }
+.cover-page { height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:40px; background:linear-gradient(135deg,#0F172A 0%,#1E293B 50%,#334155 100%); color:#fff; }
+.cover-title { font-size:34px; font-weight:700; margin-bottom:12px; }
+.cover-subtitle { font-size:18px; color:#94A3B8; margin-bottom:32px; max-width:560px; }
+.cover-meta { font-size:13px; color:#CBD5E1; }
+.cover-badge { display:inline-block; padding:4px 14px; border-radius:20px; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; background:rgba(255,255,255,0.12); color:#F1F5F9; margin-bottom:16px; }
+.content-page { padding:20px 0; }
+.page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; border-bottom:2px solid #F1F5F9; padding-bottom:12px; }
+.section { margin-bottom:36px; page-break-inside:avoid; }
+.section-title { font-size:16px; font-weight:700; color:#1E293B; margin-bottom:12px; padding-bottom:6px; border-bottom:1px solid #E2E8F0; text-transform:uppercase; letter-spacing:0.05em; }
+.prose p { margin:0 0 10px; }
+.prose h3 { font-size:15px; font-weight:700; color:#1E293B; margin:18px 0 8px; }
+.prose h4 { font-size:13px; font-weight:600; color:#334155; margin:12px 0 6px; }
+.prose ul { margin:0 0 10px; padding-left:20px; }
+.prose li { margin-bottom:4px; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { background:#F1F5F9; font-weight:700; text-align:left; padding:8px 10px; border-bottom:2px solid #E2E8F0; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:#64748B; }
+tr:nth-child(even) { background:#F8FAFC; }
+td { border-bottom:1px solid #E2E8F0; vertical-align:middle; }
+</style>
+</head>
+<body>
+
+<div class="cover-page">
+  ${coverLogo}
+  <div class="cover-badge">${depthLabel} Study</div>
+  <div class="cover-title">Market Study</div>
+  <div class="cover-subtitle">${escapeHtml(data.inputValue ?? "Market analysis")}</div>
+  <div class="cover-meta">
+    ${data.marketName ? `${escapeHtml(data.marketName)} &nbsp;·&nbsp; ` : ""}
+    ${escapeHtml(data.tenantDomain)}<br>
+    Prepared by ${escapeHtml(data.author)} &nbsp;·&nbsp; ${dateStr}
+  </div>
+</div>
+
+<div class="content-page">
+  <div class="page-header">
+    ${headerLogo}
+    <span style="font-size:12px;color:#94A3B8;">Market Study — ${dateStr}</span>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Executive Summary</div>
+    <div class="prose">${summaryHtml}</div>
+  </div>
+
+  ${data.segments.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Ranked Market Segments</div>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Segment</th><th style="text-align:right;">TAM</th>
+        <th style="text-align:right;">SAM</th><th style="text-align:center;">Priority</th>
+        <th style="text-align:center;">Confidence</th>
+      </tr></thead>
+      <tbody>${segmentRows}</tbody>
+    </table>
+  </div>` : ""}
+
+  ${data.topOpportunities.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Top GTM Opportunities &nbsp;<span style="font-size:11px;font-weight:400;color:#64748B;">(★ = whitespace / top-ROI)</span></div>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Segment</th><th>Need</th><th>Channel</th>
+        <th style="text-align:center;">ROI Score</th><th style="text-align:center;">★</th>
+      </tr></thead>
+      <tbody>${oppRows}</tbody>
+    </table>
+  </div>` : ""}
+
+  ${ORBIT_FOOTER}
+</div>
+
+</body>
+</html>`;
+}
+
+export async function generateMarketStudyPdf(data: MarketStudyPdfData): Promise<Buffer> {
+  const html = generateMarketStudyHtml(data);
+  const startTime = Date.now();
+  console.log("[Market Study PDF] Starting generation");
+  const pdfBuffer = await withPdfPage(async (page) => {
+    await page.setViewport({ width: 800, height: 600 });
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30000 });
+    return await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: { top: "15mm", bottom: "15mm", left: "12mm", right: "12mm" },
+    });
+  });
+  console.log(`[Market Study PDF] Generated in ${Date.now() - startTime}ms`);
+  return Buffer.from(pdfBuffer);
 }

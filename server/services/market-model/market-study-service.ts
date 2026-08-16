@@ -31,11 +31,15 @@ import { generateMatrixForMarket, NoMatrixWorkError } from "./opportunity-matrix
 import { replaceSources } from "../market-intelligence-sources";
 import { completeForFeature } from "../ai-provider";
 import { logAiUsage } from "../ai-usage-logger";
+import { storage } from "../../storage";
 import {
   depthConfig,
   initialStages,
   buildExecSummaryPrompt,
   EXEC_SUMMARY_SYSTEM_PROMPT,
+  COMPETITOR_DISCOVERY_SYSTEM_PROMPT,
+  buildCompetitorDiscoveryPrompt,
+  parseCompetitorSuggestions,
 } from "./market-study-core";
 
 export interface StudyContext {
@@ -56,6 +60,62 @@ export interface StartStudyOptions {
 // A dominate-depth run does N segments × sizing (each a web search) sequentially
 // plus the matrix fan-out, so give it generous headroom before the queue aborts.
 const STUDY_TIMEOUT_MS = 20 * 60 * 1000;
+
+/**
+ * Discover competitors from the study's brief/URL, create them in the market, and
+ * return the count of newly-persisted records. Non-fatal: caller catches all errors.
+ */
+async function discoverCompetitorsForStudy(opts: {
+  tenantDomain: string;
+  marketId: string;
+  userId: string;
+  inputType: "url" | "brief";
+  inputValue: string;
+  count: number;
+}): Promise<number> {
+  if (!opts.inputValue.trim()) return 0;
+
+  const prompt = buildCompetitorDiscoveryPrompt({
+    inputType: opts.inputType,
+    inputValue: opts.inputValue,
+    count: opts.count,
+  });
+  const res = await completeForFeature(AI_FEATURES.MARKET_STUDY, prompt, {
+    tenantDomain: opts.tenantDomain,
+    systemPrompt: COMPETITOR_DISCOVERY_SYSTEM_PROMPT,
+    temperature: 0.3,
+    maxTokens: 1500,
+  });
+  await logAiUsage(
+    { tenantDomain: opts.tenantDomain, marketId: opts.marketId, userId: opts.userId },
+    "market_study", res.provider, res.model,
+    { input_tokens: res.usage.inputTokens, output_tokens: res.usage.outputTokens },
+    res.durationMs, { step: "discover_competitors" },
+  );
+
+  const suggestions = parseCompetitorSuggestions(res.text);
+  let created = 0;
+  for (const s of suggestions) {
+    try {
+      // Normalise URL scheme so storage.createCompetitor doesn't reject it.
+      const url = /^https?:\/\//i.test(s.url) ? s.url : `https://${s.url}`;
+      const org = await storage.findOrCreateOrganization(url, s.name);
+      await storage.incrementOrgRefCount(org.id);
+      await storage.createCompetitor({
+        name: s.name,
+        url,
+        tenantDomain: opts.tenantDomain,
+        marketId: opts.marketId,
+        organizationId: org.id,
+        userId: opts.userId,
+      });
+      created++;
+    } catch {
+      // Duplicate URL or validation failure — skip silently.
+    }
+  }
+  return created;
+}
 
 /**
  * Create the study row and enqueue the pipeline on the shared job queue. Returns
@@ -193,6 +253,24 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
       )
       .orderBy(desc(marketSegments.priorityScore), desc(marketSegments.createdAt));
     await setStage("input", "done", existing.length ? `${existing.length} existing segment(s)` : "No existing segments — proposing from brief");
+
+    // ── Stage: discovery — discover and create competitor records ─────────────
+    abortIfCancelled();
+    await setStage("discovery", "running");
+    try {
+      const discovered = await discoverCompetitorsForStudy({
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId,
+        userId: ctx.userId,
+        inputType: opts.inputType,
+        inputValue: opts.inputValue ?? "",
+        count: cfg.proposeCount, // reuse the segment proposal count as competitor count
+      });
+      await setStage("discovery", "done", `${discovered} competitor(s) added`);
+    } catch (e: any) {
+      console.warn(`[market-study] competitor discovery failed (non-critical): ${e?.message ?? e}`);
+      await setStage("discovery", "skipped", "Could not discover competitors");
+    }
 
     // ── Stage: segments — reuse or propose ───────────────────────────────────
     abortIfCancelled();

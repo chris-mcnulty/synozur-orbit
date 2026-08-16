@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { channelLabel, type StudyStage } from "@shared/market-intelligence";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
-  ArrowLeft, RefreshCw, Loader2, CheckCircle2, XCircle, MinusCircle, Circle, Trophy, Lightbulb, TrendingUp,
+  ArrowLeft, RefreshCw, Loader2, CheckCircle2, XCircle, MinusCircle, Circle, Trophy, Lightbulb, TrendingUp, Download,
 } from "lucide-react";
 
 interface Study {
@@ -48,6 +49,29 @@ export default function MarketStudyDetailPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportPdf = async () => {
+    setIsExporting(true);
+    try {
+      const resp = await fetch(`/api/market-studies/${id}/export`, { credentials: "include" });
+      if (!resp.ok) {
+        const msg = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(msg.error ?? resp.statusText);
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `market-study-${id.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const { data: study, isLoading } = useQuery<Study>({
     queryKey: ["/api/market-studies", id],
@@ -115,10 +139,16 @@ export default function MarketStudyDetailPage() {
                 </div>
               </div>
               {done && (
-                <Button variant="outline" onClick={() => refresh.mutate()} disabled={refresh.isPending} data-testid="button-refresh-study">
-                  {refresh.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  <span className="ml-2">Refresh</span>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={exportPdf} disabled={isExporting} data-testid="button-export-study-pdf">
+                    {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    <span className="ml-2">Export PDF</span>
+                  </Button>
+                  <Button variant="outline" onClick={() => refresh.mutate()} disabled={refresh.isPending} data-testid="button-refresh-study">
+                    {refresh.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    <span className="ml-2">Refresh</span>
+                  </Button>
+                </div>
               )}
             </div>
 
