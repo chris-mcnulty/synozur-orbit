@@ -16,7 +16,7 @@
  */
 
 import { db } from "../../db";
-import { crawlCompetitorWebsite } from "../web-crawler";
+import { crawlCompetitorWebsite, buildCrawlData, getCombinedContent } from "../web-crawler";
 import { validateUrlWithDnsCheck } from "../../utils/url-validator";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { marketStudies, marketSegments, opportunityMatrixCells, AI_FEATURES } from "@shared/schema";
@@ -63,9 +63,14 @@ export interface StartStudyOptions {
 // plus the matrix fan-out, so give it generous headroom before the queue aborts.
 const STUDY_TIMEOUT_MS = 20 * 60 * 1000;
 
+interface DiscoveredCompetitor {
+  id: string;
+  url: string;
+  name: string;
+}
 /**
  * Discover competitors from the study's brief/URL, create them in the market, and
- * return the count of newly-persisted records. Non-fatal: caller catches all errors.
+ * return the newly-persisted records. Non-fatal: caller catches all errors.
  *
  * Exported for unit testing only — not part of the public API.
  */
@@ -76,8 +81,8 @@ export async function discoverCompetitorsForStudy(opts: {
   inputType: "url" | "brief";
   inputValue: string;
   count: number;
-}): Promise<number> {
-  if (!opts.inputValue.trim()) return 0;
+}): Promise<{ count: number; competitors: DiscoveredCompetitor[] }> {
+  if (!opts.inputValue.trim()) return { count: 0, competitors: [] };
 
   // When the input is a URL, crawl it first so the AI has real page content
   // (titles, offering text, descriptions) rather than just a bare URL string.
@@ -132,14 +137,14 @@ export async function discoverCompetitorsForStudy(opts: {
   );
 
   const suggestions = parseCompetitorSuggestions(res.text);
-  let created = 0;
+  const competitors: DiscoveredCompetitor[] = [];
   for (const s of suggestions) {
     try {
       // Normalise URL scheme so storage.createCompetitor doesn't reject it.
       const url = /^https?:\/\//i.test(s.url) ? s.url : `https://${s.url}`;
       const org = await storage.findOrCreateOrganization(url, s.name);
       await storage.incrementOrgRefCount(org.id);
-      await storage.createCompetitor({
+      const competitor = await storage.createCompetitor({
         name: s.name,
         url,
         tenantDomain: opts.tenantDomain,
@@ -147,12 +152,14 @@ export async function discoverCompetitorsForStudy(opts: {
         organizationId: org.id,
         userId: opts.userId,
       });
-      created++;
+      if (competitor?.id) {
+        competitors.push({ id: competitor.id, url, name: s.name });
+      }
     } catch {
       // Duplicate URL or validation failure — skip silently.
     }
   }
-  return created;
+  return { count: competitors.length, competitors };
 }
 
 /**
@@ -295,8 +302,9 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
     // ── Stage: discovery — discover and create competitor records ─────────────
     abortIfCancelled();
     await setStage("discovery", "running");
+    let discoveredCompetitors: DiscoveredCompetitor[] = [];
     try {
-      const discovered = await discoverCompetitorsForStudy({
+      const result = await discoverCompetitorsForStudy({
         tenantDomain: ctx.tenantDomain,
         marketId: ctx.marketId,
         userId: ctx.userId,
@@ -304,10 +312,54 @@ async function runStudyInBackground(studyId: string, ctx: StudyContext, opts: St
         inputValue: opts.inputValue ?? "",
         count: cfg.proposeCount, // reuse the segment proposal count as competitor count
       });
-      await setStage("discovery", "done", `${discovered} competitor(s) added`);
+      discoveredCompetitors = result.competitors;
+      await setStage("discovery", "done", `${result.count} competitor(s) added`);
     } catch (e: any) {
       console.warn(`[market-study] competitor discovery failed (non-critical): ${e?.message ?? e}`);
       await setStage("discovery", "skipped", "Could not discover competitors");
+    }
+
+    // ── Stage: crawl — enrich each discovered competitor with their website content ──
+    // Mirrors auto-build-service.ts Step 5. Failures are per-competitor and
+    // non-fatal; the stage is marked "skipped" only when no competitors were
+    // discovered, "done" otherwise (even if some individual crawls failed).
+    abortIfCancelled();
+    await setStage("crawl", "running");
+    if (discoveredCompetitors.length === 0) {
+      await setStage("crawl", "skipped", "No competitors to crawl");
+    } else {
+      let crawled = 0;
+      for (const competitor of discoveredCompetitors) {
+        abortIfCancelled();
+        try {
+          const crawlResult = await crawlCompetitorWebsite(competitor.url);
+          if (crawlResult) {
+            const socialLinks = crawlResult.socialLinks || {};
+            const detectedBlogUrl = crawlResult.pages?.find((p: any) => p.pageType === "blog")?.url ?? null;
+            await storage.updateCompetitor(competitor.id, {
+              crawlData: buildCrawlData(crawlResult),
+              lastCrawl: new Date().toISOString(),
+              lastFullCrawl: new Date(),
+              // Stamp lastWebsiteMonitor + previousWebsiteContent so scheduled
+              // sweeps skip this freshly crawled competitor (same pattern as
+              // auto-build-service.ts Step 5).
+              lastWebsiteMonitor: new Date(),
+              previousWebsiteContent: getCombinedContent(crawlResult).substring(0, 100000),
+              linkedInUrl: socialLinks.linkedIn || null,
+              instagramUrl: socialLinks.instagram || null,
+              twitterUrl: socialLinks.twitter || null,
+              facebookUrl: socialLinks.facebook || null,
+              blogUrl: detectedBlogUrl,
+              blogSnapshot: crawlResult.blogSnapshot || null,
+            });
+            crawled++;
+          }
+        } catch (e: any) {
+          console.warn(`[market-study] crawl failed for ${competitor.name} (non-critical): ${e?.message ?? e}`);
+        }
+        await setStage("crawl", "running", `Crawled ${crawled}/${discoveredCompetitors.length}`);
+      }
+      await setStage("crawl", "done", `Crawled ${crawled}/${discoveredCompetitors.length} competitor(s)`);
     }
 
     // ── Stage: segments — reuse or propose ───────────────────────────────────

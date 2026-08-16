@@ -12,8 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { CANONICAL_CHANNELS, channelLabel } from "@shared/market-intelligence";
-import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle } from "lucide-react";
-import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, ExternalLink } from "lucide-react";
+import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle, ExternalLink } from "lucide-react";
 
 interface Cell {
   id: string;

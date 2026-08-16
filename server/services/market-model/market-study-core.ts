@@ -34,6 +34,7 @@ export function depthConfig(depth: StudyDepth): DepthConfig {
 export const STUDY_STAGE_PLAN: ReadonlyArray<{ key: string; label: string }> = [
   { key: "input", label: "Reviewing input & existing data" },
   { key: "discovery", label: "Discovering competitors" },
+  { key: "crawl", label: "Crawling competitor websites" },
   { key: "segments", label: "Modeling segments" },
   { key: "sizing", label: "Sizing TAM/SAM & needs" },
   { key: "matrix", label: "Scoring GTM opportunity matrix" },
