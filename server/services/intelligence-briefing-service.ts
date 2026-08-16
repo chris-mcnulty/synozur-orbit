@@ -5,10 +5,23 @@ import { logAiUsage } from "./ai-usage-logger";
 import { fetchCompetitorNews, buildNewsSummary, type NewsArticle } from "./news-service";
 import { buildCompetitorDocumentContextForCompetitors } from "./competitor-document-context";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
-});
+let _anthropicClient: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+  if (!process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || !process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL) {
+    throw new Error(
+      "Intelligence briefings require the Anthropic AI provider. " +
+        "Please ensure AI_INTEGRATIONS_ANTHROPIC_API_KEY and AI_INTEGRATIONS_ANTHROPIC_BASE_URL are configured.",
+    );
+  }
+  if (!_anthropicClient) {
+    _anthropicClient = new Anthropic({
+      apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+      baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+    });
+  }
+  return _anthropicClient;
+}
 
 export interface BriefingTheme {
   title: string;
@@ -339,7 +352,7 @@ Rules:
   let briefingData: BriefingData;
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
@@ -792,7 +805,7 @@ Rules:
 
   try {
     reportPhase("synthesising");
-    const response = await anthropic.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
