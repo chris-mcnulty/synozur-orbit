@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { CANONICAL_CHANNELS, channelLabel } from "@shared/market-intelligence";
-import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle, ExternalLink } from "lucide-react";
+import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle, ExternalLink, ChevronDown } from "lucide-react";
 
 interface Cell {
   id: string;
@@ -221,7 +221,48 @@ interface CellSource {
   url: string | null;
   publisher: string | null;
   usedForField: string | null;
+  excerpt: string | null;
 }
+function SourceRow({ source: s }: { source: CellSource }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasExcerpt = !!s.excerpt;
+
+  return (
+    <li className="text-xs">
+      <div className="flex items-center gap-1.5">
+        {s.url ? (
+          <a
+            href={s.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-primary hover:underline truncate max-w-full"
+          >
+            {s.title ?? s.publisher ?? s.url}
+            <ExternalLink className="h-3 w-3 shrink-0" />
+          </a>
+        ) : (
+          <span className="text-muted-foreground">{s.title ?? s.publisher ?? "Unknown"}</span>
+        )}
+        {hasExcerpt && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="ml-auto shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+            title={expanded ? "Hide detail" : "Show detail"}
+            aria-expanded={expanded}
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </button>
+        )}
+      </div>
+      {hasExcerpt && expanded && (
+        <p className="mt-1 ml-0.5 text-[11px] text-muted-foreground leading-relaxed border-l-2 border-muted pl-2">
+          {s.excerpt}
+        </p>
+      )}
+    </li>
+  );
+}
+
 function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segmentName?: string; onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
   const [rev, setRev] = useState(cell.revenuePotential?.toString() ?? "");
@@ -268,23 +309,9 @@ function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segme
           {sources.length > 0 && (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Cited competitors</p>
-              <ul className="space-y-1">
+              <ul className="space-y-1.5">
                 {sources.map((s) => (
-                  <li key={s.id} className="flex items-center gap-1.5 text-xs">
-                    {s.url ? (
-                      <a
-                        href={s.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-primary hover:underline truncate max-w-full"
-                      >
-                        {s.title ?? s.publisher ?? s.url}
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">{s.title ?? s.publisher ?? "Unknown"}</span>
-                    )}
-                  </li>
+                  <SourceRow key={s.id} source={s} />
                 ))}
               </ul>
             </div>
