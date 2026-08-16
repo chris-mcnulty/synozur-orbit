@@ -224,10 +224,13 @@ async function collectPreviousSummary(tenantDomain: string): Promise<Facts | nul
       .orderBy(desc(unifiedExecSummaries.createdAt))
       .limit(1);
     if (!prev?.summaryData) return null;
+    // Only feed back the headline — not priorActions highlights. Feeding back
+    // specific segment/persona names from a previous (potentially stale) run
+    // causes the AI to repeat them in the new synthesis even when the current
+    // fact sheet no longer contains them.
     return {
       generatedAt: prev.createdAt,
       headline: prev.summaryData.headline,
-      priorActions: prev.summaryData.sections?.find((s) => s.key === "executive_actions")?.highlights,
     };
   } catch {
     return null;
@@ -278,7 +281,7 @@ function buildSynthesisPrompt(facts: Record<string, Facts | null>): string {
     "",
     "Rules:",
     "- executive_actions: 3-5 prioritized cross-area actions, each with a one-sentence rationale, as the highlights array (body summarizes the theme).",
-    "- If previousSummary is present, briefly note what changed since it where relevant.",
+    "- If previousSummary is present, briefly note what changed since it where relevant. Do NOT repeat specific segment names, persona names, or ROI scores from previousSummary unless they also appear in the current whereToPlay facts.",
     "- Each section: 2-4 highlights (short bullet strings) plus a body of 1-3 short paragraphs.",
     "- headline: one sentence capturing the company's current GTM posture.",
     "",
