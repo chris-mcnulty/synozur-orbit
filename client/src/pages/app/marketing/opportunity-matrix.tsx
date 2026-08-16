@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { CANONICAL_CHANNELS, channelLabel } from "@shared/market-intelligence";
 import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle } from "lucide-react";
+import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, ExternalLink } from "lucide-react";
 
 interface Cell {
   id: string;
@@ -215,10 +216,23 @@ export default function OpportunityMatrixPage() {
   );
 }
 
+interface CellSource {
+  id: string;
+  title: string | null;
+  url: string | null;
+  publisher: string | null;
+  usedForField: string | null;
+}
 function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segmentName?: string; onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
   const [rev, setRev] = useState(cell.revenuePotential?.toString() ?? "");
   const [eff, setEff] = useState(cell.executionEffort?.toString() ?? "");
+
+  const { data: sources = [] } = useQuery<CellSource[]>({
+    queryKey: [`/api/opportunity-matrix/${cell.id}/sources`],
+    queryFn: async () => (await apiRequest("GET", `/api/opportunity-matrix/${cell.id}/sources`)).json(),
+    enabled: cell.competitorPresence != null,
+  });
 
   const save = useMutation({
     mutationFn: async () =>
@@ -251,6 +265,30 @@ function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segme
               <span className="font-medium">Competitor presence: {Math.round(cell.competitorPresence)}/100.</span>
               {cell.presenceRationale ? ` ${cell.presenceRationale}` : ""}
             </p>
+          )}
+          {sources.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Cited competitors</p>
+              <ul className="space-y-1">
+                {sources.map((s) => (
+                  <li key={s.id} className="flex items-center gap-1.5 text-xs">
+                    {s.url ? (
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-primary hover:underline truncate max-w-full"
+                      >
+                        {s.title ?? s.publisher ?? s.url}
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">{s.title ?? s.publisher ?? "Unknown"}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             <div><Label className="text-xs">Revenue potential (0–100)</Label><Input type="number" min={0} max={100} value={rev} onChange={(e) => setRev(e.target.value)} data-testid="input-revenue" /></div>

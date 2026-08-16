@@ -19,6 +19,7 @@ import { guardFeature, guardManualAction, denyReadOnly } from "./helpers";
 import { computeRoiScore } from "../services/market-model/market-matrix-core";
 import { generateMatrixForMarket, NoMatrixWorkError, recomputeWhitespace } from "../services/market-model/opportunity-matrix-service";
 import { enqueue } from "../services/job-queue";
+import { getSources } from "../services/market-intelligence-sources";
 
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
   const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
@@ -137,6 +138,30 @@ export function registerOpportunityMatrixRoutes(app: Express): void {
       if (err instanceof NoMatrixWorkError) {
         return res.status(422).json({ error: err.message });
       }
+      sendErr(res, err);
+    }
+  });
+
+  // ── GET cell sources (competitor provenance) ─────────────────────────────────
+  app.get("/api/opportunity-matrix/:id/sources", async (req: Request, res: Response) => {
+    if (!(await guardFeature(req, res, "opportunityMatrix"))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      // Verify the cell belongs to this tenant+market before exposing sources
+      const [cell] = await db
+        .select({ id: opportunityMatrixCells.id })
+        .from(opportunityMatrixCells)
+        .where(
+          and(
+            eq(opportunityMatrixCells.id, req.params.id),
+            eq(opportunityMatrixCells.tenantDomain, ctx.tenantDomain),
+            eq(opportunityMatrixCells.marketId, ctx.marketId),
+          ),
+        );
+      if (!cell) return res.status(404).json({ error: "Cell not found" });
+      const sources = await getSources(ctx.tenantDomain, "matrix_cell", req.params.id);
+      res.json(sources);
+    } catch (err) {
       sendErr(res, err);
     }
   });
