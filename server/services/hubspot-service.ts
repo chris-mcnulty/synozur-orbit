@@ -266,9 +266,9 @@ export async function syncSegmentToHubSpotList(
   tenantDomain: string,
   hubspotListId: string,
   memberEmails: string[],
-): Promise<{ added: number; removed: number; errors: number }> {
+): Promise<{ added: number; removed: number; errors: number; rateLimited: number }> {
 
-  const { getTenantClient } = await import("./hubspot-integration");
+  const { getTenantClient, withHubspotRetry, isHubspotRateLimitError } = await import("./hubspot-integration");
   let client: any;
   try {
     const result = await getTenantClient(tenantDomain);
@@ -277,12 +277,13 @@ export async function syncSegmentToHubSpotList(
     console.warn(
       `[HubSpot] Segment mirror skipped for ${tenantDomain} — not connected: ${err.message}`,
     );
-    return { added: 0, removed: 0, errors: 0 };
+    return { added: 0, removed: 0, errors: 0, rateLimited: 0 };
   }
 
   let added = 0;
   let removed = 0;
   let errors = 0;
+  let rateLimited = 0;
 
   // ── Step 1: Fetch current HubSpot list membership ──────────────────────────
   const currentMemberIds = new Set<string>();
@@ -312,21 +313,32 @@ export async function syncSegmentToHubSpotList(
     const batch = memberEmails.slice(i, i + BATCH);
     for (const email of batch) {
       try {
-        const result = await client.crm.contacts.searchApi.doSearch({
-          filterGroups: [
-            { filters: [{ propertyName: "email", operator: "EQ" as any, value: email }] },
-          ],
-          properties: ["email"],
-          limit: 1,
-          after: "0",
-          sorts: [],
-        });
+        const result: any = await withHubspotRetry(
+          () =>
+            client.crm.contacts.searchApi.doSearch({
+              filterGroups: [
+                { filters: [{ propertyName: "email", operator: "EQ" as any, value: email }] },
+              ],
+              properties: ["email"],
+              limit: 1,
+              after: "0",
+              sorts: [],
+            }),
+          { label: `segment-mirror contact lookup (${tenantDomain} / ${email})` },
+        );
         if (result.results.length > 0) {
           desiredContactIds.add(result.results[0].id);
         }
       } catch (err: any) {
-        console.error(`[HubSpot] Segment mirror: lookup failed for ${email}: ${err.message}`);
-        errors++;
+        if (isHubspotRateLimitError(err)) {
+          rateLimited++;
+          console.warn(
+            `[HubSpot] Segment mirror: rate-limited after retries for ${email} (${tenantDomain}) — contact will be missing from list until next sync`,
+          );
+        } else {
+          console.error(`[HubSpot] Segment mirror: lookup failed for ${email}: ${err.message}`);
+          errors++;
+        }
       }
     }
     // Throttle to stay within HubSpot rate limits (100 req/10s)
@@ -354,9 +366,9 @@ export async function syncSegmentToHubSpotList(
   }
 
   console.log(
-    `[HubSpot] Segment mirror complete for list ${hubspotListId} — added=${added} removed=${removed} errors=${errors}`,
+    `[HubSpot] Segment mirror complete for list ${hubspotListId} — added=${added} removed=${removed} errors=${errors} rateLimited=${rateLimited}`,
   );
-  return { added, removed, errors };
+  return { added, removed, errors, rateLimited };
 }
 /**
  * Enrich marketing_contacts rows with data from a tenant's connected HubSpot portal.
