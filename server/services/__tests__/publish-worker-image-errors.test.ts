@@ -1,5 +1,6 @@
 /**
- * Publish worker — image-error retry classification (Task #777).
+ * Publish worker — image-error retry classification (Task #777) and
+ * pre-flight image sweep end-to-end verification (Task #779).
  *
  * - image_not_found / image_forbidden are confirmed-permanent: the post is
  *   marked publish_failed immediately (no retry), with the typed code
@@ -15,6 +16,7 @@ const state = vi.hoisted(() => ({
   accountRow: {} as any,
   tenantRow: { plan: "pro", socialPostingJitterEnabled: false },
   updates: [] as any[],
+  inserts: [] as any[],
   publishResult: { success: true } as any,
 }));
 
@@ -41,7 +43,12 @@ vi.mock("../../db", () => ({
         },
       }),
     }),
-    insert: () => ({ values: async () => [] }),
+    insert: (table: any) => ({
+      values: async (payload: any) => {
+        state.inserts.push(payload);
+        return [];
+      },
+    }),
   },
 }));
 
@@ -79,6 +86,7 @@ const postUpdate = () =>
 
 beforeEach(() => {
   state.updates.length = 0;
+  state.inserts.length = 0;
   state.accountRow = {
     id: "acct-1",
     tenantDomain: "t.example.com",
@@ -253,5 +261,28 @@ describe("preflightImageCheck", () => {
     const res = await preflightImageCheck();
     expect(res.flagged).toBe(1);
     expect(preflightUpdate().imageIssue).toBe("image_not_found");
+  });
+
+  it("does not write a duplicate audit entry when the same issue is already flagged on recheck", async () => {
+    // Simulate a post that was already flagged with image_not_found.
+    state.candidates[0].post.overrideImageUrl = "/public-objects/still-gone.png";
+    state.candidates[0].post.imageIssue = "image_not_found"; // already flagged same code
+    preflight.results.set("/public-objects/still-gone.png", {
+      ok: false,
+      code: "image_not_found",
+      message: "still missing",
+    });
+
+    const res = await preflightImageCheck();
+
+    // The db update is still written (stamps imageCheckedAt), but...
+    expect(preflightUpdate().imageIssue).toBe("image_not_found");
+    // ...no new audit-log insert should be produced for this recheck.
+    const auditInserts = state.inserts.filter(
+      (i: any) => i.action === "image_preflight",
+    );
+    expect(auditInserts).toHaveLength(0);
+    // flagged counter stays 0 — only transitions count.
+    expect(res.flagged).toBe(0);
   });
 });
