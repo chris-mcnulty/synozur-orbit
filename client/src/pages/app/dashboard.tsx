@@ -18,6 +18,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
 import { useOnboardingSteps } from "@/lib/useOnboardingSteps";
+import { getTabMarketId } from "@/lib/tabContext";
 import { cn, cleanSignalSummary } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@/lib/userContext";
@@ -91,7 +92,7 @@ export default function Dashboard() {
   });
 
   const { data: execSummary, isLoading: execSummaryLoading } = useQuery({
-    queryKey: ["/api/baseline/executive-summary"],
+    queryKey: ["/api/baseline/executive-summary", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/baseline/executive-summary", { credentials: "include" });
       if (!response.ok) return null;
@@ -109,7 +110,7 @@ export default function Dashboard() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary", getTabMarketId()] });
       toast({ title: "Executive Summary Generated", description: "Your market intelligence summary is ready." });
     },
     onError: (error: Error) => {

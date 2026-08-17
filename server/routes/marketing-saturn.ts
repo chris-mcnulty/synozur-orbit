@@ -92,7 +92,7 @@ import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { resolveBrandAssetUrl } from "../services/brand-asset-url";
-import { guardManualAction } from "./helpers";
+import { guardManualAction, denyReadOnly } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv, isOrbitDirectPost } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
@@ -3388,6 +3388,39 @@ export function registerSaturnMarketingRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Generated Posts List Error]", err.message);
       res.status(500).json({ error: "Failed to load generated posts" });
+    }
+  });
+
+  // Archive stale suggested content briefs — marks 'suggested' briefs older
+  // than N days as 'removed' so they stop inflating active planning views and
+  // exec summary stats. The AI generates many options; teams only use a few.
+  app.post("/api/content-briefs/archive-stale", async (req, res) => {
+    if (!await guardFeature(req, res, "editorialCalendar")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      if (denyReadOnly(ctx, res)) return;
+      const olderThanDays = Number(req.body?.olderThanDays ?? 30);
+      if (!Number.isFinite(olderThanDays) || olderThanDays < 1 || olderThanDays > 365) {
+        return res.status(400).json({ error: "olderThanDays must be between 1 and 365" });
+      }
+      const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+      const rows = await db
+        .update(contentBriefs)
+        .set({ status: "removed", updatedAt: new Date() })
+        .where(
+          and(
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
+            eq(contentBriefs.status, "suggested"),
+            sql`${contentBriefs.createdAt} < ${cutoff}`,
+          ),
+        )
+        .returning({ id: contentBriefs.id });
+      console.log(`[Content Briefs] Archived ${rows.length} stale suggested briefs (>${olderThanDays}d) for ${ctx.tenantDomain}`);
+      res.json({ archived: rows.length });
+    } catch (err: any) {
+      console.error("[Content Briefs Archive Stale Error]", err.message);
+      res.status(500).json({ error: "Failed to archive stale briefs" });
     }
   });
 

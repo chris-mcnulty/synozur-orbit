@@ -352,6 +352,8 @@ export default function EditorialCalendarPage() {
   // Plan selection + commit result for the "Push to Planner" step inside the schedule dialog.
   const [distPlanId, setDistPlanId] = useState<string>("");
   const [committedPlan, setCommittedPlan] = useState<{ name: string; tasks: number; skipped?: number } | null>(null);
+  const [staleConfirmOpen, setStaleConfirmOpen] = useState(false);
+  const STALE_DAYS = 30;
 
   const { data: tenant } = useQuery<{ features?: Record<string, boolean> } | null>({
     queryKey: ["/api/tenant/info"],
@@ -564,6 +566,31 @@ export default function EditorialCalendarPage() {
         toast.warning(`Approved ${total - failed} of ${total}; ${failed} could not be approved.`);
       } else {
         toast.success(`Approved ${total} piece${total === 1 ? "" : "s"}.`);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Bulk-archive suggested briefs older than STALE_DAYS — cleans up the AI
+  // backlog without touching anything that's been accepted or drafted.
+  const archiveStale = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/content-briefs/archive-stale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ olderThanDays: STALE_DAYS }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to archive");
+      return res.json() as Promise<{ archived: number }>;
+    },
+    onSuccess: ({ archived }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content-briefs"] });
+      setStaleConfirmOpen(false);
+      if (archived === 0) {
+        toast.info(`No suggested briefs older than ${STALE_DAYS} days to clean up.`);
+      } else {
+        toast.success(`Archived ${archived} old suggestion${archived === 1 ? "" : "s"}.`);
       }
     },
     onError: (e: Error) => toast.error(e.message),
@@ -1184,6 +1211,16 @@ export default function EditorialCalendarPage() {
                 <Sparkles className="mr-2 h-4 w-4" />
                 Generate new briefs
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStaleConfirmOpen(true)}
+                title={`Archive suggested briefs older than ${STALE_DAYS} days`}
+                data-testid="button-archive-stale-briefs"
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground text-xs">Clean up old suggestions</span>
+              </Button>
             </div>
           </div>
 
@@ -1798,6 +1835,36 @@ export default function EditorialCalendarPage() {
             </div>
           )}
         </div>
+
+        {/* Archive stale suggestions confirmation dialog */}
+        <Dialog open={staleConfirmOpen} onOpenChange={setStaleConfirmOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Clean up old suggestions?</DialogTitle>
+              <DialogDescription>
+                This will mark all <strong>suggested</strong> briefs older than {STALE_DAYS} days as removed.
+                Briefs that have been accepted, drafted, or further along are not affected.
+                Removed briefs are hidden from the active view but are not permanently deleted.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStaleConfirmOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => archiveStale.mutate()}
+                disabled={archiveStale.isPending}
+              >
+                {archiveStale.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cleaning up…</>
+                ) : (
+                  <><Trash2 className="mr-2 h-4 w-4" /> Archive old suggestions</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Generate dialog */}
         <Dialog open={generateOpen} onOpenChange={setGenerateOpen}>

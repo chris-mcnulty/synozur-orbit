@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { getTabMarketId } from "@/lib/tabContext";
 import { 
   FileSpreadsheet, RefreshCw, Loader2, Building2, Target, Users, 
   Lightbulb, Lock, Unlock, Save, Pencil, X
@@ -33,8 +34,9 @@ export default function BaselineSummaryPage() {
   const [editingSection, setEditingSection] = useState<SectionKey | null>(null);
   const [editContent, setEditContent] = useState("");
 
+  const activeMarketId = getTabMarketId();
   const { data: summary, isLoading } = useQuery({
-    queryKey: ["/api/baseline/executive-summary"],
+    queryKey: ["/api/baseline/executive-summary", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/baseline/executive-summary", { credentials: "include" });
       if (!response.ok) return null;
@@ -52,7 +54,7 @@ export default function BaselineSummaryPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary", activeMarketId] });
       toast({ title: "Summary Generated", description: "Executive summary has been updated." });
     },
     onError: (error: Error) => {
@@ -72,7 +74,7 @@ export default function BaselineSummaryPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary", activeMarketId] });
       setEditingSection(null);
       toast({ title: "Section Updated", description: "Your changes have been saved." });
     },
@@ -94,7 +96,7 @@ export default function BaselineSummaryPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/baseline/executive-summary", activeMarketId] });
     },
   });
 

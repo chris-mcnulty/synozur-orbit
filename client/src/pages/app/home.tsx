@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -57,7 +58,7 @@ export default function HomePage() {
       opportunities?: string;
     };
   }>({
-    queryKey: ["/api/baseline/executive-summary"],
+    queryKey: ["/api/baseline/executive-summary", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/baseline/executive-summary", { credentials: "include" });
       if (!r.ok) return { exists: false };

@@ -284,6 +284,7 @@ function buildSynthesisPrompt(facts: Record<string, Facts | null>): string {
     "- If previousSummary is present, briefly note what changed since it where relevant. Do NOT repeat specific segment names, persona names, or ROI scores from previousSummary unless they also appear in the current whereToPlay facts.",
     "- Each section: 2-4 highlights (short bullet strings) plus a body of 1-3 short paragraphs.",
     "- headline: one sentence capturing the company's current GTM posture.",
+    "- content_briefs: A large 'suggested' backlog is the normal, healthy state of an AI-assisted content pipeline — the system generates many options and teams curate the best ones. Do NOT characterize a 'suggested' count as an approval bottleneck, prioritization problem, or pipeline drag. Only flag it as a concern if zero briefs have advanced beyond 'suggested' in the period (i.e. contentBriefsByStatus contains only 'suggested' and nothing else).",
     "",
     'Return ONLY this JSON: { "headline": "...", "sections": [ { "key": "...", "title": "...", "highlights": ["..."], "body": "..." } ] }',
   ].join("\n");
