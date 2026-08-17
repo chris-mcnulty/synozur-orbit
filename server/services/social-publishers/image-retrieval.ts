@@ -24,7 +24,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Agent } from "undici";
-import { ObjectStorageService } from "../../replit_integrations/object_storage/objectStorage";
+import { ObjectStorageService, ObjectNotFoundError } from "../../replit_integrations/object_storage/objectStorage";
 
 export type ImageErrorCode = "image_not_found" | "image_forbidden" | "image_fetch_failed";
 
@@ -294,6 +294,26 @@ export function publicObjectPath(imageUrl: string): string | null {
   return filePath;
 }
 
+/**
+ * Detect a `/objects/uploads/...` path — the auth-gated private-upload route.
+ * These are stored in PRIVATE_OBJECT_DIR and must be read via getObjectEntityFile,
+ * not via searchPublicObject or HTTP fetch (HTTP fails: relative URL, no host).
+ * Returns the normalised `/objects/uploads/...` path, or null for other URLs.
+ */
+export function objectEntityPath(imageUrl: string): string | null {
+  let pathname = imageUrl;
+  if (!imageUrl.startsWith("/")) {
+    try {
+      pathname = decodeURI(new URL(imageUrl).pathname);
+    } catch {
+      return null;
+    }
+  }
+  if (!pathname.startsWith("/objects/")) return null;
+  if (pathname.includes("..")) return null;
+  return pathname;
+}
+
 function isTransientStorageError(err: unknown): boolean {
   const anyErr = err as any;
   const status = Number(anyErr?.code ?? anyErr?.response?.status ?? NaN);
@@ -305,7 +325,8 @@ function isTransientStorageError(err: unknown): boolean {
 /**
  * Retrieve the bytes of a post image.
  *
- * - `/public-objects/...` (relative or absolute) → direct object-storage read.
+ * - `/public-objects/...` (relative or absolute) → direct object-storage read via searchPublicObject.
+ * - `/objects/uploads/...` (relative or absolute) → direct read via getObjectEntityFile (private bucket).
  * - anything else → HTTP fetch with retries.
  *
  * Throws ImageRetrievalError with a typed code on failure.
@@ -315,6 +336,55 @@ export async function fetchImageBytes(
   opts: { retryDelaysMs?: number[]; storage?: ObjectStorageService } = {},
 ): Promise<RetrievedImage> {
   const delays = opts.retryDelaysMs ?? RETRY_DELAYS_MS;
+
+  // Private-upload branch: /objects/uploads/... — read directly from the
+  // private GCS bucket without going through HTTP (which fails: relative URL).
+  const entityPath = objectEntityPath(imageUrl);
+  if (entityPath) {
+    const storage = opts.storage ?? new ObjectStorageService();
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        const file = await storage.getObjectEntityFile(entityPath);
+        const [metadata] = await file.getMetadata();
+        const declaredSize = Number((metadata as any).size);
+        if (Number.isFinite(declaredSize) && declaredSize > MAX_IMAGE_BYTES) {
+          throw new ImageRetrievalError(
+            "image_fetch_failed",
+            `The stored image is ${Math.round(declaredSize / 1024 / 1024)} MB — over the ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB limit. Use Change Image (🖼) to replace it with a smaller graphic.`,
+          );
+        }
+        const [contents] = await file.download();
+        if ((contents as Buffer).byteLength > MAX_IMAGE_BYTES) {
+          throw new ImageRetrievalError(
+            "image_fetch_failed",
+            `The stored image exceeds the ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB limit. Use Change Image (🖼) to replace it with a smaller graphic.`,
+          );
+        }
+        return {
+          buffer: contents as Buffer,
+          contentType: (metadata.contentType as string) || "image/jpeg",
+        };
+      } catch (err) {
+        if (err instanceof ImageRetrievalError) throw err;
+        if (err instanceof ObjectNotFoundError) {
+          throw new ImageRetrievalError(
+            "image_not_found",
+            `The uploaded image no longer exists in Orbit storage (${imageUrl}). Use Change Image (🖼) to replace the graphic.`,
+          );
+        }
+        lastErr = err;
+        if (!isTransientStorageError(err)) break;
+        if (attempt < delays.length) await sleep(delays[attempt]);
+      }
+    }
+    throw new ImageRetrievalError(
+      "image_fetch_failed",
+      `Reading the uploaded image from Orbit storage failed after ${delays.length + 1} attempts (${imageUrl}): ${(lastErr as any)?.message ?? lastErr}. Use Retry to try again.`,
+      true,
+    );
+  }
+
   const filePath = publicObjectPath(imageUrl);
 
   if (filePath) {
@@ -417,6 +487,22 @@ export async function checkImageResolvable(
   imageUrl: string,
   opts: { retryDelaysMs?: number[]; storage?: ObjectStorageService } = {},
 ): Promise<{ ok: boolean; code?: ImageErrorCode; message?: string; transient?: boolean }> {
+  // Private-upload branch: /objects/uploads/... — check via getObjectEntityFile.
+  const entityPath = objectEntityPath(imageUrl);
+  if (entityPath) {
+    try {
+      const storage = opts.storage ?? new ObjectStorageService();
+      await storage.getObjectEntityFile(entityPath); // throws ObjectNotFoundError if missing
+      return { ok: true };
+    } catch (err: any) {
+      if (err instanceof ObjectNotFoundError) {
+        return { ok: false, code: "image_not_found", message: `Uploaded image missing from Orbit storage: ${imageUrl}` };
+      }
+      // Storage hiccup — don't flag, let preflight retry next sweep.
+      return { ok: false, code: "image_fetch_failed", message: err?.message ?? String(err), transient: true };
+    }
+  }
+
   const filePath = publicObjectPath(imageUrl);
   if (filePath) {
     try {

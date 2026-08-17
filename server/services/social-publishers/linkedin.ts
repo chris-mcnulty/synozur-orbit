@@ -264,7 +264,11 @@ export class LinkedInPublisher implements SocialPublisher {
         "X-Restli-Protocol-Version": "2.0.0",
       },
     });
-    if (!resp.ok) return [];
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      console.warn(`[LinkedIn] organizationAcls fetch failed (HTTP ${resp.status}) — treating as no managed orgs. Body: ${body.slice(0, 300)}`);
+      return [];
+    }
     const json = (await resp.json().catch(() => null)) as any;
     const elements: any[] = Array.isArray(json?.elements) ? json.elements : [];
     const out: Array<{
@@ -554,15 +558,25 @@ export class LinkedInPublisher implements SocialPublisher {
           responsePayload: parsed ?? errText,
         };
       }
+      const serviceCode = parsed?.serviceErrorCode ? String(parsed.serviceErrorCode) : null;
+      const rawMessage = parsed?.message || errText || "";
+      // "You are not permitted to perform this action" is LinkedIn's generic
+      // 403 for insufficient org-admin access or a wrong/stale authorUrn.
+      // Surface actionable context: which author was used and what code LinkedIn gave.
+      const notPermitted =
+        resp.status === 403 ||
+        rawMessage.toLowerCase().includes("not permitted") ||
+        rawMessage.toLowerCase().includes("not authorized");
+      const errorMessage = notPermitted
+        ? `LinkedIn rejected this post (HTTP ${resp.status}${serviceCode ? `, code ${serviceCode}` : ""}): ${rawMessage || "You are not permitted to perform this action"}. ` +
+          `Author URN used: ${postBody.author}. ` +
+          `This usually means the connected account is no longer an admin of the target LinkedIn Page, or the access token is missing the w_organization_social scope. ` +
+          `Try reconnecting the LinkedIn account in Settings → Social Accounts.`
+        : rawMessage || `LinkedIn post failed: ${resp.status}`;
       return {
         success: false,
-        errorCode: parsed?.serviceErrorCode
-          ? String(parsed.serviceErrorCode)
-          : `http_${resp.status}`,
-        errorMessage:
-          parsed?.message ||
-          errText ||
-          `LinkedIn post failed: ${resp.status}`,
+        errorCode: serviceCode ?? `http_${resp.status}`,
+        errorMessage,
         responsePayload: parsed ?? errText,
       };
     }
