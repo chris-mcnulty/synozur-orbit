@@ -407,7 +407,9 @@ export async function listEvents(tenant: string, limit = 50, opts?: { upcoming?:
   // upcoming-only surfaces (email sections) pass upcoming:true so the limit
   // isn't consumed by past events.
   const upcoming = opts?.upcoming ?? false;
-  const raw = await callWebsiteTool<WebsiteEventSummary[]>(tenant, "list_events", { upcoming, limit });
+  // list_events returns an {items:[...]} envelope (same shape as list_episodes /
+  // list_landing_pages) — unwrap before mapping so we never call .map on the object.
+  const raw = unwrapItems<WebsiteEventSummary>(await callWebsiteTool(tenant, "list_events", { upcoming, limit }));
   // Normalise: spec says field may be `name` or `title` — ensure `name` is always populated.
   return raw.map(ev => ({ ...ev, name: ev.name ?? ev.title ?? "Unnamed event" }));
 }
