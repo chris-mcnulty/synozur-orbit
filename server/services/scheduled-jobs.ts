@@ -2268,7 +2268,12 @@ async function runHubspotSyncJob(): Promise<void> {
             const { syncHubSpotContactEnrichment, pushLeadScoresToHubSpot } = await import("./hubspot-service");
             const planAllowsContacts = await checkFeatureAccessAsync(tenant.plan, "marketingContacts");
             if (planAllowsContacts.allowed) {
-              await syncHubSpotContactEnrichment({ tenantDomain: conn.tenantDomain });
+              const enrichResult = await syncHubSpotContactEnrichment({ tenantDomain: conn.tenantDomain });
+              if (enrichResult.rateLimited > 0) {
+                console.warn(
+                  `[HubSpot Sync] Contact enrichment rate-limited for ${conn.tenantDomain} — ${enrichResult.rateLimited} contact(s) deferred to next sweep (enriched=${enrichResult.enriched} notFound=${enrichResult.notFound} errors=${enrichResult.errors})`,
+                );
+              }
               // Push Orbit lead scores back to HubSpot contact properties
               await pushLeadScoresToHubSpot({ tenantDomain: conn.tenantDomain });
             }

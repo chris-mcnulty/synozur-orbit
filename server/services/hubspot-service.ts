@@ -376,7 +376,7 @@ export async function syncHubSpotContactEnrichment(opts: {
   tenantDomain: string;
   limit?: number;
   forceAll?: boolean;
-}): Promise<{ enriched: number; notFound: number; errors: number }> {
+}): Promise<{ enriched: number; notFound: number; errors: number; rateLimited: number }> {
   const { tenantDomain, limit = 200, forceAll = false } = opts;
 
   // Use the per-tenant OAuth client — this is the same client the daily
@@ -390,7 +390,7 @@ export async function syncHubSpotContactEnrichment(opts: {
     console.warn(
       `[HubSpot] contact enrichment skipped for ${tenantDomain} — not connected: ${err.message}`,
     );
-    return { enriched: 0, notFound: 0, errors: 0 };
+    return { enriched: 0, notFound: 0, errors: 0, rateLimited: 0 };
   }
 
   const { db } = await import("../db");
@@ -407,32 +407,54 @@ export async function syncHubSpotContactEnrichment(opts: {
     .where(and(...conditions))
     .limit(limit);
 
-  if (contacts.length === 0) return { enriched: 0, notFound: 0, errors: 0 };
+  if (contacts.length === 0) return { enriched: 0, notFound: 0, errors: 0, rateLimited: 0 };
+
+  const { withHubspotRetry, isHubspotRateLimitError } = await import("./hubspot-integration");
 
   let enriched = 0;
   let notFound = 0;
   let errors = 0;
+  let rateLimited = 0;
 
-  // HubSpot search API: max 100 req/10s. Process in small batches with a
-  // brief pause between to stay comfortably within rate limits.
+  // HubSpot search API: max 5 req/s on the search endpoint. Process contacts
+  // one at a time with withHubspotRetry (exponential backoff on 429) and a
+  // brief inter-request pause to stay within rate limits.
+  // Contacts that are still rate-limited after all retry attempts are counted
+  // separately and left un-enriched (hubspotContactId stays null) so the next
+  // sweep naturally picks them up — they are NOT silently skipped.
   const BATCH_SIZE = 50;
+  const LIFECYCLE_MAP: Record<string, string> = {
+    subscriber: "subscriber",
+    lead: "lead",
+    marketingqualifiedlead: "mql",
+    salesqualifiedlead: "sql",
+    opportunity: "opportunity",
+    customer: "customer",
+    evangelist: "evangelist",
+    other: "lead",
+  };
+
   for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
     const batch = contacts.slice(i, i + BATCH_SIZE);
     for (const contact of batch) {
       try {
-        const result = await client.crm.contacts.searchApi.doSearch({
-          filterGroups: [
-            {
-              filters: [
-                { propertyName: "email", operator: "EQ" as any, value: contact.email },
+        const result: any = await withHubspotRetry(
+          () =>
+            client.crm.contacts.searchApi.doSearch({
+              filterGroups: [
+                {
+                  filters: [
+                    { propertyName: "email", operator: "EQ" as any, value: contact.email },
+                  ],
+                },
               ],
-            },
-          ],
-          properties: ["email", "firstname", "lastname", "company", "jobtitle", "lifecyclestage"],
-          limit: 1,
-          after: "0",
-          sorts: [],
-        });
+              properties: ["email", "firstname", "lastname", "company", "jobtitle", "lifecyclestage"],
+              limit: 1,
+              after: "0",
+              sorts: [],
+            }),
+          { label: `contact email-search (${tenantDomain})` },
+        );
 
         if (result.results.length === 0) {
           notFound++;
@@ -442,17 +464,6 @@ export async function syncHubSpotContactEnrichment(opts: {
         const hs = result.results[0];
         const props = hs.properties as Record<string, string | null>;
 
-        // Map HubSpot lifecycle stage names to Orbit's spine values.
-        const LIFECYCLE_MAP: Record<string, string> = {
-          subscriber: "subscriber",
-          lead: "lead",
-          marketingqualifiedlead: "mql",
-          salesqualifiedlead: "sql",
-          opportunity: "opportunity",
-          customer: "customer",
-          evangelist: "evangelist",
-          other: "lead",
-        };
         const hsStage = (props.lifecyclestage || "").toLowerCase();
         const mappedStage = LIFECYCLE_MAP[hsStage] || null;
 
@@ -468,8 +479,16 @@ export async function syncHubSpotContactEnrichment(opts: {
         });
         enriched++;
       } catch (err: any) {
-        console.error(`[HubSpot] enrichment failed for ${contact.email}: ${err.message}`);
-        errors++;
+        if (isHubspotRateLimitError(err)) {
+          // Contact left un-enriched; next sweep will retry naturally.
+          rateLimited++;
+          console.warn(
+            `[HubSpot] contact enrichment rate-limited for ${contact.email} (${tenantDomain}) — deferred to next sweep`,
+          );
+        } else {
+          console.error(`[HubSpot] enrichment failed for ${contact.email}: ${err.message}`);
+          errors++;
+        }
       }
     }
     if (i + BATCH_SIZE < contacts.length) {
@@ -478,9 +497,9 @@ export async function syncHubSpotContactEnrichment(opts: {
   }
 
   console.log(
-    `[HubSpot] contact enrichment complete for ${tenantDomain} — enriched=${enriched} notFound=${notFound} errors=${errors}`,
+    `[HubSpot] contact enrichment complete for ${tenantDomain} — enriched=${enriched} notFound=${notFound} errors=${errors} rateLimited=${rateLimited}`,
   );
-  return { enriched, notFound, errors };
+  return { enriched, notFound, errors, rateLimited };
 }
 
 /**

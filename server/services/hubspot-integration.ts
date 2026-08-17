@@ -316,6 +316,61 @@ export async function fetchHubspotEmailStats(
 export const HUBSPOT_REST_HOST = HUBSPOT_API_HOST;
 
 // ─────────────────────────────────────────────────────────────────────────
+// Rate-limit helpers
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true when a HubSpot SDK or fetch error indicates a 429 rate-limit
+ * response. The SDK surfaces the status code in several possible shapes
+ * depending on the API method and SDK version.
+ */
+export function isHubspotRateLimitError(err: any): boolean {
+  const status =
+    err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
+  if (status === 429) return true;
+  const msg = String(
+    err?.message ?? err?.body?.message ?? "",
+  ).toLowerCase();
+  return msg.includes("rate limit") || msg.includes("too many requests");
+}
+
+/**
+ * Wrap a HubSpot API call with exponential-backoff retry on 429 responses.
+ *
+ * Delays: 1 s → 2 s → 4 s → throw (maxAttempts = 4).
+ * Non-429 errors are re-thrown immediately on the first failure.
+ *
+ * Exported so callers in other service files (e.g. hubspot-service.ts) can
+ * reuse the same retry policy without duplicating logic.
+ */
+export async function withHubspotRetry<T>(
+  fn: () => Promise<T>,
+  {
+    maxAttempts = 4,
+    baseDelayMs = 1000,
+    label = "HubSpot API call",
+  }: { maxAttempts?: number; baseDelayMs?: number; label?: string } = {},
+): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      if (!isHubspotRateLimitError(err) || attempt === maxAttempts) {
+        throw err;
+      }
+      const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+      console.warn(
+        `[HubSpot] 429 rate-limit on ${label} — backing off ${delayMs}ms (attempt ${attempt}/${maxAttempts})`,
+      );
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Inbound: enrichment + deal rollup
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -324,6 +379,7 @@ interface SyncStats {
   enriched: number;
   dealsAggregated: number;
   errors: number;
+  rateLimited: number;
 }
 
 function rootDomain(raw: string | null | undefined): string | null {
@@ -338,7 +394,7 @@ function rootDomain(raw: string | null | undefined): string | null {
 }
 
 export async function syncTenant(tenantDomain: string): Promise<SyncStats> {
-  const stats: SyncStats = { matched: 0, enriched: 0, dealsAggregated: 0, errors: 0 };
+  const stats: SyncStats = { matched: 0, enriched: 0, dealsAggregated: 0, errors: 0, rateLimited: 0 };
   const { client } = await getTenantClient(tenantDomain);
 
   const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
@@ -490,19 +546,23 @@ export async function syncTenant(tenantDomain: string): Promise<SyncStats> {
     }
   }
 
-  // Pass 1 — domain match
+  // Pass 1 — domain match (batched, 100 domains per request)
   for (let i = 0; i < domains.length; i += 100) {
     const slice = domains.slice(i, i + 100);
     try {
-      const result = await client.crm.companies.searchApi.doSearch({
-        filterGroups: [
-          { filters: [{ propertyName: "domain", operator: FilterOperatorEnum.In, values: slice }] },
-        ],
-        properties: COMPANY_PROPS,
-        limit: COMPANY_PAGE_LIMIT,
-        after: "0",
-        sorts: [],
-      });
+      const result = await withHubspotRetry(
+        () =>
+          client.crm.companies.searchApi.doSearch({
+            filterGroups: [
+              { filters: [{ propertyName: "domain", operator: FilterOperatorEnum.In, values: slice }] },
+            ],
+            properties: COMPANY_PROPS,
+            limit: COMPANY_PAGE_LIMIT,
+            after: "0",
+            sorts: [],
+          }),
+        { label: `company domain-search (${tenantDomain})` },
+      );
       for (const co of result.results) {
         const props = (co.properties as Record<string, string>) || {};
         const dom = rootDomain(props.domain);
@@ -512,11 +572,22 @@ export async function syncTenant(tenantDomain: string): Promise<SyncStats> {
         await processCompany(co, competitorId);
       }
     } catch (err) {
-      stats.errors += 1;
-      console.error(
-        `[HubSpot Sync] company domain-search failed for ${tenantDomain}:`,
-        (err as Error)?.message || err,
-      );
+      if (isHubspotRateLimitError(err)) {
+        stats.rateLimited += slice.length;
+        console.warn(
+          `[HubSpot Sync] company domain-search rate-limited for ${tenantDomain} — ${slice.length} domains deferred to next sweep`,
+        );
+      } else {
+        stats.errors += 1;
+        console.error(
+          `[HubSpot Sync] company domain-search failed for ${tenantDomain}:`,
+          (err as Error)?.message || err,
+        );
+      }
+    }
+    // Brief pause between domain batches to stay within HubSpot's 5 req/s search limit.
+    if (i + 100 < domains.length) {
+      await new Promise((r) => setTimeout(r, 250));
     }
   }
 
@@ -524,17 +595,23 @@ export async function syncTenant(tenantDomain: string): Promise<SyncStats> {
   // HubSpot search "name" only supports equality / contains_token; we use
   // contains_token (case-insensitive) per name and accept exact-name
   // matches client-side to avoid false positives.
+  // Requests are serialized with a small inter-request pause to stay within
+  // HubSpot's 5 req/s search API rate limit.
   for (const name of names) {
     try {
-      const result = await client.crm.companies.searchApi.doSearch({
-        filterGroups: [
-          { filters: [{ propertyName: "name", operator: FilterOperatorEnum.ContainsToken, value: name }] },
-        ],
-        properties: COMPANY_PROPS,
-        limit: COMPANY_PAGE_LIMIT,
-        after: "0",
-        sorts: [],
-      });
+      const result = await withHubspotRetry(
+        () =>
+          client.crm.companies.searchApi.doSearch({
+            filterGroups: [
+              { filters: [{ propertyName: "name", operator: FilterOperatorEnum.ContainsToken, value: name }] },
+            ],
+            properties: COMPANY_PROPS,
+            limit: COMPANY_PAGE_LIMIT,
+            after: "0",
+            sorts: [],
+          }),
+        { label: `company name-search "${name}" (${tenantDomain})` },
+      );
       for (const co of result.results) {
         const props = (co.properties as Record<string, string>) || {};
         const hsName = (props.name || "").trim().toLowerCase();
@@ -545,12 +622,21 @@ export async function syncTenant(tenantDomain: string): Promise<SyncStats> {
         await processCompany(co, competitorId);
       }
     } catch (err) {
-      stats.errors += 1;
-      console.warn(
-        `[HubSpot Sync] company name-search failed for ${tenantDomain}:`,
-        (err as Error)?.message || err,
-      );
+      if (isHubspotRateLimitError(err)) {
+        stats.rateLimited += 1;
+        console.warn(
+          `[HubSpot Sync] company name-search rate-limited for "${name}" (${tenantDomain}) — deferred to next sweep`,
+        );
+      } else {
+        stats.errors += 1;
+        console.warn(
+          `[HubSpot Sync] company name-search failed for ${tenantDomain}:`,
+          (err as Error)?.message || err,
+        );
+      }
     }
+    // 220 ms pause between per-name searches keeps throughput under 5 req/s.
+    await new Promise((r) => setTimeout(r, 220));
   }
 
   await storage.markHubspotSyncResult(tenantDomain, { stats, error: null });
