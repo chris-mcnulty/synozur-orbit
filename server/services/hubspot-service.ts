@@ -393,7 +393,7 @@ export async function syncHubSpotContactEnrichment(opts: {
 
   // Use the per-tenant OAuth client — this is the same client the daily
   // HubSpot sweep uses, so it always operates on the correct CRM portal.
-  const { getTenantClient } = await import("./hubspot-integration");
+  const { getTenantClient, withHubspotRetry, isHubspotRateLimitError } = await import("./hubspot-integration");
   let client: any;
   try {
     const result = await getTenantClient(tenantDomain);
@@ -410,79 +410,155 @@ export async function syncHubSpotContactEnrichment(opts: {
   const { enrichContactFromHubSpot } = await import("./marketing-contact-service");
   const { eq, and, isNull } = await import("drizzle-orm");
 
-  const conditions: any[] = [eq(marketingContacts.tenantDomain, tenantDomain)];
-  if (!forceAll) conditions.push(isNull(marketingContacts.hubspotContactId));
+  // Assemble production-grade deps and delegate all enrichment logic to the
+  // DI core. This ensures there is one authoritative implementation.
+  const deps: ContactEnrichmentDeps = {
+    loadContacts: async (td, lim, all) => {
+      const conditions: any[] = [eq(marketingContacts.tenantDomain, td)];
+      if (!all) conditions.push(isNull(marketingContacts.hubspotContactId));
+      return db
+        .select({ id: marketingContacts.id, email: marketingContacts.email })
+        .from(marketingContacts)
+        .where(and(...conditions))
+        .limit(lim);
+    },
 
-  const contacts = await db
-    .select({ id: marketingContacts.id, email: marketingContacts.email })
-    .from(marketingContacts)
-    .where(and(...conditions))
-    .limit(limit);
+    searchHubSpot: async (email) => {
+      const result: any = await withHubspotRetry(
+        () =>
+          client.crm.contacts.searchApi.doSearch({
+            filterGroups: [
+              { filters: [{ propertyName: "email", operator: "EQ" as any, value: email }] },
+            ],
+            properties: ["email", "firstname", "lastname", "company", "jobtitle", "lifecyclestage"],
+            limit: 1,
+            after: "0",
+            sorts: [],
+          }),
+        { label: `contact email-search (${tenantDomain})` },
+      );
+      if (result.results.length === 0) return null;
+      const hs = result.results[0];
+      return { id: hs.id, properties: hs.properties as Record<string, string | null> };
+    },
 
+    enrichContact: (params) => enrichContactFromHubSpot(params),
+
+    isRateLimitError: isHubspotRateLimitError,
+
+    // Production pacing: 50 contacts per batch, 600 ms inter-batch pause to
+    // stay within HubSpot's 5 req/s limit on the search endpoint.
+    batchSize: 50,
+    pauseFn: (ms) => new Promise((r) => setTimeout(r, ms)),
+  };
+
+  const result = await _syncHubSpotContactEnrichmentWithDeps({ tenantDomain, limit, forceAll }, deps);
+
+  console.log(
+    `[HubSpot] contact enrichment complete for ${tenantDomain} — enriched=${result.enriched} notFound=${result.notFound} errors=${result.errors} rateLimited=${result.rateLimited}`,
+  );
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// DI-based core for syncHubSpotContactEnrichment — exported for unit tests
+// ---------------------------------------------------------------------------
+
+export interface EnrichmentContact {
+  id: string;
+  email: string;
+}
+
+export interface HubSpotContactResult {
+  id: string;
+  properties: Record<string, string | null>;
+}
+
+export interface ContactEnrichmentDeps {
+  /** Load unenriched contacts for a single tenant */
+  loadContacts: (tenantDomain: string, limit: number, forceAll: boolean) => Promise<EnrichmentContact[]>;
+  /**
+   * Search HubSpot for a contact by email. Returns null when not found.
+   * May throw a rate-limit error after all retry attempts are exhausted.
+   * The production adapter wraps this in withHubspotRetry.
+   */
+  searchHubSpot: (email: string) => Promise<HubSpotContactResult | null>;
+  /** Write HubSpot-sourced fields back to the marketing_contacts row */
+  enrichContact: (params: {
+    tenantDomain: string;
+    email: string;
+    hubspotContactId: string;
+    firstName: string | null;
+    lastName: string | null;
+    company: string | null;
+    jobTitle: string | null;
+    lifecycleStage: string | null;
+  }) => Promise<void>;
+  /** Returns true when an error is a HubSpot 429 rate-limit response */
+  isRateLimitError: (err: unknown) => boolean;
+  /**
+   * Number of contacts processed per batch before pausing.
+   * Default: 50. Override in tests to process all contacts without pausing.
+   */
+  batchSize?: number;
+  /**
+   * Inter-batch pause to stay within HubSpot's rate limits.
+   * Default: 600 ms. Tests pass a no-op to keep suites fast.
+   */
+  pauseFn?: (ms: number) => Promise<void>;
+}
+
+const ENRICHMENT_LIFECYCLE_MAP: Record<string, string> = {
+  subscriber: "subscriber",
+  lead: "lead",
+  marketingqualifiedlead: "mql",
+  salesqualifiedlead: "sql",
+  opportunity: "opportunity",
+  customer: "customer",
+  evangelist: "evangelist",
+  other: "lead",
+};
+
+export async function _syncHubSpotContactEnrichmentWithDeps(
+  opts: { tenantDomain: string; limit?: number; forceAll?: boolean },
+  deps: ContactEnrichmentDeps,
+): Promise<{ enriched: number; notFound: number; errors: number; rateLimited: number }> {
+  const { tenantDomain, limit = 200, forceAll = false } = opts;
+
+  // HubSpot search API: max 5 req/s. Process contacts in batches with an
+  // inter-batch pause to stay within rate limits. Contacts that are still
+  // rate-limited after all retry attempts are counted separately and left
+  // un-enriched (hubspotContactId stays null) so the next sweep picks them up.
+  const BATCH_SIZE = deps.batchSize ?? 50;
+  const pause = deps.pauseFn ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  const contacts = await deps.loadContacts(tenantDomain, limit, forceAll);
   if (contacts.length === 0) return { enriched: 0, notFound: 0, errors: 0, rateLimited: 0 };
-
-  const { withHubspotRetry, isHubspotRateLimitError } = await import("./hubspot-integration");
 
   let enriched = 0;
   let notFound = 0;
   let errors = 0;
   let rateLimited = 0;
 
-  // HubSpot search API: max 5 req/s on the search endpoint. Process contacts
-  // one at a time with withHubspotRetry (exponential backoff on 429) and a
-  // brief inter-request pause to stay within rate limits.
-  // Contacts that are still rate-limited after all retry attempts are counted
-  // separately and left un-enriched (hubspotContactId stays null) so the next
-  // sweep naturally picks them up — they are NOT silently skipped.
-  const BATCH_SIZE = 50;
-  const LIFECYCLE_MAP: Record<string, string> = {
-    subscriber: "subscriber",
-    lead: "lead",
-    marketingqualifiedlead: "mql",
-    salesqualifiedlead: "sql",
-    opportunity: "opportunity",
-    customer: "customer",
-    evangelist: "evangelist",
-    other: "lead",
-  };
-
   for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
     const batch = contacts.slice(i, i + BATCH_SIZE);
     for (const contact of batch) {
       try {
-        const result: any = await withHubspotRetry(
-          () =>
-            client.crm.contacts.searchApi.doSearch({
-              filterGroups: [
-                {
-                  filters: [
-                    { propertyName: "email", operator: "EQ" as any, value: contact.email },
-                  ],
-                },
-              ],
-              properties: ["email", "firstname", "lastname", "company", "jobtitle", "lifecyclestage"],
-              limit: 1,
-              after: "0",
-              sorts: [],
-            }),
-          { label: `contact email-search (${tenantDomain})` },
-        );
+        const hsContact = await deps.searchHubSpot(contact.email);
 
-        if (result.results.length === 0) {
+        if (!hsContact) {
           notFound++;
           continue;
         }
 
-        const hs = result.results[0];
-        const props = hs.properties as Record<string, string | null>;
-
+        const props = hsContact.properties;
         const hsStage = (props.lifecyclestage || "").toLowerCase();
-        const mappedStage = LIFECYCLE_MAP[hsStage] || null;
+        const mappedStage = ENRICHMENT_LIFECYCLE_MAP[hsStage] || null;
 
-        await enrichContactFromHubSpot({
+        await deps.enrichContact({
           tenantDomain,
           email: contact.email,
-          hubspotContactId: hs.id,
+          hubspotContactId: hsContact.id,
           firstName: props.firstname || null,
           lastName: props.lastname || null,
           company: props.company || null,
@@ -491,7 +567,7 @@ export async function syncHubSpotContactEnrichment(opts: {
         });
         enriched++;
       } catch (err: any) {
-        if (isHubspotRateLimitError(err)) {
+        if (deps.isRateLimitError(err)) {
           // Contact left un-enriched; next sweep will retry naturally.
           rateLimited++;
           console.warn(
@@ -504,13 +580,10 @@ export async function syncHubSpotContactEnrichment(opts: {
       }
     }
     if (i + BATCH_SIZE < contacts.length) {
-      await new Promise((r) => setTimeout(r, 600));
+      await pause(600);
     }
   }
 
-  console.log(
-    `[HubSpot] contact enrichment complete for ${tenantDomain} — enriched=${enriched} notFound=${notFound} errors=${errors} rateLimited=${rateLimited}`,
-  );
   return { enriched, notFound, errors, rateLimited };
 }
 
