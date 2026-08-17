@@ -17,7 +17,7 @@ import {
   getValidGraphToken,
   renewGraphSubscription,
 } from "./planner-graph-client";
-import { tickMarketingPublishWorker, sweepMissedPosts, preflightImageCheck } from "./marketing-publish-worker";
+import { tickMarketingPublishWorker, sweepMissedPosts, preflightImageCheck, tickLinkedInAdminHealthCheck } from "./marketing-publish-worker";
 import { tickEmailSendWorker } from "./email-campaign-sender";
 import { tickAbTestEvaluationWorker } from "./email-ab-test";
 import { tickHubspotEmailSyncBackfill } from "./hubspot-email-backfill";
@@ -2653,6 +2653,22 @@ export function startScheduledJobs(): void {
     runPublishTick();
     setInterval(runPublishTick, 2 * 60 * 1000);
   }, 3.5 * 60 * 1000);
+
+  // LinkedIn page-admin health check — proactively verifies that active LinkedIn
+  // accounts still have admin access to the company page they're configured to
+  // post as. Catches lost access before a scheduled post hits a silent failure.
+  // Runs every 4 hours; each account is re-checked at most once per interval
+  // (throttled in-process). First tick is delayed 5 minutes after startup.
+  setTimeout(() => {
+    tickLinkedInAdminHealthCheck().catch(err => {
+      console.error("[LinkedIn Admin Check] Startup error:", err?.message || err);
+    });
+    setInterval(() => {
+      tickLinkedInAdminHealthCheck().catch(err => {
+        console.error("[LinkedIn Admin Check] Tick error:", err?.message || err);
+      });
+    }, 4 * 60 * 60 * 1000);
+  }, 5 * 60 * 1000);
 
   // Missed-post sweep — marks approved posts whose scheduledDate is more than
   // 5 days in the past as "missed" so operators can review them. Runs every

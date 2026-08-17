@@ -249,6 +249,63 @@ export class LinkedInPublisher implements SocialPublisher {
     };
   }
 
+  /**
+   * Verify that the stored token can still reach the org page it's configured
+   * to post as.  Called proactively by the account health-check sweep so
+   * operators learn about lost page-admin access *before* a post is due,
+   * not after a silent publish failure.
+   *
+   * Returns `{ ok: true }` when the authorUrn is still present in the org-acl
+   * list, `{ ok: false, reason }` otherwise (including token errors).
+   */
+  async checkPageAdminAccess(account: {
+    encryptedAccessToken: string | null;
+    tokenExpiresAt: Date | null;
+    authorUrn: string | null;
+  }): Promise<{ ok: boolean; reason?: string }> {
+    if (!account.encryptedAccessToken) {
+      return { ok: false, reason: "No access token stored — reconnect the account." };
+    }
+    if (!account.authorUrn) {
+      // No org URN configured — nothing to validate.
+      return { ok: true };
+    }
+    // Personal-profile authors (urn:li:person:...) are never in organizationAcls.
+    // Admin-access checks only apply to company pages (urn:li:organization:...).
+    if (!account.authorUrn.startsWith("urn:li:organization:")) {
+      return { ok: true };
+    }
+    if (account.tokenExpiresAt && account.tokenExpiresAt.getTime() < Date.now()) {
+      return { ok: false, reason: "Access token has expired — reconnect the account." };
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decryptSecret(account.encryptedAccessToken);
+    } catch {
+      return { ok: false, reason: "Stored token could not be decrypted — reconnect the account." };
+    }
+
+    let orgs: Array<{ urn: string }>;
+    try {
+      orgs = await this.fetchAdminOrganizations(accessToken);
+    } catch (err) {
+      // Network / 5xx — treat as transient; don't flip the account to needs_reconnect.
+      return { ok: true };
+    }
+
+    const adminUrns = new Set(orgs.map((o) => o.urn));
+    if (!adminUrns.has(account.authorUrn)) {
+      return {
+        ok: false,
+        reason:
+          `Page admin access lost — the connected LinkedIn account is no longer an administrator of the target company page (${account.authorUrn}). ` +
+          "Reconnect the account or ask a current page admin to restore administrator access.",
+      };
+    }
+    return { ok: true };
+  }
+
   async fetchAdminOrganizations(accessToken: string): Promise<
     Array<{
       mode: "organization";
@@ -266,8 +323,12 @@ export class LinkedInPublisher implements SocialPublisher {
     });
     if (!resp.ok) {
       const body = await resp.text().catch(() => "");
-      console.warn(`[LinkedIn] organizationAcls fetch failed (HTTP ${resp.status}) — treating as no managed orgs. Body: ${body.slice(0, 300)}`);
-      return [];
+      // Non-200 responses (401, 403, 429, 5xx, etc.) are thrown so callers can
+      // treat them as transient failures rather than as "the account has no orgs".
+      // An empty org list is only meaningful when we receive a genuine 200 response.
+      throw new Error(
+        `[LinkedIn] organizationAcls HTTP ${resp.status} — treating as transient. Body: ${body.slice(0, 300)}`,
+      );
     }
     const json = (await resp.json().catch(() => null)) as any;
     const elements: any[] = Array.isArray(json?.elements) ? json.elements : [];

@@ -781,6 +781,103 @@ export async function preflightImageCheck(): Promise<{ checked: number; flagged:
   return { checked, flagged, cleared };
 }
 
+// ---------------------------------------------------------------------------
+// LinkedIn page-admin health check
+// ---------------------------------------------------------------------------
+
+/**
+ * In-memory throttle: track the last time we checked each account so we
+ * don't hammer the LinkedIn API on every tick.  Keyed by social-account id.
+ */
+const linkedInAdminCheckLastRun = new Map<string, number>();
+const LINKEDIN_ADMIN_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+/**
+ * Proactively verify that every active LinkedIn account can still post to its
+ * configured company page.  If the ACL check fails (page admin access was
+ * revoked), the account is transitioned to `needs_reconnect` so the Social
+ * Accounts health badge surfaces the problem before the next scheduled post
+ * hits a silent "You are not permitted to perform this action" failure.
+ *
+ * Each account is re-checked at most once every 4 hours (in-process throttle).
+ * The function is cheap on no-op ticks: zero network calls when nothing is due.
+ */
+export async function tickLinkedInAdminHealthCheck(): Promise<{ checked: number; flagged: number }> {
+  const { LinkedInPublisher } = await import("./social-publishers/linkedin");
+  const publisher = new LinkedInPublisher();
+
+  const now = Date.now();
+
+  // Find active LinkedIn accounts that post as a company page (organization author).
+  // Personal-profile authors (person URN) are never in organizationAcls so we
+  // skip them here — checkPageAdminAccess also guards against this, but filtering
+  // at query time avoids unnecessary API calls.
+  const accounts = await db
+    .select()
+    .from(socialAccounts)
+    .where(
+      and(
+        eq(socialAccounts.platform, "linkedin"),
+        eq(socialAccounts.status, "active"),
+        isNotNull(socialAccounts.encryptedAccessToken),
+        isNotNull(socialAccounts.authorUrn),
+        eq(socialAccounts.authorMode, "organization"),
+      ),
+    );
+
+  let checked = 0;
+  let flagged = 0;
+
+  for (const account of accounts) {
+    // Throttle: skip if checked recently.
+    const lastRun = linkedInAdminCheckLastRun.get(account.id) ?? 0;
+    if (now - lastRun < LINKEDIN_ADMIN_CHECK_INTERVAL_MS) continue;
+    linkedInAdminCheckLastRun.set(account.id, now);
+
+    try {
+      const result = await publisher.checkPageAdminAccess({
+        encryptedAccessToken: account.encryptedAccessToken,
+        tokenExpiresAt: account.tokenExpiresAt,
+        authorUrn: account.authorUrn,
+      });
+      checked += 1;
+
+      if (!result.ok) {
+        const reason = result.reason ?? "LinkedIn page admin access lost — reconnect the account.";
+        console.warn(`[LinkedIn Admin Check] Account ${account.id} lost page admin access: ${reason}`);
+
+        await db.update(socialAccounts).set({
+          status: "needs_reconnect",
+          lastPublishError: reason,
+          updatedAt: new Date(),
+        }).where(eq(socialAccounts.id, account.id));
+
+        await db.insert(marketingAuditLog).values({
+          tenantDomain: account.tenantDomain,
+          marketId: account.marketId ?? null,
+          userId: null,
+          action: "social_account_health",
+          entityType: "social_account",
+          entityId: account.id,
+          status: "warning",
+          message: `LinkedIn page admin access lost: ${reason}`,
+          details: { platform: "linkedin", authorUrn: account.authorUrn },
+        });
+
+        flagged += 1;
+      }
+    } catch (err: any) {
+      // Unexpected error — log and move on; don't flip the account status on a bug.
+      console.warn(`[LinkedIn Admin Check] Unexpected error for account ${account.id}:`, err?.message || err);
+    }
+  }
+
+  if (checked > 0) {
+    console.log(`[LinkedIn Admin Check] checked=${checked} flagged=${flagged}`);
+  }
+  return { checked, flagged };
+}
+
 /**
  * Sweep for missed posts — runs on a short interval (every 5 min).
  *
