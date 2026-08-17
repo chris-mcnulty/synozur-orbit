@@ -13,6 +13,7 @@ import { Plus, Loader2, Trash2, Edit2, Wand2, Globe, FileText, LayoutList, Layou
 import { useToast } from "@/hooks/use-toast";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 
 interface ProductFeature {
   id: string;
@@ -89,7 +90,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
   const [sortOrder, setSortOrder] = useState<"name" | "status" | "priority" | "category">("name");
 
   const { data: features = [], isLoading } = useQuery<ProductFeature[]>({
-    queryKey: ["/api/products", productId, "features"],
+    queryKey: ["/api/products", getTabMarketId(), productId, "features"],
     queryFn: async () => {
       const res = await fetch(`/api/products/${productId}/features`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch features");
@@ -109,7 +110,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "features"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "features"] });
       setIsAddOpen(false);
       resetForm();
       toast({ title: "Feature Created" });
@@ -131,7 +132,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "features"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "features"] });
       setIsEditOpen(false);
       setEditingFeature(null);
       resetForm();
@@ -151,7 +152,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
       if (!res.ok) throw new Error("Failed to delete feature");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "features"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "features"] });
       toast({ title: "Feature Deleted" });
     },
     onError: (error: Error) => {
@@ -229,7 +230,7 @@ export default function FeaturesTab({ productId, product }: FeaturesTabProps) {
       
       const result = await res.json();
       setImportResult({ imported: result.features?.length || 0 });
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "features"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "features"] });
       toast({ title: "Import Complete", description: `Imported ${result.features?.length || 0} features` });
     } catch (error: any) {
       toast({ title: "Import Failed", description: error.message, variant: "destructive" });

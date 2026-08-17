@@ -35,6 +35,7 @@ import { StageBar } from "@/components/hub/hub-charts";
 import { MarketingHubNextActions } from "@/components/marketing/NextActionsByBatch";
 import { buildAreas } from "@/lib/areaNavigation";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 
 type LongFormRecommendation = {
   id: string;
@@ -54,7 +55,7 @@ interface MarketingPlan {
 
 export default function MarketingLandingPage() {
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -63,7 +64,7 @@ export default function MarketingLandingPage() {
   });
 
   const { data: gtmPlan, isLoading: gtmLoading } = useQuery<LongFormRecommendation | null>({
-    queryKey: ["/api/baseline/recommendations/gtm_plan"],
+    queryKey: ["/api/baseline/recommendations/gtm_plan", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
       if (!response.ok) return null;
@@ -73,7 +74,7 @@ export default function MarketingLandingPage() {
   });
 
   const { data: messagingFramework, isLoading: msgLoading } = useQuery<LongFormRecommendation | null>({
-    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryKey: ["/api/baseline/recommendations/messaging_framework", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
       if (!response.ok) return null;
@@ -94,7 +95,7 @@ export default function MarketingLandingPage() {
   const isEnterprise = tenantSettings?.plan === "enterprise" || tenantSettings?.plan === "unlimited";
 
   const { data: marketingPlans = [], isLoading: plansLoading } = useQuery<MarketingPlan[]>({
-    queryKey: ["/api/marketing-plans"],
+    queryKey: ["/api/marketing-plans", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/marketing-plans", { credentials: "include" });
       if (!response.ok) return [];
@@ -107,7 +108,7 @@ export default function MarketingLandingPage() {
   const { data: pipelinePosts = [] } = useQuery<
     { id: string; status: string; scheduledDate: string | null; publishedAt: string | null }[]
   >({
-    queryKey: ["/api/generated-posts/calendar", "marketing-hub"],
+    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), "marketing-hub"],
     queryFn: async () => {
       const from = new Date();
       from.setDate(from.getDate() - 30);

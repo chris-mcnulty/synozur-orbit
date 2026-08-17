@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { getFullStalenessInfo, checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -39,7 +40,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -48,7 +49,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   });
 
   const { data: analysis } = useQuery({
-    queryKey: ["/api/analysis"],
+    queryKey: ["/api/analysis", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/analysis", { credentials: "include" });
       if (!res.ok) return null;
@@ -57,7 +58,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   });
 
   const { data: battleCards = [] } = useQuery({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/battlecards", { credentials: "include" });
       if (!res.ok) return [];
@@ -66,7 +67,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   });
 
   const { data: gtmPlan } = useQuery({
-    queryKey: ["/api/baseline/recommendations/gtm_plan"],
+    queryKey: ["/api/baseline/recommendations/gtm_plan", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
       if (!res.ok) return null;
@@ -76,7 +77,7 @@ export function NeedsAttentionCard({ className }: NeedsAttentionCardProps) {
   });
 
   const { data: messagingFramework } = useQuery({
-    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryKey: ["/api/baseline/recommendations/messaging_framework", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
       if (!res.ok) return null;

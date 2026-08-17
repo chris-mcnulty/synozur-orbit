@@ -33,6 +33,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useToast } from "@/hooks/use-toast";
 import { AssigneePicker, CommentPopoverButton, OwnerAvatar, useCollabUsers } from "@/components/collaboration/CollabComponents";
@@ -157,7 +158,7 @@ export default function ActionItems() {
   const [dismissReason, setDismissReason] = useState("not_relevant");
 
   const { data: actionItems = [], isLoading } = useQuery<ActionItem[]>({
-    queryKey: ["/api/action-items"],
+    queryKey: ["/api/action-items", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/action-items", { credentials: "include" });
       if (!response.ok) return [];

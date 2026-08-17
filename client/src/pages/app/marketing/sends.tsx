@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Lock, Send, ListPlus, Users, Ban, Trash2, Plus, AlertTriangle, ChevronDown, ChevronRight, Download, Pencil, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
@@ -124,7 +125,7 @@ export default function SendsPage() {
   const [suppressEmail, setSuppressEmail] = useState("");
 
   const { data: sends = [] } = useQuery<EmailSend[]>({
-    queryKey: ["/api/email-sends"],
+    queryKey: ["/api/email-sends", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/email-sends", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -134,7 +135,7 @@ export default function SendsPage() {
   });
 
   const { data: lists = [] } = useQuery<RecipientList[]>({
-    queryKey: ["/api/email-recipient-lists"],
+    queryKey: ["/api/email-recipient-lists", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/email-recipient-lists", { credentials: "include" });
       return r.ok ? r.json() : [];

@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { formatDistanceToNow } from "date-fns";
 import {
   ArrowRight,
@@ -28,7 +29,7 @@ const STALE_AFTER_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
  */
 export default function SalesHubPage() {
   const { data: battleCards = [] } = useQuery<any[]>({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/battlecards", { credentials: "include" });
       if (!r.ok) return [];
@@ -37,7 +38,7 @@ export default function SalesHubPage() {
   });
 
   const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["/api/reports"],
+    queryKey: ["/api/reports", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/reports", { credentials: "include" });
       if (!r.ok) return [];
@@ -46,7 +47,7 @@ export default function SalesHubPage() {
   });
 
   const { data: relationshipReports = [] } = useQuery<any[]>({
-    queryKey: ["/api/relationship-reports"],
+    queryKey: ["/api/relationship-reports", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/relationship-reports", { credentials: "include" });
       if (!r.ok) return [];
@@ -56,7 +57,7 @@ export default function SalesHubPage() {
   });
 
   const { data: assessments = [] } = useQuery<any[]>({
-    queryKey: ["/api/assessments"],
+    queryKey: ["/api/assessments", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/assessments", { credentials: "include" });
       if (!r.ok) return [];
@@ -73,7 +74,7 @@ export default function SalesHubPage() {
     replied: number;
     successRate: number;
   }>({
-    queryKey: ["/api/sales-outreach/summary"],
+    queryKey: ["/api/sales-outreach/summary", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/sales-outreach/summary", { credentials: "include" });
       if (!r.ok) return null as any;

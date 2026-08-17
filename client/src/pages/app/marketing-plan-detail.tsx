@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useParams, useLocation } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -267,7 +268,7 @@ export default function MarketingPlanDetail() {
     || plannerSyncJob?.status === "pending";
 
   const { data: plannerStatus } = useQuery<PlannerStatus>({
-    queryKey: [`/api/marketing-plans/${id}/planner/status`],
+    queryKey: [`/api/marketing-plans/${id}/planner/status`, getTabMarketId()],
     queryFn: async () => {
       const res = await fetch(`/api/marketing-plans/${id}/planner/status`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load Planner status");
@@ -411,7 +412,7 @@ export default function MarketingPlanDetail() {
   };
 
   const { data: plan, isLoading: planLoading } = useQuery<MarketingPlan>({
-    queryKey: [`/api/marketing-plans/${id}`],
+    queryKey: [`/api/marketing-plans/${id}`, getTabMarketId()],
     queryFn: async () => {
       const response = await fetch(`/api/marketing-plans/${id}`, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch plan");
@@ -421,7 +422,7 @@ export default function MarketingPlanDetail() {
   });
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<MarketingTask[]>({
-    queryKey: [`/api/marketing-plans/${id}/tasks`],
+    queryKey: [`/api/marketing-plans/${id}/tasks`, getTabMarketId()],
     queryFn: async () => {
       const response = await fetch(`/api/marketing-plans/${id}/tasks`, { credentials: "include" });
       if (!response.ok) return [];

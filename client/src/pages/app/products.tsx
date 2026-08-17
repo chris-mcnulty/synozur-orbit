@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import EmptyPageState, { CardGridSkeleton } from "@/components/EmptyPageState";
 
@@ -337,7 +338,7 @@ export default function Products() {
   }
 
   const { data: baselineProductData } = useQuery<BaselineProductData | null>({
-    queryKey: ["/api/products", editingProject?.baselineProductId],
+    queryKey: ["/api/products", getTabMarketId(), editingProject?.baselineProductId],
     queryFn: async () => {
       const response = await fetch(`/api/products/${editingProject?.baselineProductId}`, { credentials: "include" });
       if (!response.ok) return null;

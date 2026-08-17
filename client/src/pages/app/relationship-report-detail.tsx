@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { ArrowLeft, Download, FileText, Handshake, Loader2, Building2, Clock } from "lucide-react";
 import { MarkdownContent } from "@/components/MarkdownViewer";
 import { formatShortDate } from "@/lib/staleness";
@@ -30,7 +31,7 @@ export default function RelationshipReportDetailPage() {
   const id = params?.id;
 
   const { data: report, isLoading, isError, error } = useQuery<RelationshipReport>({
-    queryKey: ["/api/relationship-reports", id],
+    queryKey: ["/api/relationship-reports", getTabMarketId(), id],
     enabled: !!id,
     queryFn: async () => {
       const res = await fetch(`/api/relationship-reports/${id}`, { credentials: "include" });

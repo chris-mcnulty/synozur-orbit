@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import { STUDY_DEPTHS, type StudyDepth } from "@shared/market-intelligence";
 import { Telescope, Loader2, ArrowRight, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -40,7 +41,7 @@ export default function MarketStudiesPage() {
   const [acv, setAcv] = useState("");
 
   const { data: studies = [], isLoading } = useQuery<Study[]>({
-    queryKey: ["/api/market-studies"],
+    queryKey: ["/api/market-studies", getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", "/api/market-studies")).json(),
     refetchInterval: (q) => ((q.state.data ?? []).some((s: Study) => s.status === "running" || s.status === "pending") ? 4000 : false),
   });

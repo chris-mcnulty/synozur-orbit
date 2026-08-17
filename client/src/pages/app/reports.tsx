@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { getTimeAgo, calculateStaleness, checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
+import { getTabMarketId } from "@/lib/tabContext";
 import { RefreshCw } from "lucide-react";
 import EmptyPageState from "@/components/EmptyPageState";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -75,7 +76,7 @@ export default function Reports() {
   const [strategicPlansTouched, setStrategicPlansTouched] = useState(false);
 
   const { data: reports = [], isLoading } = useQuery({
-    queryKey: ["/api/reports"],
+    queryKey: ["/api/reports", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/reports", { credentials: "include" });
       if (!response.ok) return [];
@@ -115,7 +116,7 @@ export default function Reports() {
   const pdfReportsAllowed = tenantInfo?.features?.pdfReports !== false;
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -124,7 +125,7 @@ export default function Reports() {
   });
 
   const { data: competitors = [] as any[] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -138,7 +139,7 @@ export default function Reports() {
     gtmPlanGeneratedAt?: string | null;
     messagingFrameworkGeneratedAt?: string | null;
   }>({
-    queryKey: ["/api/reports/available-content"],
+    queryKey: ["/api/reports/available-content", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/reports/available-content", { credentials: "include" });
       if (!response.ok) return { hasGtmPlan: false, hasMessagingFramework: false };

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   LineChart, Line,
   BarChart, Bar,
@@ -127,7 +128,7 @@ export default function InsightsVisualizationsPage() {
   }, [from, until, bucket]);
 
   const { data: competitors = [] } = useQuery<Competitor[]>({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -136,7 +137,7 @@ export default function InsightsVisualizationsPage() {
     },
   });
   const { data: companyProfile } = useQuery<{ id: string; companyName: string } | null>({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -153,7 +154,7 @@ export default function InsightsVisualizationsPage() {
   }, [competitors, companyProfile]);
 
   const engagement = useQuery<{ points: EngagementPoint[] }>({
-    queryKey: ["/api/dashboard/visualizations/engagement-trends", params, platform],
+    queryKey: ["/api/dashboard/visualizations/engagement-trends", getTabMarketId(), params, platform],
     queryFn: async () => {
       const q = new URLSearchParams(params);
       q.set("platforms", platform);
@@ -164,7 +165,7 @@ export default function InsightsVisualizationsPage() {
   });
 
   const postingFreq = useQuery<{ series: BucketSeriesPoint[] }>({
-    queryKey: ["/api/dashboard/visualizations/posting-frequency", params],
+    queryKey: ["/api/dashboard/visualizations/posting-frequency", getTabMarketId(), params],
     queryFn: async () => {
       const res = await fetch(`/api/dashboard/visualizations/posting-frequency?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load posting frequency");
@@ -173,7 +174,7 @@ export default function InsightsVisualizationsPage() {
   });
 
   const sentiment = useQuery<{ series: SentimentPoint[] }>({
-    queryKey: ["/api/dashboard/visualizations/sentiment-trends", params],
+    queryKey: ["/api/dashboard/visualizations/sentiment-trends", getTabMarketId(), params],
     queryFn: async () => {
       const res = await fetch(`/api/dashboard/visualizations/sentiment-trends?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load sentiment");
@@ -182,7 +183,7 @@ export default function InsightsVisualizationsPage() {
   });
 
   const activityByComp = useQuery<{ series: BucketSeriesPoint[] }>({
-    queryKey: ["/api/dashboard/visualizations/activity-by-competitor", params],
+    queryKey: ["/api/dashboard/visualizations/activity-by-competitor", getTabMarketId(), params],
     queryFn: async () => {
       const res = await fetch(`/api/dashboard/visualizations/activity-by-competitor?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load activity");
@@ -191,7 +192,7 @@ export default function InsightsVisualizationsPage() {
   });
 
   const pricing = useQuery<{ points: PricingPoint[] }>({
-    queryKey: ["/api/dashboard/visualizations/pricing-trends", params],
+    queryKey: ["/api/dashboard/visualizations/pricing-trends", getTabMarketId(), params],
     queryFn: async () => {
       const res = await fetch(`/api/dashboard/visualizations/pricing-trends?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load pricing");

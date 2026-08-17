@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,7 +117,7 @@ export default function CompetitorDocuments({
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const queryKey = [`/api/competitors/${competitorId}/documents`, { showArchived }];
+  const queryKey = [`/api/competitors/${competitorId}/documents`, getTabMarketId(), { showArchived }];
 
   const { data: docs = [], isLoading } = useQuery<CompetitorDocument[]>({
     queryKey,
@@ -131,7 +132,7 @@ export default function CompetitorDocuments({
   });
 
   const { data: previewData, isLoading: previewLoading } = useQuery<DocumentPreview>({
-    queryKey: [`/api/competitors/${competitorId}/documents/${previewDocId}/preview`],
+    queryKey: [`/api/competitors/${competitorId}/documents/${previewDocId}/preview`, getTabMarketId()],
     queryFn: async () => {
       const res = await fetch(
         `/api/competitors/${competitorId}/documents/${previewDocId}/preview`,

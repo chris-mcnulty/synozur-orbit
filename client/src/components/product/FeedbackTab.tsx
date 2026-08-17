@@ -12,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Plus, ThumbsUp, Trash2, Sparkles, Rocket, Link2, Copy, Check, Lock, MessagesSquare, Filter, Mail } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 
 type FeedbackStatus = "new" | "planned" | "shipped" | "declined";
@@ -92,7 +93,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
   const [promotingId, setPromotingId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<FeedbackResponse>({
-    queryKey: ["/api/products", productId, "feedback"],
+    queryKey: ["/api/products", getTabMarketId(), productId, "feedback"],
     queryFn: async () => {
       const res = await fetch(`/api/products/${productId}/feedback`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load feedback");
@@ -131,7 +132,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] });
       setFormData({ title: "", description: "", category: "" });
       setIsAddOpen(false);
       toast({ title: "Feedback submitted" });
@@ -148,7 +149,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       if (!res.ok) throw new Error("Failed to vote");
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] }),
     onError: (err: any) => toast({ title: "Vote failed", description: err.message, variant: "destructive" }),
   });
 
@@ -167,7 +168,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] });
       toast({ title: "Status updated" });
     },
     onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
@@ -186,7 +187,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] });
       toast({ title: "Feedback deleted" });
     },
     onError: (err: any) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
@@ -207,9 +208,9 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "features"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "features"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"] });
       toast({ title: "Promoted to feature", description: "This idea now appears on the product feature list and roadmap source." });
     },
     onError: (err: any) => toast({ title: "Promotion failed", description: err.message, variant: "destructive" }),
@@ -231,7 +232,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] });
       toast({ title: "Notification setting updated" });
     },
     onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
@@ -252,7 +253,7 @@ export default function FeedbackTab({ productId, productName }: FeedbackTabProps
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "feedback"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "feedback"] });
       toast({ title: "Public link updated" });
     },
     onError: (err: any) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),

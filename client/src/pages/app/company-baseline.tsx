@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Link } from "wouter";
 import StalenessDot from "@/components/ui/StalenessDot";
 import RefreshStrategyDialog from "@/components/RefreshStrategyDialog";
@@ -63,7 +64,7 @@ export default function CompanyBaseline() {
   });
 
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", {
         credentials: "include",
@@ -74,7 +75,7 @@ export default function CompanyBaseline() {
   });
 
   const { data: documents = [] } = useQuery({
-    queryKey: ["/api/documents"],
+    queryKey: ["/api/documents", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/documents", { credentials: "include" });
       if (!response.ok) return [];
@@ -2090,7 +2091,11 @@ function BaselineTonePanel({ companyProfileId, companyName }: { companyProfileId
   const { isAllowed, isLoading: planLoading } = useFeatureAccess("sentimentAnalysis");
 
   const { data, isLoading } = useQuery<ToneSummaryResponse>({
-    queryKey: ["/api/company-profile/tone"],
+    queryKey: ["/api/company-profile/tone", getTabMarketId()],
+    queryFn: async () => {
+      const r = await fetch("/api/company-profile/tone", { credentials: "include" });
+      return r.ok ? r.json() : null;
+    },
     enabled: isAllowed && !planLoading,
     staleTime: 60_000,
   });
@@ -2285,7 +2290,7 @@ function BaselinePricingPanel({ companyProfileId, companyName, pricingPageUrl: i
   const [pricingUrlInput, setPricingUrlInput] = useState(initialUrl || "");
 
   const { data, isLoading } = useQuery<BaselinePricingResponse>({
-    queryKey: ["/api/company-profile/pricing"],
+    queryKey: ["/api/company-profile/pricing", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile/pricing", { credentials: "include" });
       if (res.status === 403) throw new Error("forbidden");

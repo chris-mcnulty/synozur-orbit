@@ -10,6 +10,7 @@ import Typography from "@tiptap/extension-typography";
 import TurndownService from "turndown";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   Bold,
   Italic,
@@ -123,7 +124,7 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
   };
 
   const { data: assets = [], isLoading } = useQuery<MediaAsset[]>({
-    queryKey: ["/api/content-assets"],
+    queryKey: ["/api/content-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -132,7 +133,7 @@ function MediaPickerDialog({ open, onClose, onInsert }: MediaPickerDialogProps) 
   });
 
   const { data: brandAssets = [], isLoading: isBrandLoading } = useQuery<BrandAsset[]>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-assets", { credentials: "include" });
       return r.ok ? r.json() : [];

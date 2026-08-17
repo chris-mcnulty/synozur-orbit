@@ -19,6 +19,7 @@ import { Link } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatShortDate } from "@/lib/staleness";
+import { getTabMarketId } from "@/lib/tabContext";
 import EmptyPageState from "@/components/EmptyPageState";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 
@@ -81,7 +82,7 @@ export default function RelationshipReportsPage() {
   const allowed = tenantInfo?.features?.relationshipReports !== false;
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -90,7 +91,7 @@ export default function RelationshipReportsPage() {
   });
 
   const { data: competitors = [] as any[] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -101,7 +102,7 @@ export default function RelationshipReportsPage() {
   // Cross-market baseline companies for this tenant — server already excludes
   // the active market's own profile, so this list is safe to render directly.
   const { data: crossMarketProfiles = [] as any[] } = useQuery({
-    queryKey: ["/api/relationship-reports/company-profiles"],
+    queryKey: ["/api/relationship-reports/company-profiles", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/relationship-reports/company-profiles", { credentials: "include" });
       if (!response.ok) return [];
@@ -111,7 +112,7 @@ export default function RelationshipReportsPage() {
   });
 
   const { data: reports = [] as RelationshipReport[] } = useQuery<RelationshipReport[]>({
-    queryKey: ["/api/relationship-reports"],
+    queryKey: ["/api/relationship-reports", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/relationship-reports", { credentials: "include" });
       if (!response.ok) return [];

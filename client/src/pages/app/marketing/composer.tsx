@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { useToast } from "@/hooks/use-toast";
+import { getTabMarketId } from "@/lib/tabContext";
 import { cn } from "@/lib/utils";
 import AIRewritePanel from "@/components/marketing/AIRewritePanel";
 
@@ -79,7 +80,7 @@ export default function ComposerPage() {
   const isAllowed = useFeatureFlag("socialPosts");
 
   const { data: accounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -88,7 +89,7 @@ export default function ComposerPage() {
   });
 
   const { data: campaigns = [] } = useQuery<CampaignOption[]>({
-    queryKey: ["/api/campaigns", "composer-options"],
+    queryKey: ["/api/campaigns", getTabMarketId(), "composer-options"],
     queryFn: async () => {
       const r = await fetch("/api/campaigns?pageSize=200", { credentials: "include" });
       if (!r.ok) return [];

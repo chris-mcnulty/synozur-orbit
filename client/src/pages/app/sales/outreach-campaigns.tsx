@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { formatDistanceToNow } from "date-fns";
 import { Send, Plus, ArrowRight, AlertTriangle, CheckCircle2, Settings, MoreHorizontal, Archive, Trash2 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
@@ -78,7 +79,7 @@ export default function OutreachCampaignsPage() {
   const [deleteTarget, setDeleteTarget] = useState<OutreachCampaign | null>(null);
 
   const { data: campaigns = [], isLoading } = useQuery<OutreachCampaign[]>({
-    queryKey: ["/api/sales-outreach/campaigns"],
+    queryKey: ["/api/sales-outreach/campaigns", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/sales-outreach/campaigns", { credentials: "include" });
       if (!r.ok) return [];
@@ -87,7 +88,7 @@ export default function OutreachCampaignsPage() {
   });
 
   const { data: readiness } = useQuery<ReadinessReport>({
-    queryKey: ["/api/sales-outreach/readiness"],
+    queryKey: ["/api/sales-outreach/readiness", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/sales-outreach/readiness", { credentials: "include" });
       if (!r.ok) return null as any;

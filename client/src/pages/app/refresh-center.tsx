@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate, getFullStalenessInfo } from "@/lib/staleness";
+import { getTabMarketId } from "@/lib/tabContext";
 import StalenessDot from "@/components/ui/StalenessDot";
 
 interface QuickAction {
@@ -59,7 +60,7 @@ export default function RefreshCenter() {
   const isGlobalAdmin = user?.role === "Global Admin";
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -68,7 +69,7 @@ export default function RefreshCenter() {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -108,7 +109,7 @@ export default function RefreshCenter() {
   });
 
   const { data: analysis } = useQuery({
-    queryKey: ["/api/analysis"],
+    queryKey: ["/api/analysis", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/analysis", { credentials: "include" });
       if (!res.ok) return null;
@@ -117,7 +118,7 @@ export default function RefreshCenter() {
   });
 
   const { data: battleCards = [] } = useQuery({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/battlecards", { credentials: "include" });
       if (!res.ok) return [];
@@ -126,7 +127,7 @@ export default function RefreshCenter() {
   });
 
   const { data: gtmPlan } = useQuery({
-    queryKey: ["/api/baseline/recommendations/gtm_plan"],
+    queryKey: ["/api/baseline/recommendations/gtm_plan", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
       if (!res.ok) return null;
@@ -135,7 +136,7 @@ export default function RefreshCenter() {
   });
 
   const { data: messagingFramework } = useQuery({
-    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryKey: ["/api/baseline/recommendations/messaging_framework", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
       if (!res.ok) return null;
@@ -144,7 +145,7 @@ export default function RefreshCenter() {
   });
 
   const { data: latestBriefing } = useQuery({
-    queryKey: ["/api/intelligence-briefings/latest"],
+    queryKey: ["/api/intelligence-briefings/latest", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/intelligence-briefings/latest", { credentials: "include" });
       if (!res.ok) return null;

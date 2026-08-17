@@ -83,7 +83,7 @@ export default function Dashboard() {
   const isAdmin = user ? hasAdminAccess(user.role) : false;
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -119,7 +119,7 @@ export default function Dashboard() {
   });
 
   const { data: activity = [] } = useQuery({
-    queryKey: ["/api/activity"],
+    queryKey: ["/api/activity", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/activity", { credentials: "include" });
       if (!response.ok) return [];
@@ -128,7 +128,7 @@ export default function Dashboard() {
   });
 
   const { data: recommendations = [] } = useQuery({
-    queryKey: ["/api/recommendations"],
+    queryKey: ["/api/recommendations", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/recommendations", { credentials: "include" });
       if (!response.ok) return [];
@@ -137,7 +137,7 @@ export default function Dashboard() {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -155,7 +155,7 @@ export default function Dashboard() {
   });
 
   const { data: analysis } = useQuery({
-    queryKey: ["/api/analysis"],
+    queryKey: ["/api/analysis", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/analysis", { credentials: "include" });
       if (!response.ok) return null;
@@ -164,7 +164,7 @@ export default function Dashboard() {
   });
 
   const { data: reports = [] } = useQuery({
-    queryKey: ["/api/reports"],
+    queryKey: ["/api/reports", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/reports", { credentials: "include" });
       if (!response.ok) return [];
@@ -173,7 +173,7 @@ export default function Dashboard() {
   });
 
   const { data: battleCards = [] } = useQuery({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/battlecards", { credentials: "include" });
       if (!response.ok) return [];
@@ -195,7 +195,7 @@ export default function Dashboard() {
     marketAverages: { innovationScore: number; marketPresenceScore: number; overallScore: number };
     deltaVsMarket: { absolute: number; percent: number };
   }>({
-    queryKey: ["/api/dashboard/scores"],
+    queryKey: ["/api/dashboard/scores", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/dashboard/scores", { credentials: "include" });
       if (!response.ok) return null;
@@ -230,7 +230,7 @@ export default function Dashboard() {
     savedEmails: { id: string; subject: string; platform: string; label: string | null; createdAt: string }[];
     totals: { campaigns: number; totalPosts: number; scheduledPosts: number; savedEmails: number };
   }>({
-    queryKey: ["/api/marketing/dashboard-summary"],
+    queryKey: ["/api/marketing/dashboard-summary", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/marketing/dashboard-summary", { credentials: "include" });
       if (!response.ok) return { campaigns: [], savedEmails: [], totals: { campaigns: 0, totalPosts: 0, scheduledPosts: 0, savedEmails: 0 } };
@@ -239,7 +239,7 @@ export default function Dashboard() {
   });
 
   const { data: gtmPlan } = useQuery({
-    queryKey: ["/api/baseline/recommendations/gtm_plan"],
+    queryKey: ["/api/baseline/recommendations/gtm_plan", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/baseline/recommendations/gtm_plan", { credentials: "include" });
       if (!response.ok) return null;
@@ -249,7 +249,7 @@ export default function Dashboard() {
   });
 
   const { data: messagingFramework } = useQuery({
-    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryKey: ["/api/baseline/recommendations/messaging_framework", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
       if (!response.ok) return null;

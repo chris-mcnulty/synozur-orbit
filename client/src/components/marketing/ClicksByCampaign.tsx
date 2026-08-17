@@ -6,6 +6,7 @@
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,7 +35,7 @@ interface Row {
 
 export function ClicksByCampaign() {
   const { data, isLoading } = useQuery<AnalyticsResp>({
-    queryKey: ["/api/marketing-links/analytics", "by-campaign"],
+    queryKey: ["/api/marketing-links/analytics", getTabMarketId(), "by-campaign"],
     queryFn: async () => {
       const r = await fetch("/api/marketing-links/analytics?days=30", { credentials: "include" });
       if (!r.ok) throw new Error("Failed to load link analytics");

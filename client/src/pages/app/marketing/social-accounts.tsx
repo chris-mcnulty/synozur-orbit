@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { AtSign, Plus, Trash2, Lock, Pencil, Link as LinkIcon, Unlink, AlertTriangle, CheckCircle2, Mic, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag, useFeatureFlagWithLoading } from "@/hooks/useFeatureFlag";
@@ -337,7 +338,7 @@ function VoiceProfileDialog({
   const [draft, setDraft] = useState<VoiceProfile | null>(null);
 
   const { data: loaded, isLoading } = useQuery<VoiceProfile>({
-    queryKey: ["/api/social-accounts", account.id, "voice-profile"],
+    queryKey: ["/api/social-accounts", getTabMarketId(), account.id, "voice-profile"],
     queryFn: async () => {
       const r = await fetch(`/api/social-accounts/${account.id}/voice-profile`, { credentials: "include" });
       if (!r.ok) throw new Error("Failed to load voice profile");
@@ -347,7 +348,7 @@ function VoiceProfileDialog({
   });
 
   const { data: personasList = [] } = useQuery<PersonaRow[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -356,7 +357,7 @@ function VoiceProfileDialog({
   });
 
   const { data: frameworksData } = useQuery<{ items: FrameworkItem[] }>({
-    queryKey: ["/api/messaging-frameworks/available"],
+    queryKey: ["/api/messaging-frameworks/available", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/messaging-frameworks/available", { credentials: "include" });
       return r.ok ? r.json() : { items: [] };
@@ -381,7 +382,7 @@ function VoiceProfileDialog({
       return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts", account.id, "voice-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts", getTabMarketId(), account.id, "voice-profile"] });
       toast({ title: "Voice profile saved" });
       onOpenChange(false);
     },
@@ -397,7 +398,7 @@ function VoiceProfileDialog({
       if (!r.ok && r.status !== 204) throw new Error("Reset failed");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts", account.id, "voice-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts", getTabMarketId(), account.id, "voice-profile"] });
       toast({ title: "Voice profile reset to defaults" });
     },
     onError: (err: Error) => toast({ title: "Reset failed", description: err.message, variant: "destructive" }),
@@ -852,7 +853,7 @@ export default function SocialAccountsPage() {
   const linkedinPublishEnabled = tenantInfo?.linkedinDirectPublishEnabled === true;
 
   const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       return r.ok ? r.json() : [];

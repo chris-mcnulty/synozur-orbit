@@ -26,6 +26,7 @@ import { useUser } from "@/lib/userContext";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer } from "recharts";
 import { ArrowDown, ArrowRight, ArrowUp, Minus } from "lucide-react";
 import { formatCompactUsd, formatLifecycleStage, buildHubspotCompanyUrl } from "@/lib/hubspot-format";
+import { getTabMarketId } from "@/lib/tabContext";
 
 const COMPETITOR_TABS = ["overview", "battlecard", "messaging", "pages", "seo", "documents", "pricing", "history"] as const;
 type CompetitorTab = typeof COMPETITOR_TABS[number];
@@ -84,7 +85,7 @@ export default function CompetitorDetail() {
   const { isAllowed: competitorDocsAllowed } = useFeatureAccess("competitorDocuments");
 
   const { data: competitor, isLoading, error } = useQuery({
-    queryKey: ["/api/competitors", id],
+    queryKey: ["/api/competitors", getTabMarketId(), id],
     queryFn: async () => {
       const response = await fetch(`/api/competitors/${id}`, {
         credentials: "include",
@@ -96,7 +97,7 @@ export default function CompetitorDetail() {
   });
 
   const { data: allActivity = [] } = useQuery({
-    queryKey: ["/api/activity"],
+    queryKey: ["/api/activity", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/activity", {
         credentials: "include",
@@ -148,7 +149,7 @@ export default function CompetitorDetail() {
   const { data: dashboardScores } = useQuery<{
     competitors: Array<{ id: string; name: string; overallScore: number; innovationScore: number; marketPresenceScore: number }>;
   }>({
-    queryKey: ["/api/dashboard/scores"],
+    queryKey: ["/api/dashboard/scores", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/dashboard/scores", { credentials: "include" });
       if (!response.ok) return { competitors: [] };
@@ -186,7 +187,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       toast({
         title: "Crawl Started",
         description: "Competitor data is being updated.",
@@ -206,7 +207,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       setEditOpen(false);
       toast({
         title: "Competitor Updated",
@@ -284,7 +285,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
       
       const changesFound = data.results?.some((r: any) => r.hasChanges);
@@ -317,7 +318,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
       
       const result = data.result || data;
@@ -383,7 +384,7 @@ export default function CompetitorDetail() {
 
   // Battlecard query and mutations
   const { data: battlecard, isLoading: battlecardLoading } = useQuery({
-    queryKey: ["/api/competitors", id, "battlecard"],
+    queryKey: ["/api/competitors", getTabMarketId(), id, "battlecard"],
     queryFn: async () => {
       const response = await fetch(`/api/competitors/${id}/battlecard`, {
         credentials: "include",
@@ -407,7 +408,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id, "battlecard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id, "battlecard"] });
       toast({
         title: "Battlecard Generated",
         description: "AI-powered battlecard has been created for this competitor.",
@@ -434,7 +435,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id, "battlecard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id, "battlecard"] });
       toast({
         title: "Battlecard Updated",
         description: "Your changes have been saved.",
@@ -452,7 +453,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       toast({ title: "Excluded from Crawl", description: "This competitor will no longer be crawled." });
     },
     onError: () => {
@@ -470,7 +471,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       toast({ title: "Flag Dismissed", description: "Crawl failure counter has been reset." });
     },
     onError: () => {
@@ -488,7 +489,7 @@ export default function CompetitorDetail() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
       toast({ title: "Crawling Resumed", description: "This competitor will be crawled again in the next sweep." });
     },
     onError: () => {
@@ -1035,7 +1036,7 @@ export default function CompetitorDetail() {
               await fetch(`/api/competitors/${id}/refresh-social`, { method: "POST", credentials: "include" });
               toast({ title: "Social refresh started", description: `${competitor.name} social data is being updated` });
             }
-            queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+            queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
           }}
         />
 
@@ -1888,7 +1889,7 @@ export default function CompetitorDetail() {
             await fetch(`/api/competitors/${id}/refresh-social`, { method: "POST", credentials: "include" });
             toast({ title: "Social refresh started", description: `${competitor.name} social data is being updated` });
           }
-          queryClient.invalidateQueries({ queryKey: ["/api/competitors", id] });
+          queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), id] });
         }}
       />
     </AppLayout>
@@ -1924,7 +1925,7 @@ function CompetitorSeoPanel({ competitorId, competitorName }: { competitorId: st
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<{ competitorId: string; keywords: SeoKeywordRow[]; baselineMetrics: SeoMetricRow[] }>({
-    queryKey: ["/api/competitors", competitorId, "seo"],
+    queryKey: ["/api/competitors", getTabMarketId(), competitorId, "seo"],
     queryFn: async () => {
       const res = await fetch(`/api/competitors/${competitorId}/seo`, { credentials: "include" });
       if (res.status === 403) {
@@ -1941,7 +1942,7 @@ function CompetitorSeoPanel({ competitorId, competitorName }: { competitorId: st
   const selectedKeyword = data?.keywords.find((k) => k.keywordId === (selectedKeywordId || data.keywords[0]?.keywordId));
 
   const { data: history } = useQuery<SeoMetricRow[]>({
-    queryKey: ["/api/seo/keywords", selectedKeyword?.keywordId, "history"],
+    queryKey: ["/api/seo/keywords", getTabMarketId(), selectedKeyword?.keywordId, "history"],
     queryFn: async () => {
       if (!selectedKeyword) return [];
       const res = await fetch(`/api/seo/keywords/${selectedKeyword.keywordId}/history`, { credentials: "include" });
@@ -1959,7 +1960,7 @@ function CompetitorSeoPanel({ competitorId, competitorName }: { competitorId: st
     },
     onSuccess: () => {
       toast({ title: "SEO data refreshed", description: "Latest rankings have been recorded." });
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", competitorId, "seo"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), competitorId, "seo"] });
       queryClient.invalidateQueries({ queryKey: ["/api/seo/keywords"] });
     },
     onError: (err: Error) => toast({ title: "Refresh failed", description: err.message, variant: "destructive" }),
@@ -2147,7 +2148,11 @@ function CompetitorTonePanel({ competitorId, competitorName }: { competitorId: s
   const { isAllowed, isLoading: planLoading } = useFeatureAccess("sentimentAnalysis");
 
   const { data, isLoading } = useQuery<ToneSummaryResponse>({
-    queryKey: [`/api/competitors/${competitorId}/tone`],
+    queryKey: ["/api/competitors", getTabMarketId(), competitorId, "tone"],
+    queryFn: async () => {
+      const r = await fetch(`/api/competitors/${competitorId}/tone`, { credentials: "include" });
+      return r.ok ? r.json() : null;
+    },
     enabled: isAllowed && !planLoading,
     staleTime: 60_000,
   });

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
@@ -178,7 +179,7 @@ export default function PersonasPage() {
   }, [debouncedSearch, PAGE_SIZE]);
 
   const { data: paginatedData, isLoading } = useQuery<PaginatedEnvelope<Persona>>({
-    queryKey: ["/api/personas", "paginated", { page, pageSize: PAGE_SIZE, q: debouncedSearch }],
+    queryKey: ["/api/personas", getTabMarketId(), "paginated", { page, pageSize: PAGE_SIZE, q: debouncedSearch }],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
       if (debouncedSearch) params.set("q", debouncedSearch);

@@ -5,6 +5,7 @@
  */
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,7 +74,7 @@ export function LinkPerformanceTab() {
   const [importing, setImporting] = useState(false);
 
   const { data, isLoading } = useQuery<AnalyticsResp>({
-    queryKey: ["/api/marketing-links/analytics"],
+    queryKey: ["/api/marketing-links/analytics", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing-links/analytics?days=30", { credentials: "include" });
       if (!r.ok) throw new Error("Failed to load analytics");

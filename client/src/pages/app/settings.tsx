@@ -14,6 +14,7 @@ import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, Us
 import { Ga4IntegrationCard } from "@/components/Ga4IntegrationCard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import { toast } from "sonner";
 
@@ -2983,7 +2984,11 @@ function EmailHeaderImageField() {
   const [uploading, setUploading] = useState(false);
 
   const { data: brandAssets = [], isError } = useQuery<Array<{ id: string; name: string; fileUrl: string | null; url: string | null; status?: string | null }>>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
     retry: false,
   });
   const headerAsset = brandAssets.find(

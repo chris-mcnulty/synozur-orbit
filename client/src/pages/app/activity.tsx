@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { cleanSignalSummary } from "@/lib/utils";
+import { getTabMarketId } from "@/lib/tabContext";
 import AppLayout from "@/components/layout/AppLayout";
 import { ActOnThisMenu } from "@/components/ActOnThisMenu";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -118,7 +119,7 @@ export default function Activity() {
   };
 
   const { data: activity = [], isLoading: loadingActivity } = useQuery<Activity[]>({
-    queryKey: ["/api/activity"],
+    queryKey: ["/api/activity", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/activity", { credentials: "include" });
       if (!response.ok) return [];
@@ -127,7 +128,7 @@ export default function Activity() {
   });
 
   const { data: competitors = [], isLoading: loadingCompetitors } = useQuery<Competitor[]>({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -136,7 +137,7 @@ export default function Activity() {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;

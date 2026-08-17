@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Sparkles, Wand2, X, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,7 +75,7 @@ export default function AIRewritePanel({
 
   // Voice profile defaults — pre-fill but allow any selection (incl. none).
   const { data: voiceDefaults } = useQuery<VoiceDefaults>({
-    queryKey: ["/api/social-accounts", socialAccountId, "voice-profile"],
+    queryKey: ["/api/social-accounts", getTabMarketId(), socialAccountId, "voice-profile"],
     queryFn: async () => {
       const r = await fetch(`/api/social-accounts/${socialAccountId}/voice-profile`, { credentials: "include" });
       if (!r.ok) return {};
@@ -84,7 +85,7 @@ export default function AIRewritePanel({
   });
 
   const { data: personasList = [] } = useQuery<PersonaRow[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -93,7 +94,7 @@ export default function AIRewritePanel({
   });
 
   const { data: frameworksData } = useQuery<{ items: FrameworkItem[] }>({
-    queryKey: ["/api/messaging-frameworks/available"],
+    queryKey: ["/api/messaging-frameworks/available", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/messaging-frameworks/available", { credentials: "include" });
       return r.ok ? r.json() : { items: [] };

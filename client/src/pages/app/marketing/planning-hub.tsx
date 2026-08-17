@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/layout/AppLayout";
@@ -51,7 +52,7 @@ export default function PlanningHubPage() {
   };
 
   const { data: scopes, isLoading: scopesLoading } = useQuery<ScopesResponse>({
-    queryKey: ["/api/planning-hub/scopes"],
+    queryKey: ["/api/planning-hub/scopes", getTabMarketId()],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/planning-hub/scopes");
       return res.json();
@@ -65,7 +66,7 @@ export default function PlanningHubPage() {
   }, [scopes, id]);
 
   const { data: hub, isLoading: hubLoading } = useQuery<HubResponse>({
-    queryKey: ["/api/planning-hub", scope, id],
+    queryKey: ["/api/planning-hub", getTabMarketId(), scope, id],
     enabled: !!id,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/planning-hub?scope=${scope}&id=${id}`);
@@ -74,8 +75,8 @@ export default function PlanningHubPage() {
   });
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub", scope, id] });
-    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub/available", scope, id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub", getTabMarketId(), scope, id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub/available", getTabMarketId(), scope, id] });
   };
 
   // ── Detach ──

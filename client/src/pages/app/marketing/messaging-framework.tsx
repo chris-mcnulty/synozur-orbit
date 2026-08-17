@@ -14,6 +14,7 @@ import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import FieldHelp from "@/components/FieldHelp";
 import { LongFormContentSkeleton } from "@/components/ui/skeletons";
 import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 
 type LongFormRecommendation = {
@@ -50,7 +51,7 @@ export default function MessagingFrameworkPage() {
   const isReadOnlyRole = user?.role === "Consultant";
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -59,7 +60,7 @@ export default function MessagingFrameworkPage() {
   });
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -68,7 +69,7 @@ export default function MessagingFrameworkPage() {
   });
 
   const { data: messagingFramework, isLoading } = useQuery<LongFormRecommendation>({
-    queryKey: ["/api/baseline/recommendations/messaging_framework"],
+    queryKey: ["/api/baseline/recommendations/messaging_framework", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/baseline/recommendations/messaging_framework", { credentials: "include" });
       if (!response.ok) return null;

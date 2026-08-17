@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   Mail,
   Lock,
@@ -214,7 +215,7 @@ async function fetchSavedEmailExport(id: string): Promise<{ html: string; fragme
  */
 function EmailPreviewFrame({ emailId, fallbackHtml }: { emailId: string; fallbackHtml: string }) {
   const { data } = useQuery<{ html: string } | null>({
-    queryKey: ["/api/email/saved", emailId, "export-html"],
+    queryKey: ["/api/email/saved", getTabMarketId(), emailId, "export-html"],
     queryFn: () => fetchSavedEmailExport(emailId),
   });
   const doc = data?.html || `<!doctype html><html><body style="margin:0;background:#ffffff;">${DOMPurify.sanitize(fallbackHtml)}</body></html>`;
@@ -603,7 +604,7 @@ export default function EmailNewslettersPage() {
   }, [sendDialogEmail, hubspotStatus?.connection?.activeProspectSuppressionDefault]);
 
   const { data: recipientLists = [] } = useQuery<Array<{ id: string; name: string; recipientCount: number }>>({
-    queryKey: ["/api/email-recipient-lists"],
+    queryKey: ["/api/email-recipient-lists", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/email-recipient-lists", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -739,7 +740,7 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
-    queryKey: ["/api/strategic-context/summary"],
+    queryKey: ["/api/strategic-context/summary", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/strategic-context/summary", { credentials: "include" });
       return r.ok ? r.json() : { available: false, sections: {} };
@@ -748,7 +749,7 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: contentAssets = [] } = useQuery<ContentAsset[]>({
-    queryKey: ["/api/content-assets"],
+    queryKey: ["/api/content-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -757,7 +758,7 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ["/api/content-categories"],
+    queryKey: ["/api/content-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -766,7 +767,7 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
+    queryKey: ["/api/products", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/products", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -775,7 +776,7 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: savedEmails = [], isLoading: emailsLoading } = useQuery<SavedEmail[]>({
-    queryKey: ["/api/email/saved"],
+    queryKey: ["/api/email/saved", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/email/saved", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -784,7 +785,7 @@ export default function EmailNewslettersPage() {
   });
 
   const { data: availablePersonas = [] } = useQuery<{ id: string; name: string; role: string | null; isIcp: boolean }[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -3187,7 +3188,11 @@ function EmailSectionsPanel({ email, onSaved }: { email: SavedEmail; onSaved: (u
 
   // Brand assets for the About image picker
   const { data: giBA = [] } = useQuery<Array<{ id: string; name: string; fileUrl: string | null; url: string | null; fileType: string | null }>>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
+    queryFn: async () => {
+      const r = await fetch("/api/brand-assets", { credentials: "include" });
+      return r.ok ? r.json() : [];
+    },
     enabled: open && showGiImagePicker,
   });
   const GI_IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);

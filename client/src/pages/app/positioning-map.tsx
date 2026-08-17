@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label as RechartsLabel } from "recharts";
 import { Map, Wand2, Save, Loader2 } from "lucide-react";
+import { getTabMarketId } from "@/lib/tabContext";
 
 const AXIS_OPTIONS = [
   "Market Presence",
@@ -86,7 +87,7 @@ export default function PositioningMapPage() {
   const [dirty, setDirty] = useState(false);
 
   const { data: posData, isLoading: posLoading } = useQuery({
-    queryKey: ["/api/positioning-map"],
+    queryKey: ["/api/positioning-map", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/positioning-map", { credentials: "include" });
       if (!res.ok) return { positions: [] };
@@ -95,7 +96,7 @@ export default function PositioningMapPage() {
   });
 
   const { data: dashScores } = useQuery({
-    queryKey: ["/api/dashboard/scores"],
+    queryKey: ["/api/dashboard/scores", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/scores", { credentials: "include" });
       if (!res.ok) return null;
@@ -104,7 +105,7 @@ export default function PositioningMapPage() {
   });
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -113,7 +114,7 @@ export default function PositioningMapPage() {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;

@@ -19,6 +19,7 @@ import { checkArtifactFreshness, formatShortDate } from "@/lib/staleness";
 import { AlertTriangle } from "lucide-react";
 import EmptyPageState from "@/components/EmptyPageState";
 import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import {
   Select,
@@ -171,7 +172,7 @@ export default function BattleCardsPage() {
   })();
 
   const { data: competitors = [] } = useQuery<CompetitorListItem[]>({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -236,7 +237,7 @@ export default function BattleCardsPage() {
   }, [inFlightCompetitorIds, generatingFor, queryClient]);
 
   const { data: battleCards = [], isLoading: loadingCards } = useQuery<BattleCardData[]>({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/battlecards", { credentials: "include" });
       if (!response.ok) return [];
@@ -255,7 +256,7 @@ export default function BattleCardsPage() {
   }, [idFromUrl, battleCards, selectedCard?.id]);
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;

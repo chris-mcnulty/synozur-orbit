@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import { channelLabel, type StudyStage } from "@shared/market-intelligence";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -74,7 +75,7 @@ export default function MarketStudyDetailPage() {
   };
 
   const { data: study, isLoading } = useQuery<Study>({
-    queryKey: ["/api/market-studies", id],
+    queryKey: ["/api/market-studies", getTabMarketId(), id],
     queryFn: async () => (await apiRequest("GET", `/api/market-studies/${id}`)).json(),
     refetchInterval: (q) => {
       const s = q.state.data?.status;
@@ -86,12 +87,12 @@ export default function MarketStudyDetailPage() {
   const segIds = study?.resultRefs?.segmentIds ?? [];
 
   const { data: allSegments = [] } = useQuery<Segment[]>({
-    queryKey: ["/api/market-segments"],
+    queryKey: ["/api/market-segments", getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", "/api/market-segments")).json(),
     enabled: done,
   });
   const { data: matrixResp } = useQuery<{ cells: Cell[]; isStale: boolean }>({
-    queryKey: ["/api/opportunity-matrix"],
+    queryKey: ["/api/opportunity-matrix", getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", "/api/opportunity-matrix")).json(),
     enabled: done,
   });

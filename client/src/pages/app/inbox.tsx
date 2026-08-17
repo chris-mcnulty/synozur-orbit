@@ -10,6 +10,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { getTabMarketId } from "@/lib/tabContext";
 
 interface CalendarPost {
   id: string; status: string; scheduledDate: string | null; publishedAt: string | null;
@@ -40,7 +41,7 @@ const TONE: Record<Tone, { dot: string; ring: string }> = {
 
 export default function InboxPage() {
   const { data: posts = [], isLoading: postsLoading } = useQuery<CalendarPost[]>({
-    queryKey: ["/api/generated-posts/calendar", "inbox"],
+    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), "inbox"],
     queryFn: async () => {
       const from = new Date(); from.setDate(from.getDate() - 7);
       const to = new Date(); to.setDate(to.getDate() + 90);
@@ -50,14 +51,14 @@ export default function InboxPage() {
     },
   });
   const { data: activity = [], isLoading: actLoading } = useQuery<ActivityItem[]>({
-    queryKey: ["/api/activity"],
+    queryKey: ["/api/activity", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/activity", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
   const { data: outreach = [], isLoading: outLoading } = useQuery<OutreachPending[]>({
-    queryKey: ["/api/sales-outreach/pending-approvals"],
+    queryKey: ["/api/sales-outreach/pending-approvals", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/sales-outreach/pending-approvals", { credentials: "include" });
       return r.ok ? r.json() : [];

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import {
@@ -49,7 +50,7 @@ export default function SolutionAreasPage() {
   const isAllowed = useFeatureFlag("contentLibrary");
 
   const { data: areas = [], isLoading } = useQuery<SolutionArea[]>({
-    queryKey: ["/api/solution-areas"],
+    queryKey: ["/api/solution-areas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/solution-areas", { credentials: "include" });
       return r.ok ? r.json() : [];

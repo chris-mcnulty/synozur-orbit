@@ -27,6 +27,7 @@ import { ActionCostTooltip } from "@/components/ui/ActionCostTooltip";
 import EmptyPageState from "@/components/EmptyPageState";
 import { CompetitorListSkeleton } from "@/components/ui/skeletons";
 import { formatCompactUsd, formatLifecycleStage } from "@/lib/hubspot-format";
+import { getTabMarketId } from "@/lib/tabContext";
 
 export default function Competitors() {
   const { toast } = useToast();
@@ -229,7 +230,7 @@ export default function Competitors() {
   }, [debouncedCompetitorSearch, COMPETITORS_PAGE_SIZE]);
 
   const { data: competitorsPage, isLoading } = useQuery<PaginatedEnvelope<any>>({
-    queryKey: ["/api/competitors", "paginated", { page: competitorPage, pageSize: COMPETITORS_PAGE_SIZE, q: debouncedCompetitorSearch }],
+    queryKey: ["/api/competitors", getTabMarketId(), "paginated", { page: competitorPage, pageSize: COMPETITORS_PAGE_SIZE, q: debouncedCompetitorSearch }],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(competitorPage), pageSize: String(COMPETITORS_PAGE_SIZE) });
       if (debouncedCompetitorSearch) params.set("q", debouncedCompetitorSearch);
@@ -259,7 +260,7 @@ export default function Competitors() {
   const activeProjects = projects.filter(p => p.status === "active");
 
   const { data: companyProfile, isLoading: isLoadingProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", {
         credentials: "include",

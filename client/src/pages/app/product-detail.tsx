@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import RecentUpdatesCard from "@/components/RecentUpdatesCard";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import { AnnotationRail, CommentPopoverButton } from "@/components/collaboration/CollabComponents";
 
@@ -188,7 +189,7 @@ export default function ProductDetail() {
   });
 
   const { data: allProducts = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
+    queryKey: ["/api/products", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/products", { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch products");

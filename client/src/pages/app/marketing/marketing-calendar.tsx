@@ -73,7 +73,7 @@ import {
   type LocateResult,
 } from "./calendar-deep-link-core";
 import { useToast } from "@/hooks/use-toast";
-import { getTabContextHeaders } from "@/lib/tabContext";
+import { getTabContextHeaders, getTabMarketId } from "@/lib/tabContext";
 
 // Download an image (graphic or carousel slide) straight to the user's machine.
 // Images are served same-origin via Orbit, so we fetch the blob and save it with
@@ -787,9 +787,19 @@ export default function MarketingCalendarPage() {
   // calendar filters applied — the backlog has its own independent filters.
   const backlogUrl = "/api/marketing-calendar?unscheduledOnly=true";
 
-  const { data: items = [], isLoading } = useQuery<CalendarItem[]>({ queryKey: [queryUrl], select: normalizeBatchItems });
-  const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<CalendarItem[]>({ queryKey: [backlogUrl] });
-  const { data: filterOpts } = useQuery<FilterOptions>({ queryKey: ["/api/marketing-calendar/filters"] });
+  const { data: items = [], isLoading } = useQuery<CalendarItem[]>({
+    queryKey: [queryUrl, getTabMarketId()],
+    queryFn: async () => { const r = await fetch(queryUrl, { credentials: "include" }); return r.ok ? r.json() : []; },
+    select: normalizeBatchItems,
+  });
+  const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<CalendarItem[]>({
+    queryKey: [backlogUrl, getTabMarketId()],
+    queryFn: async () => { const r = await fetch(backlogUrl, { credentials: "include" }); return r.ok ? r.json() : []; },
+  });
+  const { data: filterOpts } = useQuery<FilterOptions>({
+    queryKey: ["/api/marketing-calendar/filters", getTabMarketId()],
+    queryFn: async () => { const r = await fetch("/api/marketing-calendar/filters", { credentials: "include" }); return r.ok ? r.json() : {}; },
+  });
 
   // Open per-item detail for normal items; drill into the batch's posts for a
   // collapsed social batch.

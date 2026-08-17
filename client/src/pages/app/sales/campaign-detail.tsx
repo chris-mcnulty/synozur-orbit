@@ -78,6 +78,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import { parseCSV } from "@/lib/csv-export";
 import {
@@ -641,7 +642,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
+    queryKey: ["/api/products", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/products", { credentials: "include" });
       if (!r.ok) return [];
@@ -650,7 +651,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const { data: personas = [] } = useQuery<Persona[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       if (!r.ok) return [];
@@ -659,7 +660,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const { data: conferenceList = [] } = useQuery<ConferenceSummary[]>({
-    queryKey: ["/api/conferences"],
+    queryKey: ["/api/conferences", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/conferences", { credentials: "include" });
       if (!r.ok) return [];
@@ -668,7 +669,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const { data: marketingTouches = [] } = useQuery<MarketingTouch[]>({
-    queryKey: ["/api/sales-outreach/prospects", dossier?.id, "marketing-touches"],
+    queryKey: ["/api/sales-outreach/prospects", getTabMarketId(), dossier?.id, "marketing-touches"],
     enabled: !!dossier?.id,
     queryFn: async () => {
       const r = await fetch(`/api/sales-outreach/prospects/${dossier!.id}/marketing-touches`, { credentials: "include" });
@@ -811,7 +812,7 @@ export default function OutreachCampaignDetailPage() {
     signals: { key: string; label: string; matched: number; lift: number | null }[];
     recommendations: string[];
   }>({
-    queryKey: ["/api/sales-outreach/campaigns", id, "performance"],
+    queryKey: ["/api/sales-outreach/campaigns", getTabMarketId(), id, "performance"],
     queryFn: async () => {
       const r = await fetch(`/api/sales-outreach/campaigns/${id}/performance`, { credentials: "include" });
       if (!r.ok) return null as any;
@@ -1107,7 +1108,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const { data: discoveryStatus } = useQuery<{ backends: DiscoveryBackend[] }>({
-    queryKey: ["/api/sales-outreach/discovery/status"],
+    queryKey: ["/api/sales-outreach/discovery/status", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/sales-outreach/discovery/status", { credentials: "include" });
       if (!r.ok) return { backends: [] };

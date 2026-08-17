@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import {
@@ -210,7 +211,7 @@ export default function BrandLibraryPage() {
   const assetsHasMore = assetsPage?.hasMore ?? false;
 
   const { data: categories = [] } = useQuery<BrandAssetCategory[]>({
-    queryKey: ["/api/brand-asset-categories"],
+    queryKey: ["/api/brand-asset-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-asset-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -219,7 +220,7 @@ export default function BrandLibraryPage() {
   });
 
   const { data: marketProducts = [] } = useQuery<Product[]>({
-    queryKey: ["/api/marketing/products"],
+    queryKey: ["/api/marketing/products", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing/products", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -228,7 +229,7 @@ export default function BrandLibraryPage() {
   });
 
   const { data: solutionAreas = [] } = useQuery<SolutionArea[]>({
-    queryKey: ["/api/solution-areas"],
+    queryKey: ["/api/solution-areas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/solution-areas", { credentials: "include" });
       return r.ok ? r.json() : [];

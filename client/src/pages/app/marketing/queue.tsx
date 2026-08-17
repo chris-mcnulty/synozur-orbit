@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import {
   Zap,
@@ -142,7 +143,7 @@ function AccountPausePanel() {
   const { toast } = useToast();
 
   const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       if (!r.ok) return [];
@@ -271,7 +272,7 @@ export default function QueuePage() {
   }, [deepLinkPost]);
 
   const { data: posts = [], isLoading } = useQuery<CalendarPost[]>({
-    queryKey: ["/api/generated-posts/calendar", "orbit-queue"],
+    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), "orbit-queue"],
     queryFn: async () => {
       const from = new Date();
       from.setDate(from.getDate() - 30);

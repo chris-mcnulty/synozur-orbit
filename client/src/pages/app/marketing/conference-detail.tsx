@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X, ExternalLink } from "lucide-react";
 
@@ -273,7 +274,7 @@ export default function ConferenceDetailPage() {
   // matches the conference's market, since the page 404s otherwise). This keeps
   // each client/market's social accounts isolated — never shared across markets.
   const { data: accounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -281,7 +282,7 @@ export default function ConferenceDetailPage() {
   });
 
   const { data: brandAssets = [] } = useQuery<BrandAsset[]>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -289,7 +290,7 @@ export default function ConferenceDetailPage() {
   });
 
   const { data: backgrounds = [], refetch: refetchBackgrounds } = useQuery<ConferenceBackground[]>({
-    queryKey: ["/api/conferences", id, "backgrounds"],
+    queryKey: ["/api/conferences", getTabMarketId(), id, "backgrounds"],
     queryFn: async () => {
       const r = await fetch(`/api/conferences/${id}/backgrounds`, { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -400,7 +401,7 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
   // Campaigns this event can roll up under (its promotion posts then appear in
   // the campaign's master view).
   const { data: campaignOptions = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ["/api/campaigns", "for-event-link"],
+    queryKey: ["/api/campaigns", getTabMarketId(), "for-event-link"],
     queryFn: async () => {
       // Only active campaigns — archived/completed and draft duplicates are hidden.
       const r = await fetch("/api/campaigns?status=active", { credentials: "include" });
@@ -1551,7 +1552,7 @@ function GenerateTab({
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const { data: status } = useQuery<{ status: string; errorMessage?: string | null }>({
-    queryKey: ["/api/conferences", conferenceId, "gen-status"],
+    queryKey: ["/api/conferences", getTabMarketId(), conferenceId, "gen-status"],
     queryFn: async () => {
       const r = await fetch(`/api/conferences/${conferenceId}/generate-posts-status`, { credentials: "include" });
       return r.ok ? r.json() : { status: "unknown" };
@@ -1560,7 +1561,7 @@ function GenerateTab({
   });
 
   const { data: posts = [], refetch: refetchPosts } = useQuery<Post[]>({
-    queryKey: ["/api/conferences", conferenceId, "posts"],
+    queryKey: ["/api/conferences", getTabMarketId(), conferenceId, "posts"],
     queryFn: async () => {
       const r = await fetch(`/api/conferences/${conferenceId}/posts`, { credentials: "include" });
       return r.ok ? r.json() : [];

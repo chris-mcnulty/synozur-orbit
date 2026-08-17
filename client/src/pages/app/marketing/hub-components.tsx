@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import { itemDeepLinkHref } from "@/lib/marketing-deep-links";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
@@ -232,7 +233,7 @@ export function AttachDialog({ open, onOpenChange, scope, id, onDone }: {
   const [selected, setSelected] = useState<Record<string, ItemType>>({});
 
   const { data: available = [], isLoading } = useQuery<AvailableItem[]>({
-    queryKey: ["/api/planning-hub/available", scope, id],
+    queryKey: ["/api/planning-hub/available", getTabMarketId(), scope, id],
     enabled: open && !!id,
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/planning-hub/available?scope=${scope}&id=${id}`);

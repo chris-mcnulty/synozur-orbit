@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, Users, Sparkles, Swords, FileText, RefreshCw } from "lucide-react";
 import { calculateStaleness } from "@/lib/staleness";
+import { getTabMarketId } from "@/lib/tabContext";
 
 /**
  * Single source of truth for the onboarding checklist.
@@ -42,35 +43,35 @@ export interface OnboardingState {
 
 export function useOnboardingSteps(): OnboardingState {
   const { data: companyProfile } = useQuery<any>({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/company-profile", { credentials: "include" });
       return r.ok ? r.json() : null;
     },
   });
   const { data: competitors = [] } = useQuery<any[]>({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/competitors", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
   const { data: analysis } = useQuery<any>({
-    queryKey: ["/api/analysis"],
+    queryKey: ["/api/analysis", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/analysis", { credentials: "include" });
       return r.ok ? r.json() : null;
     },
   });
   const { data: battleCards = [] } = useQuery<any[]>({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/battlecards", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
   });
   const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["/api/reports"],
+    queryKey: ["/api/reports", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/reports", { credentials: "include" });
       return r.ok ? r.json() : [];

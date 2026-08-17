@@ -14,6 +14,7 @@ import { ArrowRight, AlertTriangle, BarChart2, Play, Loader2, RefreshCw, Chevron
 import { PlanLimitBadge, PlanLimitBanner } from "@/components/UpgradePrompt";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
+import { getTabMarketId } from "@/lib/tabContext";
 import { calculateStaleness, getTimeAgo, getStalenessInfo, checkArtifactFreshness, formatShortDate, type StalenessLevel } from "@/lib/staleness";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -121,7 +122,7 @@ export default function Analysis() {
   const [competitorSelections, setCompetitorSelections] = useState<Record<string, boolean>>({});
 
   const { data: analysis, isLoading } = useQuery({
-    queryKey: ["/api/analysis"],
+    queryKey: ["/api/analysis", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/analysis", { credentials: "include" });
       if (!response.ok) return null;
@@ -130,7 +131,7 @@ export default function Analysis() {
   });
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -139,7 +140,7 @@ export default function Analysis() {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/company-profile", { credentials: "include" });
       if (!response.ok) return null;
@@ -161,7 +162,7 @@ export default function Analysis() {
   const analysisCount = tenant?.usage?.monthlyAnalysisCount ?? 0;
 
   const { data: freshness, refetch: refetchFreshness } = useQuery<SourceFreshnessData>({
-    queryKey: ["/api/analysis/source-freshness"],
+    queryKey: ["/api/analysis/source-freshness", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/analysis/source-freshness", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load source freshness");
@@ -173,7 +174,7 @@ export default function Analysis() {
 
 
   const { data: recommendations = [] } = useQuery<any[]>({
-    queryKey: ["/api/recommendations"],
+    queryKey: ["/api/recommendations", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/recommendations", { credentials: "include" });
       if (!response.ok) return [];

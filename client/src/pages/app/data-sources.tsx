@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   Database,
   Globe,
@@ -275,7 +276,7 @@ export default function DataSourcesPage() {
   const queryClient = useQueryClient();
 
   const { data: competitors = [], isLoading: loadingCompetitors } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch competitors");
@@ -284,7 +285,7 @@ export default function DataSourcesPage() {
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["/api/company-profile"],
+    queryKey: ["/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -293,7 +294,7 @@ export default function DataSourcesPage() {
   });
 
   const { data: documents = [] } = useQuery({
-    queryKey: ["/api/documents"],
+    queryKey: ["/api/documents", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/documents", { credentials: "include" });
       if (!res.ok) return [];
@@ -302,7 +303,7 @@ export default function DataSourcesPage() {
   });
 
   const { data: newsData, isLoading: loadingNews, refetch: refetchNews } = useQuery({
-    queryKey: ["/api/data-sources/news"],
+    queryKey: ["/api/data-sources/news", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/data-sources/news", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch news");

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag, useFeatureFlagWithLoading } from "@/hooks/useFeatureFlag";
@@ -307,7 +308,7 @@ export default function IntelligenceBriefingPage() {
   }, [idFromUrl]);
 
   const { data: briefings = [], isLoading: loadingList } = useQuery<IntelligenceBriefing[]>({
-    queryKey: ["/api/intelligence-briefings"],
+    queryKey: ["/api/intelligence-briefings", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/intelligence-briefings?limit=20", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load briefings");
@@ -318,7 +319,7 @@ export default function IntelligenceBriefingPage() {
   const activeBriefingId = selectedBriefingId || (briefings.length > 0 ? briefings[0].id : null);
 
   const { data: briefing, isLoading: loadingBriefing } = useQuery<IntelligenceBriefing>({
-    queryKey: ["/api/intelligence-briefings", activeBriefingId],
+    queryKey: ["/api/intelligence-briefings", getTabMarketId(), activeBriefingId],
     queryFn: async () => {
       const res = await fetch(`/api/intelligence-briefings/${activeBriefingId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load briefing");
@@ -489,7 +490,7 @@ export default function IntelligenceBriefingPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings", activeBriefingId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/intelligence-briefings", getTabMarketId(), activeBriefingId] });
       toast({ title: "Action item removed" });
     },
     onError: (err: Error) => {
@@ -518,7 +519,7 @@ export default function IntelligenceBriefingPage() {
   });
 
   const { data: podcastStatus, refetch: refetchPodcastStatus } = useQuery<{ podcastStatus: string; podcastAudioUrl: string | null }>({
-    queryKey: ["/api/intelligence-briefings", activeBriefingId, "podcast-status"],
+    queryKey: ["/api/intelligence-briefings", getTabMarketId(), activeBriefingId, "podcast-status"],
     queryFn: async () => {
       const res = await fetch(`/api/intelligence-briefings/${activeBriefingId}/podcast-status`, { credentials: "include" });
       if (!res.ok) return { podcastStatus: "none", podcastAudioUrl: null };
@@ -644,7 +645,7 @@ export default function IntelligenceBriefingPage() {
   };
 
   const { data: freshness, refetch: refetchFreshness } = useQuery<SourceFreshnessData>({
-    queryKey: ["/api/intelligence-briefings/source-freshness"],
+    queryKey: ["/api/intelligence-briefings/source-freshness", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/intelligence-briefings/source-freshness", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load source freshness");

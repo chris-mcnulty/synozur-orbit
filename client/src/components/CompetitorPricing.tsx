@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -79,7 +80,7 @@ export default function CompetitorPricing({
   const [pricingUrlInput, setPricingUrlInput] = useState(initialPricingUrl || "");
 
   const { data, isLoading, error } = useQuery<PricingResponse>({
-    queryKey: ["/api/competitors", competitorId, "pricing"],
+    queryKey: ["/api/competitors", getTabMarketId(), competitorId, "pricing"],
     queryFn: async () => {
       const res = await fetch(`/api/competitors/${competitorId}/pricing`, { credentials: "include" });
       if (res.status === 403) throw new Error("forbidden");
@@ -110,8 +111,8 @@ export default function CompetitorPricing({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", competitorId, "pricing"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", competitorId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), competitorId, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), competitorId] });
       setEditingUrl(false);
       toast({ title: "Pricing URL saved" });
     },
@@ -133,7 +134,7 @@ export default function CompetitorPricing({
       return res.json();
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/competitors", competitorId, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/competitors", getTabMarketId(), competitorId, "pricing"] });
       queryClient.invalidateQueries({ queryKey: ["/api/activity"] });
       toast({
         title: result.hasChanges ? "Pricing change detected" : "Pricing snapshot updated",

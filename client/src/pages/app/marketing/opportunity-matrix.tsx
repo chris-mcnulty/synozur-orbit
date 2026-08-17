@@ -11,6 +11,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import { CANONICAL_CHANNELS, channelLabel } from "@shared/market-intelligence";
 import { Grid3x3, Sparkles, Loader2, Trophy, Lightbulb, AlertTriangle, ExternalLink, ChevronDown } from "lucide-react";
 
@@ -52,14 +53,14 @@ export default function OpportunityMatrixPage() {
 
   interface MatrixResponse { cells: Cell[]; isStale: boolean; staleReason?: string }
   const { data: matrixData, isLoading } = useQuery<MatrixResponse>({
-    queryKey: ["/api/opportunity-matrix"],
+    queryKey: ["/api/opportunity-matrix", getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", "/api/opportunity-matrix")).json(),
   });
   const cells = matrixData?.cells ?? [];
   const isStale = matrixData?.isStale ?? false;
   const staleReason = matrixData?.staleReason;
   const { data: segments = [] } = useQuery<Segment[]>({
-    queryKey: ["/api/market-segments"],
+    queryKey: ["/api/market-segments", getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", "/api/market-segments")).json(),
   });
 
@@ -269,7 +270,7 @@ function CellDialog({ cell, segmentName, onClose, onSaved }: { cell: Cell; segme
   const [eff, setEff] = useState(cell.executionEffort?.toString() ?? "");
 
   const { data: sources = [] } = useQuery<CellSource[]>({
-    queryKey: [`/api/opportunity-matrix/${cell.id}/sources`],
+    queryKey: [`/api/opportunity-matrix/${cell.id}/sources`, getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", `/api/opportunity-matrix/${cell.id}/sources`)).json(),
     enabled: cell.competitorPresence != null,
   });

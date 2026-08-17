@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { PaginationFooter, type PaginatedEnvelope, usePersistedPageSize } from "@/components/ui/pagination-footer";
 import {
@@ -215,6 +216,7 @@ export default function ContentLibraryPage() {
   const { data: assetsPage, isLoading } = useQuery<PaginatedEnvelope<ContentAsset>>({
     queryKey: [
       "/api/content-assets",
+      getTabMarketId(),
       "paginated",
       { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, source: serverSourceParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam, sort: sortBy },
     ],
@@ -240,7 +242,7 @@ export default function ContentLibraryPage() {
   const assetsHasMore = assetsPage?.hasMore ?? false;
 
   const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ["/api/content-categories"],
+    queryKey: ["/api/content-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -249,7 +251,7 @@ export default function ContentLibraryPage() {
   });
 
   const { data: marketProducts = [] } = useQuery<Product[]>({
-    queryKey: ["/api/marketing/products"],
+    queryKey: ["/api/marketing/products", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing/products", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -258,7 +260,7 @@ export default function ContentLibraryPage() {
   });
 
   const { data: solutionAreas = [] } = useQuery<SolutionArea[]>({
-    queryKey: ["/api/solution-areas"],
+    queryKey: ["/api/solution-areas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/solution-areas", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -269,7 +271,7 @@ export default function ContentLibraryPage() {
   interface BrandAsset { id: string; name: string; fileUrl: string | null; url: string | null; fileType: string | null; categoryId?: string | null; }
   interface BrandAssetCategory { id: string; name: string; }
   const { data: brandAssets = [] } = useQuery<BrandAsset[]>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -277,7 +279,7 @@ export default function ContentLibraryPage() {
     enabled: isAllowed && showBrandImagePicker,
   });
   const { data: brandAssetCategories = [] } = useQuery<BrandAssetCategory[]>({
-    queryKey: ["/api/brand-asset-categories"],
+    queryKey: ["/api/brand-asset-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-asset-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -311,7 +313,7 @@ export default function ContentLibraryPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const { data: suggestions = [] } = useQuery<any[]>({
-    queryKey: ["/api/suggested-content-assets"],
+    queryKey: ["/api/suggested-content-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/suggested-content-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -505,7 +507,7 @@ export default function ContentLibraryPage() {
   const [websitePublishOpen, setWebsitePublishOpen] = useState(false);
 
   const { data: referencingEmails = [] } = useQuery<{ id: string; subject: string; platform: string | null; label: string | null; createdAt: string }[]>({
-    queryKey: ["/api/content-assets", detailAsset?.id, "emails"],
+    queryKey: ["/api/content-assets", getTabMarketId(), detailAsset?.id, "emails"],
     queryFn: async () => {
       const r = await fetch(`/api/content-assets/${detailAsset!.id}/emails`, { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -527,7 +529,7 @@ export default function ContentLibraryPage() {
   };
 
   const { data: referencingPosts = [] } = useQuery<ReferencingPost[]>({
-    queryKey: ["/api/content-assets", detailAsset?.id, "posts"],
+    queryKey: ["/api/content-assets", getTabMarketId(), detailAsset?.id, "posts"],
     queryFn: async () => {
       const r = await fetch(`/api/content-assets/${detailAsset!.id}/posts`, { credentials: "include" });
       return r.ok ? r.json() : [];

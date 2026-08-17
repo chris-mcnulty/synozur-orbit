@@ -60,6 +60,7 @@ import {
 } from "lucide-react";
 import { FeatureGate } from "@/components/UpgradePrompt";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { RepurposeDialog } from "@/components/marketing/RepurposeDialog";
@@ -410,13 +411,13 @@ export default function EditorialCalendarPage() {
   }, []);
 
   const { data: marketingPlans } = useQuery<MarketingPlan[]>({
-    queryKey: ["/api/marketing-plans"],
+    queryKey: ["/api/marketing-plans", getTabMarketId()],
     queryFn: async () => (await getJson("/api/marketing-plans")) ?? [],
     enabled: distOpen,
   });
 
   const { data: allBriefs, isLoading: briefsLoading } = useQuery<ContentBrief[]>({
-    queryKey: ["/api/content-briefs"],
+    queryKey: ["/api/content-briefs", getTabMarketId()],
     queryFn: async () => (await getJson("/api/content-briefs")) ?? [],
     enabled: allowed,
   });
@@ -458,7 +459,7 @@ export default function EditorialCalendarPage() {
   const { data: campaignOptions } = useQuery<NamedRow[]>({
     // All non-deleted campaigns — used for filter dropdown and assign picker.
     // Includes draft, active, completed, archived so users can find any brief.
-    queryKey: ["/api/campaigns", "all-picker"],
+    queryKey: ["/api/campaigns", getTabMarketId(), "all-picker"],
     queryFn: async () => {
       const all: NamedRow[] = (await getJson("/api/campaigns")) ?? [];
       // Exclude deleted; dedupe by name
@@ -475,12 +476,12 @@ export default function EditorialCalendarPage() {
     enabled: allowed,
   });
   const { data: themeOptions } = useQuery<NamedRow[]>({
-    queryKey: ["/api/solution-areas"],
+    queryKey: ["/api/solution-areas", getTabMarketId()],
     queryFn: async () => (await getJson("/api/solution-areas")) ?? [],
     enabled: allowed,
   });
   const { data: categoryOptions } = useQuery<NamedRow[]>({
-    queryKey: ["/api/content-categories"],
+    queryKey: ["/api/content-categories", getTabMarketId()],
     queryFn: async () => (await getJson("/api/content-categories")) ?? [],
     enabled: allowed,
   });

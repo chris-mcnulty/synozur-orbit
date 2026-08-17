@@ -12,6 +12,7 @@ import { Plus, Loader2, Trash2, Edit2, Calendar, Sparkles, CheckCircle, Clock, A
 import { useToast } from "@/hooks/use-toast";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 
 interface FeedbackComment {
   id: string;
@@ -104,7 +105,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
   const [sortOrder, setSortOrder] = useState<"title" | "status" | "effort">("title");
 
   const { data: roadmapItems = [], isLoading } = useQuery<RoadmapItem[]>({
-    queryKey: ["/api/products", productId, "roadmap"],
+    queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"],
     queryFn: async () => {
       const res = await fetch(`/api/products/${productId}/roadmap`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch roadmap");
@@ -113,7 +114,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
   });
 
   const { data: recommendations = [] } = useQuery<FeatureRecommendation[]>({
-    queryKey: ["/api/products", productId, "recommendations"],
+    queryKey: ["/api/products", getTabMarketId(), productId, "recommendations"],
     queryFn: async () => {
       const res = await fetch(`/api/products/${productId}/recommendations`, { credentials: "include" });
       if (!res.ok) return [];
@@ -133,7 +134,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"] });
       setIsAddOpen(false);
       resetForm();
       toast({ title: "Roadmap Item Created" });
@@ -155,7 +156,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"] });
       setIsEditOpen(false);
       setEditingItem(null);
       resetForm();
@@ -175,7 +176,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       if (!res.ok) throw new Error("Failed to delete roadmap item");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"] });
       toast({ title: "Roadmap Item Deleted" });
     },
     onError: (error: Error) => {
@@ -193,7 +194,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "recommendations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "recommendations"] });
       toast({ title: "Recommendations Generated", description: "AI has analyzed your competitive landscape and generated roadmap recommendations." });
     },
     onError: (error: Error) => {
@@ -213,7 +214,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "recommendations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "recommendations"] });
       toast({ title: "Recommendation Updated" });
     },
     onError: (error: Error) => {
@@ -231,8 +232,8 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "roadmap"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "recommendations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "recommendations"] });
       toast({ title: "Added to Roadmap", description: "The recommendation has been added to your roadmap." });
     },
     onError: (error: Error) => {
@@ -288,7 +289,7 @@ export default function RoadmapTab({ productId, product }: RoadmapTabProps) {
       
       const result = await res.json();
       setImportResult({ imported: result.items?.length || 0 });
-      queryClient.invalidateQueries({ queryKey: ["/api/products", productId, "roadmap"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products", getTabMarketId(), productId, "roadmap"] });
       toast({ title: "Import Complete", description: `Imported ${result.items?.length || 0} roadmap items` });
     } catch (error: any) {
       toast({ title: "Import Failed", description: error.message, variant: "destructive" });

@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -70,7 +71,7 @@ export default function ConferencePromotionPage() {
   const [filterCampaignLinked, setFilterCampaignLinked] = useState(false);
 
   const { data: conferences = [], isLoading } = useQuery<Conference[]>({
-    queryKey: ["/api/conferences"],
+    queryKey: ["/api/conferences", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/conferences", { credentials: "include" });
       return r.ok ? r.json() : [];

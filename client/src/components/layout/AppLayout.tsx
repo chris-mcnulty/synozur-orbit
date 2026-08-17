@@ -154,7 +154,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const { data: competitors = [] } = useQuery({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/competitors", { credentials: "include" });
       if (!response.ok) return [];
@@ -164,7 +164,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const { data: recommendations = [] } = useQuery({
-    queryKey: ["/api/recommendations"],
+    queryKey: ["/api/recommendations", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/recommendations", { credentials: "include" });
       if (!response.ok) return [];
@@ -174,7 +174,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const { data: analysis } = useQuery({
-    queryKey: ["/api/analysis"],
+    queryKey: ["/api/analysis", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/analysis", { credentials: "include" });
       if (!response.ok) return null;
@@ -184,7 +184,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const { data: activityData = [] } = useQuery({
-    queryKey: ["/api/activity"],
+    queryKey: ["/api/activity", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/activity", { credentials: "include" });
       if (!response.ok) return [];
@@ -194,7 +194,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const { data: reports = [] } = useQuery({
-    queryKey: ["/api/reports"],
+    queryKey: ["/api/reports", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/reports", { credentials: "include" });
       if (!response.ok) return [];
@@ -204,7 +204,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
   });
 
   const { data: battleCards = [] } = useQuery({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", activeMarketId],
     queryFn: async () => {
       const response = await fetch("/api/battlecards", { credentials: "include" });
       if (!response.ok) return [];

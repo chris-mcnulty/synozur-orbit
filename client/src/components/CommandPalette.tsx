@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { getFullStalenessInfo } from "@/lib/staleness";
+import { getTabMarketId } from "@/lib/tabContext";
 
 interface CommandAction {
   id: string;
@@ -104,7 +105,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
 
   // Fetch competitors for live search
   const { data: competitors = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/competitors"],
+    queryKey: ["commandPalette", "/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/competitors", { credentials: "include" });
       if (!res.ok) return [];
@@ -114,7 +115,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: companyProfile } = useQuery({
-    queryKey: ["commandPalette", "/api/company-profile"],
+    queryKey: ["commandPalette", "/api/company-profile", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/company-profile", { credentials: "include" });
       if (!res.ok) return null;
@@ -124,7 +125,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: activityData = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/activity"],
+    queryKey: ["commandPalette", "/api/activity", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/activity", { credentials: "include" });
       if (!res.ok) return [];
@@ -134,7 +135,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: newsData } = useQuery({
-    queryKey: ["commandPalette", "/api/data-sources/news"],
+    queryKey: ["commandPalette", "/api/data-sources/news", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/data-sources/news", { credentials: "include" });
       if (!res.ok) return null;
@@ -147,7 +148,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   // Fetched only when the palette is open to avoid unnecessary load.
   // Namespaced query keys prevent cache collisions with other consumers.
   const { data: products = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/products"],
+    queryKey: ["commandPalette", "/api/products", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/products", { credentials: "include" });
       if (!res.ok) return [];
@@ -157,7 +158,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: documents = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/documents"],
+    queryKey: ["commandPalette", "/api/documents", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/documents", { credentials: "include" });
       if (!res.ok) return [];
@@ -167,7 +168,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: battlecards = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/battlecards"],
+    queryKey: ["commandPalette", "/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/battlecards", { credentials: "include" });
       if (!res.ok) return [];
@@ -177,7 +178,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: campaigns = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/campaigns"],
+    queryKey: ["commandPalette", "/api/campaigns", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/campaigns", { credentials: "include" });
       if (!res.ok) return [];
@@ -187,7 +188,7 @@ export default function CommandPalette({ open, onOpenChange }: CommandPalettePro
   });
 
   const { data: reports = [] } = useQuery({
-    queryKey: ["commandPalette", "/api/reports"],
+    queryKey: ["commandPalette", "/api/reports", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/reports", { credentials: "include" });
       if (!res.ok) return [];

@@ -40,7 +40,7 @@ export default function HomePage() {
   const { user } = useUser();
 
   const { data: activity = [] } = useQuery<any[]>({
-    queryKey: ["/api/activity"],
+    queryKey: ["/api/activity", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/activity", { credentials: "include" });
       if (!r.ok) return [];
@@ -78,7 +78,7 @@ export default function HomePage() {
     competitors?: { id: string; name: string; innovationScore: number; marketPresenceScore: number }[];
     deltaVsMarket?: { absolute: number; percent: number };
   }>({
-    queryKey: ["/api/dashboard/scores"],
+    queryKey: ["/api/dashboard/scores", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/dashboard/scores", { credentials: "include" });
       if (!r.ok) return null;
@@ -104,7 +104,7 @@ export default function HomePage() {
   });
 
   const { data: recommendations = [] } = useQuery<any[]>({
-    queryKey: ["/api/recommendations"],
+    queryKey: ["/api/recommendations", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/recommendations", { credentials: "include" });
       if (!r.ok) return [];
@@ -122,7 +122,7 @@ export default function HomePage() {
   });
 
   const { data: battleCards = [] } = useQuery<any[]>({
-    queryKey: ["/api/battlecards"],
+    queryKey: ["/api/battlecards", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/battlecards", { credentials: "include" });
       if (!r.ok) return [];
@@ -131,7 +131,7 @@ export default function HomePage() {
   });
 
   const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["/api/reports"],
+    queryKey: ["/api/reports", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/reports", { credentials: "include" });
       if (!r.ok) return [];
@@ -142,7 +142,7 @@ export default function HomePage() {
   const { data: marketingSummary } = useQuery<{
     totals: { campaigns: number; totalPosts: number; scheduledPosts: number; savedEmails: number };
   }>({
-    queryKey: ["/api/marketing/dashboard-summary"],
+    queryKey: ["/api/marketing/dashboard-summary", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing/dashboard-summary", { credentials: "include" });
       if (!r.ok) return { totals: { campaigns: 0, totalPosts: 0, scheduledPosts: 0, savedEmails: 0 } };

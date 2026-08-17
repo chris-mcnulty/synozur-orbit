@@ -25,6 +25,7 @@
 import { useRef, useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   AlertCircle, AtSign, Calendar, CheckCircle2, Clock, Download, ExternalLink,
   ImageOff, Library, Link2, Loader2, RefreshCw, Share2, Sparkles, Trash2, Upload,
@@ -185,7 +186,7 @@ export default function SocialPostEditor({
   });
 
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       if (!r.ok) return [];
@@ -459,7 +460,7 @@ export default function SocialPostEditor({
   });
 
   const { data: brandAssets = [] } = useQuery<any[]>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-assets", { credentials: "include" });
       return r.ok ? r.json() : [];

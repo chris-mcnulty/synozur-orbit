@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Search, Plus, RefreshCw, Trash2, Download, Loader2, BarChart2, Lock, FileText } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Cell } from "recharts";
 import { downloadCSVBlob } from "@/lib/csv-export";
@@ -113,7 +114,7 @@ export default function SeoDashboard() {
   }, [isPdfGenerating, pdfJobId]);
 
   const sov = useQuery<ShareOfVoiceResponse>({
-    queryKey: ["/api/seo/share-of-voice"],
+    queryKey: ["/api/seo/share-of-voice", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/seo/share-of-voice", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load share-of-voice");
@@ -122,7 +123,7 @@ export default function SeoDashboard() {
   });
 
   const keywordsQuery = useQuery<TrackedKeyword[]>({
-    queryKey: ["/api/seo/keywords"],
+    queryKey: ["/api/seo/keywords", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/seo/keywords", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load keywords");

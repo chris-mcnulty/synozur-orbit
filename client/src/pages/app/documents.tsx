@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Badge } from "@/components/ui/badge";
 import { GROUNDING_DOC_CONTEXTS, GROUNDING_DOC_CONTEXT_LABELS, GROUNDING_DOC_CONTEXT_PRESETS } from "@shared/schema";
@@ -70,7 +71,7 @@ export default function Documents() {
   const pendingUploadPathRef = useRef<string | null>(null);
 
   const { data: documents = [], isLoading } = useQuery<GroundingDocument[]>({
-    queryKey: ["/api/documents"],
+    queryKey: ["/api/documents", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/documents", {
         credentials: "include",
@@ -81,7 +82,7 @@ export default function Documents() {
   });
 
   const { data: competitors = [] } = useQuery<Competitor[]>({
-    queryKey: ["/api/competitors"],
+    queryKey: ["/api/competitors", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/competitors", {
         credentials: "include",
@@ -92,7 +93,7 @@ export default function Documents() {
   });
 
   const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
+    queryKey: ["/api/products", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/products", {
         credentials: "include",

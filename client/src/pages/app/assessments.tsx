@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from "@/components/ui/button";
 import { ClipboardList, Plus, Eye, Trash2, Scale, Calendar, Building2, User, Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -40,7 +41,7 @@ export default function Assessments() {
   const isAdmin = user?.role === "Global Admin" || user?.role === "Domain Admin";
 
   const { data: assessments = [], isLoading } = useQuery<Assessment[]>({
-    queryKey: ["/api/assessments"],
+    queryKey: ["/api/assessments", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/assessments", { credentials: "include" });
       if (!response.ok) return [];

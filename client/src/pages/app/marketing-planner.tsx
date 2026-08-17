@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 
 interface MarketingPlan {
   id: string;
@@ -135,7 +136,7 @@ export default function MarketingPlanner() {
   const isEnterprise = tenantSettings?.plan === "enterprise" || tenantSettings?.plan === "unlimited";
 
   const { data: plans = [], isLoading, error } = useQuery<MarketingPlan[]>({
-    queryKey: ["/api/marketing-plans"],
+    queryKey: ["/api/marketing-plans", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/marketing-plans", {
         credentials: "include",

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   Globe,
   Newspaper,
@@ -89,7 +90,7 @@ export default function RecentUpdatesCard({ entityType, entityId, entityName }: 
     : `/api/activity/by-product/${entityId}`;
 
   const { data: activities = [], isLoading: loadingActivity } = useQuery<ActivityItem[]>({
-    queryKey: [apiPath],
+    queryKey: [apiPath, getTabMarketId()],
     queryFn: async () => {
       const res = await fetch(`${apiPath}?limit=10`, { credentials: "include" });
       if (!res.ok) return [];
@@ -99,7 +100,7 @@ export default function RecentUpdatesCard({ entityType, entityId, entityName }: 
   });
 
   const { data: latestBriefing } = useQuery<IntelligenceBriefing | null>({
-    queryKey: ["/api/intelligence-briefings/latest"],
+    queryKey: ["/api/intelligence-briefings/latest", getTabMarketId()],
     queryFn: async () => {
       const res = await fetch("/api/intelligence-briefings/latest", { credentials: "include" });
       if (!res.ok) return null;

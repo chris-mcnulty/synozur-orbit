@@ -16,6 +16,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import {
   Gauge, Plus, Pencil, Trash2, Sparkles, Loader2, Download, TrendingUp, Target, ExternalLink,
   RefreshCw, AlertTriangle, User,
@@ -151,11 +152,11 @@ export default function MarketSegmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<MarketSegment | null>(null);
 
   const { data: segments = [], isLoading } = useQuery<MarketSegment[]>({
-    queryKey: ["/api/market-segments"],
+    queryKey: ["/api/market-segments", getTabMarketId()],
     queryFn: async () => (await apiRequest("GET", "/api/market-segments")).json(),
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/market-segments"] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/market-segments", getTabMarketId()] });
 
   const backfillMutation = useMutation({
     mutationFn: async () => (await apiRequest("POST", "/api/market-segments/backfill")).json(),
@@ -388,13 +389,13 @@ function EditDialog({ segment, onClose, onSaved }: { segment: MarketSegment; onC
   const [samOverride, setSamOverride] = useState(segment.samUserOverride?.toString() ?? "");
 
   const { data: sources = [] } = useQuery<SourceRow[]>({
-    queryKey: ["/api/market-segments", segment.id, "sources"],
+    queryKey: ["/api/market-segments", getTabMarketId(), segment.id, "sources"],
     queryFn: async () => (await apiRequest("GET", `/api/market-segments/${segment.id}/sources`)).json(),
   });
 
   const refresh = () => {
     onSaved();
-    queryClient.invalidateQueries({ queryKey: ["/api/market-segments", segment.id, "sources"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/market-segments", getTabMarketId(), segment.id, "sources"] });
   };
 
   const sanitizeNeeds = (n: NeedsMap): NeedsMap => ({

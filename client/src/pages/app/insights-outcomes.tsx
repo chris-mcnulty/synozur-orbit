@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -66,7 +67,7 @@ export default function InsightsOutcomesPage() {
   const [warnDismissed, setWarnDismissed] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<OutcomesPayload>({
-    queryKey: ["/api/insights/outcomes", start, end],
+    queryKey: ["/api/insights/outcomes", getTabMarketId(), start, end],
     queryFn: async () => {
       const res = await fetch(`/api/insights/outcomes?start=${start}&end=${end}`, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());

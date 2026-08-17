@@ -21,6 +21,26 @@ export function getTabTenantId(): string | null {
   return safeGet(TENANT_KEY);
 }
 
+/**
+ * Returns the active market ID for the current browser tab, or null when no
+ * market is selected (i.e. the tenant's own baseline market is active).
+ *
+ * CONVENTION — market-scoped useQuery cache keys:
+ * Any useQuery that calls a market-scoped API endpoint (e.g. /api/competitors,
+ * /api/company-profile, /api/recommendations, /api/analysis, /api/battlecards,
+ * /api/personas, /api/baseline/*, /api/dashboard/scores, etc.) MUST include
+ * getTabMarketId() as the second element of its queryKey array so that React
+ * Query maintains separate caches per market and re-fetches automatically when
+ * the user switches markets:
+ *
+ *   useQuery({
+ *     queryKey: ["/api/competitors", getTabMarketId()],
+ *     queryFn: () => fetch("/api/competitors", ...).then(r => r.json()),
+ *   })
+ *
+ * Tenant-wide endpoints (e.g. /api/users, /api/tenant, /api/jobs/*) that
+ * return the same data regardless of market do NOT need this discriminator.
+ */
 export function getTabMarketId(): string | null {
   return safeGet(MARKET_KEY);
 }

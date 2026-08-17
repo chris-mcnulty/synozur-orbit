@@ -25,6 +25,7 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 
 interface Persona {
   id: string;
@@ -85,7 +86,7 @@ export default function OutreachInterviewPage() {
   const [channels, setChannels] = useState<string[]>(["email"]);
 
   const { data: personas = [] } = useQuery<Persona[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       if (!r.ok) return [];
@@ -95,7 +96,7 @@ export default function OutreachInterviewPage() {
   });
 
   const { data: conferences = [] } = useQuery<ConferenceLite[]>({
-    queryKey: ["/api/conferences"],
+    queryKey: ["/api/conferences", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/conferences", { credentials: "include" });
       if (!r.ok) return [];

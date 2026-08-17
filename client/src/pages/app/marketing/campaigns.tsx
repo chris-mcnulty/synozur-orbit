@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { LayoutList, Plus, ArrowRight, Lock, Calendar, ChevronRight, ChevronLeft, Check, Copy, Search, Sparkles, Network, Share2, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
@@ -262,7 +263,7 @@ export default function CampaignsPage() {
   }, [debouncedCampaignSearch, CAMPAIGNS_PAGE_SIZE, statusFilter]);
 
   const { data: campaignsPage, isLoading } = useQuery<PaginatedEnvelope<Campaign>>({
-    queryKey: ["/api/campaigns", "paginated", { page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE, q: debouncedCampaignSearch, status: statusFilter }],
+    queryKey: ["/api/campaigns", getTabMarketId(), "paginated", { page: campaignPage, pageSize: CAMPAIGNS_PAGE_SIZE, q: debouncedCampaignSearch, status: statusFilter }],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(campaignPage), pageSize: String(CAMPAIGNS_PAGE_SIZE) });
       if (debouncedCampaignSearch) params.set("q", debouncedCampaignSearch);
@@ -280,7 +281,7 @@ export default function CampaignsPage() {
   const campaignsHasMore = campaignsPage?.hasMore ?? false;
 
   const { data: allAssets = [] } = useQuery<ContentAsset[]>({
-    queryKey: ["/api/content-assets"],
+    queryKey: ["/api/content-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -289,7 +290,7 @@ export default function CampaignsPage() {
   });
 
   const { data: categories = [] } = useQuery<ContentCategory[]>({
-    queryKey: ["/api/content-categories"],
+    queryKey: ["/api/content-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -298,7 +299,7 @@ export default function CampaignsPage() {
   });
 
   const { data: personasRaw = [] } = useQuery<Persona[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       if (!r.ok) return [];
@@ -354,7 +355,7 @@ export default function CampaignsPage() {
   }, [isInstant, preselectedAssetId, allAssets]);
 
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -363,7 +364,7 @@ export default function CampaignsPage() {
   });
 
   const { data: marketProducts = [] } = useQuery<MarketProduct[]>({
-    queryKey: ["/api/marketing/products"],
+    queryKey: ["/api/marketing/products", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing/products", { credentials: "include" });
       return r.ok ? r.json() : [];

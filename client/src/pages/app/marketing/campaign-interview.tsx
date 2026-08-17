@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { Link, useSearch } from "wouter";
@@ -284,7 +285,7 @@ export default function CampaignInterviewPage() {
   // ── Persona picker ────────────────────────────────────────────────────────
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<string[]>([]);
   const { data: interviewPersonas = [] } = useQuery<InterviewPersona[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: () =>
       apiJson("/api/personas").then((d) => (Array.isArray(d) ? d : d?.items ?? [])),
   });
@@ -560,13 +561,13 @@ export default function CampaignInterviewPage() {
   const assetSelectionInitialized = useRef(false);
 
   const { data: interviewContentAssets = [] } = useQuery<InterviewContentAsset[]>({
-    queryKey: ["/api/content-assets"],
+    queryKey: ["/api/content-assets", getTabMarketId()],
     queryFn: () => apiJson("/api/content-assets"),
     enabled: step >= 3,
   });
 
   const { data: interviewBrandAssets = [] } = useQuery<Array<{ id: string; name: string; fileUrl?: string | null; url?: string | null; assetType?: string | null; categoryName?: string | null }>>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
     queryFn: () => apiJson("/api/brand-assets"),
     enabled: step >= 3,
   });

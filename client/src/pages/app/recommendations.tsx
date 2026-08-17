@@ -20,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { exportToCSV, type CSVExportItem } from "@/lib/csv-export";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DropdownMenu,
@@ -51,7 +52,7 @@ export default function Recommendations() {
   const [filterImpact, setFilterImpact] = useState<string>("all");
 
   const { data: recommendations = [], isLoading } = useQuery<Recommendation[]>({
-    queryKey: ["/api/recommendations"],
+    queryKey: ["/api/recommendations", getTabMarketId()],
     queryFn: async () => {
       const response = await fetch("/api/recommendations", { credentials: "include" });
       if (!response.ok) return [];

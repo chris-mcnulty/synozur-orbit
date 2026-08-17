@@ -61,6 +61,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import SocialPostEditor from "@/components/marketing/SocialPostEditor";
+import { getTabMarketId } from "@/lib/tabContext";
 import { cn } from "@/lib/utils";
 import {
   NATIVE_SOCIAL_BRIEF_FORMATS,
@@ -387,7 +388,7 @@ export default function ContentPipelinePage() {
   }, []);
 
   const { data: postRows = [], isLoading: postsLoading } = useQuery<CalendarPostRow[]>({
-    queryKey: ["/api/generated-posts/calendar", "pipeline", postsWindow.from, postsWindow.to],
+    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), "pipeline", postsWindow.from, postsWindow.to],
     queryFn: async () => {
       const params = new URLSearchParams({
         from: postsWindow.from,
@@ -401,7 +402,7 @@ export default function ContentPipelinePage() {
   });
 
   const { data: emailRows = [] } = useQuery<SavedEmailRow[]>({
-    queryKey: ["/api/email/saved"],
+    queryKey: ["/api/email/saved", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/email/saved", { credentials: "include" });
       if (!r.ok) return [];
@@ -410,7 +411,7 @@ export default function ContentPipelinePage() {
   });
 
   const { data: briefRows = [] } = useQuery<any[]>({
-    queryKey: ["/api/content-briefs"],
+    queryKey: ["/api/content-briefs", getTabMarketId()],
     queryFn: async () => {
       // Flat, tenant+market-scoped brief list — every calendar's briefs in
       // one request, so the unified pipeline really is complete.
@@ -422,7 +423,7 @@ export default function ContentPipelinePage() {
 
   const { data: allCampaigns = [] } = useQuery<{ id: string; name: string; status: string }[]>({
     // All non-deleted campaigns — used to detect closed ones for the filter toggle.
-    queryKey: ["/api/campaigns", "pipeline-all"],
+    queryKey: ["/api/campaigns", getTabMarketId(), "pipeline-all"],
     queryFn: async () => {
       const r = await fetch("/api/campaigns", { credentials: "include" });
       if (!r.ok) return [];

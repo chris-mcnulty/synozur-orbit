@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useParams, useLocation, useSearch } from "wouter";
 import {
   Share2,
@@ -528,7 +529,7 @@ export default function CampaignDetailPage() {
 
   // Hub tab: planning-hub data for this campaign
   const { data: hub, isLoading: hubLoading } = useQuery<HubResponse>({
-    queryKey: ["/api/planning-hub", "campaign", id],
+    queryKey: ["/api/planning-hub", getTabMarketId(), "campaign", id],
     enabled: activeTab === "hub" && !!id,
     queryFn: async () => {
       const res = await fetch(`/api/planning-hub?scope=campaign&id=${id}`, { credentials: "include" });
@@ -537,8 +538,8 @@ export default function CampaignDetailPage() {
   });
 
   const refreshHub = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub", "campaign", id] });
-    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub/available", "campaign", id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub", getTabMarketId(), "campaign", id] });
+    queryClient.invalidateQueries({ queryKey: ["/api/planning-hub/available", getTabMarketId(), "campaign", id] });
   };
 
   const hubDetachMutation = useMutation({
@@ -732,7 +733,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: strategicContext } = useQuery<{ available: boolean; sections: Record<string, boolean> }>({
-    queryKey: ["/api/strategic-context/summary"],
+    queryKey: ["/api/strategic-context/summary", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/strategic-context/summary", { credentials: "include" });
       return r.ok ? r.json() : { available: false, sections: {} };
@@ -740,7 +741,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: allAssets = [] } = useQuery<ContentAsset[]>({
-    queryKey: ["/api/content-assets"],
+    queryKey: ["/api/content-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -749,7 +750,7 @@ export default function CampaignDetailPage() {
 
   // Content-library categories, for filtering the content tab of the image picker.
   const { data: contentCategories = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ["/api/content-categories"],
+    queryKey: ["/api/content-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/content-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -759,7 +760,7 @@ export default function CampaignDetailPage() {
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
     // includeInactive: posts may still reference a disconnected/replaced
     // account — we need its name for filters/badges instead of a raw GUID.
-    queryKey: ["/api/social-accounts", "includeInactive"],
+    queryKey: ["/api/social-accounts", getTabMarketId(), "includeInactive"],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts?includeInactive=true", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -767,7 +768,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: marketProducts = [] } = useQuery<MarketProduct[]>({
-    queryKey: ["/api/marketing/products"],
+    queryKey: ["/api/marketing/products", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing/products", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -775,7 +776,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: brandAssets = [] } = useQuery<BrandAsset[]>({
-    queryKey: ["/api/brand-assets"],
+    queryKey: ["/api/brand-assets", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-assets", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -783,7 +784,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: brandAssetCategories = [] } = useQuery<BrandAssetCategory[]>({
-    queryKey: ["/api/brand-asset-categories"],
+    queryKey: ["/api/brand-asset-categories", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/brand-asset-categories", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -791,7 +792,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: availablePersonas = [] } = useQuery<{ id: string; name: string; role: string | null; isIcp: boolean }[]>({
-    queryKey: ["/api/personas"],
+    queryKey: ["/api/personas", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/personas", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -888,7 +889,7 @@ export default function CampaignDetailPage() {
   const activeBatch = batchFilter ? postBatches.batches.find((b) => b.key === batchFilter) ?? null : null;
 
   const { data: contentPlan } = useQuery<ContentPlanResponse>({
-    queryKey: [`/api/campaigns/${id}/content-plan`],
+    queryKey: [`/api/campaigns/${id}/content-plan`, getTabMarketId()],
     queryFn: async () => {
       const r = await fetch(`/api/campaigns/${id}/content-plan`, { credentials: "include" });
       return r.ok ? r.json() : { calendar: null, briefs: [] };
@@ -906,7 +907,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: linkedEvents = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string; postCount: number }[]>({
-    queryKey: [`/api/campaigns/${id}/events`],
+    queryKey: [`/api/campaigns/${id}/events`, getTabMarketId()],
     queryFn: async () => {
       const r = await fetch(`/api/campaigns/${id}/events`, { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -915,7 +916,7 @@ export default function CampaignDetailPage() {
 
   // All conferences in this market — powers the "Link event" picker and orphan detection
   const { data: allConferences = [] } = useQuery<{ id: string; name: string; status: string; startDate?: string | null; campaignId?: string | null }[]>({
-    queryKey: ["/api/conferences", "for-link-picker"],
+    queryKey: ["/api/conferences", getTabMarketId(), "for-link-picker"],
     queryFn: async () => {
       const r = await fetch("/api/conferences", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -981,7 +982,7 @@ export default function CampaignDetailPage() {
   });
 
   const { data: allCampaigns = [] } = useQuery<Array<{ id: string; name: string; status: string; parentCampaignId?: string | null }>>({
-    queryKey: ["/api/campaigns", "all-for-link"],
+    queryKey: ["/api/campaigns", getTabMarketId(), "all-for-link"],
     queryFn: async () => {
       // Pickers only offer active campaigns — archived/completed and draft
       // duplicates ("X (Copy)") are hidden so the list stays clean.

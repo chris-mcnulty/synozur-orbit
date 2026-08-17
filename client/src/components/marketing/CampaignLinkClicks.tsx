@@ -10,6 +10,7 @@
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getTabMarketId } from "@/lib/tabContext";
 import { formatDistanceToNow } from "date-fns";
 import { ChevronRight, ExternalLink, Link2, MousePointerClick, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,7 +69,7 @@ export function CampaignLinkClicks({ campaignId }: { campaignId: string }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery<AnalyticsResp>({
-    queryKey: ["/api/marketing-links/analytics", "campaign-clicks"],
+    queryKey: ["/api/marketing-links/analytics", getTabMarketId(), "campaign-clicks"],
     queryFn: async () => {
       const r = await fetch("/api/marketing-links/analytics?days=30", { credentials: "include" });
       if (!r.ok) throw new Error("Failed to load link analytics");

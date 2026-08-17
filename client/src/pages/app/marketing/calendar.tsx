@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
+import { getTabMarketId } from "@/lib/tabContext";
 import { Link, useSearch } from "wouter";
 import {
   AlertTriangle, ChevronLeft, ChevronRight, AtSign, Lock,
@@ -113,7 +114,7 @@ export default function CalendarPage() {
 
   // Campaign names for the filter dropdown.
   const { data: filterOpts } = useQuery<{ campaigns?: { id: string; name: string }[] }>({
-    queryKey: ["/api/marketing-calendar/filters"],
+    queryKey: ["/api/marketing-calendar/filters", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/marketing-calendar/filters", { credentials: "include" });
       return r.ok ? r.json() : {};
@@ -129,7 +130,7 @@ export default function CalendarPage() {
   const days = useMemo(() => eachDayOfInterval({ start: gridStart, end: gridEnd }), [gridStart, gridEnd]);
 
   const { data: posts = [], isLoading } = useQuery<CalendarPost[]>({
-    queryKey: ["/api/generated-posts/calendar", gridStart.toISOString(), gridEnd.toISOString()],
+    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), gridStart.toISOString(), gridEnd.toISOString()],
     queryFn: async () => {
       const params = new URLSearchParams({
         from: gridStart.toISOString(),
@@ -523,7 +524,7 @@ function ReassignAccountDialog({ open, onClose }: { open: boolean; onClose: () =
   }, [open]);
 
   const { data: accounts = [] } = useQuery<Array<{ id: string; platform: string; accountName: string | null; status: string }>>({
-    queryKey: ["/api/social-accounts"],
+    queryKey: ["/api/social-accounts", getTabMarketId()],
     queryFn: async () => {
       const r = await fetch("/api/social-accounts", { credentials: "include" });
       return r.ok ? r.json() : [];
@@ -535,7 +536,7 @@ function ReassignAccountDialog({ open, onClose }: { open: boolean; onClose: () =
   // All pending posts for the target platform, tenant-wide: wide date window
   // plus undated drafts, filtered client-side to unpublished statuses.
   const { data: candidatePosts = [], isLoading: postsLoading } = useQuery<CalendarPost[]>({
-    queryKey: ["/api/generated-posts/calendar", "reassign", targetAccount?.platform ?? "none"],
+    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), "reassign", targetAccount?.platform ?? "none"],
     queryFn: async () => {
       const now = new Date();
       // Only posts that can still publish: from the start of today forward,
