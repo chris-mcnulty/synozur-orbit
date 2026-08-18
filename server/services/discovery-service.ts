@@ -347,5 +347,16 @@ export async function importDiscoveredProspects(
   }));
 
   const imported = await db.insert(prospects).values(rows).returning();
+
+  // Auto-promote: immediately upsert matching marketing contacts for all
+  // discovered prospects. Fire-and-forget so discovery import latency is unaffected.
+  if (imported.length > 0) {
+    import("./prospect-promotion-service")
+      .then(({ promoteProspects }) =>
+        promoteProspects(tenantDomain, imported, "sales_discovery"),
+      )
+      .catch((err) => console.error("[discovery:auto-promote]", err));
+  }
+
   return { imported, skipped };
 }

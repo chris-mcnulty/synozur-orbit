@@ -1,7 +1,7 @@
 /**
  * Unit tests for the pure planning core of prospect → marketing-contact
- * promotion: dedupe, opt-out preservation, HubSpot id carry-over, and
- * fill-only-missing-fields linking.
+ * promotion: dedupe, opt-out preservation, HubSpot id carry-over,
+ * fill-only-missing-fields linking, and per-path source labelling.
  */
 import { describe, it } from "vitest";
 import assert from "node:assert/strict";
@@ -154,6 +154,63 @@ describe("planProspectPromotions", () => {
       prospectId: "p2",
       email: "ada@example.com",
     });
+  });
+
+  it("produces skip_no_email for prospects with whitespace-only email", () => {
+    const actions = planProspectPromotions([prospect({ email: "   " })], new Map(), NOW);
+    assert.deepEqual(actions, [{ kind: "skip_no_email", prospectId: "p1" }]);
+  });
+
+  it("does not overwrite an existing sourceProspectId when already linked", () => {
+    const existing = contact({ sourceProspectId: "earlier-prospect" });
+    const actions = planProspectPromotions(
+      [prospect()],
+      new Map([["ada@example.com", existing]]),
+      NOW,
+    );
+    const a = actions[0];
+    assert.equal(a.kind, "link");
+    if (a.kind !== "link") return;
+    // already linked — must not overwrite
+    assert.equal(a.set.sourceProspectId, undefined);
+  });
+
+  it("sets sourceProspectId on a linked contact that has none", () => {
+    const existing = contact({ sourceProspectId: null });
+    const actions = planProspectPromotions(
+      [prospect()],
+      new Map([["ada@example.com", existing]]),
+      NOW,
+    );
+    const a = actions[0];
+    assert.equal(a.kind, "link");
+    if (a.kind !== "link") return;
+    assert.equal(a.set.sourceProspectId, "p1");
+  });
+
+  it("merges outreach attribution onto existing metadata without clobbering unrelated keys", () => {
+    const existing = contact({ metadata: { crm: "hubspot", score: 42 } });
+    const actions = planProspectPromotions(
+      [prospect()],
+      new Map([["ada@example.com", existing]]),
+      NOW,
+    );
+    const a = actions[0];
+    assert.equal(a.kind, "link");
+    if (a.kind !== "link") return;
+    const m = a.set.metadata as any;
+    assert.equal(m.crm, "hubspot");
+    assert.equal(m.score, 42);
+    assert.ok(m.outreach?.prospectId, "outreach attribution must be present");
+  });
+
+  it("all four creation-path source labels are distinct strings", () => {
+    // Documents the expected source values for each import path so they
+    // don't silently collide. These are the values passed to promoteProspects()
+    // at each call site; the actual writing happens in the apply layer.
+    const SOURCES = ["sales_manual", "sales_import", "sales_discovery", "sales_hubspot", "sales_backfill"];
+    const unique = new Set(SOURCES);
+    assert.equal(unique.size, SOURCES.length, "each entry path must have a unique source label");
   });
 
   it("summarizes the plan into created/linked/skipped counts", () => {

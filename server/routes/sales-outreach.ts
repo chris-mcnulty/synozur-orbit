@@ -408,6 +408,10 @@ export function registerSalesOutreachRoutes(app: Express) {
           status: "new",
         })
         .returning();
+      // Auto-promote: immediately upsert a matching marketing contact.
+      promoteProspects(ctx.tenantDomain, [created], "sales_manual").catch((err) =>
+        console.error("[sales-outreach-prospects:auto-promote]", err),
+      );
       res.status(201).json(created);
     } catch (err: any) {
       console.error("[sales-outreach-prospects:create]", err);
@@ -1132,29 +1136,29 @@ export function registerSalesOutreachRoutes(app: Express) {
         (c) => !haveIds.has(c.hubspotContactId) && !(c.email && haveEmails.has(c.email.toLowerCase())),
       );
       if (toInsert.length > 0) {
-        await db.insert(prospects).values(
-          toInsert.map((c) => ({
-            campaignId: campaign.id,
-            tenantDomain: ctx.tenantDomain,
-            marketId: ctx.marketId || null,
-            name: c.name,
-            title: (c as any).jobTitle ?? null,
-            companyName: (c as any).company ?? null,
-            email: c.email ?? null,
-            linkedinUrl: isValidLinkedInProfileUrl((c as any).linkedinUrl) ? (c as any).linkedinUrl : null,
-            hubspotContactId: c.hubspotContactId,
-            source: "hubspot",
-            ownerUserId: ctx.userId,
-            status: "new" as const,
-          })),
+        const insertedHubspot = await db
+          .insert(prospects)
+          .values(
+            toInsert.map((c) => ({
+              campaignId: campaign.id,
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId || null,
+              name: c.name,
+              title: (c as any).jobTitle ?? null,
+              companyName: (c as any).company ?? null,
+              email: c.email ?? null,
+              linkedinUrl: isValidLinkedInProfileUrl((c as any).linkedinUrl) ? (c as any).linkedinUrl : null,
+              hubspotContactId: c.hubspotContactId,
+              source: "hubspot",
+              ownerUserId: ctx.userId,
+              status: "new" as const,
+            })),
+          )
+          .returning();
+        // Auto-promote: upsert matching marketing contacts for every imported HubSpot prospect.
+        promoteProspects(ctx.tenantDomain, insertedHubspot, "sales_hubspot").catch((err) =>
+          console.error("[sales-outreach:import-hubspot:auto-promote]", err),
         );
-        // Pre-warm marketing cache for contacts that have emails, so the
-        // next email send finds the id without a HubSpot search.
-        for (const c of toInsert) {
-          if (c.email) {
-            preWarmMarketingCache(ctx.tenantDomain, c.email, c.hubspotContactId).catch(() => {});
-          }
-        }
       }
       res.json({ imported: toInsert.length, skipped: contacts.length - toInsert.length, fetched: contacts.length });
     } catch (err: any) {
@@ -1219,28 +1223,38 @@ export function registerSalesOutreachRoutes(app: Express) {
         return true;
       });
 
+      let insertedRows: typeof prospects.$inferSelect[] = [];
       if (toInsert.length > 0) {
-        await db.insert(prospects).values(
-          toInsert.map((r) => ({
-            campaignId: campaign.id,
-            tenantDomain: ctx.tenantDomain,
-            marketId: ctx.marketId || null,
-            name: String(r.name).trim(),
-            title: r.title?.trim() || null,
-            companyName: r.companyName?.trim() || null,
-            email: r.email?.trim() || null,
-            linkedinUrl: isValidLinkedInProfileUrl(r.linkedinUrl) ? r.linkedinUrl!.trim() : null,
-            source: "import" as const,
-            ownerUserId: ctx.userId,
-            status: "new" as const,
-          })),
+        insertedRows = await db
+          .insert(prospects)
+          .values(
+            toInsert.map((r) => ({
+              campaignId: campaign.id,
+              tenantDomain: ctx.tenantDomain,
+              marketId: ctx.marketId || null,
+              name: String(r.name).trim(),
+              title: r.title?.trim() || null,
+              companyName: r.companyName?.trim() || null,
+              email: r.email?.trim() || null,
+              linkedinUrl: isValidLinkedInProfileUrl(r.linkedinUrl) ? r.linkedinUrl!.trim() : null,
+              source: "import" as const,
+              ownerUserId: ctx.userId,
+              status: "new" as const,
+            })),
+          )
+          .returning();
+        // Auto-promote: upsert matching marketing contacts for every imported prospect.
+        promoteProspects(ctx.tenantDomain, insertedRows, "sales_import").catch((err) =>
+          console.error("[sales-outreach:import-csv:auto-promote]", err),
         );
       }
 
+      const noEmailCount = insertedRows.filter((r) => !r.email).length;
       res.json({
         imported: toInsert.length,
         skipped: dedupedRows.length - toInsert.length,
         total: rawRows.length,
+        noEmailCount,
       });
     } catch (err: any) {
       console.error("[sales-outreach:import-csv]", err);

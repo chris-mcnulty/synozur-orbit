@@ -231,10 +231,19 @@ export function summarizePlan(actions: PromotionAction[]): PromotionSummary {
 /**
  * Promote prospects into marketing contacts. Returns a summary of what
  * happened. Prospect rows must already be tenant-scoped by the caller.
+ *
+ * @param source - The `source` value written to newly-created marketing contacts.
+ *   Pass a path-specific label for auto-promotion paths:
+ *     "sales_import"     — CSV bulk import
+ *     "sales_discovery"  — Apollo / outbound discovery import
+ *     "sales_manual"     — manual single-prospect add
+ *     "sales_hubspot"    — HubSpot list import
+ *   Defaults to "outreach" for the existing deliberate-promotion endpoints.
  */
 export async function promoteProspects(
   tenantDomain: string,
   prospectRows: PromotableProspect[],
+  source: string = "outreach",
 ): Promise<PromotionSummary> {
   const emails = Array.from(
     new Set(
@@ -293,7 +302,7 @@ export async function promoteProspects(
           company: action.values.company,
           jobTitle: action.values.jobTitle,
           hubspotContactId: action.values.hubspotContactId,
-          source: "outreach",
+          source,
           sourceProspectId: action.values.sourceProspectId,
           metadata: action.values.metadata,
           createdAt: now,
