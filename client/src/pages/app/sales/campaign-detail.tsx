@@ -506,6 +506,10 @@ export default function OutreachCampaignDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
 
+  // Edit prospect dialog state.
+  const [editingProspect, setEditingProspect] = useState<Prospect | null>(null);
+  const [editProspectForm, setEditProspectForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
+
   // Draft review dialog state.
   const [draft, setDraft] = useState<Touch | null>(null);
   const [draftProspect, setDraftProspect] = useState<Prospect | null>(null);
@@ -1113,6 +1117,50 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Could not remove prospect", description: err?.message, variant: "destructive" }),
   });
 
+  const editProspectMutation = useMutation({
+    mutationFn: async (vars: { id: string; payload: object }) => {
+      const res = await apiRequest("PATCH", `/api/sales-outreach/prospects/${vars.id}`, vars.payload);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update prospect");
+      }
+      return res.json() as Promise<Prospect>;
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Prospect[]>(prospectsKey, (old) =>
+        old ? old.map((p) => (p.id === updated.id ? updated : p)) : old,
+      );
+      setEditingProspect(null);
+      toast({ title: "Prospect updated" });
+    },
+    onError: (err: any) => toast({ title: "Couldn't save changes", description: err?.message, variant: "destructive" }),
+  });
+
+  function openEditProspect(p: Prospect) {
+    setEditProspectForm({
+      name: p.name,
+      title: p.title ?? "",
+      companyName: p.companyName ?? "",
+      email: p.email ?? "",
+      linkedinUrl: p.linkedinUrl ?? "",
+    });
+    setEditingProspect(p);
+  }
+
+  function submitEditProspect() {
+    if (!editingProspect) return;
+    editProspectMutation.mutate({
+      id: editingProspect.id,
+      payload: {
+        name: editProspectForm.name,
+        title: editProspectForm.title,
+        companyName: editProspectForm.companyName,
+        email: editProspectForm.email,
+        linkedinUrl: editProspectForm.linkedinUrl,
+      },
+    });
+  }
+
   const { data: discoveryStatus } = useQuery<{ backends: DiscoveryBackend[] }>({
     queryKey: ["/api/sales-outreach/discovery/status", getTabMarketId()],
     queryFn: async () => {
@@ -1658,6 +1706,16 @@ export default function OutreachCampaignDetailPage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => openEditProspect(p)}
+                          data-testid={`edit-prospect-${p.id}`}
+                          title="Edit contact details"
+                          aria-label={`Edit contact details for ${p.name}`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             if (confirm(`Remove ${p.name} from this campaign?`)) {
                               deleteProspect.mutate(p.id);
@@ -1951,6 +2009,80 @@ export default function OutreachCampaignDetailPage() {
               data-testid="button-edit-campaign-save"
             >
               {editCampaign.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit prospect dialog */}
+      <Dialog open={!!editingProspect} onOpenChange={(o) => { if (!o) setEditingProspect(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit prospect</DialogTitle>
+            <DialogDescription>Update contact details. Saved values will be used for enrichment, composing, and HubSpot sync.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-name">Name <span className="text-destructive">*</span></Label>
+              <Input
+                id="ep-name"
+                value={editProspectForm.name}
+                onChange={(e) => setEditProspectForm({ ...editProspectForm, name: e.target.value })}
+                data-testid="input-edit-prospect-name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="ep-title">Title</Label>
+                <Input
+                  id="ep-title"
+                  value={editProspectForm.title}
+                  onChange={(e) => setEditProspectForm({ ...editProspectForm, title: e.target.value })}
+                  data-testid="input-edit-prospect-title"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ep-company">Company</Label>
+                <Input
+                  id="ep-company"
+                  value={editProspectForm.companyName}
+                  onChange={(e) => setEditProspectForm({ ...editProspectForm, companyName: e.target.value })}
+                  data-testid="input-edit-prospect-company"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-email">Email</Label>
+              <Input
+                id="ep-email"
+                type="email"
+                value={editProspectForm.email}
+                onChange={(e) => setEditProspectForm({ ...editProspectForm, email: e.target.value })}
+                data-testid="input-edit-prospect-email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ep-linkedin">LinkedIn URL</Label>
+              <Input
+                id="ep-linkedin"
+                value={editProspectForm.linkedinUrl}
+                onChange={(e) => setEditProspectForm({ ...editProspectForm, linkedinUrl: e.target.value })}
+                placeholder="https://www.linkedin.com/in/…"
+                data-testid="input-edit-prospect-linkedin"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setEditingProspect(null)} disabled={editProspectMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submitEditProspect}
+              disabled={!editProspectForm.name.trim() || editProspectMutation.isPending}
+              data-testid="button-save-prospect-edit"
+            >
+              {editProspectMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
               Save changes
             </Button>
           </DialogFooter>

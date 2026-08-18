@@ -485,6 +485,72 @@ export function registerSalesOutreachRoutes(app: Express) {
     }
   });
 
+  // Edit a prospect's contact details (name, title, company, email, linkedinUrl).
+  // Only fills/corrects fields — does not change status, score, or dossier.
+  app.patch("/api/sales-outreach/prospects/:id", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
+      const ctx = await getRequestContext(req);
+
+      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+
+      const body = req.body ?? {};
+
+      // name is required; fall back to existing value if not supplied
+      const rawName = body.name !== undefined ? String(body.name).trim() : prospect.name;
+      if (!rawName) return res.status(400).json({ error: "Prospect name is required" });
+
+      // email: validate format when a non-empty value is provided
+      let email = prospect.email;
+      if (body.email !== undefined) {
+        const rawEmail = typeof body.email === "string" ? body.email.trim() : "";
+        if (!rawEmail) {
+          email = null;
+        } else {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+            return res.status(400).json({ error: "Invalid email address" });
+          }
+          email = rawEmail;
+        }
+      }
+
+      // linkedinUrl: validate format when a non-empty value is provided
+      let linkedinUrl = prospect.linkedinUrl;
+      if (body.linkedinUrl !== undefined) {
+        const rawLi = typeof body.linkedinUrl === "string" ? body.linkedinUrl.trim() : "";
+        if (!rawLi) {
+          linkedinUrl = null;
+        } else {
+          if (!isValidLinkedInProfileUrl(rawLi)) {
+            return res.status(400).json({ error: "LinkedIn URL must be a valid linkedin.com/in/… profile link" });
+          }
+          linkedinUrl = rawLi;
+        }
+      }
+
+      const update: Record<string, unknown> = { name: rawName, email, linkedinUrl, updatedAt: new Date() };
+      if (body.title !== undefined) {
+        update.title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : null;
+      }
+      if (body.companyName !== undefined) {
+        update.companyName = typeof body.companyName === "string" && body.companyName.trim() ? body.companyName.trim() : null;
+      }
+
+      const [updated] = await db
+        .update(prospects)
+        .set(update)
+        .where(eq(prospects.id, prospect.id))
+        .returning();
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[sales-outreach-prospects:patch]", err);
+      res.status(500).json({ error: err.message || "Failed to update prospect" });
+    }
+  });
+
   // Which discovery backends are available (web is free; Sales Navigator is
   // gated on the LinkedIn MCP). Informational — drives the discovery UI.
   app.get("/api/sales-outreach/discovery/status", async (req, res) => {
