@@ -5229,6 +5229,11 @@ export interface ProspectScoreBreakdown {
   total: number;
   /** Threshold the total was compared against. */
   threshold: number;
+  /**
+   * When the campaign targets multiple personas, the name/role of the persona
+   * that produced the best score for this prospect.
+   */
+  matchedPersonaName?: string;
 }
 
 /** Raw research signals gathered about a prospect (sourced, never fabricated). */

@@ -14,7 +14,7 @@
 import { db } from "../db";
 import { prospects, outreachCampaigns, personas, type Prospect } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { buildIcpCriteria, scoreProspect, type ScoredProspect } from "./prospector-core";
+import { buildIcpCriteria, scoreProspect, scoreProspectAgainstAll, type ScoredProspect, type PersonaRef } from "./prospector-core";
 import {
   candidateToAttributes,
   dedupeCandidates,
@@ -100,7 +100,7 @@ export function getDiscoveryBackends(): DiscoveryBackendStatus[] {
   ];
 }
 
-/** Load a campaign and flatten its ICP persona + targeting filter into criteria. */
+/** Load a campaign and flatten its ICP personas + targeting filter into criteria. */
 async function loadCampaignContext(tenantDomain: string, campaignId: string) {
   const [campaign] = await db
     .select()
@@ -110,21 +110,33 @@ async function loadCampaignContext(tenantDomain: string, campaignId: string) {
     throw new Error("Campaign not found");
   }
 
-  // Prefer the persona flagged isIcp among the campaign's targets (mirrors
-  // prospector-service so discovery and research score against the same ICP).
-  let icpPersona: { role?: string | null; industry?: string | null; companySize?: string | null } | undefined;
+  // Load ALL personas targeted by this campaign. The criteria used for search
+  // is built from all personas merged (so the search stays as broad as possible),
+  // while scoring uses scoreProspectAgainstAll so each candidate is assessed
+  // against every persona independently and the best match wins.
   const personaIds = campaign.targetPersonaIds ?? [];
+  let campaignPersonas: PersonaRef[] = [];
   if (personaIds.length > 0) {
     const rows = await db
-      .select({ id: personas.id, role: personas.role, industry: personas.industry, companySize: personas.companySize, isIcp: personas.isIcp })
+      .select({ id: personas.id, name: personas.name, role: personas.role, industry: personas.industry, companySize: personas.companySize })
       .from(personas)
       .where(eq(personas.tenantDomain, tenantDomain));
-    const inCampaign = rows.filter((p) => personaIds.includes(p.id));
-    icpPersona = inCampaign.find((p) => p.isIcp) ?? inCampaign[0];
+    campaignPersonas = rows.filter((p) => personaIds.includes(p.id));
   }
 
-  const criteria = buildIcpCriteria(icpPersona, campaign.targetingFilter ?? undefined);
-  return { campaign, criteria };
+  // Build a merged criteria for search backends (union of all persona fields).
+  // The primary persona (first in list) anchors the base; the others contribute
+  // extra roles/industries through the filter's targetRoles/industries arrays.
+  const primaryPersona = campaignPersonas[0];
+  const extraRoles = campaignPersonas.slice(1).map((p) => p.role).filter((r): r is string => !!r);
+  const extraIndustries = campaignPersonas.slice(1).map((p) => p.industry).filter((i): i is string => !!i);
+  const mergedFilter = {
+    ...(campaign.targetingFilter ?? {}),
+    targetRoles: [...(campaign.targetingFilter?.targetRoles ?? []), ...extraRoles],
+    industries: [...(campaign.targetingFilter?.industries ?? []), ...extraIndustries],
+  };
+  const criteria = buildIcpCriteria(primaryPersona, mergedFilter);
+  return { campaign, criteria, campaignPersonas };
 }
 
 /**
@@ -136,7 +148,7 @@ export async function discoverProspects(
   campaignId: string,
   opts: { backend?: DiscoveryBackendId; limit?: number } = {},
 ): Promise<DiscoverResult> {
-  const { campaign, criteria: rawCriteria } = await loadCampaignContext(tenantDomain, campaignId);
+  const { campaign, criteria: rawCriteria, campaignPersonas } = await loadCampaignContext(tenantDomain, campaignId);
   const limit = normalizeLimit(opts.limit);
 
   // Intent expansion: interpret the targeting (metro suburbs, adjacent
@@ -281,10 +293,14 @@ export async function discoverProspects(
 
   const deduped = dedupeCandidates(found, existing);
 
-  // Score each candidate; rank qualified-first, then by score.
+  // Score each candidate against ALL campaign personas and keep the best
+  // result. This mirrors prospector-service so discovery and research always
+  // use the same scoring rules. Pass the original campaign targetingFilter
+  // (not the already-flattened IcpCriteria) so buildIcpCriteria can correctly
+  // merge each persona's own fields with the campaign-level targeting.
   const scored: ScoredDiscoveryCandidate[] = deduped.map((candidate) => ({
     candidate,
-    scored: scoreProspect(candidateToAttributes(candidate), criteria),
+    scored: scoreProspectAgainstAll(campaignPersonas, campaign.targetingFilter ?? undefined, candidateToAttributes(candidate)),
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 

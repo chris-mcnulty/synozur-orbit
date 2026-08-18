@@ -190,6 +190,76 @@ export function buildIcpCriteria(
   };
 }
 
+/**
+ * A persona reference used for multi-persona scoring. Carries just the fields
+ * needed to build ICP criteria plus an id and display name.
+ */
+export interface PersonaRef {
+  id: string;
+  /** Human-readable display name (preferred for UI/dossier labelling). */
+  name?: string | null;
+  role?: string | null;
+  industry?: string | null;
+  companySize?: string | null;
+}
+
+/** A scored prospect annotated with which persona produced the best score. */
+export interface ScoredProspectWithPersona extends ScoredProspect {
+  /** id of the persona that produced the winning score (if personas were provided). */
+  matchedPersonaId?: string;
+  /** Display label of the winning persona (name ?? role). */
+  matchedPersonaName?: string;
+}
+
+/**
+ * Score a prospect against every persona in `personas` independently and
+ * return the result with the highest `score`. When no persona matches
+ * (all disqualified or all zero) the lowest-score result is returned so the
+ * caller always receives a coherent breakdown.
+ *
+ * The `filter` (campaign-level targeting: roles, industries, geographies…) is
+ * merged into each persona's criteria via `buildIcpCriteria`, mirroring the
+ * single-persona path exactly.
+ *
+ * When `personas` is empty the function falls back to scoring against the
+ * filter alone (no persona fields).
+ */
+export function scoreProspectAgainstAll(
+  personas: PersonaRef[],
+  filter:
+    | {
+        targetRoles?: string[] | null;
+        industries?: string[] | null;
+        geographies?: string[] | null;
+        segments?: string[] | null;
+        namedAccounts?: string[] | null;
+      }
+    | undefined,
+  attrs: ProspectAttributes,
+  disqualifiers?: string[],
+  threshold?: number,
+): ScoredProspectWithPersona {
+  if (personas.length === 0) {
+    const criteria = buildIcpCriteria(undefined, filter, disqualifiers, threshold);
+    return scoreProspect(attrs, criteria);
+  }
+
+  let best: ScoredProspectWithPersona | null = null;
+  for (const persona of personas) {
+    const criteria = buildIcpCriteria(persona, filter, disqualifiers, threshold);
+    const scored = scoreProspect(attrs, criteria);
+    if (best === null || scored.score > best.score) {
+      best = {
+        ...scored,
+        matchedPersonaId: persona.id,
+        matchedPersonaName: persona.name ?? persona.role ?? undefined,
+      };
+    }
+  }
+  // best is non-null because personas.length > 0
+  return best!;
+}
+
 /** Dedupe case-insensitively, keeping the first-seen casing. */
 function dedupe(xs: string[]): string[] {
   const seen = new Set<string>();

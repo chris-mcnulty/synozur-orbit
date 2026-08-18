@@ -13,7 +13,7 @@ import { prospects, outreachCampaigns, personas, type Prospect } from "@shared/s
 import { eq } from "drizzle-orm";
 import { completeForFeature } from "./ai-provider";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
-import { buildIcpCriteria, scoreProspect, type ScoredProspect } from "./prospector-core";
+import { buildIcpCriteria, scoreProspect, scoreProspectAgainstAll, type ScoredProspect, type ScoredProspectWithPersona, type PersonaRef } from "./prospector-core";
 
 const SYSTEM_PROMPT = `You are a B2B sales researcher. Write a tight, factual prospect dossier for a seller preparing 1:1 outreach. Lead with why this person fits (or doesn't) the ICP, then the few facts that would shape a first message. Be specific and cite what you're inferring from. Never fabricate — if something is unknown, say "unknown". No filler, no hype, no clichés. 180 words max.`;
 
@@ -47,17 +47,24 @@ export async function researchProspect(
     .where(eq(outreachCampaigns.id, prospect.campaignId));
   if (!campaign) throw new Error("Campaign not found");
 
-  // The ICP persona: prefer one flagged isIcp among the campaign's targets.
-  let icpPersona: { role?: string | null; industry?: string | null; companySize?: string | null } | undefined;
+  // Load all personas targeted by this campaign. Score the prospect against
+  // each one independently and keep the best result — a multi-persona campaign
+  // (e.g. M365 Admins + Systems Integrators + Practice Leads) should not
+  // penalise a perfect-fit prospect just because they don't match the one
+  // persona that happens to have isIcp=true.
   const personaIds = campaign.targetPersonaIds ?? [];
+  let campaignPersonas: PersonaRef[] = [];
   if (personaIds.length > 0) {
-    const rows = await db.select().from(personas).where(eq(personas.tenantDomain, tenantDomain));
-    const inCampaign = rows.filter((p) => personaIds.includes(p.id));
-    icpPersona = (inCampaign.find((p: any) => p.isIcp) ?? inCampaign[0]) as any;
+    const rows = await db
+      .select({ id: personas.id, name: personas.name, role: personas.role, industry: personas.industry, companySize: personas.companySize })
+      .from(personas)
+      .where(eq(personas.tenantDomain, tenantDomain));
+    campaignPersonas = rows.filter((p) => personaIds.includes(p.id));
   }
 
-  const criteria = buildIcpCriteria(icpPersona, campaign.targetingFilter ?? undefined);
-  const scored = scoreProspect(
+  const scored: ScoredProspectWithPersona = scoreProspectAgainstAll(
+    campaignPersonas,
+    campaign.targetingFilter ?? undefined,
     {
       title: prospect.title,
       companyName: prospect.companyName,
@@ -69,7 +76,6 @@ export async function researchProspect(
       email: prospect.email,
       linkedinUrl: prospect.linkedinUrl,
     },
-    criteria,
   );
 
   // Grounded dossier. Strategic context gives positioning/voice/competitive
@@ -81,6 +87,13 @@ export async function researchProspect(
   );
   const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
 
+  // Attach matchedPersonaName to the breakdown so the persisted record and
+  // the read-only dossier route can surface which persona the prospect best fit
+  // without re-running the scorer.
+  if (scored.matchedPersonaName) {
+    scored.breakdown = { ...scored.breakdown, matchedPersonaName: scored.matchedPersonaName };
+  }
+
   const prospectBlock = [
     "## Prospect",
     `Name: ${prospect.name}`,
@@ -90,6 +103,7 @@ export async function researchProspect(
     "",
     "## ICP fit (computed)",
     `Score: ${scored.score}/100 (threshold ${scored.breakdown.threshold}) — ${scored.disqualified ? "DISQUALIFIED" : scored.qualified ? "qualified" : "below threshold"}`,
+    scored.matchedPersonaName ? `Best-match ICP persona: ${scored.matchedPersonaName}` : "",
     `Signals: ${scored.breakdown.signals.map((s) => `${s.label}=${s.matched ? "yes" : "no"}`).join(", ")}`,
   ]
     .filter(Boolean)
