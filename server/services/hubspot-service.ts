@@ -416,27 +416,20 @@ export async function syncHubSpotContactEnrichment(opts: {
     loadContacts: async (td, lim, all) => {
       const conditions: any[] = [eq(marketingContacts.tenantDomain, td)];
       if (!all) conditions.push(isNull(marketingContacts.hubspotContactId));
-      return db
+      // Single contact table: contacts needing enrichment are simply those
+      // without a hubspotContactId — but only rows with an email can be
+      // searched in HubSpot.
+      const { isNotNull } = await import("drizzle-orm");
+      conditions.push(isNotNull(marketingContacts.email));
+      const rows = await db
         .select({
           id: marketingContacts.id,
           email: marketingContacts.email,
-          sourceProspectId: marketingContacts.sourceProspectId,
         })
         .from(marketingContacts)
         .where(and(...conditions))
         .limit(lim);
-    },
-
-    // When a marketing contact is linked to a prospect, use the prospect's
-    // already-resolved HubSpot ID so we skip a live API search.
-    getProspectHubspotId: async (prospectId) => {
-      const { prospects } = await import("@shared/schema");
-      const [row] = await db
-        .select({ hubspotContactId: prospects.hubspotContactId })
-        .from(prospects)
-        .where(eq(prospects.id, prospectId))
-        .limit(1);
-      return row?.hubspotContactId ?? null;
+      return rows.map((r) => ({ id: r.id, email: r.email! }));
     },
 
     searchHubSpot: async (email) => {
@@ -717,8 +710,8 @@ export async function pushLeadScoresToHubSpot(opts: {
   const { eq, and, isNotNull } = await import("drizzle-orm");
 
   const deps: PushLeadScoresDeps = {
-    loadContacts: async (td, lim) =>
-      db
+    loadContacts: async (td, lim) => {
+      const rows = await db
         .select({
           id: marketingContacts.id,
           email: marketingContacts.email,
@@ -731,9 +724,13 @@ export async function pushLeadScoresToHubSpot(opts: {
           and(
             eq(marketingContacts.tenantDomain, td),
             isNotNull(marketingContacts.hubspotContactId),
+            isNotNull(marketingContacts.email),
           ),
         )
-        .limit(lim),
+        .limit(lim);
+      // email is filtered non-null above; narrow the type for the deps contract
+      return rows.filter((r): r is typeof r & { email: string } => !!r.email);
+    },
     updateHubSpotContact: async (hubspotContactId, score, stage) => {
       await client.crm.contacts.basicApi.update(hubspotContactId, {
         properties: {

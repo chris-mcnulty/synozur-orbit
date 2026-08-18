@@ -99,11 +99,15 @@ async function resolveSendSegmentContacts(
   tenantDomain: string,
 ): Promise<Array<{ email: string; firstName: string | null; lastName: string | null }>> {
   const { resolveMarketingSegmentContacts } = await import("./hubspot-list-segment-service");
+  // Contact emails are nullable on the single contact table — only emailable
+  // contacts can receive a send.
+  const emailable = <T extends { email: string | null }>(rows: T[]) =>
+    rows.filter((r): r is T & { email: string } => !!r.email);
   const materialised = await resolveMarketingSegmentContacts(segmentId, tenantDomain, MAX_RECIPIENTS_PER_SEND);
-  if (materialised) return materialised;
+  if (materialised) return emailable(materialised);
   const { resolveSegmentContacts } = await import("./marketing-contact-service");
   const { contacts } = await resolveSegmentContacts(segmentId, tenantDomain, MAX_RECIPIENTS_PER_SEND);
-  return contacts;
+  return emailable(contacts);
 }
 
 function bumpTenantSendCount(tenantDomain: string, n: number): boolean {
@@ -991,7 +995,7 @@ export async function dispatchEmailSend(opts: DispatchSendOptions): Promise<Disp
               eq(marketingContacts.emailOptOut, true),
             ));
           for (const r of optedOutRows) {
-            localSuppressed.set(r.email.toLowerCase(), r.email);
+            if (r.email) localSuppressed.set(r.email.toLowerCase(), r.email);
           }
           let hubspotOptedOut = new Set<string>();
           try {
@@ -1269,7 +1273,9 @@ export async function deliverEmailSend(opts: DispatchSendOptions, existingSendId
             eq(marketingContacts.emailOptOut, true),
           ),
         );
-      const optedOutEmails = new Set(optedOutRows.map(r => r.email.toLowerCase()));
+      const optedOutEmails = new Set(
+        optedOutRows.map(r => r.email?.toLowerCase()).filter((e): e is string => !!e),
+      );
       if (optedOutEmails.size > 0) {
         for (let i = recipients.length - 1; i >= 0; i--) {
           if (optedOutEmails.has(recipients[i].email)) {
@@ -1341,7 +1347,9 @@ export async function deliverEmailSend(opts: DispatchSendOptions, existingSendId
             inArray(emailSubscriptionPreferences.subscriptionTypeId, nonTransactionalIds),
             sql`${emailSubscriptionPreferences.optedOutAt} IS NOT NULL`,
           ));
-        const optedOutEmails = new Set(optedOutRows.map(r => r.email.toLowerCase()));
+        const optedOutEmails = new Set(
+        optedOutRows.map(r => r.email?.toLowerCase()).filter((e): e is string => !!e),
+      );
         if (optedOutEmails.size > 0) {
           for (let i = recipients.length - 1; i >= 0; i--) {
             if (optedOutEmails.has(recipients[i].email)) {
@@ -1357,11 +1365,12 @@ export async function deliverEmailSend(opts: DispatchSendOptions, existingSendId
     if (!testRecipient && opts.excludeActiveProspects && recipients.length > 0) {
       const candidateEmails = recipients.map(r => r.email);
       const activeProspectRows = await db
-        .select({ email: prospects.email })
+        .select({ email: marketingContacts.email })
         .from(prospects)
+        .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .where(and(
           eq(prospects.tenantDomain, tenantDomain),
-          inArray(prospects.email, candidateEmails),
+          inArray(marketingContacts.email, candidateEmails),
           notInArray(prospects.status, ["replied", "dormant"]),
         ));
       const activeProspectEmails = new Set(

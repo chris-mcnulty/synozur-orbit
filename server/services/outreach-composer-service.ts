@@ -131,7 +131,8 @@ export async function composeTouch(
   prospectId: string,
   opts: ComposeTouchOptions = {},
 ): Promise<ComposeTouchResult> {
-  const [prospect] = await db.select().from(prospects).where(eq(prospects.id, prospectId));
+  const { getProspectWithContact } = await import("./prospect-contact-service");
+  const prospect = await getProspectWithContact(prospectId);
   if (!prospect || prospect.tenantDomain !== tenantDomain) throw new Error("Prospect not found");
 
   const [campaign] = await db
@@ -141,6 +142,11 @@ export async function composeTouch(
   if (!campaign) throw new Error("Campaign not found");
 
   const channel: OutreachChannel = opts.channel ?? ((campaign.channels?.[0] as OutreachChannel) || "email");
+  // Fail closed: an email touch needs a recipient. LinkedIn-only prospects
+  // (nullable contact email) must be composed on the linkedin channel.
+  if (channel === "email" && !prospect.email) {
+    throw new Error("Prospect has no email address — compose a LinkedIn touch or enrich the contact first.");
+  }
   const stepNumber = opts.stepNumber ?? 1;
   // LinkedIn shape + intent (null/ignored for email). Default to a direct
   // message; the caller (UI) picks connect-request when appropriate.
@@ -265,7 +271,7 @@ export async function composeTouch(
       .set({ status: "draft_pending_approval", updatedAt: new Date() })
       .where(eq(prospects.id, prospect.id))
       .returning();
-    updatedProspect = u;
+    updatedProspect = { ...prospect, ...u };
   }
 
   return {

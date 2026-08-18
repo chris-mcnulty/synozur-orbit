@@ -286,10 +286,12 @@ export async function detectMailboxActivity(userId: string, tenantDomain: string
   const token = await getValidGraphToken(userId);
   if (!token) return result;
 
-  const owned = await db
-    .select()
+  const { getProspectsWithContacts } = await import("./prospect-contact-service");
+  const ownedRows = await db
+    .select({ id: prospects.id })
     .from(prospects)
     .where(and(eq(prospects.tenantDomain, tenantDomain), eq(prospects.ownerUserId, userId)));
+  const owned = await getProspectsWithContacts(ownedRows.map((r) => r.id));
   if (owned.length === 0) return result;
   const ownedIds = new Set(owned.map((p) => p.id));
 

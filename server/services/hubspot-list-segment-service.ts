@@ -162,6 +162,9 @@ export async function syncHubspotListSegment(segment: MarketingSegment): Promise
         )
         .onConflictDoUpdate({
           target: [marketingContacts.tenantDomain, marketingContacts.email],
+          // Partial unique index (WHERE email IS NOT NULL) — predicate must
+          // match or Postgres cannot infer the index for conflict handling.
+          targetWhere: sql`${marketingContacts.email} IS NOT NULL`,
           set: {
             firstName: sql`COALESCE(excluded.first_name, ${marketingContacts.firstName})`,
             lastName: sql`COALESCE(excluded.last_name, ${marketingContacts.lastName})`,

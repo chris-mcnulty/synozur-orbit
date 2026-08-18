@@ -11,10 +11,11 @@ import { describe, it, vi, expect } from "vitest";
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 //
-// importDiscoveredProspects makes three DB calls in order:
-//   1. select().from(outreachCampaigns).where()  → returns the campaign row
-//   2. select().from(prospects).where()           → returns existing prospects (for dedup)
-//   3. insert(prospects).values(rows).returning() → returns inserted rows
+// importDiscoveredProspects makes these queued calls in order:
+//   1. select().from(outreachCampaigns).where()      → the campaign row
+//   2. select().from(prospects).innerJoin().where()  → existing people (dedup)
+//   3. per candidate: insert(prospects)...returning() → membership { id }
+//   4. getProspectsWithContacts (mocked, dbQ-backed)  → flattened imported rows
 //
 // The queue-based mock pops one batch per terminal call so the order matters.
 
@@ -35,6 +36,7 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
   function mkChain(): any {
     return {
       from: () => mkChain(),
+      innerJoin: () => mkChain(),
       where: terminal,
       set: () => mkChain(),
       values: terminal,
@@ -57,6 +59,18 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
 });
 
 vi.mock("../../db", () => ({ db: makeMockDb() }));
+
+// Single-contact-table seam: contact find-or-create is stubbed, and the final
+// flattened-view fetch pops one dbQ batch (the "inserted" fixture).
+vi.mock("../prospect-contact-service", () => ({
+  ensureContactForPerson: vi.fn().mockResolvedValue({ contactId: "contact-1", created: true }),
+  // Pops the same "insert returning {id}" dbQ batch the old direct insert used.
+  addCampaignMembership: vi.fn(async () => {
+    const row = (dbQ.shift() ?? [])[0];
+    return { membershipId: row?.id ?? "membership-1", created: true };
+  }),
+  getProspectsWithContacts: vi.fn(async () => dbQ.shift() ?? []),
+}));
 
 // ── Import under test AFTER mocks are wired ───────────────────────────────────
 
@@ -96,7 +110,8 @@ describe("importDiscoveredProspects — source + confidence persistence", () => 
         status: "new",
       },
     ];
-    pushDb(...inserted);
+    pushDb({ id: "p-1" }); // membership insert returning
+    pushDb(...inserted);   // flattened view fetch
 
     const result = await importDiscoveredProspects(
       "acme.com",
@@ -134,7 +149,8 @@ describe("importDiscoveredProspects — source + confidence persistence", () => 
         status: "new",
       },
     ];
-    pushDb(...inserted);
+    pushDb({ id: "p-2" }); // membership insert returning
+    pushDb(...inserted);   // flattened view fetch
 
     const result = await importDiscoveredProspects(
       "acme.com",
@@ -170,7 +186,8 @@ describe("importDiscoveredProspects — source + confidence persistence", () => 
         status: "new",
       },
     ];
-    pushDb(...inserted);
+    pushDb({ id: "p-3" }); // membership insert returning
+    pushDb(...inserted);   // flattened view fetch
 
     const result = await importDiscoveredProspects(
       "acme.com",
@@ -215,7 +232,9 @@ describe("importDiscoveredProspects — source + confidence persistence", () => 
         status: "new",
       },
     ];
-    pushDb(...inserted);
+    pushDb({ id: "p-4" }); // membership insert returning (Dave)
+    pushDb({ id: "p-5" }); // membership insert returning (Eve)
+    pushDb(...inserted);   // flattened view fetch
 
     const result = await importDiscoveredProspects(
       "acme.com",
@@ -239,6 +258,7 @@ describe("importDiscoveredProspects — source + confidence persistence", () => 
     // Existing prospect matches "Alice Chen" by email
     pushDb({ email: "alice@apex.com", linkedinUrl: null, name: "Alice Chen", companyName: "Apex Capital" });
     // Only one inserted (the non-duplicate)
+    pushDb({ id: "p-6" }); // membership insert returning
     pushDb({ id: "p-6", name: "Frank Torres", source: "apollo", signals: { discoveryConfidence: "verified" }, status: "new" });
 
     const result = await importDiscoveredProspects(

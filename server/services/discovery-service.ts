@@ -12,8 +12,9 @@
  */
 
 import { db } from "../db";
-import { prospects, outreachCampaigns, personas, type Prospect } from "@shared/schema";
+import { prospects, outreachCampaigns, personas, marketingContacts, type ProspectWithContact } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { addCampaignMembership, ensureContactForPerson, getProspectsWithContacts } from "./prospect-contact-service";
 import { buildIcpCriteria, scoreProspect, scoreProspectAgainstAll, type ScoredProspect, type PersonaRef } from "./prospector-core";
 import {
   candidateToAttributes,
@@ -281,15 +282,7 @@ export async function discoverProspects(
   const foundCount = found.length;
 
   // Dedup against prospects already on this campaign.
-  const existing = await db
-    .select({
-      email: prospects.email,
-      linkedinUrl: prospects.linkedinUrl,
-      name: prospects.name,
-      companyName: prospects.companyName,
-    })
-    .from(prospects)
-    .where(eq(prospects.campaignId, campaign.id));
+  const existing = await loadExistingCampaignPeople(campaign.id);
 
   const deduped = dedupeCandidates(found, existing);
 
@@ -317,7 +310,7 @@ export async function importDiscoveredProspects(
   campaignId: string,
   candidates: DiscoveryCandidate[],
   ctx: { ownerUserId: string; marketId?: string | null },
-): Promise<{ imported: Prospect[]; skipped: number }> {
+): Promise<{ imported: ProspectWithContact[]; skipped: number }> {
   const [campaign] = await db
     .select()
     .from(outreachCampaigns)
@@ -327,52 +320,64 @@ export async function importDiscoveredProspects(
   }
 
   // Re-dedup at import time against the live campaign (the preview may be stale).
-  const existing = await db
-    .select({
-      email: prospects.email,
-      linkedinUrl: prospects.linkedinUrl,
-      name: prospects.name,
-      companyName: prospects.companyName,
-    })
-    .from(prospects)
-    .where(eq(prospects.campaignId, campaign.id));
+  const existing = await loadExistingCampaignPeople(campaign.id);
   const toInsert = dedupeCandidates(candidates, existing);
   const skipped = candidates.length - toInsert.length;
 
   if (toInsert.length === 0) return { imported: [], skipped };
 
-  const rows = toInsert.map((c) => ({
-    campaignId: campaign.id,
-    tenantDomain,
-    marketId: ctx.marketId ?? null,
-    name: c.name,
-    title: c.title ?? null,
-    companyName: c.companyName ?? null,
-    email: c.email ?? null,
-    linkedinUrl: c.linkedinUrl ?? null,
-    source: c.source, // "web" | "salesnav"
-    signals: {
-      geography: c.geography ?? undefined,
-      industry: c.industry ?? undefined,
-      segment: c.segment ?? undefined,
-      sources: c.sourceUrl ? [c.sourceUrl] : undefined,
-      discoveryConfidence: c.confidence ?? undefined,
-    },
-    ownerUserId: ctx.ownerUserId,
-    status: "new" as const,
-  }));
-
-  const imported = await db.insert(prospects).values(rows).returning();
-
-  // Auto-promote: immediately upsert matching marketing contacts for all
-  // discovered prospects. Fire-and-forget so discovery import latency is unaffected.
-  if (imported.length > 0) {
-    import("./prospect-promotion-service")
-      .then(({ promoteProspects }) =>
-        promoteProspects(tenantDomain, imported, "sales_discovery"),
-      )
-      .catch((err) => console.error("[discovery:auto-promote]", err));
+  // Single contact table: find-or-create each person, then add the
+  // campaign-membership row referencing the contact.
+  const membershipIds: string[] = [];
+  for (const c of toInsert) {
+    const { contactId } = await ensureContactForPerson(tenantDomain, {
+      name: c.name,
+      title: c.title ?? null,
+      companyName: c.companyName ?? null,
+      email: c.email ?? null,
+      linkedinUrl: c.linkedinUrl ?? null,
+    }, "sales_discovery");
+    const { membershipId, created } = await addCampaignMembership({
+      campaignId: campaign.id,
+      tenantDomain,
+      marketId: ctx.marketId ?? null,
+      contactId,
+      source: c.source, // "web" | "salesnav"
+      signals: {
+        geography: c.geography ?? undefined,
+        industry: c.industry ?? undefined,
+        segment: c.segment ?? undefined,
+        sources: c.sourceUrl ? [c.sourceUrl] : undefined,
+        discoveryConfidence: c.confidence ?? undefined,
+      },
+      ownerUserId: ctx.ownerUserId,
+      status: "new" as const,
+    });
+    if (!created) continue; // already on this campaign (retried import)
+    membershipIds.push(membershipId);
   }
 
+  const imported = await getProspectsWithContacts(membershipIds);
   return { imported, skipped };
+}
+
+/** Person fields of everyone already on the campaign (for dedupe). */
+async function loadExistingCampaignPeople(campaignId: string) {
+  const rows = await db
+    .select({
+      email: marketingContacts.email,
+      linkedinUrl: marketingContacts.linkedinUrl,
+      firstName: marketingContacts.firstName,
+      lastName: marketingContacts.lastName,
+      companyName: marketingContacts.company,
+    })
+    .from(prospects)
+    .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
+    .where(eq(prospects.campaignId, campaignId));
+  return rows.map((r) => ({
+    email: r.email,
+    linkedinUrl: r.linkedinUrl,
+    name: [r.firstName, r.lastName].filter(Boolean).join(" "),
+    companyName: r.companyName,
+  }));
 }

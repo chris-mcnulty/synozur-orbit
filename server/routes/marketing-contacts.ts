@@ -42,6 +42,57 @@ import {
 import { fireContactEvent } from "../services/marketing-workflow-service";
 
 // ---------------------------------------------------------------------------
+// Sales context (single contact table: memberships live on prospects.contactId)
+// ---------------------------------------------------------------------------
+
+const EMPTY_SALES_CONTEXT = {
+  sourceProspectId: null as string | null,
+  prospectStatus: null as string | null,
+  prospectIcpScore: null as number | null,
+  outreachCampaignId: null as string | null,
+  outreachCampaignName: null as string | null,
+};
+
+/**
+ * Latest campaign membership per contact. A leftJoin would duplicate contact
+ * rows when a contact is on multiple campaigns, so we merge in JS instead.
+ * `sourceProspectId` carries the membership (prospect) id — the client uses it
+ * to deep-link into the sales dossier.
+ */
+async function latestMembershipByContact(
+  tenantDomain: string,
+  contactIds: string[],
+): Promise<Map<string, typeof EMPTY_SALES_CONTEXT>> {
+  const map = new Map<string, typeof EMPTY_SALES_CONTEXT>();
+  if (contactIds.length === 0) return map;
+  const rows = await db
+    .select({
+      contactId: prospects.contactId,
+      prospectId: prospects.id,
+      status: prospects.status,
+      icpScore: prospects.icpScore,
+      campaignId: prospects.campaignId,
+      campaignName: outreachCampaignsTable.name,
+      updatedAt: prospects.updatedAt,
+    })
+    .from(prospects)
+    .leftJoin(outreachCampaignsTable, eq(prospects.campaignId, outreachCampaignsTable.id))
+    .where(and(eq(prospects.tenantDomain, tenantDomain), inArray(prospects.contactId, contactIds)))
+    .orderBy(desc(prospects.updatedAt), desc(prospects.id));
+  for (const r of rows) {
+    if (map.has(r.contactId)) continue; // rows ordered newest-first
+    map.set(r.contactId, {
+      sourceProspectId: r.prospectId,
+      prospectStatus: r.status,
+      prospectIcpScore: r.icpScore,
+      outreachCampaignId: r.campaignId,
+      outreachCampaignName: r.campaignName,
+    });
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
 // Rule validation
 // ---------------------------------------------------------------------------
 
@@ -294,7 +345,6 @@ export function registerMarketingContactsRoutes(app: Express) {
         score: marketingContacts.score,
         hubspotContactId: marketingContacts.hubspotContactId,
         source: marketingContacts.source,
-        sourceProspectId: marketingContacts.sourceProspectId,
         metadata: marketingContacts.metadata,
         lastEventAt: marketingContacts.lastEventAt,
         emailOptOut: marketingContacts.emailOptOut,
@@ -302,22 +352,19 @@ export function registerMarketingContactsRoutes(app: Express) {
         emailOptOutSource: marketingContacts.emailOptOutSource,
         createdAt: marketingContacts.createdAt,
         updatedAt: marketingContacts.updatedAt,
-        // Sales context (null when contact has no linked prospect)
-        prospectStatus: prospects.status,
-        prospectIcpScore: prospects.icpScore,
-        outreachCampaignId: prospects.campaignId,
-        outreachCampaignName: outreachCampaignsTable.name,
       })
       .from(marketingContacts)
-      .leftJoin(prospects, eq(marketingContacts.sourceProspectId, prospects.id))
-      .leftJoin(outreachCampaignsTable, eq(prospects.campaignId, outreachCampaignsTable.id))
       .where(and(...conditions))
       .orderBy(desc(marketingContacts.lastEventAt))
       .limit(pageSize)
       .offset(offset);
 
+    // Sales context: latest campaign membership per contact (two-step merge —
+    // a join would duplicate contacts on multiple memberships).
+    const memberships = await latestMembershipByContact(ctx.tenantDomain, rows.map((r) => r.id));
+
     res.json({
-      data: rows,
+      data: rows.map((r) => ({ ...r, ...(memberships.get(r.id) ?? EMPTY_SALES_CONTEXT) })),
       pagination: {
         page,
         pageSize,
@@ -347,7 +394,6 @@ export function registerMarketingContactsRoutes(app: Express) {
         score: marketingContacts.score,
         hubspotContactId: marketingContacts.hubspotContactId,
         source: marketingContacts.source,
-        sourceProspectId: marketingContacts.sourceProspectId,
         metadata: marketingContacts.metadata,
         lastEventAt: marketingContacts.lastEventAt,
         emailOptOut: marketingContacts.emailOptOut,
@@ -355,14 +401,8 @@ export function registerMarketingContactsRoutes(app: Express) {
         emailOptOutSource: marketingContacts.emailOptOutSource,
         createdAt: marketingContacts.createdAt,
         updatedAt: marketingContacts.updatedAt,
-        prospectStatus: prospects.status,
-        prospectIcpScore: prospects.icpScore,
-        outreachCampaignId: prospects.campaignId,
-        outreachCampaignName: outreachCampaignsTable.name,
       })
       .from(marketingContacts)
-      .leftJoin(prospects, eq(marketingContacts.sourceProspectId, prospects.id))
-      .leftJoin(outreachCampaignsTable, eq(prospects.campaignId, outreachCampaignsTable.id))
       .where(
         and(
           eq(marketingContacts.id, req.params.id),
@@ -372,7 +412,8 @@ export function registerMarketingContactsRoutes(app: Express) {
       .limit(1);
 
     if (!contact) return res.status(404).json({ error: "Contact not found" });
-    res.json(contact);
+    const memberships = await latestMembershipByContact(ctx.tenantDomain, [contact.id]);
+    res.json({ ...contact, ...(memberships.get(contact.id) ?? EMPTY_SALES_CONTEXT) });
   });
 
   // ──────────────────────────────────────────────────────────
@@ -631,40 +672,8 @@ export function registerMarketingContactsRoutes(app: Express) {
     }
   });
 
-  // HubSpot identity reconciliation sweep — aligns hubspotContactId between
-  // linked prospect/marketing-contact pairs. Admin-only, idempotent.
-  // ──────────────────────────────────────────────────────────────────────────
-  app.post("/api/admin/marketing-contacts/reconcile-hubspot-identity", async (req: Request, res: Response) => {
-    if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
-
-    try {
-      const ctx = await getRequestContext(req);
-      const user = await storage.getUser(ctx.userId);
-      if (!user || !["Domain Admin", "Global Admin"].includes(user.role)) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
-
-      const plan = await getTenantPlan(ctx.tenantDomain);
-      const gate = await checkFeatureAccessAsync(plan, "marketingContacts");
-      if (!gate.allowed) {
-        return res.status(403).json({ error: gate.reason, upgradeRequired: gate.upgradeRequired });
-      }
-
-      const { runHubspotIdentityReconciliation } = await import(
-        "../services/hubspot-contact-resolver"
-      );
-      const limit = typeof req.body?.limit === "number" ? Math.min(req.body.limit, 2000) : 500;
-
-      const result = await runHubspotIdentityReconciliation({
-        tenantDomain: ctx.tenantDomain,
-        limit,
-      });
-      res.json({ ok: true, ...result });
-    } catch (err: any) {
-      console.error("[marketing-contacts] HubSpot identity reconciliation failed:", err.message);
-      res.status(500).json({ error: err.message || "Reconciliation failed" });
-    }
-  });
+  // NOTE: the HubSpot identity reconciliation sweep was retired with the
+  // single contact table — sales and marketing share one hubspotContactId.
 
   // ──────────────────────────────────────────────────────────
   // SEGMENT CRUD

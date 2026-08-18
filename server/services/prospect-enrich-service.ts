@@ -16,7 +16,8 @@
  */
 
 import { db } from "../db";
-import { prospects, type Prospect, type ProspectSignals } from "@shared/schema";
+import { prospects, type ProspectWithContact, type ProspectSignals } from "@shared/schema";
+import { getProspectWithContact, updateContactPersonFields } from "./prospect-contact-service";
 import { eq } from "drizzle-orm";
 import { completeWithWebSearch, isWebSearchAvailable } from "./ai-provider";
 import { isApolloAvailable, matchApolloPerson } from "./apollo-discovery-provider";
@@ -142,7 +143,7 @@ export function parseEnrichLookup(raw: string, targets: EnrichTargets): EnrichLo
 }
 
 export interface EnrichResult {
-  prospect: Prospect;
+  prospect: ProspectWithContact;
   found: { linkedinUrl: boolean; email: boolean };
   /** Which backends contributed a value, e.g. ["apollo"] or ["apollo","web"]. */
   sources: string[];
@@ -164,7 +165,7 @@ export async function enrichProspectContact(
   tenantDomain: string,
   prospectId: string,
 ): Promise<EnrichResult> {
-  const [prospect] = await db.select().from(prospects).where(eq(prospects.id, prospectId));
+  const prospect = await getProspectWithContact(prospectId);
   if (!prospect || prospect.tenantDomain !== tenantDomain) throw new Error("Prospect not found");
 
   const needLinkedin = !prospect.linkedinUrl;
@@ -236,29 +237,35 @@ export async function enrichProspectContact(
     if (contributed) sources.push("web");
   }
 
-  // Only fill blanks; build the persisted patch + evidence trail.
-  const patch: Partial<typeof prospects.$inferInsert> = {};
-  if (needLinkedin && linkedinUrl) patch.linkedinUrl = linkedinUrl;
-  if (needEmail && email) patch.email = email;
+  // Only fill blanks. Contact details (email/linkedin) live on the shared
+  // marketing contact; the evidence trail stays on the membership signals.
+  const contactPatch: { linkedinUrl?: string | null; email?: string | null } = {};
+  if (needLinkedin && linkedinUrl) contactPatch.linkedinUrl = linkedinUrl;
+  if (needEmail && email) contactPatch.email = email;
 
   let updated = prospect;
-  if (Object.keys(patch).length > 0) {
+  if (Object.keys(contactPatch).length > 0) {
+    await updateContactPersonFields(prospect.contactId, contactPatch);
     const signals: ProspectSignals = { ...(prospect.signals ?? {}) };
     if (evidence.length > 0) {
       const existing = Array.isArray(signals.sources) ? signals.sources : [];
       signals.sources = Array.from(new Set([...existing, ...evidence]));
     }
-    const [row] = await db
+    await db
       .update(prospects)
-      .set({ ...patch, signals, updatedAt: new Date() })
-      .where(eq(prospects.id, prospect.id))
-      .returning();
-    updated = row;
+      .set({ signals, updatedAt: new Date() })
+      .where(eq(prospects.id, prospect.id));
+    updated = {
+      ...prospect,
+      signals,
+      linkedinUrl: contactPatch.linkedinUrl ?? prospect.linkedinUrl,
+      email: contactPatch.email ?? prospect.email,
+    };
   }
 
   return {
     prospect: updated,
-    found: { linkedinUrl: !!patch.linkedinUrl, email: !!patch.email },
+    found: { linkedinUrl: !!contactPatch.linkedinUrl, email: !!contactPatch.email },
     sources,
     notes,
     usage: ai ? { inputTokens: ai.usage.inputTokens, outputTokens: ai.usage.outputTokens } : undefined,

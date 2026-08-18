@@ -171,10 +171,20 @@ vi.mock("../outreach-performance-service", () => ({
   getCampaignPerformance: vi.fn(),
 }));
 
-vi.mock("../prospect-promotion-service", () => ({
-  promoteProspects: vi.fn().mockResolvedValue({
-    total: 1, created: 1, linked: 0, skippedOptedOut: 0, skippedNoEmail: 0,
+vi.mock("../prospect-contact-service", () => ({
+  // dbQ-backed so existing pushDb(...) fixtures keep working: each call pops
+  // one queued result, mirroring the old direct-select behaviour.
+  getProspectWithContact: vi.fn(async () => (dbQ.shift() ?? [])[0]),
+  getProspectsWithContacts: vi.fn(async () => dbQ.shift() ?? []),
+  listCampaignProspects: vi.fn(async () => dbQ.shift() ?? []),
+  ensureContactForPerson: vi.fn().mockResolvedValue({ contactId: "contact-1", created: true }),
+  // Pops the same "insert returning {id}" dbQ batch the old direct insert used.
+  addCampaignMembership: vi.fn(async () => {
+    const row = (dbQ.shift() ?? [])[0];
+    return { membershipId: row?.id ?? "membership-1", created: true };
   }),
+  updateContactPersonFields: vi.fn().mockResolvedValue(undefined),
+  flattenProspect: vi.fn((m: any, c: any) => ({ ...m, ...c })),
 }));
 
 vi.mock("../hubspot-contact-resolver", () => ({
@@ -197,7 +207,7 @@ import { getLinkedInCapabilities } from "../linkedin-provider";
 import { composeTouch } from "../outreach-composer-service";
 import { discoverProspects, importDiscoveredProspects } from "../discovery-service";
 import { enrichProspectContact, EnrichError } from "../prospect-enrich-service";
-import { promoteProspects } from "../prospect-promotion-service";
+import { ensureContactForPerson } from "../prospect-contact-service";
 
 // ── Shared test context ───────────────────────────────────────────────────────
 
@@ -479,7 +489,9 @@ describe("sales-outreach routes", () => {
 
     it("adds a prospect to a campaign and returns 201", async () => {
       vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-      // insert prospect → [NEW_PROSPECT]
+      // insert membership → [NEW_PROSPECT]
+      pushDb(NEW_PROSPECT);
+      // getProspectWithContact (flattened view) → [NEW_PROSPECT]
       pushDb(NEW_PROSPECT);
 
       const res = await request(app)
@@ -488,6 +500,24 @@ describe("sales-outreach routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ name: "Bob Smith", status: "new" });
+    });
+
+    it("returns 200 with the existing membership on a duplicate add", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      const { addCampaignMembership } = await import("../prospect-contact-service");
+      vi.mocked(addCampaignMembership).mockResolvedValueOnce({
+        membershipId: "prospect-existing",
+        created: false,
+      });
+      // getProspectWithContact (flattened view) → existing membership
+      pushDb({ ...NEW_PROSPECT, id: "prospect-existing" });
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/prospects")
+        .send({ name: "Bob Smith", email: "bob@partner.com" });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: "prospect-existing", name: "Bob Smith" });
     });
 
     it("returns 400 when prospect name is missing", async () => {
@@ -1087,8 +1117,11 @@ describe("sales-outreach routes", () => {
       vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
       // select existing → empty (no prospects on this campaign yet)
       pushDb(); // resolves to []
-      // insert is called → consumes one queue slot (result is unused)
-      pushDb();
+      // per imported row: insert membership returning + flattened view fetch
+      pushDb({ id: "p-1" });
+      pushDb({ id: "p-1", name: "Alice Smith", email: "alice@acme.com" });
+      pushDb({ id: "p-2" });
+      pushDb({ id: "p-2", name: "Bob Jones", email: "bob@beta.com" });
 
       const res = await request(app)
         .post("/api/sales-outreach/campaigns/camp-1/import-csv")
@@ -1101,9 +1134,10 @@ describe("sales-outreach routes", () => {
     it("skips duplicates already on the campaign (by email)", async () => {
       vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
       // select existing → one prospect with alice's email
-      pushDb({ email: "alice@acme.com", name: "Alice Smith" });
-      // insert is called for Bob (the non-duplicate) → consumes one queue slot
-      pushDb();
+      pushDb({ email: "alice@acme.com", firstName: "Alice", lastName: "Smith" });
+      // insert for Bob (the non-duplicate): membership + view
+      pushDb({ id: "p-2" });
+      pushDb({ id: "p-2", name: "Bob Jones", email: "bob@beta.com" });
 
       const res = await request(app)
         .post("/api/sales-outreach/campaigns/camp-1/import-csv")
@@ -1117,8 +1151,9 @@ describe("sales-outreach routes", () => {
       vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
       // select existing → none
       pushDb();
-      // insert for the one unique row
-      pushDb();
+      // insert for the one unique row: membership + view
+      pushDb({ id: "p-1" });
+      pushDb({ id: "p-1", name: "Alice Smith", email: "alice@acme.com" });
 
       const duplicated = [CSV_ROWS[0], { ...CSV_ROWS[0] }]; // same email twice
       const res = await request(app)
@@ -1128,6 +1163,25 @@ describe("sales-outreach routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.imported).toBe(1);
       expect(res.body.skipped).toBe(0); // intra-batch dedup is silent
+    });
+
+    it("a retried import does not duplicate memberships (conflict-safe insert)", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      // select existing → empty (race: the pre-check missed the first attempt's rows)
+      pushDb();
+      const { addCampaignMembership } = await import("../prospect-contact-service");
+      // Both rows conflict on (campaignId, contactId) — memberships already exist.
+      vi.mocked(addCampaignMembership)
+        .mockResolvedValueOnce({ membershipId: "p-1", created: false })
+        .mockResolvedValueOnce({ membershipId: "p-2", created: false });
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/import-csv")
+        .send({ rows: CSV_ROWS });
+
+      expect(res.status).toBe(200);
+      // No flattened-view fetches were consumed → nothing was re-inserted.
+      expect(dbQ.length).toBe(0);
     });
 
     it("returns 400 when no rows have a name", async () => {
@@ -1157,8 +1211,9 @@ describe("sales-outreach routes", () => {
       const noEmailRow = { name: "Carol Lee", title: "CRO", companyName: "Gamma Ltd", email: "", linkedinUrl: "https://linkedin.com/in/carollee" };
       // select existing → none
       pushDb();
-      // insert
-      pushDb();
+      // insert: membership + view
+      pushDb({ id: "p-9" });
+      pushDb({ id: "p-9", name: "Carol Lee", email: null });
 
       const res = await request(app)
         .post("/api/sales-outreach/campaigns/camp-1/import-csv")
@@ -1169,103 +1224,13 @@ describe("sales-outreach routes", () => {
     });
   });
 
-  // ── Promotion authorization (campaign owner or admin only) ─────────────────
-
-  describe("POST /api/sales-outreach/campaigns/:id/promote-prospects", () => {
-    const CAMPAIGN = { id: "camp-1", tenantDomain: "acme.com", createdBy: "owner-9", status: "active" };
-    const PROSPECT_ROW = {
-      id: "pr-1", campaignId: "camp-1", tenantDomain: "acme.com",
-      name: "Ada Lovelace", email: "ada@example.com", title: "CTO",
-      companyName: "Analytical", hubspotContactId: null, status: "dormant",
-    };
-
-    it("rejects a non-owner non-admin with 403 and promotes nothing", async () => {
-      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "someone-else", userRole: "Standard User" } as any);
-      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-
-      const res = await request(app)
-        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
-        .send({ status: "dormant" });
-
-      expect(res.status).toBe(403);
-      expect(promoteProspects).not.toHaveBeenCalled();
-    });
-
-    it("allows the campaign owner", async () => {
-      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "owner-9", userRole: "Standard User" } as any);
-      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-      pushDb(PROSPECT_ROW); // prospects select
-
-      const res = await request(app)
-        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
-        .send({ status: "dormant" });
-
-      expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ created: 1 });
-      expect(promoteProspects).toHaveBeenCalledWith("acme.com", [PROSPECT_ROW]);
-    });
-
-    it("allows a Domain Admin who is not the owner", async () => {
-      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "admin-1", userRole: "Domain Admin" } as any);
-      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-      pushDb(PROSPECT_ROW);
-
-      const res = await request(app)
-        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
-        .send({ prospectIds: ["pr-1"] });
-
-      expect(res.status).toBe(200);
-      expect(promoteProspects).toHaveBeenCalled();
-    });
-
-    it("returns 400 without prospectIds or status", async () => {
-      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "owner-9", userRole: "Standard User" } as any);
-      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-
-      const res = await request(app)
-        .post("/api/sales-outreach/campaigns/camp-1/promote-prospects")
-        .send({});
-
-      expect(res.status).toBe(400);
-      expect(promoteProspects).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("POST /api/sales-outreach/prospects/:id/promote", () => {
-    const CAMPAIGN = { id: "camp-1", tenantDomain: "acme.com", createdBy: "owner-9", status: "active" };
-    const PROSPECT_ROW = {
-      id: "pr-1", campaignId: "camp-1", tenantDomain: "acme.com",
-      name: "Ada Lovelace", email: "ada@example.com", status: "dormant",
-    };
-
-    it("rejects a non-owner non-admin with 403", async () => {
-      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "someone-else", userRole: "Standard User" } as any);
-      pushDb(PROSPECT_ROW); // prospect select
-      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-
-      const res = await request(app).post("/api/sales-outreach/prospects/pr-1/promote").send({});
-
-      expect(res.status).toBe(403);
-      expect(promoteProspects).not.toHaveBeenCalled();
-    });
-
-    it("allows the campaign owner", async () => {
-      vi.mocked(getRequestContext).mockResolvedValue({ ...TEST_CTX, userId: "owner-9", userRole: "Standard User" } as any);
-      pushDb(PROSPECT_ROW);
-      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
-
-      const res = await request(app).post("/api/sales-outreach/prospects/pr-1/promote").send({});
-
-      expect(res.status).toBe(200);
-      expect(promoteProspects).toHaveBeenCalledWith("acme.com", [PROSPECT_ROW]);
-    });
-  });
-
   // ── GET /api/sales-outreach/prospects/:id (marketing dossier read) ────────────
 
   describe("GET /api/sales-outreach/prospects/:id", () => {
     const PROSPECT_DOSSIER = {
       id: "pr-42",
+      tenantDomain: "acme.com",
+      contactId: "contact-42",
       name: "Alan Turing",
       title: "Head of Cryptography",
       companyName: "Bletchley Labs",

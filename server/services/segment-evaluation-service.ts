@@ -394,5 +394,7 @@ export async function getSegmentMemberEmails(segmentId: string, tenantDomain: st
         eq(marketingSegmentMembers.tenantDomain, tenantDomain),
       ),
     );
-  return rows.map((r) => r.email);
+  // Email is nullable on the single contact table — segments only target
+  // emailable members.
+  return rows.map((r) => r.email).filter((e): e is string => !!e);
 }

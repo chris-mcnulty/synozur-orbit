@@ -182,6 +182,10 @@ export async function upsertContact(opts: {
         .values(insertValues)
         .onConflictDoUpdate({
           target: [marketingContacts.tenantDomain, marketingContacts.email],
+          // The unique index is partial (WHERE email IS NOT NULL) since the
+          // single-contact-table migration; Postgres can only infer it when
+          // the conflict target carries the same predicate.
+          targetWhere: sql`${marketingContacts.email} IS NOT NULL`,
           set: updateSet,
         })
         .returning();
@@ -543,7 +547,7 @@ export async function backfillContactOptOuts(tenantDomain: string): Promise<{
     );
 
   if (contactRows.length > 0) {
-    const emails = contactRows.map(r => r.email);
+    const emails = contactRows.map(r => r.email).filter((e): e is string => !!e);
 
     // pullSubscriptionStatus rejects batches larger than its internal cap
     // (MARKETING_HS_CONSENT_PULL_MAX, default 1 000). Chunk the full email
@@ -863,48 +867,15 @@ export async function emitOutreachTouchJourneyEvent(opts: {
   tenantDomain: string;
 }): Promise<void> {
   try {
-    // Resolve the linked marketing contact.
-    // Try sourceProspectId match first, then email match via the prospect row.
-    let contactId: string | null = null;
-
-    const byProspectId = await db
-      .select({ id: marketingContacts.id })
-      .from(marketingContacts)
-      .where(
-        and(
-          eq(marketingContacts.tenantDomain, opts.tenantDomain),
-          eq(marketingContacts.sourceProspectId, opts.prospectId),
-        ),
-      )
+    // Single contact table: the membership row points directly at the contact.
+    const [prospectRow] = await db
+      .select({ contactId: prospects.contactId })
+      .from(prospects)
+      .where(eq(prospects.id, opts.prospectId))
       .limit(1);
+    const contactId = prospectRow?.contactId ?? null;
 
-    if (byProspectId.length > 0) {
-      contactId = byProspectId[0].id;
-    } else {
-      // Fall back to email-based lookup via the prospects table.
-      const [prospectRow] = await db
-        .select({ email: prospects.email })
-        .from(prospects)
-        .where(eq(prospects.id, opts.prospectId))
-        .limit(1);
-
-      if (prospectRow?.email) {
-        const normalised = prospectRow.email.trim().toLowerCase();
-        const byEmail = await db
-          .select({ id: marketingContacts.id })
-          .from(marketingContacts)
-          .where(
-            and(
-              eq(marketingContacts.tenantDomain, opts.tenantDomain),
-              eq(marketingContacts.email, normalised),
-            ),
-          )
-          .limit(1);
-        if (byEmail.length > 0) contactId = byEmail[0].id;
-      }
-    }
-
-    if (!contactId) return; // no linked marketing contact — skip
+    if (!contactId) return; // membership gone — skip
 
     // Resolve campaign name if not supplied by the caller.
     let campaignName = opts.campaignName ?? null;
@@ -997,7 +968,7 @@ export async function backfillOutreachTouchEvents(tenantDomain: string): Promise
       generatedAt: outreachTouches.generatedAt,
       linkedinThreadRef: outreachTouches.linkedinThreadRef,
       campaignName: outreachCampaigns.name,
-      prospectEmail: prospects.email,
+      prospectContactId: prospects.contactId,
     })
     .from(outreachTouches)
     .leftJoin(outreachCampaigns, eq(outreachCampaigns.id, outreachTouches.campaignId))
@@ -1017,38 +988,10 @@ export async function backfillOutreachTouchEvents(tenantDomain: string): Promise
     );
 
   for (const touch of touchRows) {
-    // Resolve marketing contact.
-    let contactId: string | null = null;
+    // Single contact table: the membership row points directly at the contact.
+    const contactId = touch.prospectContactId ?? null;
 
-    const byProspectId = await db
-      .select({ id: marketingContacts.id })
-      .from(marketingContacts)
-      .where(
-        and(
-          eq(marketingContacts.tenantDomain, tenantDomain),
-          eq(marketingContacts.sourceProspectId, touch.prospectId),
-        ),
-      )
-      .limit(1);
-
-    if (byProspectId.length > 0) {
-      contactId = byProspectId[0].id;
-    } else if (touch.prospectEmail) {
-      const normalised = touch.prospectEmail.trim().toLowerCase();
-      const byEmail = await db
-        .select({ id: marketingContacts.id })
-        .from(marketingContacts)
-        .where(
-          and(
-            eq(marketingContacts.tenantDomain, tenantDomain),
-            eq(marketingContacts.email, normalised),
-          ),
-        )
-        .limit(1);
-      if (byEmail.length > 0) contactId = byEmail[0].id;
-    }
-
-    if (!contactId) continue; // no linked contact — skip
+    if (!contactId) continue; // membership gone — skip
 
     // Idempotency check.
     const existing = await db

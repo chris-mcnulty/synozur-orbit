@@ -31,7 +31,6 @@ import {
   MoreHorizontal,
   Archive,
   Trash2,
-  Megaphone,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
@@ -270,14 +269,6 @@ interface Touch {
   body: string | null;
   status: string;
   complianceFlags: Compliance | null;
-}
-
-interface PromotionSummary {
-  total: number;
-  created: number;
-  linked: number;
-  skippedOptedOut: number;
-  skippedNoEmail: number;
 }
 
 interface DiscoveryCandidate {
@@ -530,11 +521,6 @@ export default function OutreachCampaignDetailPage() {
   const [draftBody, setDraftBody] = useState("");
   const [sharpenResult, setSharpenResult] = useState<{ body: string; subject: string | null; changelog: string[] } | null>(null);
   const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
-
-  // Promote-to-marketing dialog state.
-  const [promoteOpen, setPromoteOpen] = useState(false);
-  const [promoteStatus, setPromoteStatus] = useState("dormant");
-  const [promoteResult, setPromoteResult] = useState<PromotionSummary | null>(null);
 
   // Discovery dialog state.
   const [discovering, setDiscovering] = useState(false);
@@ -1081,40 +1067,6 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "HubSpot sync failed", description: err?.message, variant: "destructive" }),
   });
 
-  const promoteProspect = useMutation({
-    mutationFn: async (prospectId: string) => {
-      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${prospectId}/promote`, {});
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to add to marketing contacts");
-      }
-      return res.json() as Promise<PromotionSummary>;
-    },
-    onSuccess: (summary) => {
-      toast({
-        title: summary.created > 0 ? "Added to marketing contacts" : summary.linked > 0 ? "Linked to existing marketing contact" : "Contact opted out — left untouched",
-        description: summary.skippedOptedOut > 0 ? "This contact previously opted out of marketing email, so nothing was changed." : undefined,
-      });
-    },
-    onError: (err: any) => toast({ title: "Could not add to marketing", description: err?.message, variant: "destructive" }),
-  });
-
-  const promoteBulk = useMutation({
-    mutationFn: async (status: string) => {
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/promote-prospects`, {
-        status: status === "all" ? undefined : status,
-        prospectIds: status === "all" ? prospects.filter((p) => p.email).map((p) => p.id) : undefined,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to add prospects to marketing contacts");
-      }
-      return res.json() as Promise<PromotionSummary>;
-    },
-    onSuccess: (summary) => setPromoteResult(summary),
-    onError: (err: any) => toast({ title: "Could not add to marketing", description: err?.message, variant: "destructive" }),
-  });
-
   const deleteProspect = useMutation({
     mutationFn: async (prospectId: string) => {
       const res = await apiRequest("DELETE", `/api/sales-outreach/prospects/${prospectId}`);
@@ -1391,14 +1343,6 @@ export default function OutreachCampaignDetailPage() {
               <Upload className="w-4 h-4 mr-1.5" />
               Import from CSV
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => { setPromoteResult(null); setPromoteOpen(true); }}
-              data-testid="button-promote-to-marketing"
-            >
-              <Megaphone className="w-4 h-4 mr-1.5" />
-              Add to marketing
-            </Button>
             <Button onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
               <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
             </Button>
@@ -1660,21 +1604,6 @@ export default function OutreachCampaignDetailPage() {
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        )}
-                        {p.email && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => promoteProspect.mutate(p.id)}
-                            disabled={promoteProspect.isPending && promoteProspect.variables === p.id}
-                            data-testid={`promote-${p.id}`}
-                            title="Add to marketing contacts"
-                            aria-label={`Add ${p.name} to marketing contacts`}
-                          >
-                            {promoteProspect.isPending && promoteProspect.variables === p.id
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              : <Megaphone className="w-3.5 h-3.5" />}
-                          </Button>
                         )}
                         {(!p.email || !p.linkedinUrl) && (
                           <Button
@@ -2498,82 +2427,6 @@ export default function OutreachCampaignDetailPage() {
               </DialogFooter>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Promote-to-marketing dialog — bulk add prospects to marketing contacts */}
-      <Dialog open={promoteOpen} onOpenChange={(o) => { setPromoteOpen(o); if (!o) setPromoteResult(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add prospects to marketing contacts</DialogTitle>
-            <DialogDescription>
-              Promotes prospects from this campaign into your marketing contact database so they can
-              be targeted with segments and recipient lists. Existing contacts are linked (never
-              duplicated), and opted-out contacts are left untouched.
-            </DialogDescription>
-          </DialogHeader>
-          {promoteResult ? (
-            <div className="space-y-2 text-sm" data-testid="promote-result-summary">
-              <p className="font-medium">Done — {promoteResult.total} prospect{promoteResult.total === 1 ? "" : "s"} processed:</p>
-              <ul className="space-y-1 text-muted-foreground">
-                <li data-testid="promote-result-created">{promoteResult.created} new marketing contact{promoteResult.created === 1 ? "" : "s"} created</li>
-                <li data-testid="promote-result-linked">{promoteResult.linked} linked to existing contacts</li>
-                {promoteResult.skippedOptedOut > 0 && (
-                  <li data-testid="promote-result-optout">{promoteResult.skippedOptedOut} skipped — previously opted out (left untouched)</li>
-                )}
-                {promoteResult.skippedNoEmail > 0 && (
-                  <li data-testid="promote-result-noemail">{promoteResult.skippedNoEmail} skipped — no email address</li>
-                )}
-              </ul>
-              <p className="text-xs text-muted-foreground pt-1">
-                Promoted contacts have source “outreach”, so you can build a segment with the rule
-                Source = outreach. Actively-worked prospects are still suppressed from sends when
-                “exclude active prospects” is on.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label htmlFor="promote-status">Which prospects?</Label>
-                <Select value={promoteStatus} onValueChange={setPromoteStatus}>
-                  <SelectTrigger id="promote-status" data-testid="select-promote-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All prospects with an email</SelectItem>
-                    <SelectItem value="dormant">Dormant (cadence exhausted, no reply)</SelectItem>
-                    <SelectItem value="replied">Replied</SelectItem>
-                    <SelectItem value="new">New</SelectItem>
-                    <SelectItem value="researched">Researched</SelectItem>
-                    <SelectItem value="sent">Sent</SelectItem>
-                    <SelectItem value="awaiting_reply">Awaiting reply</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Tip: dormant and replied prospects are the usual candidates for nurture. Prospects a
-                rep is actively working stay protected by the send-time “exclude active prospects”
-                guard either way.
-              </p>
-            </div>
-          )}
-          <DialogFooter>
-            {promoteResult ? (
-              <Button onClick={() => setPromoteOpen(false)} data-testid="button-promote-done">Done</Button>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setPromoteOpen(false)}>Cancel</Button>
-                <Button
-                  onClick={() => promoteBulk.mutate(promoteStatus)}
-                  disabled={promoteBulk.isPending}
-                  data-testid="button-promote-confirm"
-                >
-                  {promoteBulk.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-                  Add to marketing contacts
-                </Button>
-              </>
-            )}
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -153,6 +153,30 @@ describe("computeBackfillPlan destructive-migration handling", () => {
     expect(toStamp).toEqual([]);
   });
 
+  it("applies the real 0096-0098 single-contact-table migrations on an established pre-consolidation schema (empty ledger) instead of stamping them", async () => {
+    // Regression: 0096 recreates marketing_contacts_tenant_email_uniq (which
+    // already exists on pre-consolidation databases) and 0097 is update-only,
+    // so without the always-apply marker the planner would stamp them and the
+    // consolidation would silently never run.
+    const files = [
+      "0096_single_contact_table.sql",
+      "0097_fix_cross_tenant_contact_links.sql",
+      "0098_unique_campaign_membership.sql",
+    ].map((name) => {
+      const real = fs.readFileSync(path.join(process.cwd(), "migrations", name), "utf8");
+      expect(real.includes(ALWAYS_APPLY_MARKER)).toBe(true);
+      return write(name, real);
+    });
+    // Established pre-0096 database: old contacts index already present.
+    const pool = fakePool(
+      new Set(["users", "prospects", "marketing_contacts"]),
+      new Set(["marketing_contacts_tenant_email_uniq"])
+    );
+    const { toStamp, toApply } = await computeBackfillPlan(pool, files, "[test]");
+    expect(toApply).toEqual(files);
+    expect(toStamp).toEqual([]);
+  });
+
   it("always applies marker migrations even when they are alter-only (no CREATE at all)", async () => {
     const markerAlter = write(
       "0087_marker_alter_only.sql",

@@ -5279,19 +5279,17 @@ export type ProspectStatus =
   | "cadence_step_due"
   | "dormant";
 
+// Campaign membership row. Person identity (name, email, title, company,
+// LinkedIn, HubSpot ids) lives on marketing_contacts — the single shared
+// contact table. A "prospect" is a contact's participation in one outreach
+// campaign: status, ICP score, dossier, cadence state.
 export const prospects = pgTable("prospects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
-  name: text("name").notNull(),
-  title: text("title"),
-  companyName: text("company_name"),
-  email: text("email"),
-  linkedinUrl: text("linkedin_url"),
-  // CRM linkage (enriched from / pushed to HubSpot).
-  hubspotContactId: text("hubspot_contact_id"),
-  hubspotCompanyId: text("hubspot_company_id"),
+  // The person this membership belongs to (single contact spine).
+  contactId: varchar("contact_id").notNull().references((): AnyPgColumn => marketingContacts.id, { onDelete: "cascade" }),
   source: text("source").notNull().default("manual"), // hubspot | manual | linkedin | import
   // ICP qualification.
   icpScore: integer("icp_score"),
@@ -5311,6 +5309,9 @@ export const prospects = pgTable("prospects", {
   campaignIdx: index("prospects_campaign_idx").on(table.campaignId),
   tenantStatusIdx: index("prospects_tenant_status_idx").on(table.tenantDomain, table.status),
   nextActionIdx: index("prospects_next_action_idx").on(table.nextActionAt),
+  contactIdx: index("prospects_contact_idx").on(table.contactId),
+  // One membership per contact per campaign — imports/manual adds upsert.
+  campaignContactUniq: uniqueIndex("prospects_campaign_contact_uniq").on(table.campaignId, table.contactId),
 }));
 
 /** Compliance / AI-cliché scan result attached to a generated draft. */
@@ -5432,11 +5433,8 @@ export const cadenceStepsRelations = relations(cadenceSteps, ({ one }) => ({
   template: one(cadenceTemplates, { fields: [cadenceSteps.templateId], references: [cadenceTemplates.id] }),
 }));
 
-export const prospectsRelations = relations(prospects, ({ one, many }) => ({
-  campaign: one(outreachCampaigns, { fields: [prospects.campaignId], references: [outreachCampaigns.id] }),
-  owner: one(users, { fields: [prospects.ownerUserId], references: [users.id] }),
-  touches: many(outreachTouches),
-}));
+// NOTE: prospects.contactId → marketingContacts relation is declared after the
+// marketingContacts table definition below (tables must precede relations).
 
 export const outreachTouchesRelations = relations(outreachTouches, ({ one }) => ({
   prospect: one(prospects, { fields: [outreachTouches.prospectId], references: [prospects.id] }),
@@ -5463,6 +5461,21 @@ export type InsertCadenceStep = z.infer<typeof insertCadenceStepSchema>;
 export const insertProspectSchema = createInsertSchema(prospects).omit({ id: true, createdAt: true, updatedAt: true });
 export type Prospect = typeof prospects.$inferSelect;
 export type InsertProspect = z.infer<typeof insertProspectSchema>;
+
+/**
+ * Membership row flattened with its contact's person fields — the shape the
+ * outreach API and UI render (identical to the pre-consolidation prospect
+ * shape, plus contactId). Person fields are owned by marketing_contacts.
+ */
+export type ProspectWithContact = Prospect & {
+  name: string;
+  title: string | null;
+  companyName: string | null;
+  email: string | null;
+  linkedinUrl: string | null;
+  hubspotContactId: string | null;
+  hubspotCompanyId: string | null;
+};
 
 export const insertOutreachTouchSchema = createInsertSchema(outreachTouches).omit({ id: true, generatedAt: true });
 export type OutreachTouch = typeof outreachTouches.$inferSelect;
@@ -5514,17 +5527,22 @@ export const marketingContacts = pgTable(
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     tenantDomain: text("tenant_domain").notNull(),
-    email: text("email").notNull(),
+    // Nullable: contacts sourced from outreach imports may not have an email
+    // yet (LinkedIn-only prospects). Uniqueness is enforced only when set.
+    email: text("email"),
     firstName: text("first_name"),
     lastName: text("last_name"),
     company: text("company"),
     jobTitle: text("job_title"),
+    linkedinUrl: text("linkedin_url"),
     // Lifecycle stage: subscriber | lead | mql | sql | opportunity | customer | evangelist
     lifecycleStage: text("lifecycle_stage").notNull().default("subscriber"),
     // Lead score — computed by lead-scoring-service on every event ingest
     score: integer("score").notNull().default(0),
     // HubSpot contact ID for read-enrichment sync
     hubspotContactId: text("hubspot_contact_id"),
+    // HubSpot company ID (carried from CRM imports; used for associations).
+    hubspotCompanyId: text("hubspot_company_id"),
     // Source that first created this contact
     source: text("source").notNull().default("manual"),
     // Set when this contact was promoted from a sales-outreach prospect —
@@ -5542,10 +5560,9 @@ export const marketingContacts = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
-    tenantEmailUniq: uniqueIndex("marketing_contacts_tenant_email_uniq").on(
-      table.tenantDomain,
-      table.email,
-    ),
+    tenantEmailUniq: uniqueIndex("marketing_contacts_tenant_email_uniq")
+      .on(table.tenantDomain, table.email)
+      .where(sql`${table.email} IS NOT NULL`),
     tenantDomainIdx: index("marketing_contacts_tenant_domain_idx").on(table.tenantDomain),
     lifecycleIdx: index("marketing_contacts_lifecycle_idx").on(
       table.tenantDomain,
@@ -5623,6 +5640,16 @@ export const marketingScoringRules = pgTable(
 export const marketingContactsRelations = relations(marketingContacts, ({ many }) => ({
   events: many(marketingContactEvents),
   segmentMembers: many(marketingSegmentMembers),
+  campaignMemberships: many(prospects),
+}));
+
+// Declared here (not next to the prospects table) because marketingContacts
+// must be defined before relations() references it.
+export const prospectsRelations = relations(prospects, ({ one, many }) => ({
+  campaign: one(outreachCampaigns, { fields: [prospects.campaignId], references: [outreachCampaigns.id] }),
+  owner: one(users, { fields: [prospects.ownerUserId], references: [users.id] }),
+  contact: one(marketingContacts, { fields: [prospects.contactId], references: [marketingContacts.id] }),
+  touches: many(outreachTouches),
 }));
 
 export const marketingContactEventsRelations = relations(marketingContactEvents, ({ one }) => ({

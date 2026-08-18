@@ -1714,11 +1714,12 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     let activeProspectEmailSet = new Set<string>();
     if (recipientEmails.length > 0) {
       const activeProspectRows = await db
-        .select({ email: prospects.email })
+        .select({ email: marketingContacts.email })
         .from(prospects)
+        .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .where(and(
           eq(prospects.tenantDomain, ctx.tenantDomain),
-          inArray(prospects.email, recipientEmails),
+          inArray(marketingContacts.email, recipientEmails),
           notInArray(prospects.status, ["replied", "dormant"]),
         ));
       for (const p of activeProspectRows) {
@@ -1760,15 +1761,17 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       const candidateEmails = recipients.map(r => r.email.trim().toLowerCase());
       const activeProspects = await db
         .select({
-          email: prospects.email,
-          name: prospects.name,
-          companyName: prospects.companyName,
+          email: marketingContacts.email,
+          firstName: marketingContacts.firstName,
+          lastName: marketingContacts.lastName,
+          companyName: marketingContacts.company,
           status: prospects.status,
         })
         .from(prospects)
+        .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .where(and(
           eq(prospects.tenantDomain, ctx.tenantDomain),
-          inArray(prospects.email, candidateEmails),
+          inArray(marketingContacts.email, candidateEmails),
           notInArray(prospects.status, ["replied", "dormant"]),
         ));
       res.json({
@@ -1776,7 +1779,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         emails: activeProspects.map(p => p.email),
         prospects: activeProspects.map(p => ({
           email: p.email,
-          name: p.name,
+          name: [p.firstName, p.lastName].filter(Boolean).join(" "),
           companyName: p.companyName,
           status: p.status,
         })),

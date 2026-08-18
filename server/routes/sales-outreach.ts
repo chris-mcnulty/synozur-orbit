@@ -16,7 +16,7 @@ import {
   marketingContacts,
   type InsertOutreachSettings,
   type OutreachChannel,
-  type Prospect,
+  type ProspectWithContact,
 } from "@shared/schema";
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -42,8 +42,15 @@ import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote, hasHubspotListScopes } from "../services/hubspot-integration";
-import { preWarmMarketingCache, updateLinkedMarketingContactHubspotId } from "../services/hubspot-contact-resolver";
-import { promoteProspects } from "../services/prospect-promotion-service";
+import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
+import {
+  addCampaignMembership,
+  ensureContactForPerson,
+  getProspectWithContact,
+  listCampaignProspects,
+  updateContactPersonFields,
+  flattenProspect,
+} from "../services/prospect-contact-service";
 import { scoreProspectAgainstAll, type PersonaRef } from "../services/prospector-core";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
@@ -70,7 +77,7 @@ function domainOf(email: string | null | undefined): string | null {
 async function scoreAndUpdateImportedProspects(
   tenantDomain: string,
   campaignId: string,
-  importedProspects: Prospect[],
+  importedProspects: ProspectWithContact[],
 ): Promise<void> {
   if (importedProspects.length === 0) return;
   try {
@@ -393,11 +400,8 @@ export function registerSalesOutreachRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const rows = await db
-        .select()
-        .from(prospects)
-        .where(eq(prospects.campaignId, campaign.id))
-        .orderBy(desc(prospects.icpScore));
+      const rows = await listCampaignProspects(campaign.id);
+      rows.sort((a, b) => (b.icpScore ?? -1) - (a.icpScore ?? -1));
       res.json(rows);
     } catch (err: any) {
       console.error("[sales-outreach-prospects:list]", err);
@@ -423,12 +427,15 @@ export function registerSalesOutreachRoutes(app: Express) {
           // outreach_touches has no created_at column; generatedAt is the
           // creation timestamp. Expose it as createdAt for the client.
           createdAt: outreachTouches.generatedAt,
-          prospectName: prospects.name,
-          companyName: prospects.companyName,
+          prospectFirstName: marketingContacts.firstName,
+          prospectLastName: marketingContacts.lastName,
+          prospectEmail: marketingContacts.email,
+          companyName: marketingContacts.company,
           campaignName: outreachCampaigns.name,
         })
         .from(outreachTouches)
         .leftJoin(prospects, eq(prospects.id, outreachTouches.prospectId))
+        .leftJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .leftJoin(outreachCampaigns, eq(outreachCampaigns.id, outreachTouches.campaignId))
         .where(and(
           eq(outreachTouches.tenantDomain, ctx.tenantDomain),
@@ -436,7 +443,10 @@ export function registerSalesOutreachRoutes(app: Express) {
         ))
         .orderBy(desc(outreachTouches.generatedAt))
         .limit(50);
-      res.json(rows);
+      res.json(rows.map(({ prospectFirstName, prospectLastName, prospectEmail, ...r }) => ({
+        ...r,
+        prospectName: [prospectFirstName, prospectLastName].filter(Boolean).join(" ") || prospectEmail || "",
+      })));
     } catch (err: any) {
       console.error("[sales-outreach:pending-approvals]", err);
       res.status(500).json({ error: err.message || "Failed to list pending approvals" });
@@ -455,30 +465,28 @@ export function registerSalesOutreachRoutes(app: Express) {
       const name = String(body.name ?? "").trim();
       if (!name) return res.status(400).json({ error: "Prospect name is required" });
 
-      const [created] = await db
-        .insert(prospects)
-        .values({
-          campaignId: campaign.id,
-          tenantDomain: ctx.tenantDomain,
-          marketId: ctx.marketId || null,
-          name,
-          title: body.title ?? null,
-          companyName: body.companyName ?? null,
-          email: body.email ?? null,
-          linkedinUrl: body.linkedinUrl ?? null,
-          hubspotContactId: body.hubspotContactId ?? null,
-          hubspotCompanyId: body.hubspotCompanyId ?? null,
-          source: body.source ?? "manual",
-          signals: body.signals ?? null,
-          ownerUserId: body.ownerUserId ?? ctx.userId,
-          status: "new",
-        })
-        .returning();
-      // Auto-promote: immediately upsert a matching marketing contact.
-      promoteProspects(ctx.tenantDomain, [created], "sales_manual").catch((err) =>
-        console.error("[sales-outreach-prospects:auto-promote]", err),
-      );
-      res.status(201).json(created);
+      // Single contact table: find-or-create the person, then add membership.
+      const { contactId } = await ensureContactForPerson(ctx.tenantDomain, {
+        name,
+        title: body.title ?? null,
+        companyName: body.companyName ?? null,
+        email: body.email ?? null,
+        linkedinUrl: body.linkedinUrl ?? null,
+        hubspotContactId: body.hubspotContactId ?? null,
+        hubspotCompanyId: body.hubspotCompanyId ?? null,
+      }, "sales_manual");
+      const { membershipId, created } = await addCampaignMembership({
+        campaignId: campaign.id,
+        tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId || null,
+        contactId,
+        source: body.source ?? "manual",
+        signals: body.signals ?? null,
+        ownerUserId: body.ownerUserId ?? ctx.userId,
+        status: "new",
+      });
+      // Repeated add of the same person returns the existing membership (200).
+      res.status(created ? 201 : 200).json(await getProspectWithContact(membershipId));
     } catch (err: any) {
       console.error("[sales-outreach-prospects:create]", err);
       res.status(500).json({ error: err.message || "Failed to add prospect" });
@@ -492,7 +500,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
 
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      const prospect = await getProspectWithContact(req.params.id);
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }
@@ -531,20 +539,16 @@ export function registerSalesOutreachRoutes(app: Express) {
         }
       }
 
-      const update: Record<string, unknown> = { name: rawName, email, linkedinUrl, updatedAt: new Date() };
+      // Person fields live on the shared marketing contact now.
+      const patch: Parameters<typeof updateContactPersonFields>[1] = { name: rawName, email, linkedinUrl };
       if (body.title !== undefined) {
-        update.title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : null;
+        patch.title = typeof body.title === "string" && body.title.trim() ? body.title.trim() : null;
       }
       if (body.companyName !== undefined) {
-        update.companyName = typeof body.companyName === "string" && body.companyName.trim() ? body.companyName.trim() : null;
+        patch.companyName = typeof body.companyName === "string" && body.companyName.trim() ? body.companyName.trim() : null;
       }
-
-      const [updated] = await db
-        .update(prospects)
-        .set(update)
-        .where(eq(prospects.id, prospect.id))
-        .returning();
-      res.json(updated);
+      await updateContactPersonFields(prospect.contactId, patch);
+      res.json(await getProspectWithContact(prospect.id));
     } catch (err: any) {
       console.error("[sales-outreach-prospects:patch]", err);
       res.status(500).json({ error: err.message || "Failed to update prospect" });
@@ -661,43 +665,28 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!(await guardFeature(req, res, "marketingContacts"))) return;
       const ctx = await getRequestContext(req);
 
-      // Verify the prospect belongs to this tenant AND is reachable from a
-      // marketing contact in this tenant (i.e. it was promoted/linked).
-      const [linked] = await db
-        .select({
-          id: prospects.id,
-          name: prospects.name,
-          title: prospects.title,
-          companyName: prospects.companyName,
-          email: prospects.email,
-          linkedinUrl: prospects.linkedinUrl,
-          icpScore: prospects.icpScore,
-          scoreBreakdown: prospects.scoreBreakdown,
-          status: prospects.status,
-          disqualifiedReason: prospects.disqualifiedReason,
-          researchDossier: prospects.researchDossier,
-          signals: prospects.signals,
-          createdAt: prospects.createdAt,
-          updatedAt: prospects.updatedAt,
-        })
-        .from(prospects)
-        .innerJoin(
-          marketingContacts,
-          and(
-            eq(marketingContacts.sourceProspectId, prospects.id),
-            eq(marketingContacts.tenantDomain, ctx.tenantDomain),
-          ),
-        )
-        .where(
-          and(
-            eq(prospects.id, req.params.id),
-            eq(prospects.tenantDomain, ctx.tenantDomain),
-          ),
-        )
-        .limit(1);
-
-      if (!linked) return res.status(404).json({ error: "Prospect not found" });
-      res.json(linked);
+      // Single contact table: every membership is linked to a marketing
+      // contact by construction, so tenant scoping is the only gate needed.
+      const p = await getProspectWithContact(req.params.id);
+      if (!p || p.tenantDomain !== ctx.tenantDomain) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      res.json({
+        id: p.id,
+        name: p.name,
+        title: p.title,
+        companyName: p.companyName,
+        email: p.email,
+        linkedinUrl: p.linkedinUrl,
+        icpScore: p.icpScore,
+        scoreBreakdown: p.scoreBreakdown,
+        status: p.status,
+        disqualifiedReason: p.disqualifiedReason,
+        researchDossier: p.researchDossier,
+        signals: p.signals,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      });
     } catch (err: any) {
       console.error("[sales-outreach] GET prospect/:id failed:", err.message);
       res.status(500).json({ error: "Failed to load prospect" });
@@ -711,7 +700,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       const ctx = await getRequestContext(req);
 
       // Validate ownership before metering for cleaner audit logs.
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      const prospect = await getProspectWithContact(req.params.id);
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }
@@ -776,7 +765,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!(await guardFeature(req, res, "prospectResearch"))) return;
       const ctx = await getRequestContext(req);
 
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      const prospect = await getProspectWithContact(req.params.id);
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }
@@ -817,7 +806,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!(await guardFeature(req, res, "outreachComposer"))) return;
       const ctx = await getRequestContext(req);
 
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      const prospect = await getProspectWithContact(req.params.id);
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }
@@ -860,7 +849,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
       const rows = await db
         .select()
-        .from(outreachTouches)
+        .from(outreachTouches) /* membership id unchanged */
         .where(eq(outreachTouches.prospectId, prospect.id))
         .orderBy(outreachTouches.stepNumber);
       res.json(rows);
@@ -885,7 +874,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       const subject = typeof req.body?.subject === "string" ? req.body.subject : touch.subject;
       const body = typeof req.body?.body === "string" ? req.body.body : touch.body;
 
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, touch.prospectId));
+      const prospect = await getProspectWithContact(touch.prospectId);
       const cc = await loadComplianceContext(ctx.tenantDomain, touch.voiceProfileId);
       const compliance = scanCompliance({
         channel: touch.channel as OutreachChannel,
@@ -970,7 +959,7 @@ export function registerSalesOutreachRoutes(app: Express) {
         return res.status(422).json({ error: "Resolve compliance blockers before approving.", flags });
       }
 
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, touch.prospectId));
+      const prospect = await getProspectWithContact(touch.prospectId);
 
       // Circuit breakers: master + per-channel + per-domain caps + global pause,
       // counted from the durable send ledger. Fails closed.
@@ -981,6 +970,15 @@ export function registerSalesOutreachRoutes(app: Express) {
       );
       if (!decision.allowed) {
         return res.status(423).json({ error: decision.reason, code: "cap_reached" });
+      }
+
+      // Fail closed: never approve (and draft) an email touch without a
+      // recipient — the contact's email may have been cleared since compose.
+      if (touch.channel === "email" && !prospect?.email) {
+        return res.status(422).json({
+          error: "Prospect has no email address — add one before approving this email touch.",
+          code: "missing_recipient",
+        });
       }
 
       let outlookDraftId: string | null = null;
@@ -1073,13 +1071,12 @@ export function registerSalesOutreachRoutes(app: Express) {
               prospect.hubspotContactId ||
               (await pushProspectToHubspot(ctx.tenantDomain, prospect, first, rest.join(" ")));
             if (!prospect.hubspotContactId) {
-              await db.update(prospects).set({ hubspotContactId: contactId }).where(eq(prospects.id, prospect.id));
+              // HubSpot identity lives on the shared marketing contact now.
+              await updateContactPersonFields(prospect.contactId, { hubspotContactId: contactId });
               // Pre-warm marketing cache so the next email send skips the HubSpot search.
               if (prospect.email) {
                 preWarmMarketingCache(ctx.tenantDomain, prospect.email, contactId).catch(() => {});
               }
-              // Propagate to linked marketing contact (matched by sourceProspectId).
-              updateLinkedMarketingContactHubspotId(ctx.tenantDomain, prospect.id, contactId).catch(() => {});
             }
             const summary = `<p><strong>Outreach approved via Orbit</strong> (${touch.channel}, step ${touch.stepNumber})</p>${touch.subject ? `<p>Subject: ${touch.subject}</p>` : ""}`;
             await logContactNote(ctx.tenantDomain, contactId, summary);
@@ -1276,8 +1273,9 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       // Flag contacts already on this campaign so the UI can show them greyed out.
       const existing = await db
-        .select({ hsId: prospects.hubspotContactId, email: prospects.email })
+        .select({ hsId: marketingContacts.hubspotContactId, email: marketingContacts.email })
         .from(prospects)
+        .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .where(eq(prospects.campaignId, campaign.id));
       const haveIds = new Set(existing.map((e) => e.hsId).filter(Boolean) as string[]);
       const haveEmails = new Set(existing.map((e) => (e.email || "").toLowerCase()).filter(Boolean));
@@ -1329,8 +1327,9 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       // Dedupe against prospects already on this campaign.
       const existing = await db
-        .select({ hsId: prospects.hubspotContactId, email: prospects.email })
+        .select({ hsId: marketingContacts.hubspotContactId, email: marketingContacts.email })
         .from(prospects)
+        .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .where(eq(prospects.campaignId, campaign.id));
       const haveIds = new Set(existing.map((e) => e.hsId).filter(Boolean) as string[]);
       const haveEmails = new Set(existing.map((e) => (e.email || "").toLowerCase()).filter(Boolean));
@@ -1339,29 +1338,29 @@ export function registerSalesOutreachRoutes(app: Express) {
         (c) => !haveIds.has(c.hubspotContactId) && !(c.email && haveEmails.has(c.email.toLowerCase())),
       );
       if (toInsert.length > 0) {
-        const insertedHubspot = await db
-          .insert(prospects)
-          .values(
-            toInsert.map((c) => ({
-              campaignId: campaign.id,
-              tenantDomain: ctx.tenantDomain,
-              marketId: ctx.marketId || null,
-              name: c.name,
-              title: (c as any).jobTitle ?? null,
-              companyName: (c as any).company ?? null,
-              email: c.email ?? null,
-              linkedinUrl: isValidLinkedInProfileUrl((c as any).linkedinUrl) ? (c as any).linkedinUrl : null,
-              hubspotContactId: c.hubspotContactId,
-              source: "hubspot",
-              ownerUserId: ctx.userId,
-              status: "new" as const,
-            })),
-          )
-          .returning();
-        // Auto-promote: upsert matching marketing contacts for every imported HubSpot prospect.
-        promoteProspects(ctx.tenantDomain, insertedHubspot, "sales_hubspot").catch((err) =>
-          console.error("[sales-outreach:import-hubspot:auto-promote]", err),
-        );
+        const insertedHubspot: ProspectWithContact[] = [];
+        for (const c of toInsert) {
+          const { contactId } = await ensureContactForPerson(ctx.tenantDomain, {
+            name: c.name,
+            title: (c as any).jobTitle ?? null,
+            companyName: (c as any).company ?? null,
+            email: c.email ?? null,
+            linkedinUrl: isValidLinkedInProfileUrl((c as any).linkedinUrl) ? (c as any).linkedinUrl : null,
+            hubspotContactId: c.hubspotContactId,
+          }, "sales_hubspot");
+          const { membershipId, created } = await addCampaignMembership({
+            campaignId: campaign.id,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            contactId,
+            source: "hubspot",
+            ownerUserId: ctx.userId,
+            status: "new" as const,
+          });
+          if (!created) continue; // already on this campaign (retried import)
+          const view = await getProspectWithContact(membershipId);
+          if (view) insertedHubspot.push(view);
+        }
         // Score against all campaign personas immediately so the prospect list
         // shows ICP scores without waiting for an explicit Research step.
         scoreAndUpdateImportedProspects(ctx.tenantDomain, campaign.id, insertedHubspot).catch((err) =>
@@ -1418,11 +1417,20 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       // Deduplicate against prospects already on this campaign.
       const existing = await db
-        .select({ email: prospects.email, name: prospects.name })
+        .select({
+          email: marketingContacts.email,
+          firstName: marketingContacts.firstName,
+          lastName: marketingContacts.lastName,
+        })
         .from(prospects)
+        .innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
         .where(eq(prospects.campaignId, campaign.id));
       const haveEmails = new Set(existing.map((e) => (e.email || "").toLowerCase()).filter(Boolean));
-      const haveNames = new Set(existing.map((e) => (e.name || "").toLowerCase()).filter(Boolean));
+      const haveNames = new Set(
+        existing
+          .map((e) => [e.firstName, e.lastName].filter(Boolean).join(" ").toLowerCase())
+          .filter(Boolean),
+      );
 
       const toInsert = dedupedRows.filter((r) => {
         const email = (r.email || "").trim().toLowerCase();
@@ -1431,30 +1439,29 @@ export function registerSalesOutreachRoutes(app: Express) {
         return true;
       });
 
-      let insertedRows: typeof prospects.$inferSelect[] = [];
+      const insertedRows: ProspectWithContact[] = [];
       if (toInsert.length > 0) {
-        insertedRows = await db
-          .insert(prospects)
-          .values(
-            toInsert.map((r) => ({
-              campaignId: campaign.id,
-              tenantDomain: ctx.tenantDomain,
-              marketId: ctx.marketId || null,
-              name: String(r.name).trim(),
-              title: r.title?.trim() || null,
-              companyName: r.companyName?.trim() || null,
-              email: r.email?.trim() || null,
-              linkedinUrl: isValidLinkedInProfileUrl(r.linkedinUrl) ? r.linkedinUrl!.trim() : null,
-              source: "import" as const,
-              ownerUserId: ctx.userId,
-              status: "new" as const,
-            })),
-          )
-          .returning();
-        // Auto-promote: upsert matching marketing contacts for every imported prospect.
-        promoteProspects(ctx.tenantDomain, insertedRows, "sales_import").catch((err) =>
-          console.error("[sales-outreach:import-csv:auto-promote]", err),
-        );
+        for (const r of toInsert) {
+          const { contactId } = await ensureContactForPerson(ctx.tenantDomain, {
+            name: String(r.name).trim(),
+            title: r.title?.trim() || null,
+            companyName: r.companyName?.trim() || null,
+            email: r.email?.trim() || null,
+            linkedinUrl: isValidLinkedInProfileUrl(r.linkedinUrl) ? r.linkedinUrl!.trim() : null,
+          }, "sales_import");
+          const { membershipId, created } = await addCampaignMembership({
+            campaignId: campaign.id,
+            tenantDomain: ctx.tenantDomain,
+            marketId: ctx.marketId || null,
+            contactId,
+            source: "import" as const,
+            ownerUserId: ctx.userId,
+            status: "new" as const,
+          });
+          if (!created) continue; // already on this campaign (retried import)
+          const view = await getProspectWithContact(membershipId);
+          if (view) insertedRows.push(view);
+        }
         // Score against all campaign personas immediately so the prospect list
         // shows ICP scores without waiting for an explicit Research step.
         scoreAndUpdateImportedProspects(ctx.tenantDomain, campaign.id, insertedRows).catch((err) =>
@@ -1475,95 +1482,14 @@ export function registerSalesOutreachRoutes(app: Express) {
     }
   });
 
-  // Push a prospect into HubSpot (create/update the contact). Returns the id.
-  // ── Promote prospects into marketing contacts ──────────────────────────
-  // Deliberate user action: bridges outreach prospects into the marketing
-  // contact spine (upsert by tenant+email, opt-out preserved, HubSpot id
-  // carried over). Bulk: selected prospect ids OR all prospects in a status.
-  app.post("/api/sales-outreach/campaigns/:id/promote-prospects", async (req, res) => {
-    try {
-      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
-      if (!(await guardFeature(req, res, "marketingContacts"))) return;
-      const ctx = await getRequestContext(req);
-      const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
-      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-
-      // Only the campaign creator or an admin may promote prospects — same
-      // policy as campaign edit/delete, since promotion changes marketing
-      // audience membership.
-      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
-      if (!isAdmin && campaign.createdBy !== ctx.userId) {
-        return res.status(403).json({ error: "Only the campaign owner or an admin can promote prospects from this campaign." });
-      }
-
-      const prospectIds = Array.isArray(req.body?.prospectIds)
-        ? (req.body.prospectIds as unknown[]).filter((v): v is string => typeof v === "string")
-        : null;
-      const status = typeof req.body?.status === "string" ? req.body.status : null;
-
-      const PROSPECT_STATUSES = [
-        "new", "researched", "draft_pending_approval", "sent",
-        "awaiting_reply", "replied", "cadence_step_due", "dormant",
-      ];
-      if (status && !PROSPECT_STATUSES.includes(status)) {
-        return res.status(400).json({ error: `Unknown status "${status}"` });
-      }
-      if ((!prospectIds || prospectIds.length === 0) && !status) {
-        return res.status(400).json({ error: "Provide prospectIds or a status filter" });
-      }
-
-      const conditions = [
-        eq(prospects.campaignId, campaign.id),
-        eq(prospects.tenantDomain, ctx.tenantDomain),
-      ];
-      if (prospectIds && prospectIds.length > 0) conditions.push(inArray(prospects.id, prospectIds));
-      if (status) conditions.push(eq(prospects.status, status));
-
-      const rows = await db.select().from(prospects).where(and(...conditions));
-      if (rows.length === 0) {
-        return res.json({ total: 0, created: 0, linked: 0, skippedOptedOut: 0, skippedNoEmail: 0 });
-      }
-      const summary = await promoteProspects(ctx.tenantDomain, rows);
-      res.json(summary);
-    } catch (err: any) {
-      console.error("[sales-outreach-promote]", err);
-      res.status(500).json({ error: err.message || "Failed to promote prospects" });
-    }
-  });
-
-  // Single-prospect promotion (prospect list row action).
-  app.post("/api/sales-outreach/prospects/:id/promote", async (req, res) => {
-    try {
-      if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
-      if (!(await guardFeature(req, res, "marketingContacts"))) return;
-      const ctx = await getRequestContext(req);
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
-      if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
-        return res.status(404).json({ error: "Prospect not found" });
-      }
-      // Same policy as bulk promotion: campaign owner or admin only.
-      const campaign = await getCampaign(ctx.tenantDomain, prospect.campaignId);
-      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const isAdmin = ctx.userRole === "Domain Admin" || ctx.userRole === "Global Admin";
-      if (!isAdmin && campaign.createdBy !== ctx.userId) {
-        return res.status(403).json({ error: "Only the campaign owner or an admin can promote this prospect." });
-      }
-      if (!prospect.email) {
-        return res.status(400).json({ error: "Prospect has no email address — enrich it first" });
-      }
-      const summary = await promoteProspects(ctx.tenantDomain, [prospect]);
-      res.json(summary);
-    } catch (err: any) {
-      console.error("[sales-outreach-promote-one]", err);
-      res.status(500).json({ error: err.message || "Failed to promote prospect" });
-    }
-  });
+  // NOTE: the promote-to-marketing endpoints were retired with the single
+  // contact table — every prospect IS a marketing contact by construction.
 
   app.post("/api/sales-outreach/prospects/:id/sync-hubspot", async (req, res) => {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      const prospect = await getProspectWithContact(req.params.id);
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }
@@ -1572,18 +1498,13 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       const [first, ...rest] = (prospect.name || "").split(" ");
       const hubspotContactId = await pushProspectToHubspot(ctx.tenantDomain, prospect, first, rest.join(" "));
-      const [updated] = await db
-        .update(prospects)
-        .set({ hubspotContactId, updatedAt: new Date() })
-        .where(eq(prospects.id, prospect.id))
-        .returning();
+      // HubSpot identity lives on the shared marketing contact.
+      await updateContactPersonFields(prospect.contactId, { hubspotContactId });
       // Pre-warm marketing cache so the next email send skips the HubSpot search.
       if (prospect.email) {
         preWarmMarketingCache(ctx.tenantDomain, prospect.email, hubspotContactId).catch(() => {});
       }
-      // Propagate to linked marketing contact (matched by sourceProspectId).
-      updateLinkedMarketingContactHubspotId(ctx.tenantDomain, prospect.id, hubspotContactId).catch(() => {});
-      res.json({ prospect: updated, hubspotContactId });
+      res.json({ prospect: { ...prospect, hubspotContactId }, hubspotContactId });
     } catch (err: any) {
       console.error("[sales-outreach:sync-hubspot]", err);
       res.status(500).json({ error: err.message || "Failed to sync to HubSpot" });
@@ -1664,7 +1585,7 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
-      const [prospect] = await db.select().from(prospects).where(eq(prospects.id, req.params.id));
+      const prospect = await getProspectWithContact(req.params.id);
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }

@@ -9,7 +9,7 @@
  */
 
 import { db } from "../db";
-import { prospects, outreachCampaigns, personas, type Prospect } from "@shared/schema";
+import { prospects, outreachCampaigns, personas, type ProspectWithContact } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { completeForFeature } from "./ai-provider";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
@@ -98,7 +98,7 @@ async function aiSemanticRoleCheck(
 }
 
 export interface ResearchProspectResult {
-  prospect: Prospect;
+  prospect: ProspectWithContact;
   scored: ScoredProspect;
   dossier: string;
   usage: { inputTokens: number; outputTokens: number };
@@ -116,7 +116,8 @@ export async function researchProspect(
   prospectId: string,
   opts: { isDefaultMarket?: boolean } = {},
 ): Promise<ResearchProspectResult> {
-  const [prospect] = await db.select().from(prospects).where(eq(prospects.id, prospectId));
+  const { getProspectWithContact } = await import("./prospect-contact-service");
+  const prospect = await getProspectWithContact(prospectId);
   if (!prospect || prospect.tenantDomain !== tenantDomain) {
     throw new Error("Prospect not found");
   }
@@ -296,7 +297,7 @@ export async function researchProspect(
     .returning();
 
   return {
-    prospect: updated,
+    prospect: { ...prospect, ...updated },
     scored,
     dossier,
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
