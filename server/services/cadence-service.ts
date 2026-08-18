@@ -19,6 +19,7 @@ import {
 } from "@shared/schema";
 import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { getValidGraphToken } from "./planner-graph-client";
+import { emitOutreachTouchJourneyEvent } from "./marketing-contact-service";
 import {
   checkCaps,
   nextDueStep,
@@ -307,8 +308,19 @@ export async function detectMailboxActivity(userId: string, tenantDomain: string
         // Stamp the touch as sent (records the real send time for reply timing).
         // The prospect is already `awaiting_reply` from the optimistic approve
         // model, so no prospect-state change is needed here.
-        await db.update(outreachTouches).set({ status: "sent", sentAt: new Date() }).where(eq(outreachTouches.id, t.id));
+        const sentAt = new Date();
+        await db.update(outreachTouches).set({ status: "sent", sentAt }).where(eq(outreachTouches.id, t.id));
         result.touchesConfirmedSent++;
+        // Flow the confirmed send into the marketing contact journey (fire-and-forget).
+        emitOutreachTouchJourneyEvent({
+          touchId: t.id,
+          prospectId: t.prospectId,
+          campaignId: t.campaignId,
+          channel: t.channel,
+          subject: t.subject ?? null,
+          sentAt,
+          tenantDomain,
+        }).catch(() => {});
       }
     } catch { /* best-effort */ }
   }

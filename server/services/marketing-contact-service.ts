@@ -9,7 +9,7 @@
  */
 
 import { db } from "../db";
-import { and, eq, inArray, isNotNull, sql, gte, lte, notInArray, ilike } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql, gte, lte, notInArray, ilike } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   marketingContacts,
@@ -21,6 +21,9 @@ import {
   emailSuppressions,
   marketingLinkClicks,
   marketingLinks,
+  outreachTouches,
+  outreachCampaigns,
+  prospects,
   type MarketingContact,
   type MarketingContactSegment,
   type InsertMarketingContact,
@@ -831,4 +834,272 @@ export interface SegmentRule {
   field: SegmentRuleField;
   op: SegmentRuleOp;
   value: string | string[] | number;
+}
+
+// ---------------------------------------------------------------------------
+// Outreach touch → journey event
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit a marketing_contact_events row for a single outreach touch that has
+ * been sent (email) or delivered (LinkedIn direct send).  Idempotent on
+ * touchId — re-running for the same touch is a safe no-op.
+ *
+ * Finds the linked marketing contact via:
+ *   1. marketingContacts.sourceProspectId = touch.prospectId  (primary)
+ *   2. marketingContacts.email = prospect.email               (fallback)
+ *
+ * Skips silently when the prospect has no email and no sourceProspectId
+ * link exists — never throws so callers can fire-and-forget.
+ */
+export async function emitOutreachTouchJourneyEvent(opts: {
+  touchId: string;
+  prospectId: string;
+  campaignId: string;
+  campaignName?: string | null;
+  channel: string;        // "email" | "linkedin"
+  subject: string | null;
+  sentAt: Date;
+  tenantDomain: string;
+}): Promise<void> {
+  try {
+    // Resolve the linked marketing contact.
+    // Try sourceProspectId match first, then email match via the prospect row.
+    let contactId: string | null = null;
+
+    const byProspectId = await db
+      .select({ id: marketingContacts.id })
+      .from(marketingContacts)
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, opts.tenantDomain),
+          eq(marketingContacts.sourceProspectId, opts.prospectId),
+        ),
+      )
+      .limit(1);
+
+    if (byProspectId.length > 0) {
+      contactId = byProspectId[0].id;
+    } else {
+      // Fall back to email-based lookup via the prospects table.
+      const [prospectRow] = await db
+        .select({ email: prospects.email })
+        .from(prospects)
+        .where(eq(prospects.id, opts.prospectId))
+        .limit(1);
+
+      if (prospectRow?.email) {
+        const normalised = prospectRow.email.trim().toLowerCase();
+        const byEmail = await db
+          .select({ id: marketingContacts.id })
+          .from(marketingContacts)
+          .where(
+            and(
+              eq(marketingContacts.tenantDomain, opts.tenantDomain),
+              eq(marketingContacts.email, normalised),
+            ),
+          )
+          .limit(1);
+        if (byEmail.length > 0) contactId = byEmail[0].id;
+      }
+    }
+
+    if (!contactId) return; // no linked marketing contact — skip
+
+    // Resolve campaign name if not supplied by the caller.
+    let campaignName = opts.campaignName ?? null;
+    if (!campaignName) {
+      const [camp] = await db
+        .select({ name: outreachCampaigns.name })
+        .from(outreachCampaigns)
+        .where(eq(outreachCampaigns.id, opts.campaignId))
+        .limit(1);
+      campaignName = camp?.name ?? null;
+    }
+
+    // Idempotency: if an event with this touchId already exists, skip.
+    const existing = await db
+      .select({ id: marketingContactEvents.id })
+      .from(marketingContactEvents)
+      .where(
+        and(
+          eq(marketingContactEvents.contactId, contactId),
+          sql`${marketingContactEvents.metadata}->>'touchId' = ${opts.touchId}`,
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0) return; // already recorded
+
+    const eventType: ContactEventType =
+      opts.channel === "linkedin" ? "social_engage" : "email_sent";
+
+    await db.insert(marketingContactEvents).values({
+      id: randomUUID(),
+      contactId,
+      tenantDomain: opts.tenantDomain,
+      eventType,
+      source: "sales_outreach",
+      occurredAt: opts.sentAt,
+      metadata: {
+        touchId: opts.touchId,
+        campaignId: opts.campaignId,
+        campaignName: opts.campaignName,
+        subject: opts.subject ?? null,
+        channel: opts.channel,
+      },
+    } as InsertMarketingContactEvent);
+
+    // Keep lastEventAt current on the contact.
+    await db
+      .update(marketingContacts)
+      .set({ lastEventAt: opts.sentAt, updatedAt: new Date() })
+      .where(
+        and(
+          eq(marketingContacts.id, contactId),
+          sql`${marketingContacts.lastEventAt} IS NULL OR ${marketingContacts.lastEventAt} < ${opts.sentAt}`,
+        ),
+      );
+  } catch (err: any) {
+    console.error("[marketing-contact] emitOutreachTouchJourneyEvent failed:", err?.message);
+  }
+}
+
+/**
+ * One-shot backfill: write journey events for historical sent outreach touches
+ * that are linked to marketing contacts.  Idempotent — already-recorded events
+ * (identified by metadata.touchId) are skipped.
+ *
+ * Covers:
+ *   - email touches with status = "sent"
+ *   - linkedin touches with status = "approved" AND linkedinThreadRef IS NOT NULL
+ *     (meaning they were actually dispatched via the LinkedIn provider)
+ *
+ * Returns how many events were created and how many were skipped (already existed).
+ */
+export async function backfillOutreachTouchEvents(tenantDomain: string): Promise<{
+  eventsCreated: number;
+  eventsSkipped: number;
+}> {
+  let eventsCreated = 0;
+  let eventsSkipped = 0;
+
+  // Load all touches that represent a real send: email→sent or linkedin→approved+threadRef.
+  const touchRows = await db
+    .select({
+      id: outreachTouches.id,
+      prospectId: outreachTouches.prospectId,
+      campaignId: outreachTouches.campaignId,
+      channel: outreachTouches.channel,
+      subject: outreachTouches.subject,
+      status: outreachTouches.status,
+      sentAt: outreachTouches.sentAt,
+      generatedAt: outreachTouches.generatedAt,
+      linkedinThreadRef: outreachTouches.linkedinThreadRef,
+      campaignName: outreachCampaigns.name,
+      prospectEmail: prospects.email,
+    })
+    .from(outreachTouches)
+    .leftJoin(outreachCampaigns, eq(outreachCampaigns.id, outreachTouches.campaignId))
+    .leftJoin(prospects, eq(prospects.id, outreachTouches.prospectId))
+    .where(
+      and(
+        eq(outreachTouches.tenantDomain, tenantDomain),
+        or(
+          eq(outreachTouches.status, "sent"),
+          and(
+            eq(outreachTouches.channel, "linkedin"),
+            eq(outreachTouches.status, "approved"),
+            isNotNull(outreachTouches.linkedinThreadRef),
+          ),
+        ),
+      ),
+    );
+
+  for (const touch of touchRows) {
+    // Resolve marketing contact.
+    let contactId: string | null = null;
+
+    const byProspectId = await db
+      .select({ id: marketingContacts.id })
+      .from(marketingContacts)
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, tenantDomain),
+          eq(marketingContacts.sourceProspectId, touch.prospectId),
+        ),
+      )
+      .limit(1);
+
+    if (byProspectId.length > 0) {
+      contactId = byProspectId[0].id;
+    } else if (touch.prospectEmail) {
+      const normalised = touch.prospectEmail.trim().toLowerCase();
+      const byEmail = await db
+        .select({ id: marketingContacts.id })
+        .from(marketingContacts)
+        .where(
+          and(
+            eq(marketingContacts.tenantDomain, tenantDomain),
+            eq(marketingContacts.email, normalised),
+          ),
+        )
+        .limit(1);
+      if (byEmail.length > 0) contactId = byEmail[0].id;
+    }
+
+    if (!contactId) continue; // no linked contact — skip
+
+    // Idempotency check.
+    const existing = await db
+      .select({ id: marketingContactEvents.id })
+      .from(marketingContactEvents)
+      .where(
+        and(
+          eq(marketingContactEvents.contactId, contactId),
+          sql`${marketingContactEvents.metadata}->>'touchId' = ${touch.id}`,
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      eventsSkipped++;
+      continue;
+    }
+
+    const eventType: ContactEventType =
+      touch.channel === "linkedin" ? "social_engage" : "email_sent";
+    const occurredAt = touch.sentAt ?? touch.generatedAt;
+
+    await db.insert(marketingContactEvents).values({
+      id: randomUUID(),
+      contactId,
+      tenantDomain,
+      eventType,
+      source: "sales_outreach",
+      occurredAt,
+      metadata: {
+        touchId: touch.id,
+        campaignId: touch.campaignId,
+        campaignName: touch.campaignName ?? null,
+        subject: touch.subject ?? null,
+        channel: touch.channel,
+      },
+    } as InsertMarketingContactEvent);
+
+    eventsCreated++;
+
+    // Keep lastEventAt current.
+    await db
+      .update(marketingContacts)
+      .set({ lastEventAt: occurredAt, updatedAt: new Date() })
+      .where(
+        and(
+          eq(marketingContacts.id, contactId),
+          sql`${marketingContacts.lastEventAt} IS NULL OR ${marketingContacts.lastEventAt} < ${occurredAt}`,
+        ),
+      );
+  }
+
+  return { eventsCreated, eventsSkipped };
 }

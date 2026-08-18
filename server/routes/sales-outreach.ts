@@ -45,6 +45,7 @@ import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
 import { getCampaignPerformance } from "../services/outreach-performance-service";
+import { emitOutreachTouchJourneyEvent } from "../services/marketing-contact-service";
 
 function domainOf(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -839,6 +840,21 @@ export function registerSalesOutreachRoutes(app: Express) {
         .set({ status: "approved", outlookDraftId, linkedinThreadRef, approvedBy: ctx.userId })
         .where(eq(outreachTouches.id, touch.id))
         .returning();
+
+      // LinkedIn direct send: flow the send into the marketing contact journey
+      // immediately (fire-and-forget). Email touches are handled later by
+      // detectMailboxActivity once Graph confirms the draft left the Drafts folder.
+      if (touch.channel === "linkedin" && linkedinThreadRef) {
+        emitOutreachTouchJourneyEvent({
+          touchId: touch.id,
+          prospectId: touch.prospectId,
+          campaignId: touch.campaignId,
+          channel: touch.channel,
+          subject: touch.subject ?? null,
+          sentAt: new Date(),
+          tenantDomain: ctx.tenantDomain,
+        }).catch(() => {});
+      }
 
       // Advance the prospect to awaiting_reply on approval. This is the
       // deliberate v1 "optimistic" model: the seller sends the Outlook draft

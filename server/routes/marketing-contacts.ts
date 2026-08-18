@@ -519,7 +519,16 @@ export function registerMarketingContactsRoutes(app: Express) {
 
       const summary = await backfillContactTimeline(ctx.tenantDomain);
       const optOutSummary = await backfillContactOptOuts(ctx.tenantDomain);
-      res.json({ ok: true, ...summary, optOutsFromSendGrid: optOutSummary.fromSendGrid, optOutsFromHubSpot: optOutSummary.fromHubSpot });
+      const { backfillOutreachTouchEvents } = await import("../services/marketing-contact-service");
+      const outreachSummary = await backfillOutreachTouchEvents(ctx.tenantDomain);
+      res.json({
+        ok: true,
+        ...summary,
+        optOutsFromSendGrid: optOutSummary.fromSendGrid,
+        optOutsFromHubSpot: optOutSummary.fromHubSpot,
+        outreachEventsCreated: outreachSummary.eventsCreated,
+        outreachEventsSkipped: outreachSummary.eventsSkipped,
+      });
     } catch (err: any) {
       console.error("[marketing-contacts] backfill failed:", err.message);
       res.status(500).json({ error: err.message || "Backfill failed" });
