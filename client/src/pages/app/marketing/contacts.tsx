@@ -56,6 +56,9 @@ import {
   Briefcase,
   TrendingUp,
   ExternalLink,
+  BookOpen,
+  ShieldCheck,
+  AlertCircle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -346,6 +349,166 @@ function CustomerJourneyTab({ contact }: { contact: MarketingContact }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Prospect dossier — read-only modal for marketing users
+// ---------------------------------------------------------------------------
+
+interface ProspectDossier {
+  id: string;
+  name: string;
+  title: string | null;
+  companyName: string | null;
+  email: string | null;
+  icpScore: number | null;
+  scoreBreakdown: {
+    signals?: { key: string; label: string; weight: number; matched: boolean; note?: string }[];
+    total?: number;
+    threshold?: number;
+  } | null;
+  status: string;
+  disqualifiedReason: string | null;
+  researchDossier: string | null;
+  signals: { discoveryConfidence?: "verified" | "reconfirm" | null; [key: string]: unknown } | null;
+}
+
+function ProspectDossierModal({
+  prospectId,
+  open,
+  onClose,
+}: {
+  prospectId: string | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { data: dossier, isLoading, error } = useQuery<ProspectDossier>({
+    queryKey: ["/api/sales-outreach/prospects", prospectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/sales-outreach/prospects/${prospectId}`);
+      if (!res.ok) throw new Error("Failed to load dossier");
+      return res.json();
+    },
+    enabled: !!prospectId && open,
+  });
+
+  const hasSignals =
+    dossier?.scoreBreakdown?.signals && dossier.scoreBreakdown.signals.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-primary" />
+            Prospect dossier
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading && (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-destructive py-4">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            Could not load prospect dossier.
+          </div>
+        )}
+
+        {dossier && (
+          <div className="space-y-4">
+            {/* Identity */}
+            <div className="flex flex-col gap-0.5">
+              <p className="font-semibold text-base leading-tight">{dossier.name}</p>
+              {(dossier.title || dossier.companyName) && (
+                <p className="text-sm text-muted-foreground">
+                  {[dossier.title, dossier.companyName].filter(Boolean).join(" · ")}
+                </p>
+              )}
+              {dossier.icpScore != null && (
+                <p className="text-xs text-amber-600 font-medium flex items-center gap-1 mt-0.5">
+                  <TrendingUp className="h-3 w-3" />
+                  ICP score: {dossier.icpScore}/100
+                </p>
+              )}
+              {dossier.signals?.discoveryConfidence && (
+                <div className="mt-1">
+                  {dossier.signals.discoveryConfidence === "verified" ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Verified
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-yellow-600 font-medium">
+                      <AlertCircle className="h-3.5 w-3.5" /> Needs reconfirmation
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Disqualified reason */}
+            {dossier.disqualifiedReason && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+                {dossier.disqualifiedReason}
+              </div>
+            )}
+
+            {/* Research dossier */}
+            {dossier.researchDossier ? (
+              <div className="border rounded-md p-3 bg-muted/30">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Research summary
+                </p>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                  {dossier.researchDossier}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                No research dossier available yet.
+              </p>
+            )}
+
+            {/* ICP score signals */}
+            {hasSignals && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  ICP signal breakdown
+                </p>
+                <div className="space-y-1.5">
+                  {dossier.scoreBreakdown!.signals!.map((sig) => (
+                    <div key={sig.key} className="flex items-start gap-2 text-xs">
+                      <span
+                        className={`mt-0.5 shrink-0 h-3.5 w-3.5 rounded-full flex items-center justify-center ${
+                          sig.matched
+                            ? "bg-emerald-100 text-emerald-600"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {sig.matched ? "✓" : "—"}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className={sig.matched ? "text-foreground font-medium" : "text-muted-foreground"}>
+                          {sig.label}
+                        </span>
+                        {sig.note && (
+                          <span className="text-muted-foreground"> · {sig.note}</span>
+                        )}
+                      </span>
+                      <span className="text-muted-foreground shrink-0">×{sig.weight}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TimelinePanel({
   contact,
   open,
@@ -355,6 +518,7 @@ function TimelinePanel({
   open: boolean;
   onClose: () => void;
 }) {
+  const [dossierOpen, setDossierOpen] = useState(false);
   const { data: events, isLoading } = useQuery<ContactEvent[]>({
     queryKey: ["/api/marketing-contacts", contact?.id, "events"],
     queryFn: async () => {
@@ -371,6 +535,7 @@ function TimelinePanel({
     : "";
 
   return (
+    <>
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-[420px] sm:w-[520px] overflow-y-auto">
         <SheetHeader className="pb-4 border-b border-border">
@@ -437,6 +602,17 @@ function TimelinePanel({
                 </span>
               )}
             </div>
+            {contact.sourceProspectId && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-1 h-7 text-xs border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 self-start"
+                onClick={() => setDossierOpen(true)}
+              >
+                <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+                View dossier
+              </Button>
+            )}
           </div>
         )}
 
@@ -503,6 +679,12 @@ function TimelinePanel({
         </div>
       </SheetContent>
     </Sheet>
+    <ProspectDossierModal
+      prospectId={contact?.sourceProspectId ?? null}
+      open={dossierOpen}
+      onClose={() => setDossierOpen(false)}
+    />
+    </>
   );
 }
 

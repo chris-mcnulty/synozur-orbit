@@ -12,6 +12,7 @@ import {
   emailSends,
   generatedEmails,
   emailRecipients,
+  marketingContacts,
   type InsertOutreachSettings,
   type OutreachChannel,
 } from "@shared/schema";
@@ -516,6 +517,60 @@ export function registerSalesOutreachRoutes(app: Express) {
     } catch (err: any) {
       console.error("[sales-outreach-discovery:import]", err);
       res.status(500).json({ error: err.message || "Failed to import prospects" });
+    }
+  });
+
+  // Read-only prospect dossier — accessible to marketing users viewing a linked contact.
+  //
+  // Authorization: requires the marketingContacts feature (same gate as the contacts list),
+  // AND the requested prospect must be linked to at least one marketing contact in this
+  // tenant (via marketing_contacts.source_prospect_id). This prevents arbitrary prospect
+  // ID enumeration by users who happen to be authenticated in the same tenant.
+  app.get("/api/sales-outreach/prospects/:id", async (req, res) => {
+    try {
+      if (!(await guardFeature(req, res, "marketingContacts"))) return;
+      const ctx = await getRequestContext(req);
+
+      // Verify the prospect belongs to this tenant AND is reachable from a
+      // marketing contact in this tenant (i.e. it was promoted/linked).
+      const [linked] = await db
+        .select({
+          id: prospects.id,
+          name: prospects.name,
+          title: prospects.title,
+          companyName: prospects.companyName,
+          email: prospects.email,
+          linkedinUrl: prospects.linkedinUrl,
+          icpScore: prospects.icpScore,
+          scoreBreakdown: prospects.scoreBreakdown,
+          status: prospects.status,
+          disqualifiedReason: prospects.disqualifiedReason,
+          researchDossier: prospects.researchDossier,
+          signals: prospects.signals,
+          createdAt: prospects.createdAt,
+          updatedAt: prospects.updatedAt,
+        })
+        .from(prospects)
+        .innerJoin(
+          marketingContacts,
+          and(
+            eq(marketingContacts.sourceProspectId, prospects.id),
+            eq(marketingContacts.tenantDomain, ctx.tenantDomain),
+          ),
+        )
+        .where(
+          and(
+            eq(prospects.id, req.params.id),
+            eq(prospects.tenantDomain, ctx.tenantDomain),
+          ),
+        )
+        .limit(1);
+
+      if (!linked) return res.status(404).json({ error: "Prospect not found" });
+      res.json(linked);
+    } catch (err: any) {
+      console.error("[sales-outreach] GET prospect/:id failed:", err.message);
+      res.status(500).json({ error: "Failed to load prospect" });
     }
   });
 

@@ -21,21 +21,25 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
 
   function terminal(): any {
     const val = dbQ.shift() ?? [];
-    return {
+    const t: any = {
       // Thenable — so `await chain.where(...)` resolves to val
       then: (resolve: any, reject?: any) => Promise.resolve(val).then(resolve, reject),
       catch: (reject: any) => Promise.resolve(val).catch(reject),
       finally: (cb: any) => Promise.resolve(val).finally(cb),
-      // Chainable — returning/orderBy return the SAME val already popped,
+      // Chainable — returning/orderBy/limit return the SAME val already popped,
       // not a fresh pop, so update().set().where().returning() works correctly.
       returning: () => Promise.resolve(val),
       orderBy: () => Promise.resolve(val),
+      limit: () => t,
     };
+    return t;
   }
 
   function mkChain(): any {
     return {
       from: () => mkChain(),
+      innerJoin: () => mkChain(),
+      leftJoin: () => mkChain(),
       where: terminal,
       set: () => mkChain(),
       values: terminal,
@@ -1254,6 +1258,89 @@ describe("sales-outreach routes", () => {
 
       expect(res.status).toBe(200);
       expect(promoteProspects).toHaveBeenCalledWith("acme.com", [PROSPECT_ROW]);
+    });
+  });
+
+  // ── GET /api/sales-outreach/prospects/:id (marketing dossier read) ────────────
+
+  describe("GET /api/sales-outreach/prospects/:id", () => {
+    const PROSPECT_DOSSIER = {
+      id: "pr-42",
+      name: "Alan Turing",
+      title: "Head of Cryptography",
+      companyName: "Bletchley Labs",
+      email: "alan@bletchley.io",
+      linkedinUrl: null,
+      icpScore: 82,
+      scoreBreakdown: null,
+      status: "researching",
+      disqualifiedReason: null,
+      researchDossier: "Strong ICP fit; deeply technical buyer.",
+      signals: { discoveryConfidence: "verified" },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    it("returns 401 when the feature guard rejects (unauthenticated)", async () => {
+      vi.mocked(guardFeature).mockImplementation(async (_req, res, _feature) => {
+        res.status(401).json({ error: "Not authenticated" });
+        return false;
+      });
+
+      const res = await request(app).get("/api/sales-outreach/prospects/pr-42");
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 403 when the marketingContacts feature is not enabled", async () => {
+      vi.mocked(guardFeature).mockImplementation(async (_req, res, feature) => {
+        if (feature === "marketingContacts") {
+          res.status(403).json({ error: "Feature not available on your plan." });
+          return false;
+        }
+        return true;
+      });
+
+      const res = await request(app).get("/api/sales-outreach/prospects/pr-42");
+
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 404 when the prospect is not linked to any marketing contact in the tenant", async () => {
+      // dbQ left empty → terminal() returns [] → destructure gives undefined → 404
+      const res = await request(app).get("/api/sales-outreach/prospects/pr-42");
+
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ error: expect.stringMatching(/not found/i) });
+    });
+
+    it("returns 404 when the prospect belongs to a different tenant", async () => {
+      // Cross-tenant: innerJoin on tenantDomain returns no rows
+      const res = await request(app).get("/api/sales-outreach/prospects/pr-other-tenant");
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 200 with the dossier when the prospect is linked to a contact in this tenant", async () => {
+      // pushDb(row) pushes [row] onto dbQ; terminal() pops [row] and destructures to row
+      pushDb(PROSPECT_DOSSIER);
+
+      const res = await request(app).get("/api/sales-outreach/prospects/pr-42");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        id: "pr-42",
+        name: "Alan Turing",
+        icpScore: 82,
+        researchDossier: "Strong ICP fit; deeply technical buyer.",
+        signals: { discoveryConfidence: "verified" },
+      });
+      // Verify the feature guard was called with the marketingContacts key
+      expect(guardFeature).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        "marketingContacts",
+      );
     });
   });
 });
