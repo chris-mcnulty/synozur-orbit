@@ -5,6 +5,7 @@ import {
   outreachSettings,
   outreachCampaigns,
   prospects,
+  personas,
   outreachTouches,
   outreachSendLedger,
   socialAccountVoiceProfiles,
@@ -15,6 +16,7 @@ import {
   marketingContacts,
   type InsertOutreachSettings,
   type OutreachChannel,
+  type Prospect,
 } from "@shared/schema";
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -42,6 +44,7 @@ import { getRedirectUri } from "./planner";
 import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote, hasHubspotListScopes } from "../services/hubspot-integration";
 import { preWarmMarketingCache, updateLinkedMarketingContactHubspotId } from "../services/hubspot-contact-resolver";
 import { promoteProspects } from "../services/prospect-promotion-service";
+import { scoreProspectAgainstAll, type PersonaRef } from "../services/prospector-core";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
 import { getLinkedInCapabilities, sendLinkedInMessage } from "../services/linkedin-provider";
@@ -52,6 +55,67 @@ function domainOf(email: string | null | undefined): string | null {
   if (!email) return null;
   const at = email.lastIndexOf("@");
   return at >= 0 ? email.slice(at + 1).toLowerCase() : null;
+}
+
+/**
+ * Score newly imported prospects against all campaign personas and persist
+ * the best-match ICP score + breakdown. Intended to be called fire-and-forget
+ * after a bulk insert so the prospect list shows scores without waiting for an
+ * explicit Research step.
+ *
+ * Uses `scoreProspectAgainstAll` (the same function as `researchProspect`) so
+ * multi-persona campaigns never penalise a prospect who fits a non-primary
+ * persona.
+ */
+async function scoreAndUpdateImportedProspects(
+  tenantDomain: string,
+  campaignId: string,
+  importedProspects: Prospect[],
+): Promise<void> {
+  if (importedProspects.length === 0) return;
+  try {
+    const [campaign] = await db
+      .select()
+      .from(outreachCampaigns)
+      .where(eq(outreachCampaigns.id, campaignId));
+    if (!campaign || campaign.tenantDomain !== tenantDomain) return;
+
+    const personaIds = campaign.targetPersonaIds ?? [];
+    let campaignPersonas: PersonaRef[] = [];
+    if (personaIds.length > 0) {
+      const rows = await db
+        .select({ id: personas.id, name: personas.name, role: personas.role, industry: personas.industry, companySize: personas.companySize })
+        .from(personas)
+        .where(eq(personas.tenantDomain, tenantDomain));
+      campaignPersonas = rows.filter((p) => personaIds.includes(p.id));
+    }
+
+    const filter = campaign.targetingFilter ?? undefined;
+
+    await Promise.all(
+      importedProspects.map(async (prospect) => {
+        const attrs = {
+          title: prospect.title,
+          companyName: prospect.companyName,
+          geography: (prospect.signals as any)?.geography ?? null,
+          industry: (prospect.signals as any)?.industry ?? null,
+          segment: (prospect.signals as any)?.segment ?? null,
+          email: prospect.email,
+          linkedinUrl: prospect.linkedinUrl,
+        };
+        const scored = scoreProspectAgainstAll(campaignPersonas, filter, attrs);
+        const breakdown = scored.matchedPersonaName
+          ? { ...scored.breakdown, matchedPersonaName: scored.matchedPersonaName }
+          : scored.breakdown;
+        await db
+          .update(prospects)
+          .set({ icpScore: scored.score, scoreBreakdown: breakdown, updatedAt: new Date() })
+          .where(eq(prospects.id, prospect.id));
+      }),
+    );
+  } catch (err) {
+    console.error("[sales-outreach:scoreAndUpdateImportedProspects]", err);
+  }
 }
 
 /**
@@ -1232,6 +1296,11 @@ export function registerSalesOutreachRoutes(app: Express) {
         promoteProspects(ctx.tenantDomain, insertedHubspot, "sales_hubspot").catch((err) =>
           console.error("[sales-outreach:import-hubspot:auto-promote]", err),
         );
+        // Score against all campaign personas immediately so the prospect list
+        // shows ICP scores without waiting for an explicit Research step.
+        scoreAndUpdateImportedProspects(ctx.tenantDomain, campaign.id, insertedHubspot).catch((err) =>
+          console.error("[sales-outreach:import-hubspot:score]", err),
+        );
       }
       res.json({ imported: toInsert.length, skipped: contacts.length - toInsert.length, fetched: contacts.length });
     } catch (err: any) {
@@ -1319,6 +1388,11 @@ export function registerSalesOutreachRoutes(app: Express) {
         // Auto-promote: upsert matching marketing contacts for every imported prospect.
         promoteProspects(ctx.tenantDomain, insertedRows, "sales_import").catch((err) =>
           console.error("[sales-outreach:import-csv:auto-promote]", err),
+        );
+        // Score against all campaign personas immediately so the prospect list
+        // shows ICP scores without waiting for an explicit Research step.
+        scoreAndUpdateImportedProspects(ctx.tenantDomain, campaign.id, insertedRows).catch((err) =>
+          console.error("[sales-outreach:import-csv:score]", err),
         );
       }
 
