@@ -364,6 +364,7 @@ interface ProspectDossier {
     signals?: { key: string; label: string; weight: number; matched: boolean; note?: string }[];
     total?: number;
     threshold?: number;
+    matchedPersonaName?: string | null;
   } | null;
   status: string;
   disqualifiedReason: string | null;
@@ -430,6 +431,11 @@ function ProspectDossierModal({
                 <p className="text-xs text-amber-600 font-medium flex items-center gap-1 mt-0.5">
                   <TrendingUp className="h-3 w-3" />
                   ICP score: {dossier.icpScore}/100
+                </p>
+              )}
+              {dossier.scoreBreakdown?.matchedPersonaName && (
+                <p className="text-xs text-primary font-medium mt-0.5">
+                  Best-match ICP: {dossier.scoreBreakdown.matchedPersonaName}
                 </p>
               )}
               {dossier.signals?.discoveryConfidence && (

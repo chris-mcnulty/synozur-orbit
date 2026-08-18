@@ -212,6 +212,12 @@ interface Prospect {
   disqualifiedReason: string | null;
   researchDossier: string | null;
   signals?: { discoveryConfidence?: "verified" | "reconfirm" | null } | null;
+  scoreBreakdown?: {
+    signals?: { key: string; label: string; weight: number; matched: boolean; note?: string }[];
+    total?: number;
+    threshold?: number;
+    matchedPersonaName?: string | null;
+  } | null;
 }
 
 interface HubspotContact {
@@ -1960,6 +1966,11 @@ export default function OutreachCampaignDetailPage() {
               {dossier?.title}{dossier?.companyName ? ` · ${dossier.companyName}` : ""}
               {dossier?.icpScore != null ? ` · ICP ${dossier.icpScore}/100` : ""}
             </DialogDescription>
+            {dossier?.scoreBreakdown?.matchedPersonaName && (
+              <p className="text-xs text-primary font-medium mt-0.5">
+                Best-match ICP: {dossier.scoreBreakdown.matchedPersonaName}
+              </p>
+            )}
           </DialogHeader>
           {dossier?.signals?.discoveryConfidence && (
             <div className="mb-1">
