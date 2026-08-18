@@ -417,10 +417,26 @@ export async function syncHubSpotContactEnrichment(opts: {
       const conditions: any[] = [eq(marketingContacts.tenantDomain, td)];
       if (!all) conditions.push(isNull(marketingContacts.hubspotContactId));
       return db
-        .select({ id: marketingContacts.id, email: marketingContacts.email })
+        .select({
+          id: marketingContacts.id,
+          email: marketingContacts.email,
+          sourceProspectId: marketingContacts.sourceProspectId,
+        })
         .from(marketingContacts)
         .where(and(...conditions))
         .limit(lim);
+    },
+
+    // When a marketing contact is linked to a prospect, use the prospect's
+    // already-resolved HubSpot ID so we skip a live API search.
+    getProspectHubspotId: async (prospectId) => {
+      const { prospects } = await import("@shared/schema");
+      const [row] = await db
+        .select({ hubspotContactId: prospects.hubspotContactId })
+        .from(prospects)
+        .where(eq(prospects.id, prospectId))
+        .limit(1);
+      return row?.hubspotContactId ?? null;
     },
 
     searchHubSpot: async (email) => {
@@ -467,6 +483,9 @@ export async function syncHubSpotContactEnrichment(opts: {
 export interface EnrichmentContact {
   id: string;
   email: string;
+  /** Populated when the contact was created from a prospect. Used to short-circuit
+   *  the HubSpot email search when the linked prospect already has an ID. */
+  sourceProspectId?: string | null;
 }
 
 export interface HubSpotContactResult {
@@ -477,6 +496,12 @@ export interface HubSpotContactResult {
 export interface ContactEnrichmentDeps {
   /** Load unenriched contacts for a single tenant */
   loadContacts: (tenantDomain: string, limit: number, forceAll: boolean) => Promise<EnrichmentContact[]>;
+  /**
+   * When a contact has a sourceProspectId, return that prospect's
+   * hubspotContactId so we can skip a live HubSpot API search.
+   * Optional — when omitted the resolver falls through to searchHubSpot.
+   */
+  getProspectHubspotId?: (prospectId: string) => Promise<string | null>;
   /**
    * Search HubSpot for a contact by email. Returns null when not found.
    * May throw a rate-limit error after all retry attempts are exhausted.
@@ -544,6 +569,26 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
     const batch = contacts.slice(i, i + BATCH_SIZE);
     for (const contact of batch) {
       try {
+        // Prefer the linked prospect's already-resolved HubSpot ID — this
+        // skips a live API search and keeps both records in sync.
+        if (contact.sourceProspectId && deps.getProspectHubspotId) {
+          const prospectHsId = await deps.getProspectHubspotId(contact.sourceProspectId);
+          if (prospectHsId) {
+            await deps.enrichContact({
+              tenantDomain,
+              email: contact.email,
+              hubspotContactId: prospectHsId,
+              firstName: null,
+              lastName: null,
+              company: null,
+              jobTitle: null,
+              lifecycleStage: null,
+            });
+            enriched++;
+            continue;
+          }
+        }
+
         const hsContact = await deps.searchHubSpot(contact.email);
 
         if (!hsContact) {

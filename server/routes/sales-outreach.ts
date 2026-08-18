@@ -39,7 +39,7 @@ import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote, hasHubspotListScopes } from "../services/hubspot-integration";
-import { preWarmMarketingCache } from "../services/hubspot-contact-resolver";
+import { preWarmMarketingCache, updateLinkedMarketingContactHubspotId } from "../services/hubspot-contact-resolver";
 import { promoteProspects } from "../services/prospect-promotion-service";
 import { extractOutboundVoice, getPersonalVoiceProfile, VoiceExtractError } from "../services/outbound-voice-service";
 import { assertApprovalAllowed, getOutreachSummary, tickCadence, detectMailboxActivity } from "../services/cadence-service";
@@ -877,6 +877,8 @@ export function registerSalesOutreachRoutes(app: Express) {
               if (prospect.email) {
                 preWarmMarketingCache(ctx.tenantDomain, prospect.email, contactId).catch(() => {});
               }
+              // Propagate to linked marketing contact (matched by sourceProspectId).
+              updateLinkedMarketingContactHubspotId(ctx.tenantDomain, prospect.id, contactId).catch(() => {});
             }
             const summary = `<p><strong>Outreach approved via Orbit</strong> (${touch.channel}, step ${touch.stepNumber})</p>${touch.subject ? `<p>Subject: ${touch.subject}</p>` : ""}`;
             await logContactNote(ctx.tenantDomain, contactId, summary);
@@ -1368,6 +1370,8 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (prospect.email) {
         preWarmMarketingCache(ctx.tenantDomain, prospect.email, hubspotContactId).catch(() => {});
       }
+      // Propagate to linked marketing contact (matched by sourceProspectId).
+      updateLinkedMarketingContactHubspotId(ctx.tenantDomain, prospect.id, hubspotContactId).catch(() => {});
       res.json({ prospect: updated, hubspotContactId });
     } catch (err: any) {
       console.error("[sales-outreach:sync-hubspot]", err);

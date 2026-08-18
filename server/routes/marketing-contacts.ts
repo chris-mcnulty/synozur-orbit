@@ -565,6 +565,41 @@ export function registerMarketingContactsRoutes(app: Express) {
     }
   });
 
+  // HubSpot identity reconciliation sweep — aligns hubspotContactId between
+  // linked prospect/marketing-contact pairs. Admin-only, idempotent.
+  // ──────────────────────────────────────────────────────────────────────────
+  app.post("/api/admin/marketing-contacts/reconcile-hubspot-identity", async (req: Request, res: Response) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      if (!user || !["Domain Admin", "Global Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const plan = await getTenantPlan(ctx.tenantDomain);
+      const gate = await checkFeatureAccessAsync(plan, "marketingContacts");
+      if (!gate.allowed) {
+        return res.status(403).json({ error: gate.reason, upgradeRequired: gate.upgradeRequired });
+      }
+
+      const { runHubspotIdentityReconciliation } = await import(
+        "../services/hubspot-contact-resolver"
+      );
+      const limit = typeof req.body?.limit === "number" ? Math.min(req.body.limit, 2000) : 500;
+
+      const result = await runHubspotIdentityReconciliation({
+        tenantDomain: ctx.tenantDomain,
+        limit,
+      });
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[marketing-contacts] HubSpot identity reconciliation failed:", err.message);
+      res.status(500).json({ error: err.message || "Reconciliation failed" });
+    }
+  });
+
   // ──────────────────────────────────────────────────────────
   // SEGMENT CRUD
   // ──────────────────────────────────────────────────────────

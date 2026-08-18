@@ -57,6 +57,7 @@ import { db } from "../db";
 import {
   emailSendRecipients,
   emailRecipients,
+  marketingContacts,
   prospects,
   hubspotContactIdCache,
 } from "@shared/schema";
@@ -420,6 +421,300 @@ export async function resolveSendRecipientContacts(opts: {
   } catch {
     return { ...EMPTY, ran: false, errors: 1 };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Linked marketing-contact write-through (called from sales routes)
+// ---------------------------------------------------------------------------
+
+/**
+ * When a prospect's HubSpot contact ID is resolved or refreshed via the sales
+ * path, propagate it to the linked marketing_contacts row (matched by
+ * sourceProspectId) so both sides stay in agreement without waiting for the
+ * next enrichment sweep.
+ *
+ * Safe to fire-and-forget — never throws.
+ */
+export async function updateLinkedMarketingContactHubspotId(
+  tenantDomain: string,
+  prospectId: string,
+  contactId: string,
+): Promise<void> {
+  if (!contactId) return;
+  try {
+    await db
+      .update(marketingContacts)
+      .set({ hubspotContactId: contactId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, tenantDomain),
+          eq(marketingContacts.sourceProspectId, prospectId),
+        ),
+      );
+  } catch (err: any) {
+    console.warn(
+      `[HubSpot] updateLinkedMarketingContactHubspotId failed for prospect ${prospectId}: ${err?.message}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Canonical pair reconciler — exported types + pure DI core for tests
+// ---------------------------------------------------------------------------
+
+export type ReconcileAction = "aligned" | "skipped" | "conflict_resolved" | "not_found";
+
+export interface ReconcileOutcome {
+  canonicalId: string | null;
+  action: ReconcileAction;
+  reason: string;
+}
+
+/**
+ * Injected dependency callbacks for the pair reconciler. Each dep is a pure
+ * function so unit tests can pass vi.fn() stubs without DB or network.
+ */
+export interface ReconcilerDeps {
+  /** Current HubSpot contact ID on the prospect row, or null. */
+  getProspectId(): Promise<string | null>;
+  /** Current HubSpot contact ID on the marketing contact row, or null. */
+  getMarketingId(): Promise<string | null>;
+  /** Persist the canonical ID to the prospect row. */
+  writeProspect(id: string): Promise<void>;
+  /** Persist the canonical ID to the marketing contact row. */
+  writeMarketing(id: string): Promise<void>;
+  /** Upsert the canonical ID into the shared cross-system cache. */
+  writeCache(id: string): Promise<void>;
+  /**
+   * Optional: search HubSpot by email when neither side has an ID.
+   * Omit in the admin sweep (too many API calls) — not-found pairs are left
+   * for the enrichment sweep which does live per-contact search anyway.
+   */
+  hubspotSearch?(): Promise<string | null>;
+}
+
+/**
+ * Pure reconciliation logic with injected deps. Exported so unit tests can
+ * verify every divergence case without DB or HubSpot network calls.
+ *
+ * Resolution rule (in priority order):
+ *   1. Both agree  → skipped (idempotent)
+ *   2. Only prospect has ID  → copy to marketing contact  (aligned)
+ *   3. Only marketing contact has ID → copy to prospect   (aligned)
+ *   4. Both set and different → prefer prospect (sales authoritative), update
+ *      marketing contact, log conflict              (conflict_resolved)
+ *   5. Neither set + hubspotSearch provided → search HubSpot by email,
+ *      write to both if found                      (aligned / not_found)
+ */
+export async function _reconcileWithDeps(deps: ReconcilerDeps): Promise<ReconcileOutcome> {
+  const [pId, mId] = await Promise.all([deps.getProspectId(), deps.getMarketingId()]);
+
+  // Case: both agree (including both null)
+  if (pId === mId) {
+    if (!pId) {
+      // Neither has ID — try live HubSpot search if caller provided it
+      if (deps.hubspotSearch) {
+        const found = await deps.hubspotSearch();
+        if (found) {
+          await Promise.all([
+            deps.writeProspect(found),
+            deps.writeMarketing(found),
+            deps.writeCache(found),
+          ]);
+          return {
+            canonicalId: found,
+            action: "aligned",
+            reason: "both sides set from HubSpot email search",
+          };
+        }
+      }
+      return {
+        canonicalId: null,
+        action: "not_found",
+        reason: "neither side has a HubSpot contact ID",
+      };
+    }
+    return { canonicalId: pId, action: "skipped", reason: "IDs already agree" };
+  }
+
+  // Case: only prospect has ID — propagate to marketing contact
+  if (pId && !mId) {
+    await Promise.all([deps.writeMarketing(pId), deps.writeCache(pId)]);
+    return {
+      canonicalId: pId,
+      action: "aligned",
+      reason: "prospect ID propagated to marketing contact",
+    };
+  }
+
+  // Case: only marketing contact has ID — propagate to prospect
+  if (mId && !pId) {
+    await Promise.all([deps.writeProspect(mId), deps.writeCache(mId)]);
+    return {
+      canonicalId: mId,
+      action: "aligned",
+      reason: "marketing contact ID propagated to prospect",
+    };
+  }
+
+  // Case: both set and different — conflict. Prefer prospect (sales authoritative).
+  const canonical = pId!;
+  console.warn(
+    `[HubSpot identity] conflict: prospect=${pId} marketing=${mId} → canonical=${canonical} (prospect preferred)`,
+  );
+  await Promise.all([deps.writeMarketing(canonical), deps.writeCache(canonical)]);
+  return {
+    canonicalId: canonical,
+    action: "conflict_resolved",
+    reason: `conflict: prospect ID (${pId}) preferred over marketing ID (${mId})`,
+  };
+}
+
+/**
+ * Reconcile the HubSpot contact ID for a single linked prospect/marketing-contact
+ * pair. Idempotent — safe to call repeatedly.
+ *
+ * When opts.hubspotSearch is supplied (interactive / per-pair path), a live
+ * HubSpot email search is attempted if neither side has an ID. Omit it for
+ * bulk sweeps to avoid burning API quota — the enrichment sweep will pick up
+ * not-found pairs on its next run.
+ */
+export async function reconcileLinkedHubspotIdentity(opts: {
+  tenantDomain: string;
+  prospectId: string;
+  marketingContactId: string;
+  email: string;
+  hubspotSearch?: () => Promise<string | null>;
+}): Promise<ReconcileOutcome> {
+  const { tenantDomain, prospectId, marketingContactId, email } = opts;
+  const norm = normalizeEmail(email);
+
+  const deps: ReconcilerDeps = {
+    async getProspectId() {
+      const [row] = await db
+        .select({ id: prospects.hubspotContactId })
+        .from(prospects)
+        .where(and(eq(prospects.id, prospectId), eq(prospects.tenantDomain, tenantDomain)))
+        .limit(1);
+      return row?.id ?? null;
+    },
+    async getMarketingId() {
+      const [row] = await db
+        .select({ id: marketingContacts.hubspotContactId })
+        .from(marketingContacts)
+        .where(
+          and(
+            eq(marketingContacts.id, marketingContactId),
+            eq(marketingContacts.tenantDomain, tenantDomain),
+          ),
+        )
+        .limit(1);
+      return row?.id ?? null;
+    },
+    async writeProspect(id) {
+      await db
+        .update(prospects)
+        .set({ hubspotContactId: id, updatedAt: new Date() })
+        .where(and(eq(prospects.id, prospectId), eq(prospects.tenantDomain, tenantDomain)));
+    },
+    async writeMarketing(id) {
+      await db
+        .update(marketingContacts)
+        .set({ hubspotContactId: id, updatedAt: new Date() })
+        .where(
+          and(
+            eq(marketingContacts.id, marketingContactId),
+            eq(marketingContacts.tenantDomain, tenantDomain),
+          ),
+        );
+    },
+    async writeCache(id) {
+      if (norm) await upsertSharedCache(tenantDomain, norm, id);
+    },
+    hubspotSearch: opts.hubspotSearch,
+  };
+
+  return _reconcileWithDeps(deps);
+}
+
+// ---------------------------------------------------------------------------
+// Admin reconciliation sweep
+// ---------------------------------------------------------------------------
+
+export interface ReconciliationSweepResult {
+  aligned: number;
+  skipped: number;
+  conflict_resolved: number;
+  not_found: number;
+  errors: number;
+}
+
+/**
+ * Sweep all linked prospect/marketing-contact pairs for a tenant (or all
+ * tenants when tenantDomain is omitted) and align their HubSpot contact IDs.
+ *
+ * Only processes pairs where marketing_contacts.source_prospect_id IS NOT NULL
+ * (the explicit link column written at prospect-promote time).  Unlinked
+ * contacts are left untouched — existing behaviour is preserved.
+ *
+ * Idempotent — safe to run repeatedly. No live HubSpot API calls are made
+ * during the sweep; not-found pairs will be resolved by the enrichment sweep.
+ */
+export async function runHubspotIdentityReconciliation(opts: {
+  tenantDomain?: string;
+  limit?: number;
+}): Promise<ReconciliationSweepResult> {
+  const { tenantDomain, limit = 500 } = opts;
+  const { isNotNull: isNotNullOp } = await import("drizzle-orm");
+
+  const conditions: Parameters<typeof and>[0][] = [isNotNullOp(marketingContacts.sourceProspectId)];
+  if (tenantDomain) conditions.push(eq(marketingContacts.tenantDomain, tenantDomain));
+
+  const rows = await db
+    .select({
+      id: marketingContacts.id,
+      tenantDomain: marketingContacts.tenantDomain,
+      email: marketingContacts.email,
+      sourceProspectId: marketingContacts.sourceProspectId,
+    })
+    .from(marketingContacts)
+    .where(and(...conditions))
+    .limit(limit);
+
+  const result: ReconciliationSweepResult = {
+    aligned: 0,
+    skipped: 0,
+    conflict_resolved: 0,
+    not_found: 0,
+    errors: 0,
+  };
+
+  for (const row of rows) {
+    if (!row.sourceProspectId) continue;
+    try {
+      const outcome = await reconcileLinkedHubspotIdentity({
+        tenantDomain: row.tenantDomain,
+        prospectId: row.sourceProspectId,
+        marketingContactId: row.id,
+        email: row.email,
+        // No hubspotSearch — bulk sweep avoids live API calls.
+      });
+      result[outcome.action] = (result[outcome.action] ?? 0) + 1;
+    } catch (err: any) {
+      console.error(
+        `[HubSpot identity sweep] error for marketing contact ${row.id}: ${err?.message}`,
+      );
+      result.errors += 1;
+    }
+  }
+
+  console.log(
+    `[HubSpot identity sweep] done for ${tenantDomain ?? "all tenants"} — ` +
+      `aligned=${result.aligned} skipped=${result.skipped} conflicts=${result.conflict_resolved} ` +
+      `not_found=${result.not_found} errors=${result.errors}`,
+  );
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
