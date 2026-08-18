@@ -22,6 +22,8 @@ import {
   emailSends,
   generatedEmails,
   campaigns,
+  prospects,
+  outreachCampaigns as outreachCampaignsTable,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
@@ -255,10 +257,12 @@ export function registerMarketingContactsRoutes(app: Express) {
     const offset = (page - 1) * pageSize;
 
     const lifecycle = typeof req.query.lifecycle === "string" ? req.query.lifecycle : undefined;
+    const origin = typeof req.query.source === "string" ? req.query.source : undefined;
     const q = typeof req.query.q === "string" ? req.query.q.trim() : undefined;
 
     const conditions: any[] = [eq(marketingContacts.tenantDomain, ctx.tenantDomain)];
     if (lifecycle) conditions.push(eq(marketingContacts.lifecycleStage, lifecycle));
+    if (origin) conditions.push(eq(marketingContacts.source, origin));
     if (q) {
       const pattern = `%${q.replace(/%/g, "\\%")}%`;
       conditions.push(
@@ -278,8 +282,35 @@ export function registerMarketingContactsRoutes(app: Express) {
     const total = Number(totalRow?.total ?? 0);
 
     const rows = await db
-      .select()
+      .select({
+        id: marketingContacts.id,
+        tenantDomain: marketingContacts.tenantDomain,
+        email: marketingContacts.email,
+        firstName: marketingContacts.firstName,
+        lastName: marketingContacts.lastName,
+        company: marketingContacts.company,
+        jobTitle: marketingContacts.jobTitle,
+        lifecycleStage: marketingContacts.lifecycleStage,
+        score: marketingContacts.score,
+        hubspotContactId: marketingContacts.hubspotContactId,
+        source: marketingContacts.source,
+        sourceProspectId: marketingContacts.sourceProspectId,
+        metadata: marketingContacts.metadata,
+        lastEventAt: marketingContacts.lastEventAt,
+        emailOptOut: marketingContacts.emailOptOut,
+        emailOptOutAt: marketingContacts.emailOptOutAt,
+        emailOptOutSource: marketingContacts.emailOptOutSource,
+        createdAt: marketingContacts.createdAt,
+        updatedAt: marketingContacts.updatedAt,
+        // Sales context (null when contact has no linked prospect)
+        prospectStatus: prospects.status,
+        prospectIcpScore: prospects.icpScore,
+        outreachCampaignId: prospects.campaignId,
+        outreachCampaignName: outreachCampaignsTable.name,
+      })
       .from(marketingContacts)
+      .leftJoin(prospects, eq(marketingContacts.sourceProspectId, prospects.id))
+      .leftJoin(outreachCampaignsTable, eq(prospects.campaignId, outreachCampaignsTable.id))
       .where(and(...conditions))
       .orderBy(desc(marketingContacts.lastEventAt))
       .limit(pageSize)
@@ -304,8 +335,34 @@ export function registerMarketingContactsRoutes(app: Express) {
     const ctx = await getRequestContext(req);
 
     const [contact] = await db
-      .select()
+      .select({
+        id: marketingContacts.id,
+        tenantDomain: marketingContacts.tenantDomain,
+        email: marketingContacts.email,
+        firstName: marketingContacts.firstName,
+        lastName: marketingContacts.lastName,
+        company: marketingContacts.company,
+        jobTitle: marketingContacts.jobTitle,
+        lifecycleStage: marketingContacts.lifecycleStage,
+        score: marketingContacts.score,
+        hubspotContactId: marketingContacts.hubspotContactId,
+        source: marketingContacts.source,
+        sourceProspectId: marketingContacts.sourceProspectId,
+        metadata: marketingContacts.metadata,
+        lastEventAt: marketingContacts.lastEventAt,
+        emailOptOut: marketingContacts.emailOptOut,
+        emailOptOutAt: marketingContacts.emailOptOutAt,
+        emailOptOutSource: marketingContacts.emailOptOutSource,
+        createdAt: marketingContacts.createdAt,
+        updatedAt: marketingContacts.updatedAt,
+        prospectStatus: prospects.status,
+        prospectIcpScore: prospects.icpScore,
+        outreachCampaignId: prospects.campaignId,
+        outreachCampaignName: outreachCampaignsTable.name,
+      })
       .from(marketingContacts)
+      .leftJoin(prospects, eq(marketingContacts.sourceProspectId, prospects.id))
+      .leftJoin(outreachCampaignsTable, eq(prospects.campaignId, outreachCampaignsTable.id))
       .where(
         and(
           eq(marketingContacts.id, req.params.id),

@@ -53,6 +53,9 @@ import {
   Pencil,
   CheckCircle2,
   X,
+  Briefcase,
+  TrendingUp,
+  ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -73,9 +76,15 @@ interface MarketingContact {
   lifecycleStage: string;
   hubspotContactId: string | null;
   source: string;
+  sourceProspectId: string | null;
   lastEventAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Sales context (null when contact has no linked prospect)
+  prospectStatus: string | null;
+  prospectIcpScore: number | null;
+  outreachCampaignId: string | null;
+  outreachCampaignName: string | null;
 }
 
 interface ContactEvent {
@@ -124,6 +133,71 @@ const EVENT_TYPE_CONFIG: Record<
   email_click: { icon: MousePointerClick, label: "Email link clicked", color: "text-violet-400" },
   link_click: { icon: MousePointerClick, label: "Link clicked", color: "text-orange-400" },
   social_engage: { icon: Share2, label: "Social engagement", color: "text-pink-400" },
+  // Sales outreach events surfaced from the outreach pipeline
+  sales_outreach: { icon: Briefcase, label: "Sales outreach", color: "text-amber-500" },
+};
+
+// ---------------------------------------------------------------------------
+// Origin / source helpers
+// ---------------------------------------------------------------------------
+
+const ORIGIN_CONFIG: Record<string, { label: string; color: string }> = {
+  // Marketing ingest paths
+  manual:          { label: "Manual",              color: "bg-slate-500" },
+  hubspot:         { label: "HubSpot",             color: "bg-orange-500" },
+  webbase:         { label: "Website",             color: "bg-blue-500" },
+  import:          { label: "Import",              color: "bg-teal-500" },
+  apollo:          { label: "Outbound discovery",  color: "bg-violet-600" },
+  linkedin:        { label: "LinkedIn",            color: "bg-sky-600" },
+  sendgrid:        { label: "SendGrid",            color: "bg-cyan-600" },
+  // Sales-originated contacts (promoted from prospects)
+  outreach:        { label: "Sales outreach",      color: "bg-rose-500" },
+  sales_manual:    { label: "Sales manual",        color: "bg-rose-400" },
+  sales_import:    { label: "Sales import",        color: "bg-rose-600" },
+  sales_discovery: { label: "Sales discovery",     color: "bg-amber-600" },
+  sales_hubspot:   { label: "Sales HubSpot",       color: "bg-orange-600" },
+  sales_backfill:  { label: "Sales backfill",      color: "bg-slate-600" },
+  salesnav:        { label: "Sales Navigator",     color: "bg-indigo-600" },
+};
+
+const ORIGIN_FILTER_OPTIONS = [
+  // Marketing ingest
+  { value: "manual",          label: "Manual" },
+  { value: "hubspot",         label: "HubSpot" },
+  { value: "webbase",         label: "Website" },
+  { value: "import",          label: "Import" },
+  { value: "apollo",          label: "Outbound discovery" },
+  { value: "linkedin",        label: "LinkedIn" },
+  // Sales-originated
+  { value: "outreach",        label: "Sales outreach" },
+  { value: "sales_manual",    label: "Sales manual" },
+  { value: "sales_import",    label: "Sales import" },
+  { value: "sales_discovery", label: "Sales discovery" },
+  { value: "sales_hubspot",   label: "Sales HubSpot" },
+  { value: "salesnav",        label: "Sales Navigator" },
+];
+
+function OriginBadge({ source }: { source: string }) {
+  const config = ORIGIN_CONFIG[source];
+  return (
+    <Badge
+      variant="outline"
+      className={`text-xs border-0 text-white shrink-0 ${config?.color ?? "bg-slate-500"}`}
+    >
+      {config?.label ?? source}
+    </Badge>
+  );
+}
+
+const PROSPECT_STATUS_LABELS: Record<string, string> = {
+  new:          "New",
+  researching:  "Researching",
+  ready:        "Ready",
+  contacted:    "Contacted",
+  engaged:      "Engaged",
+  meeting_set:  "Meeting set",
+  disqualified: "Disqualified",
+  converted:    "Converted",
 };
 
 const RULE_FIELD_OPTIONS = [
@@ -308,10 +382,13 @@ function TimelinePanel({
             <span className="text-xs text-muted-foreground">{contact?.email}</span>
           </SheetDescription>
           {contact && (
-            <div className="flex flex-col gap-1 pt-1">
-              <LifecycleBadge stage={contact.lifecycleStage} />
+            <div className="flex flex-col gap-1.5 pt-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <LifecycleBadge stage={contact.lifecycleStage} />
+                <OriginBadge source={contact.source} />
+              </div>
               {contact.company && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                   <Building2 className="h-3 w-3" /> {contact.company}
                   {contact.jobTitle ? ` · ${contact.jobTitle}` : ""}
                 </span>
@@ -325,6 +402,43 @@ function TimelinePanel({
             </div>
           )}
         </SheetHeader>
+
+        {/* Sales context panel — only shown for contacts linked to a prospect */}
+        {contact?.outreachCampaignName && (
+          <div className="mt-4 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 flex flex-col gap-1.5">
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+              <Briefcase className="h-3.5 w-3.5" />
+              Sales context
+            </p>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span className="font-medium text-foreground">Campaign:</span>
+                <a
+                  href={`/app/sales/outreach/${contact.outreachCampaignId}`}
+                  className="text-primary hover:underline flex items-center gap-0.5"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {contact.outreachCampaignName}
+                  <ExternalLink className="h-3 w-3 opacity-60" />
+                </a>
+              </span>
+              {contact.prospectStatus && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <span className="font-medium text-foreground">Prospect status:</span>
+                  {PROSPECT_STATUS_LABELS[contact.prospectStatus] ?? contact.prospectStatus}
+                </span>
+              )}
+              {contact.prospectIcpScore != null && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <TrendingUp className="h-3 w-3 text-amber-500" />
+                  <span className="font-medium text-foreground">ICP score:</span>
+                  {contact.prospectIcpScore}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="pt-4">
           <Tabs defaultValue="timeline">
@@ -349,23 +463,29 @@ function TimelinePanel({
                 <ol className="relative border-l border-border ml-2 space-y-4">
                   {events.map((ev) => {
                     const config = EVENT_TYPE_CONFIG[ev.eventType];
+                    const isSalesOutreach = ev.eventType === "sales_outreach";
                     const Icon = config?.icon ?? Globe;
+                    const evMeta = ev.metadata as Record<string, unknown> | null;
+                    const campaignName = evMeta?.campaignName as string | undefined;
                     return (
                       <li key={ev.id} className="ml-4">
-                        <span className="absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full bg-muted border border-border">
+                        <span className={`absolute -left-2 flex h-4 w-4 items-center justify-center rounded-full border ${isSalesOutreach ? "bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-700" : "bg-muted border-border"}`}>
                           <Icon className={`h-2.5 w-2.5 ${config?.color ?? "text-slate-400"}`} />
                         </span>
                         <div className="flex flex-col gap-0.5">
-                          <p className="text-sm font-medium leading-tight">
+                          <p className={`text-sm font-medium leading-tight ${isSalesOutreach ? "text-amber-700 dark:text-amber-400" : ""}`}>
                             {config?.label ?? ev.eventType}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(ev.occurredAt), { addSuffix: true })}
-                            {ev.source ? ` · via ${ev.source}` : ""}
+                            {ev.source && !isSalesOutreach ? ` · via ${ev.source}` : ""}
+                            {campaignName && (
+                              <span className="text-amber-600 dark:text-amber-400"> · {campaignName}</span>
+                            )}
                           </p>
-                          {ev.metadata && Object.keys(ev.metadata).length > 0 && (
+                          {evMeta && !isSalesOutreach && Object.keys(evMeta).length > 0 && (
                             <p className="text-xs text-muted-foreground font-mono truncate">
-                              {JSON.stringify(ev.metadata).slice(0, 80)}
+                              {JSON.stringify(evMeta).slice(0, 80)}
                             </p>
                           )}
                         </div>
@@ -505,6 +625,7 @@ export default function ContactsPage() {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
   const [lifecycle, setLifecycle] = useState<string>("");
+  const [origin, setOrigin] = useState<string>("");
   const [selectedContact, setSelectedContact] = useState<MarketingContact | null>(null);
 
   const debouncedQ = useDebouncedValue(q, 300);
@@ -512,9 +633,10 @@ export default function ContactsPage() {
   const params = new URLSearchParams({ page: String(page), pageSize: "25" });
   if (debouncedQ) params.set("q", debouncedQ);
   if (lifecycle) params.set("lifecycle", lifecycle);
+  if (origin) params.set("source", origin);
 
   const { data, isLoading, isError } = useQuery<ContactsResponse>({
-    queryKey: ["/api/marketing-contacts", page, debouncedQ, lifecycle],
+    queryKey: ["/api/marketing-contacts", page, debouncedQ, lifecycle, origin],
     queryFn: async () => {
       const res = await fetch(`/api/marketing-contacts?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to load contacts");
@@ -574,7 +696,7 @@ export default function ContactsPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="w-[170px]">
+                <SelectTrigger className="w-[160px]">
                   <SelectValue placeholder="All stages" />
                 </SelectTrigger>
                 <SelectContent>
@@ -582,6 +704,25 @@ export default function ContactsPage() {
                   {LIFECYCLE_STAGES.map((s) => (
                     <SelectItem key={s.value} value={s.value}>
                       {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={origin || "__all"}
+                onValueChange={(v) => {
+                  setOrigin(v === "__all" ? "" : v);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[175px]">
+                  <SelectValue placeholder="All origins" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all">All origins</SelectItem>
+                  {ORIGIN_FILTER_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -608,7 +749,7 @@ export default function ContactsPage() {
                   <div className="text-center py-16">
                     <Users className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <p className="text-sm text-muted-foreground">
-                      {debouncedQ || lifecycle
+                      {debouncedQ || lifecycle || origin
                         ? "No contacts match your filters."
                         : "No contacts yet. Events from your website will appear here once the webhook is configured."}
                     </p>
@@ -626,6 +767,9 @@ export default function ContactsPage() {
                           </th>
                           <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">
                             Stage
+                          </th>
+                          <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">
+                            Origin
                           </th>
                           <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">
                             Last activity
@@ -660,6 +804,9 @@ export default function ContactsPage() {
                             </td>
                             <td className="px-4 py-3">
                               <LifecycleBadge stage={contact.lifecycleStage} />
+                            </td>
+                            <td className="px-4 py-3 hidden lg:table-cell">
+                              <OriginBadge source={contact.source} />
                             </td>
                             <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
                               {contact.lastEventAt ? (
