@@ -5225,7 +5225,20 @@ export const cadenceSteps = pgTable("cadence_steps", {
 
 /** Per-signal contribution to a prospect's ICP score. */
 export interface ProspectScoreBreakdown {
-  signals: { key: string; label: string; weight: number; matched: boolean; note?: string }[];
+  signals: {
+    key: string;
+    label: string;
+    weight: number;
+    matched: boolean;
+    note?: string;
+    /**
+     * True when the prospect has no data for this signal AND criteria exist to
+     * match against. Distinguishes "unknown" (absent data) from "mismatch"
+     * (data present but didn't match). Both count as 0 points but mean
+     * different things for follow-up.
+     */
+    absent?: boolean;
+  }[];
   total: number;
   /** Threshold the total was compared against. */
   threshold: number;
@@ -5234,6 +5247,19 @@ export interface ProspectScoreBreakdown {
    * that produced the best score for this prospect.
    */
   matchedPersonaName?: string;
+  /**
+   * True when the prospect is at a consulting / systems-integrator / agency
+   * firm — indicates a potential partner/channel opportunity rather than a
+   * direct end-user buyer.
+   */
+  partnerFit?: boolean;
+  /** Human-readable reason the partnerFit flag was set. */
+  partnerFitNote?: string;
+  /**
+   * True when the role signal was awarded via semantic / synonym-map matching
+   * after literal substring matching failed.
+   */
+  semanticRoleMatch?: boolean;
 }
 
 /** Raw research signals gathered about a prospect (sourced, never fabricated). */

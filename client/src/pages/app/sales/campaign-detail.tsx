@@ -213,10 +213,23 @@ interface Prospect {
   researchDossier: string | null;
   signals?: { discoveryConfidence?: "verified" | "reconfirm" | null } | null;
   scoreBreakdown?: {
-    signals?: { key: string; label: string; weight: number; matched: boolean; note?: string }[];
+    signals?: {
+      key: string;
+      label: string;
+      weight: number;
+      matched: boolean;
+      note?: string;
+      /** True when the prospect has no data for this signal (unknown, not a mismatch). */
+      absent?: boolean;
+    }[];
     total?: number;
     threshold?: number;
     matchedPersonaName?: string | null;
+    /** Prospect appears to be at a consulting/SI/agency firm — possible partner/channel. */
+    partnerFit?: boolean;
+    partnerFitNote?: string;
+    /** Role was matched via AI/semantic fallback, not literal substring. */
+    semanticRoleMatch?: boolean;
   } | null;
 }
 
@@ -2091,7 +2104,7 @@ export default function OutreachCampaignDetailPage() {
 
       {/* Dossier dialog */}
       <Dialog open={!!dossier} onOpenChange={(o) => !o && setDossier(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{dossier?.name}</DialogTitle>
             <DialogDescription>
@@ -2104,6 +2117,66 @@ export default function OutreachCampaignDetailPage() {
               </p>
             )}
           </DialogHeader>
+
+          {/* Partner / channel fit banner */}
+          {dossier?.scoreBreakdown?.partnerFit && (
+            <div className="rounded-md bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-3 py-2 text-xs text-violet-800 dark:text-violet-300" data-testid="partner-fit-banner">
+              <p className="font-semibold mb-0.5">Possible partner / channel fit</p>
+              <p>{dossier.scoreBreakdown.partnerFitNote ?? "This prospect appears to be at a consulting or systems-integrator firm. Consider a partner engagement angle rather than a direct end-user pitch."}</p>
+            </div>
+          )}
+
+          {/* Score breakdown — unknown vs mismatch vs match */}
+          {dossier?.scoreBreakdown?.signals && dossier.scoreBreakdown.signals.length > 0 && (
+            <div className="rounded-md border border-border p-2.5 space-y-1.5" data-testid="score-breakdown">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Score breakdown</p>
+              {(() => {
+                const signals = dossier.scoreBreakdown!.signals!;
+                const contactInfoOnly =
+                  dossier.icpScore != null &&
+                  signals.filter((s) => !["email", "linkedin"].includes(s.key) && s.matched).length === 0 &&
+                  signals.some((s) => (s.key === "email" || s.key === "linkedin") && s.matched);
+                return (
+                  <>
+                    {contactInfoOnly && (
+                      <div className="rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-1 text-[11px] text-amber-800 dark:text-amber-300 mb-1.5" data-testid="contact-info-only-callout">
+                        Only contact-presence points scored — no ICP fit signals matched. This may mean key data (title, industry, geography) is missing rather than a definitive pass.
+                      </div>
+                    )}
+                    {signals.map((s) => {
+                      let stateLabel: string;
+                      let stateClass: string;
+                      if (s.matched) {
+                        stateLabel = `+${s.weight}`;
+                        stateClass = "text-emerald-600 dark:text-emerald-400 font-semibold";
+                      } else if (s.absent) {
+                        stateLabel = "unknown";
+                        stateClass = "text-muted-foreground italic";
+                      } else {
+                        stateLabel = "no match";
+                        stateClass = "text-muted-foreground";
+                      }
+                      return (
+                        <div key={s.key} className="flex items-start gap-2 text-xs" data-testid={`signal-row-${s.key}`}>
+                          <span className="flex-1 text-foreground">{s.label}</span>
+                          <span className={stateClass}>{stateLabel}</span>
+                          {s.note && (
+                            <span className="w-full text-[10px] text-muted-foreground mt-0.5 col-span-2 pl-0">{s.note}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {dossier.scoreBreakdown?.semanticRoleMatch && (
+                      <p className="text-[10px] text-muted-foreground mt-1 pt-1 border-t border-border">
+                        ✦ Role matched via semantic analysis (not an exact keyword match).
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
           {dossier?.signals?.discoveryConfidence && (
             <div className="mb-1">
               <DiscoveryConfidenceBadge confidence={dossier.signals.discoveryConfidence} />

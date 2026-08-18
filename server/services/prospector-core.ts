@@ -91,9 +91,160 @@ export function findDisqualifier(
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Partner / channel-fit detection
+// ---------------------------------------------------------------------------
+
+/** Company-name substrings that suggest a consulting / SI / agency firm. */
+const PARTNER_COMPANY_KEYWORDS = [
+  "consulting", "consultants", "consultant", "advisory", "advisors",
+  "advisories", "solutions", "integrat", "partners", "partner llp",
+  "accenture", "deloitte", "kpmg", "pwc", "ernst & young", " ey ",
+  "capgemini", "infosys", "wipro", "cognizant", "tata consultancy",
+  "ntt data", "unisys", "dxc technology", "hewitt", "bdo ",
+  "rsm us", "grant thornton", "mckinsey", "bcg consulting", "bain &",
+];
+
+/** Industry signals that suggest a consulting / SI / agency firm. */
+const PARTNER_INDUSTRY_KEYWORDS = [
+  "consulting", "professional services", "system integrat",
+  "managed service", "outsourc", "advisory services", "it services",
+];
+
+/** Title keywords that strongly suggest a partner/channel/practice role. */
+const PARTNER_TITLE_KEYWORDS = [
+  "practice lead", "practice director", "practice head", "practice manager",
+  "alliance", "channel director", "channel manager", "channel lead",
+  "partner director", "partner manager", "partner lead",
+];
+
+/**
+ * Detect whether a prospect appears to be at a consulting / systems-integrator /
+ * agency firm, making them a potential partner/channel opportunity rather than a
+ * direct end-user buyer.
+ */
+export function detectPartnerFit(attrs: ProspectAttributes): { partnerFit: boolean; note?: string } {
+  const cn = norm(attrs.companyName);
+  const title = norm(attrs.title);
+  const industry = norm(attrs.industry);
+
+  // Company name heuristics (highest signal).
+  for (const kw of PARTNER_COMPANY_KEYWORDS) {
+    if (cn.includes(kw.trim())) {
+      return {
+        partnerFit: true,
+        note: `Company name "${attrs.companyName}" suggests a consulting/SI firm — consider a partner/channel engagement approach.`,
+      };
+    }
+  }
+
+  // Industry signal (only meaningful after research has run).
+  for (const kw of PARTNER_INDUSTRY_KEYWORDS) {
+    if (industry.includes(kw)) {
+      return {
+        partnerFit: true,
+        note: `Industry "${attrs.industry}" indicates a consulting/professional-services firm — possible channel partner.`,
+      };
+    }
+  }
+
+  // Title keywords (secondary signal — combines well with advisory company names).
+  for (const kw of PARTNER_TITLE_KEYWORDS) {
+    if (title.includes(kw)) {
+      return {
+        partnerFit: true,
+        note: `Title "${attrs.title}" includes a partner/practice keyword — may be a channel/alliance contact.`,
+      };
+    }
+  }
+
+  return { partnerFit: false };
+}
+
+// ---------------------------------------------------------------------------
+// Semantic / synonym-based role matching (synchronous, no I/O)
+// ---------------------------------------------------------------------------
+
+/** Common stop words to strip before concept extraction. */
+const STOP_WORDS = new Set([
+  "and", "or", "of", "for", "the", "a", "an", "in", "at", "to", "with",
+  "by", "on", "as", "is", "are", "be", "was", "it", "its", "this",
+  "that", "from", "into", "about", "between",
+]);
+
+/**
+ * Generic seniority / level terms that are NOT discriminative for function.
+ * "Engineering Manager" and "Sales Manager" share "manager", but that tells us
+ * nothing about function. These tokens are intentionally excluded from the
+ * semantic-match concept comparison so that only domain/function words count.
+ */
+const GENERIC_LEVEL_TERMS = new Set([
+  "manager", "director", "lead", "head", "vp", "president", "officer",
+  "executive", "senior", "junior", "associate", "principal", "chief",
+  "global", "regional", "national", "corporate", "enterprise", "general",
+  "specialist", "analyst", "consultant", "advisor", "coordinator",
+  "representative", "professional", "expert", "fellow", "staff",
+]);
+
+/** Extract meaningful NON-generic concept tokens from a normalised string. */
+function extractDiscriminativeConcepts(text: string): string[] {
+  return text
+    .split(/[\s\-\/,&+|]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w) && !GENERIC_LEVEL_TERMS.has(w));
+}
+
+/**
+ * Lightweight synonym/concept-overlap check. When literal substring matching
+ * fails, this compares discriminative (non-seniority) concept tokens extracted
+ * from the prospect's title against those in each ICP role. Returns an
+ * explanatory note string plus the matched role on a confident match.
+ *
+ * Match heuristic: at least 1 shared DISCRIMINATIVE concept AND the shared
+ * concepts cover ≥40 % of the role's discriminative concept list. This avoids
+ * false positives on seniority words ("Engineering Manager" ≠ "Sales Manager").
+ *
+ * Returns `{ note, matchedRole }` on a match, or null when no confident match.
+ */
+export function semanticRoleMatch(
+  title: string | null | undefined,
+  roles?: string[],
+): { note: string; matchedRole: string } | null {
+  if (!title || !roles || roles.length === 0) return null;
+  const titleConcepts = new Set(extractDiscriminativeConcepts(norm(title)));
+  // If the title has NO discriminative tokens, never match — we can't tell the function.
+  if (titleConcepts.size === 0) return null;
+
+  for (const role of roles) {
+    const roleConcepts = extractDiscriminativeConcepts(norm(role));
+    // Skip roles with no discriminative tokens (e.g. "Manager") — too ambiguous.
+    if (roleConcepts.length === 0) continue;
+    const shared = roleConcepts.filter((c) => titleConcepts.has(c));
+    if (shared.length > 0 && shared.length / roleConcepts.length >= 0.40) {
+      return {
+        note: `Concept match to ICP role "${role}" via shared domain terms: ${shared.join(", ")}`,
+        matchedRole: role,
+      };
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Core scorer
+// ---------------------------------------------------------------------------
+
 /**
  * Score a prospect against the ICP criteria. Disqualifiers are hard: a match
  * forces score 0 and `disqualified=true` regardless of other signals.
+ *
+ * Enhancements vs. the original implementation:
+ * - Signals carry `absent: true` when the prospect has no data for that signal
+ *   and criteria exist — distinguishing "unknown" from "mismatch" in the UI.
+ * - Role matching falls back to a lightweight semantic/concept-overlap check
+ *   when literal substring matching fails.
+ * - Partner/channel fit is detected from company name, industry, and title and
+ *   recorded in the breakdown.
  */
 export function scoreProspect(attrs: ProspectAttributes, criteria: IcpCriteria): ScoredProspect {
   const threshold = criteria.threshold ?? DEFAULT_THRESHOLD;
@@ -113,46 +264,122 @@ export function scoreProspect(attrs: ProspectAttributes, criteria: IcpCriteria):
     };
   }
 
-  // When named accounts are configured, use company-name matching for the
-  // "industry" slot — it's a stronger and immediately available signal vs.
-  // industry which only populates after AI research runs on a new prospect.
-  const hasNamedAccounts = (criteria.namedAccounts?.length ?? 0) > 0;
-  const industrySignal = hasNamedAccounts
-    ? {
-        key: "industry" as keyof typeof SIGNAL_WEIGHTS,
-        label: "Named account match",
-        matched: matchesAny(attrs.companyName, criteria.namedAccounts),
-      }
-    : {
-        key: "industry" as keyof typeof SIGNAL_WEIGHTS,
-        label: "Industry fit",
-        matched: matchesAny(attrs.industry, criteria.industries),
-      };
+  // ── Role: literal first, then semantic fallback ──────────────────────────
+  const hasRoleCriteria = (criteria.roles?.length ?? 0) > 0;
+  let roleMatched = matchesAny(attrs.title, criteria.roles);
+  let roleNote: string | undefined;
+  let semanticRoleMatchUsed = false;
+  const roleAbsent = !norm(attrs.title) && hasRoleCriteria;
 
-  const checks: { key: keyof typeof SIGNAL_WEIGHTS; label: string; matched: boolean; note?: string }[] = [
-    { key: "role", label: "Role / title fit", matched: matchesAny(attrs.title, criteria.roles) },
-    industrySignal,
-    { key: "geography", label: "Geography fit", matched: matchesAny(attrs.geography, criteria.geographies) },
-    { key: "segment", label: "Segment / size fit", matched: matchesAny(attrs.segment, criteria.segments) },
-    { key: "email", label: "Has email", matched: Boolean(norm(attrs.email)) },
-    { key: "linkedin", label: "Has LinkedIn", matched: Boolean(norm(attrs.linkedinUrl)) },
+  if (!roleMatched && !roleAbsent && hasRoleCriteria) {
+    // Literal match failed — try concept-overlap semantic fallback.
+    const semResult = semanticRoleMatch(attrs.title, criteria.roles);
+    if (semResult) {
+      roleMatched = true;
+      roleNote = semResult.note;
+      semanticRoleMatchUsed = true;
+    }
+  }
+
+  // ── Industry / Named account ─────────────────────────────────────────────
+  const hasNamedAccounts = (criteria.namedAccounts?.length ?? 0) > 0;
+  let industryMatched: boolean;
+  let industryLabel: string;
+  let industryAbsent: boolean;
+  if (hasNamedAccounts) {
+    industryLabel = "Named account match";
+    industryMatched = matchesAny(attrs.companyName, criteria.namedAccounts);
+    industryAbsent = !norm(attrs.companyName) && hasNamedAccounts;
+  } else {
+    industryLabel = "Industry fit";
+    const hasIndustryCriteria = (criteria.industries?.length ?? 0) > 0;
+    industryMatched = matchesAny(attrs.industry, criteria.industries);
+    industryAbsent = !norm(attrs.industry) && hasIndustryCriteria;
+  }
+
+  // ── Geography / Segment ───────────────────────────────────────────────────
+  const hasGeoCriteria = (criteria.geographies?.length ?? 0) > 0;
+  const geoMatched = matchesAny(attrs.geography, criteria.geographies);
+  const geoAbsent = !norm(attrs.geography) && hasGeoCriteria;
+
+  const hasSegmentCriteria = (criteria.segments?.length ?? 0) > 0;
+  const segMatched = matchesAny(attrs.segment, criteria.segments);
+  const segAbsent = !norm(attrs.segment) && hasSegmentCriteria;
+
+  // ── Build signal list ──────────────────────────────────────────────────────
+  const signals: ProspectScoreBreakdown["signals"] = [
+    {
+      key: "role",
+      label: "Role / title fit",
+      weight: SIGNAL_WEIGHTS.role,
+      matched: roleMatched,
+      absent: roleAbsent || undefined,
+      note: roleNote,
+    },
+    {
+      key: "industry",
+      label: industryLabel,
+      weight: SIGNAL_WEIGHTS.industry,
+      matched: industryMatched,
+      absent: industryAbsent || undefined,
+    },
+    {
+      key: "geography",
+      label: "Geography fit",
+      weight: SIGNAL_WEIGHTS.geography,
+      matched: geoMatched,
+      absent: geoAbsent || undefined,
+    },
+    {
+      key: "segment",
+      label: "Segment / size fit",
+      weight: SIGNAL_WEIGHTS.segment,
+      matched: segMatched,
+      absent: segAbsent || undefined,
+    },
+    {
+      key: "email",
+      label: "Has email",
+      weight: SIGNAL_WEIGHTS.email,
+      matched: Boolean(norm(attrs.email)),
+    },
+    {
+      key: "linkedin",
+      label: "Has LinkedIn",
+      weight: SIGNAL_WEIGHTS.linkedin,
+      matched: Boolean(norm(attrs.linkedinUrl)),
+    },
   ];
 
-  const signals = checks.map((c) => ({
-    key: c.key,
-    label: c.label,
-    weight: SIGNAL_WEIGHTS[c.key],
-    matched: c.matched,
-    note: c.note,
-  }));
+  // Strip undefined absent fields to keep the persisted JSON clean.
+  const cleanedSignals = signals.map((s) => {
+    if (s.absent === undefined) {
+      const { absent: _absent, ...rest } = s;
+      return rest;
+    }
+    return s;
+  });
 
-  const total = signals.reduce((sum, s) => sum + (s.matched ? s.weight : 0), 0);
+  const total = cleanedSignals.reduce((sum, s) => sum + (s.matched ? s.weight : 0), 0);
+
+  // ── Partner / channel detection ───────────────────────────────────────────
+  const partnerResult = detectPartnerFit(attrs);
+
+  const breakdown: ProspectScoreBreakdown = {
+    signals: cleanedSignals,
+    total,
+    threshold,
+    ...(partnerResult.partnerFit
+      ? { partnerFit: true, partnerFitNote: partnerResult.note }
+      : {}),
+    ...(semanticRoleMatchUsed ? { semanticRoleMatch: true } : {}),
+  };
 
   return {
     score: total,
     qualified: total >= threshold,
     disqualified: false,
-    breakdown: { signals, total, threshold },
+    breakdown,
   };
 }
 
