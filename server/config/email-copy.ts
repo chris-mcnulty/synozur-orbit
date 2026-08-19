@@ -362,10 +362,15 @@ export const WEEKLY_DIGEST_EMAIL = {
 // INTELLIGENCE BRIEFING DIGEST EMAIL
 // ============================================
 export const INTELLIGENCE_BRIEFING_DIGEST_EMAIL = {
-  subject: (companyName: string, periodLabel?: string) => periodLabel ? `Intelligence Briefing - ${companyName} (${periodLabel})` : `Intelligence Briefing - ${companyName}`,
+  subject: (companyName: string, periodLabel?: string, baselineMarketName?: string) => {
+    const anchor = baselineMarketName || companyName;
+    return periodLabel ? `Intelligence Briefing - ${anchor} (${periodLabel})` : `Intelligence Briefing - ${anchor}`;
+  },
   heading: 'Your Intelligence Briefing',
   greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
-  intro: `Here's your AI-synthesized intelligence briefing for the past week:`,
+  intro: (baselineMarketName?: string, baselineCompanyName?: string) => baselineMarketName
+    ? `Here's your AI-synthesized intelligence briefing for the <span class="highlight">${baselineMarketName}</span> baseline market${baselineCompanyName ? `, anchored to <span class="highlight">${baselineCompanyName}</span>` : ''}.`
+    : `Here's your AI-synthesized intelligence briefing for the past week:`,
   executiveSummaryHeading: 'Executive Summary',
   actionItemsHeading: 'Top Action Items',
   actionItemUrgencyLabels: {
@@ -386,8 +391,13 @@ export const INTELLIGENCE_BRIEFING_DIGEST_EMAIL = {
   buttonText: 'View Full Briefing',
   unsubscribeText: 'Manage your notification preferences',
   footerMessage: `You're receiving this email because you opted in to weekly competitive intelligence digests.`,
-  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, settingsLink: string, periodLabel?: string) =>
-    `Hi ${name},\n\nIntelligence Briefing for ${companyName}${periodLabel ? ` (${periodLabel})` : ''}\n\nExecutive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe from weekly digests, update your preferences: ${settingsLink}`,
+  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, settingsLink: string, periodLabel?: string, baselineMarketName?: string, baselineCompanyName?: string) => {
+    const anchor = baselineMarketName || companyName;
+    const baselineLine = baselineMarketName
+      ? `Baseline market: ${baselineMarketName}${baselineCompanyName ? ` (${baselineCompanyName})` : ''}\n\n`
+      : '';
+    return `Hi ${name},\n\nIntelligence Briefing for ${anchor}${periodLabel ? ` (${periodLabel})` : ''}\n\n${baselineLine}Executive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe from weekly digests, update your preferences: ${settingsLink}`;
+  },
 };
 
 // ============================================
@@ -448,13 +458,15 @@ export const SUPPORT_TICKET_REPLY_EMAIL = {
 // SCHEDULED BRIEFING PODCAST EMAIL
 // ============================================
 export const SCHEDULED_BRIEFING_EMAIL = {
-  subject: (companyName: string, baselineCompanyName?: string, periodLabel?: string) => {
-    const anchor = baselineCompanyName || companyName;
+  subject: (companyName: string, baselineCompanyName?: string, periodLabel?: string, baselineMarketName?: string) => {
+    const anchor = baselineMarketName || baselineCompanyName || companyName;
     return periodLabel ? `Your Weekly Intelligence Briefing — ${anchor} (${periodLabel})` : `Your Weekly Intelligence Briefing — ${anchor}`;
   },
   heading: 'Your Weekly Intelligence Briefing',
   greeting: (name: string) => `Hi <span class="highlight">${name}</span>,`,
-  intro: (baselineCompanyName?: string) => baselineCompanyName
+  intro: (baselineCompanyName?: string, baselineMarketName?: string) => baselineMarketName
+    ? `Your scheduled weekly intelligence briefing is ready for the <span class="highlight">${baselineMarketName}</span> baseline market${baselineCompanyName ? `, anchored to <span class="highlight">${baselineCompanyName}</span>` : ''}. Here are the highlights:`
+    : baselineCompanyName
     ? `Your scheduled weekly intelligence briefing is ready. This report is anchored to <span class="highlight">${baselineCompanyName}</span> as the baseline company. Here are the highlights:`
     : `Your scheduled weekly intelligence briefing is ready. Here are the highlights:`,
   executiveSummaryHeading: 'Executive Summary',
@@ -477,9 +489,11 @@ export const SCHEDULED_BRIEFING_EMAIL = {
   viewBriefingButtonText: 'View Full Briefing',
   unsubscribeText: 'Manage your briefing subscription preferences',
   footerMessage: `You're receiving this email because you subscribed to weekly intelligence briefing updates.`,
-  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, podcastLink: string, settingsLink: string, periodLabel?: string, baselineCompanyName?: string) => {
-    const anchor = baselineCompanyName || companyName;
-    const anchorLine = baselineCompanyName ? `Baseline company: ${baselineCompanyName}\n\n` : '';
+  plainText: (name: string, companyName: string, executiveSummary: string, actionItemsText: string, briefingLink: string, podcastLink: string, settingsLink: string, periodLabel?: string, baselineCompanyName?: string, baselineMarketName?: string) => {
+    const anchor = baselineMarketName || baselineCompanyName || companyName;
+    const anchorLine = baselineMarketName
+      ? `Baseline market: ${baselineMarketName}${baselineCompanyName ? ` (${baselineCompanyName})` : ''}\n\n`
+      : baselineCompanyName ? `Baseline company: ${baselineCompanyName}\n\n` : '';
     return `Hi ${name},\n\nYour Weekly Intelligence Briefing — ${anchor}${periodLabel ? ` (${periodLabel})` : ''}\n\n${anchorLine}Executive Summary:\n${executiveSummary}\n\nTop Action Items:\n${actionItemsText}\n\nListen to podcast: ${podcastLink}\n\nView full briefing: ${briefingLink}\n\nTo unsubscribe, update your preferences: ${settingsLink}`;
   },
 };

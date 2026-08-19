@@ -201,6 +201,58 @@ function buildCompetitorContext(competitors: Competitor[], baseline?: CompanyPro
   return lines.join("\n");
 }
 
+interface BriefingMarketScope {
+  marketId?: string;
+  context?: ContextFilter;
+}
+
+/**
+ * Briefings may be generated from either an explicit market ID or a request
+ * context. When either is present, canonicalize it into one validated market
+ * before any data is read so activities, competitors, baseline, persistence,
+ * and notifications cannot diverge across markets.
+ */
+async function resolveBriefingMarketScope(
+  tenantDomain: string,
+  marketId?: string,
+  ctx?: ContextFilter,
+): Promise<BriefingMarketScope> {
+  if (ctx && ctx.tenantDomain !== tenantDomain) {
+    throw new Error("Briefing context tenant does not match the requested tenant");
+  }
+  if (ctx && marketId && ctx.marketId !== marketId) {
+    throw new Error("Briefing context market does not match the requested market");
+  }
+
+  const effectiveMarketId = ctx?.marketId || marketId;
+  if (!effectiveMarketId) {
+    throw new Error("Briefing generation requires an explicit market context");
+  }
+
+  const [tenant, market] = await Promise.all([
+    storage.getTenantByDomain(tenantDomain),
+    storage.getMarket(effectiveMarketId),
+  ]);
+  if (
+    !tenant ||
+    !market ||
+    market.tenantId !== tenant.id ||
+    (ctx && ctx.tenantId !== tenant.id)
+  ) {
+    throw new Error(`Cannot generate briefing for an invalid market context: ${effectiveMarketId}`);
+  }
+
+  return {
+    marketId: effectiveMarketId,
+    context: {
+      tenantId: tenant.id,
+      tenantDomain,
+      marketId: effectiveMarketId,
+      isDefaultMarket: market.isDefault,
+    },
+  };
+}
+
 export async function generateBriefing(
   tenantDomain: string,
   periodDays: number = 7,
@@ -214,26 +266,13 @@ export async function generateBriefing(
   let activities: Activity[];
   let competitors: Competitor[];
   let baseline: CompanyProfile | undefined;
+  const scope = await resolveBriefingMarketScope(tenantDomain, marketId, ctx);
 
-  if (ctx) {
-    [activities, competitors, baseline] = await Promise.all([
-      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-      storage.getCompetitorsByContext(ctx),
-      storage.getCompanyProfileByContext(ctx).then(p => p || undefined),
-    ]);
-  } else if (marketId) {
-    [activities, competitors, baseline] = await Promise.all([
-      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-      storage.getCompetitorsByMarket(tenantDomain, marketId),
-      storage.getCompanyProfileByTenant(tenantDomain),
-    ]);
-  } else {
-    [activities, competitors, baseline] = await Promise.all([
-      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-      storage.getCompetitorsByTenantDomain(tenantDomain),
-      storage.getCompanyProfileByTenant(tenantDomain),
-    ]);
-  }
+  [activities, competitors, baseline] = await Promise.all([
+    storage.getActivityByTenantForPeriod(tenantDomain, periodDays, scope.marketId),
+    storage.getCompetitorsByContext(scope.context!),
+    storage.getCompanyProfileByContext(scope.context!).then(p => p || undefined),
+  ]);
 
   let newsArticles: NewsArticle[] = [];
   try {
@@ -357,7 +396,7 @@ Rules:
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
-    void logAiUsage({ tenantDomain, marketId }, "generate_briefing", "anthropic", "claude-sonnet-4-5", response.usage);
+    void logAiUsage({ tenantDomain, marketId: scope.marketId }, "generate_briefing", "anthropic", "claude-sonnet-4-5", response.usage);
 
     const textBlock = response.content.find(block => block.type === "text");
     let raw = textBlock?.text || "";
@@ -475,7 +514,7 @@ Rules:
 
   const briefing = await storage.createIntelligenceBriefing({
     tenantDomain,
-    marketId: marketId || null,
+    marketId: scope.marketId || null,
     periodStart,
     periodEnd: now,
     status: "published",
@@ -491,7 +530,7 @@ Rules:
     const { notifications } = await import("./notifications");
     await notifications.dispatch(tenantDomain, "briefing_ready", {
       briefingId: briefing.id,
-      marketId: marketId || null,
+      marketId: scope.marketId || null,
       periodLabel: briefingData.periodLabel,
       executiveSummary: briefingData.executiveSummary,
       actionItemCount: (briefingData.actionItems || []).length,
@@ -664,26 +703,13 @@ export async function generateBriefingData(
   let activities: Activity[];
   let competitors: Competitor[];
   let baseline: CompanyProfile | undefined;
+  const scope = await resolveBriefingMarketScope(tenantDomain, marketId, ctx);
 
-  if (ctx) {
-    [activities, competitors, baseline] = await Promise.all([
-      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-      storage.getCompetitorsByContext(ctx),
-      storage.getCompanyProfileByContext(ctx).then(p => p || undefined),
-    ]);
-  } else if (marketId) {
-    [activities, competitors, baseline] = await Promise.all([
-      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-      storage.getCompetitorsByMarket(tenantDomain, marketId),
-      storage.getCompanyProfileByTenant(tenantDomain),
-    ]);
-  } else {
-    [activities, competitors, baseline] = await Promise.all([
-      storage.getActivityByTenantForPeriod(tenantDomain, periodDays, marketId),
-      storage.getCompetitorsByTenantDomain(tenantDomain),
-      storage.getCompanyProfileByTenant(tenantDomain),
-    ]);
-  }
+  [activities, competitors, baseline] = await Promise.all([
+    storage.getActivityByTenantForPeriod(tenantDomain, periodDays, scope.marketId),
+    storage.getCompetitorsByContext(scope.context!),
+    storage.getCompanyProfileByContext(scope.context!).then(p => p || undefined),
+  ]);
 
   reportPhase("fetching_news");
 
@@ -810,7 +836,7 @@ Rules:
       max_tokens: 8192,
       messages: [{ role: "user", content: prompt }],
     });
-    void logAiUsage({ tenantDomain, marketId }, "generate_briefing_data", "anthropic", "claude-sonnet-4-5", response.usage);
+    void logAiUsage({ tenantDomain, marketId: scope.marketId }, "generate_briefing_data", "anthropic", "claude-sonnet-4-5", response.usage);
 
     const textBlock = response.content.find(block => block.type === "text");
     let raw = textBlock?.text || "";

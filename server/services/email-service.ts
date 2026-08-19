@@ -687,6 +687,8 @@ export interface BriefingDigestData {
   briefingId?: string;
   periodLabel?: string;
   periodDays?: number;
+  baselineMarketName?: string;
+  baselineCompanyName?: string;
 }
 
 interface WeeklyDigestParams {
@@ -848,7 +850,7 @@ export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise
       
       <p>${copy.greeting(name)}</p>
       
-      <p>${copy.intro}</p>
+      <p>${copy.intro(briefing.baselineMarketName, briefing.baselineCompanyName)}</p>
       
       ${executiveSummaryHtml}
       
@@ -867,11 +869,21 @@ export async function sendWeeklyDigestEmail(params: WeeklyDigestParams): Promise
     `;
 
     const actionItemsText = topActions.map(a => `- [${a.urgency}] ${a.title}: ${a.description}`).join('\n');
-    const text = copy.plainText(name, companyName, briefing.executiveSummary, actionItemsText, briefingLink, settingsLink);
+    const text = copy.plainText(
+      name,
+      companyName,
+      briefing.executiveSummary,
+      actionItemsText,
+      briefingLink,
+      settingsLink,
+      briefing.periodLabel,
+      briefing.baselineMarketName,
+      briefing.baselineCompanyName,
+    );
 
     return sendEmail({
       to: email,
-      subject: copy.subject(companyName),
+      subject: copy.subject(companyName, briefing.periodLabel, briefing.baselineMarketName),
       html: wrapEmailContent(content),
       text
     });
@@ -1049,6 +1061,7 @@ export async function sendScheduledBriefingEmail(
     periodLabel?: string;
     podcastUrl?: string;
     baselineCompanyName?: string;
+    baselineMarketName?: string;
   },
   baseUrl: string,
 ): Promise<boolean> {
@@ -1096,11 +1109,12 @@ export async function sendScheduledBriefingEmail(
   const actionItemsText = topActions.map(item => `- [${item.urgency}] ${item.title}: ${item.description}`).join("\n");
 
   const baselineCompanyName = briefingData.baselineCompanyName;
+  const baselineMarketName = briefingData.baselineMarketName;
 
   const content = `
     <h1>${copy.heading}</h1>
     <p>${copy.greeting(recipientName)}</p>
-    <p>${copy.intro(baselineCompanyName)}</p>
+    <p>${copy.intro(baselineCompanyName, baselineMarketName)}</p>
     
     <div class="divider"></div>
     
@@ -1143,11 +1157,12 @@ export async function sendScheduledBriefingEmail(
     settingsLink,
     briefingData.periodLabel,
     baselineCompanyName,
+    baselineMarketName,
   );
 
   return sendEmail({
     to: email,
-    subject: copy.subject(companyName, baselineCompanyName, briefingData.periodLabel),
+    subject: copy.subject(companyName, baselineCompanyName, briefingData.periodLabel, baselineMarketName),
     html: wrapEmailContent(content),
     text,
   });

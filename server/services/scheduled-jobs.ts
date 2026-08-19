@@ -8,6 +8,7 @@ import { analyzeCompetitorWebsite, type LinkedInContext } from "../ai-service";
 import { processTrialReminders } from "./trial-service";
 import { sendWeeklyDigestEmail, sendScheduledBriefingEmail, type BriefingDigestData } from "./email-service";
 import { generateBriefing, type BriefingData } from "./intelligence-briefing-service";
+import { resolveEligibleBriefingMarket } from "./briefing-market-resolver";
 import { notifications } from "./notifications";
 import { enqueueCrawl, enqueueMonitor } from "./job-queue";
 import { crawlOps } from "./crawl-db";
@@ -1447,23 +1448,27 @@ async function checkAndRunWeeklyDigest(): Promise<void> {
 
 const tenantBriefingCache: Map<string, { briefingId: string; briefingData: BriefingData } | null> = new Map();
 
-async function generateBriefingForTenant(tenantDomain: string): Promise<{ briefingId: string; briefingData: BriefingData } | null> {
-  if (tenantBriefingCache.has(tenantDomain)) {
-    return tenantBriefingCache.get(tenantDomain) || null;
+async function generateBriefingForTenant(
+  tenantDomain: string,
+  marketId: string,
+): Promise<{ briefingId: string; briefingData: BriefingData } | null> {
+  const cacheKey = `${tenantDomain}:${marketId}`;
+  if (tenantBriefingCache.has(cacheKey)) {
+    return tenantBriefingCache.get(cacheKey) || null;
   }
 
   try {
-    console.log(`[Scheduled Job] Generating intelligence briefing for tenant ${tenantDomain}...`);
-    const briefing = await generateBriefing(tenantDomain, 8);
+    console.log(`[Scheduled Job] Generating intelligence briefing for tenant ${tenantDomain} market=${marketId}...`);
+    const briefing = await generateBriefing(tenantDomain, 8, marketId);
     const result = {
       briefingId: briefing.id,
       briefingData: briefing.briefingData as BriefingData,
     };
-    tenantBriefingCache.set(tenantDomain, result);
+    tenantBriefingCache.set(cacheKey, result);
     return result;
   } catch (error) {
-    console.error(`[Scheduled Job] Failed to generate briefing for ${tenantDomain}:`, error);
-    tenantBriefingCache.set(tenantDomain, null);
+    console.error(`[Scheduled Job] Failed to generate briefing for ${tenantDomain} market=${marketId}:`, error);
+    tenantBriefingCache.set(cacheKey, null);
     return null;
   }
 }
@@ -1552,7 +1557,13 @@ async function buildWeeklyDigestCtx(tenantDomain: string): Promise<{
   const tenant = await storage.getTenantByDomain(tenantDomain);
   if (!tenant || tenant.status !== "active") return null;
 
-  const weeklyActivity = await storage.getWeeklyActivityByTenant(tenantDomain);
+  const eligibleMarket = await resolveEligibleBriefingMarket(tenant);
+  if (!eligibleMarket) {
+    console.warn(`[Scheduled Job] Suppressing weekly digest for ${tenantDomain}: no active default market with a baseline profile.`);
+    return null;
+  }
+
+  const weeklyActivity = await storage.getWeeklyActivityByTenant(tenantDomain, eligibleMarket.market.id);
   const activities = weeklyActivity.map(act => ({
     competitorName: act.competitorName,
     type: act.type,
@@ -1560,13 +1571,21 @@ async function buildWeeklyDigestCtx(tenantDomain: string): Promise<{
     summary: act.summary || undefined,
   }));
 
-  const tenantBriefing = await generateBriefingForTenant(tenantDomain);
-  const briefing = tenantBriefing ? {
+  const tenantBriefing = await generateBriefingForTenant(tenantDomain, eligibleMarket.market.id);
+  if (!tenantBriefing) {
+    console.warn(`[Scheduled Job] Suppressing weekly digest for ${tenantDomain}: scoped briefing generation failed.`);
+    return null;
+  }
+
+  const briefing = {
     executiveSummary: tenantBriefing.briefingData.executiveSummary,
     actionItems: tenantBriefing.briefingData.actionItems || [],
     riskAlerts: tenantBriefing.briefingData.riskAlerts || [],
     briefingId: tenantBriefing.briefingId,
-  } : undefined;
+    periodLabel: tenantBriefing.briefingData.periodLabel,
+    baselineMarketName: eligibleMarket.market.name,
+    baselineCompanyName: eligibleMarket.baseline.companyName,
+  };
 
   return { activities, briefing };
 }
@@ -1683,11 +1702,16 @@ async function runScheduledBriefingJob(): Promise<void> {
       const podcastCheck = await checkFeatureAccessAsync(tenant.plan, "podcastBriefings");
 
       for (const config of configs) {
-        const marketId = config.marketId || undefined;
+        const eligibleMarket = await resolveEligibleBriefingMarket(tenant, config.marketId);
+        if (!eligibleMarket) {
+          console.warn(`[Scheduled Briefing] Suppressing ${tenantDomain} config=${config.id}: no active eligible market with a baseline profile.`);
+          continue;
+        }
+        const marketId = eligibleMarket.market.id;
 
-        const subscribers = await storage.getEnabledBriefingSubscribers(tenantDomain, marketId);
+        const subscribers = await storage.getEnabledBriefingSubscribers(tenantDomain, config.marketId || undefined);
         if (subscribers.length === 0) {
-          console.log(`[Scheduled Briefing] No subscribers for ${tenantDomain} market=${marketId}, skipping.`);
+          console.log(`[Scheduled Briefing] No subscribers for ${tenantDomain} configMarket=${config.marketId ?? "default"}, skipping.`);
           continue;
         }
 
@@ -1702,23 +1726,6 @@ async function runScheduledBriefingJob(): Promise<void> {
           generatedCount++;
 
           const briefingData = briefing.briefingData as BriefingData;
-
-          // Look up baseline company for this market so emails clearly identify which market the report covers
-          let baselineCompanyName: string | undefined;
-          if (marketId) {
-            try {
-              const market = await storage.getMarket(marketId);
-              const baselineProfile = await storage.getCompanyProfileByContext({
-                tenantId: tenant.id,
-                tenantDomain,
-                marketId,
-                isDefaultMarket: false,
-              });
-              baselineCompanyName = baselineProfile?.companyName || market?.name || undefined;
-            } catch {
-              // non-fatal — email still sends without the anchor label
-            }
-          }
 
           let podcastUrl: string | undefined;
 
@@ -1748,7 +1755,8 @@ async function runScheduledBriefingJob(): Promise<void> {
                   briefingId: briefing.id,
                   periodLabel: briefingData.periodLabel,
                   podcastUrl,
-                  baselineCompanyName,
+                  baselineCompanyName: eligibleMarket.baseline.companyName,
+                  baselineMarketName: eligibleMarket.market.name,
                 },
                 baseUrl,
               );
