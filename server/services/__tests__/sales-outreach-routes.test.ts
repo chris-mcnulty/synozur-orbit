@@ -421,6 +421,47 @@ describe("sales-outreach routes", () => {
       expect(res.status).toBe(423);
       expect(res.body).toMatchObject({ error: expect.stringMatching(/cap/i), code: "cap_reached" });
     });
+
+    it("returns 422 missing_recipient when the contact email was cleared after compose", async () => {
+      // Touch is email channel, approved=pending, but the prospect's email has
+      // since been removed (e.g. a contact-merge or manual edit).
+      pushDb(TOUCH);
+      // getProspectWithContact pops the next dbQ entry — prospect has no email.
+      pushDb({ ...PROSPECT, email: null });
+      vi.mocked(assertApprovalAllowed).mockResolvedValue({ allowed: true } as any);
+
+      const res = await request(app).post("/api/sales-outreach/touches/touch-1/approve");
+
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject({ code: "missing_recipient" });
+      expect(res.body.error).toMatch(/no email address/i);
+      // Draft must never be created when the recipient is missing.
+      expect(createOutlookDraft).not.toHaveBeenCalled();
+    });
+
+    it("succeeds (200) when an email touch has a valid recipient", async () => {
+      // Mirrors the happy-path approval test to confirm the recipient guard does
+      // not block legitimate sends with a real email address.
+      pushDb(TOUCH);
+      pushDb(PROSPECT); // email: "jane@fund.com"
+      pushDb(UPDATED_TOUCH);
+      pushDb(); // prospect status update
+      pushDb(); // send ledger insert
+
+      vi.mocked(assertApprovalAllowed).mockResolvedValue({ allowed: true } as any);
+      vi.mocked(createOutlookDraft).mockResolvedValue({
+        draftId: "draft-1",
+        webLink: "https://outlook.office.com/drafts/draft-1",
+      } as any);
+
+      const res = await request(app).post("/api/sales-outreach/touches/touch-1/approve");
+
+      expect(res.status).toBe(200);
+      expect(res.body.touch).toMatchObject({ status: "approved" });
+      expect(createOutlookDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ toEmail: "jane@fund.com" }),
+      );
+    });
   });
 
   // ── POST /api/sales-outreach/prospects/:id/mark-replied ────────────────────
@@ -624,6 +665,58 @@ describe("sales-outreach routes", () => {
 
       expect(res.status).toBe(403);
       expect(composeTouch).not.toHaveBeenCalled();
+    });
+
+    it("propagates a rejection when channel=email and the prospect has no email address", async () => {
+      // The service guard in outreach-composer-service throws when a caller
+      // requests an email touch for a LinkedIn-only prospect. The route must
+      // surface that error so the caller knows why composition failed.
+      vi.mocked(guardManualAction).mockResolvedValue(true);
+      // Route pre-check resolves the prospect (no email — LinkedIn-only prospect).
+      pushDb({ ...PROSPECT, email: null });
+      vi.mocked(composeTouch).mockRejectedValue(
+        new Error("Prospect has no email address — compose a LinkedIn touch or enrich the contact first."),
+      );
+
+      const res = await request(app)
+        .post("/api/sales-outreach/prospects/prospect-1/compose")
+        .send({ channel: "email", stepNumber: 1 });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toMatch(/no email address/i);
+      // composeTouch was still called — the guard lives inside the service, not the route.
+      expect(composeTouch).toHaveBeenCalledWith(
+        "acme.com",
+        "prospect-1",
+        expect.objectContaining({ channel: "email" }),
+      );
+    });
+
+    it("composes a LinkedIn touch for a prospect without an email address", async () => {
+      // LinkedIn-only prospects (no email column) must still be composable on
+      // the linkedin channel — the guard must not block them.
+      vi.mocked(guardManualAction).mockResolvedValue(true);
+      pushDb({ ...PROSPECT, email: null });
+      const linkedinResult = {
+        touch: { id: "touch-li", channel: "linkedin", subject: null, body: "Hi Jane via LI!" },
+        prospect: { ...PROSPECT, email: null },
+        compliance: { pass: true, flags: [] },
+        provider: "openai",
+        model: "gpt-4o",
+        usage: { inputTokens: 180, outputTokens: 60 },
+      };
+      vi.mocked(composeTouch).mockResolvedValue(linkedinResult as any);
+
+      const res = await request(app)
+        .post("/api/sales-outreach/prospects/prospect-1/compose")
+        .send({ channel: "linkedin", stepNumber: 1 });
+
+      expect(res.status).toBe(201);
+      expect(composeTouch).toHaveBeenCalledWith(
+        "acme.com",
+        "prospect-1",
+        expect.objectContaining({ channel: "linkedin" }),
+      );
     });
   });
 
