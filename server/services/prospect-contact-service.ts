@@ -20,10 +20,14 @@
  */
 
 import { randomUUID } from "crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   marketingContacts,
+  marketingContactEvents,
+  marketingSegmentMembers,
+  marketingWorkflowEnrollments,
+  outreachTouches,
   prospects,
   type MarketingContact,
   type Prospect,
@@ -145,9 +149,35 @@ export async function ensureContactForPerson(
         if (!existing.lastName && lastName) set.lastName = lastName;
         if (!existing.company && person.companyName?.trim()) set.company = person.companyName.trim();
         if (!existing.jobTitle && person.title?.trim()) set.jobTitle = person.title.trim();
-        if (!existing.linkedinUrl && person.linkedinUrl) set.linkedinUrl = person.linkedinUrl;
         if (!existing.hubspotContactId && person.hubspotContactId) set.hubspotContactId = person.hubspotContactId;
         if (!existing.hubspotCompanyId && person.hubspotCompanyId) set.hubspotCompanyId = person.hubspotCompanyId;
+
+        // LinkedIn URL needs care: if the existing contact has no LinkedIn URL
+        // but another contact already holds the incoming one, merge that
+        // LinkedIn-only contact into the email contact rather than issuing a
+        // uniqueness-violating UPDATE.
+        if (!existing.linkedinUrl && person.linkedinUrl) {
+          const [linkedinHolder] = await db
+            .select({ id: marketingContacts.id })
+            .from(marketingContacts)
+            .where(
+              and(
+                eq(marketingContacts.tenantDomain, tenantDomain),
+                eq(marketingContacts.linkedinUrl, person.linkedinUrl),
+              ),
+            )
+            .limit(1);
+
+          if (linkedinHolder && linkedinHolder.id !== existing.id) {
+            // Another contact holds this LinkedIn URL. Absorb it into the
+            // keeper (email contact) — the merge also copies the linkedinUrl.
+            await mergeContacts(tenantDomain, existing.id, linkedinHolder.id);
+          } else {
+            // Safe to set directly (no conflicting holder, or it's already us).
+            set.linkedinUrl = person.linkedinUrl;
+          }
+        }
+
         if (Object.keys(set).length > 0) {
           await db
             .update(marketingContacts)
@@ -183,15 +213,67 @@ export async function ensureContactForPerson(
       .returning({ id: marketingContacts.id });
 
     if (inserted.length === 0) {
-      // Lost a concurrent race — the contact now exists; fetch it. Never fall
-      // through to the unverified generated id: it was not persisted, and a
-      // membership insert against it would fail its FK.
-      const [raced] = await db
-        .select({ id: marketingContacts.id })
+      // The insert was rejected by a unique constraint. Two possible causes:
+      //
+      // (a) Email race: another request concurrently inserted the same email.
+      //     Recovery: re-fetch by email.
+      //
+      // (b) LinkedIn index conflict: a LinkedIn-only contact (email=null) already
+      //     holds the same linkedinUrl. The incoming import also carries an email,
+      //     so we should set that email on the existing LinkedIn contact and fill
+      //     its blank fields — unifying both identities into one contact.
+      //     Recovery: re-fetch by linkedinUrl, then patch the email onto it.
+      //
+      // Never fall through to the unverified generated id: it was not persisted,
+      // and a membership insert against it would fail its FK.
+
+      // (a) Email race
+      const [byEmail] = await db
+        .select()
         .from(marketingContacts)
         .where(and(eq(marketingContacts.tenantDomain, tenantDomain), eq(marketingContacts.email, email)))
         .limit(1);
-      if (raced) return { contactId: raced.id, created: false };
+      if (byEmail) {
+        if (person.hubspotContactId) {
+          preWarmMarketingCache(tenantDomain, email, person.hubspotContactId).catch(() => {});
+        }
+        return { contactId: byEmail.id, created: false };
+      }
+
+      // (b) LinkedIn-only contact that now needs its email set
+      const incomingLinkedinUrl = person.linkedinUrl || null;
+      if (incomingLinkedinUrl) {
+        const [byLinkedin] = await db
+          .select()
+          .from(marketingContacts)
+          .where(
+            and(
+              eq(marketingContacts.tenantDomain, tenantDomain),
+              eq(marketingContacts.linkedinUrl, incomingLinkedinUrl),
+            ),
+          )
+          .limit(1);
+        if (byLinkedin && !byLinkedin.emailOptOut) {
+          // Apply the email and any other missing fields to the LinkedIn-only contact.
+          const set: Partial<typeof marketingContacts.$inferInsert> = { email };
+          if (!byLinkedin.firstName && firstName) set.firstName = firstName;
+          if (!byLinkedin.lastName && lastName) set.lastName = lastName;
+          if (!byLinkedin.company && person.companyName?.trim()) set.company = person.companyName.trim();
+          if (!byLinkedin.jobTitle && person.title?.trim()) set.jobTitle = person.title.trim();
+          if (!byLinkedin.hubspotContactId && person.hubspotContactId) set.hubspotContactId = person.hubspotContactId;
+          if (!byLinkedin.hubspotCompanyId && person.hubspotCompanyId) set.hubspotCompanyId = person.hubspotCompanyId;
+          await db
+            .update(marketingContacts)
+            .set({ ...set, updatedAt: now })
+            .where(eq(marketingContacts.id, byLinkedin.id));
+          if (person.hubspotContactId) {
+            preWarmMarketingCache(tenantDomain, email, person.hubspotContactId).catch(() => {});
+          }
+          return { contactId: byLinkedin.id, created: false };
+        }
+        if (byLinkedin) return { contactId: byLinkedin.id, created: false };
+      }
+
       throw new Error(`Failed to find or create marketing contact for ${email}`);
     }
     if (person.hubspotContactId) {
@@ -200,24 +282,268 @@ export async function ensureContactForPerson(
     return { contactId: id, created: true };
   }
 
-  // No email — create a standalone contact row (nullable email).
+  // No email — try to match by LinkedIn URL before creating a new contact.
+  const linkedinUrl = person.linkedinUrl || null;
+
+  if (linkedinUrl) {
+    const [byLinkedin] = await db
+      .select()
+      .from(marketingContacts)
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, tenantDomain),
+          eq(marketingContacts.linkedinUrl, linkedinUrl),
+        ),
+      )
+      .limit(1);
+
+    if (byLinkedin) {
+      if (!byLinkedin.emailOptOut) {
+        const set: Partial<typeof marketingContacts.$inferInsert> = {};
+        if (!byLinkedin.firstName && firstName) set.firstName = firstName;
+        if (!byLinkedin.lastName && lastName) set.lastName = lastName;
+        if (!byLinkedin.company && person.companyName?.trim()) set.company = person.companyName.trim();
+        if (!byLinkedin.jobTitle && person.title?.trim()) set.jobTitle = person.title.trim();
+        if (!byLinkedin.hubspotContactId && person.hubspotContactId) set.hubspotContactId = person.hubspotContactId;
+        if (!byLinkedin.hubspotCompanyId && person.hubspotCompanyId) set.hubspotCompanyId = person.hubspotCompanyId;
+        if (Object.keys(set).length > 0) {
+          await db
+            .update(marketingContacts)
+            .set({ ...set, updatedAt: now })
+            .where(and(eq(marketingContacts.id, byLinkedin.id), eq(marketingContacts.emailOptOut, false)));
+        }
+      }
+      return { contactId: byLinkedin.id, created: false };
+    }
+  }
+
+  // No email, no LinkedIn match — create a standalone contact row (nullable email).
   const id = randomUUID();
-  await db.insert(marketingContacts).values({
-    id,
-    tenantDomain,
-    email: null,
-    firstName,
-    lastName,
-    company: person.companyName?.trim() || null,
-    jobTitle: person.title?.trim() || null,
-    linkedinUrl: person.linkedinUrl || null,
-    hubspotContactId: person.hubspotContactId || null,
-    hubspotCompanyId: person.hubspotCompanyId || null,
-    source,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const inserted = await db
+    .insert(marketingContacts)
+    .values({
+      id,
+      tenantDomain,
+      email: null,
+      firstName,
+      lastName,
+      company: person.companyName?.trim() || null,
+      jobTitle: person.title?.trim() || null,
+      linkedinUrl,
+      hubspotContactId: person.hubspotContactId || null,
+      hubspotCompanyId: person.hubspotCompanyId || null,
+      source,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing()
+    .returning({ id: marketingContacts.id });
+
+  if (inserted.length === 0 && linkedinUrl) {
+    // Lost a concurrent race on the linkedin unique index — fetch the winner.
+    const [raced] = await db
+      .select({ id: marketingContacts.id })
+      .from(marketingContacts)
+      .where(
+        and(
+          eq(marketingContacts.tenantDomain, tenantDomain),
+          eq(marketingContacts.linkedinUrl, linkedinUrl),
+        ),
+      )
+      .limit(1);
+    if (raced) return { contactId: raced.id, created: false };
+  }
+
   return { contactId: id, created: true };
+}
+
+// ---------------------------------------------------------------------------
+// Contact merge (deduplication)
+// ---------------------------------------------------------------------------
+
+export interface MergeResult {
+  keeperId: string;
+  duplicateId: string;
+  prospectsRepointed: number;
+  eventsRepointed: number;
+}
+
+/**
+ * Merge `duplicateId` into `keeperId` within the same tenant.
+ *
+ * The entire operation runs in a single transaction. Steps:
+ *  1. Back-fill any missing person fields on the keeper from the duplicate.
+ *  2. Resolve prospect membership collisions:
+ *     a. For campaigns where the keeper already has a membership, copy any
+ *        richer research/scoring data from the duplicate membership, repoint
+ *        the duplicate's touches to the keeper's membership, then delete the
+ *        duplicate membership.
+ *     b. For campaigns where the keeper has no membership, repoint the
+ *        duplicate membership directly to the keeper.
+ *  3. Repoint marketing_contact_events from duplicate → keeper.
+ *  4. Repoint marketing_segment_members (delete keeper-already-in-segment
+ *     duplicates to respect the (segmentId, contactId) PK).
+ *  5. Repoint marketing_workflow_enrollments from duplicate → keeper.
+ *  6. Delete the duplicate contact (no remaining FK children).
+ *
+ * Both contacts must belong to `tenantDomain`; throws otherwise.
+ */
+export async function mergeContacts(
+  tenantDomain: string,
+  keeperId: string,
+  duplicateId: string,
+): Promise<MergeResult> {
+  if (keeperId === duplicateId) throw new Error("keeperId and duplicateId must differ");
+
+  // Pre-flight: load both contacts before entering the transaction.
+  const [keeper, duplicate] = await Promise.all([
+    db.select().from(marketingContacts).where(eq(marketingContacts.id, keeperId)).limit(1),
+    db.select().from(marketingContacts).where(eq(marketingContacts.id, duplicateId)).limit(1),
+  ]);
+
+  if (!keeper[0]) throw new Error(`Keeper contact ${keeperId} not found`);
+  if (!duplicate[0]) throw new Error(`Duplicate contact ${duplicateId} not found`);
+  if (keeper[0].tenantDomain !== tenantDomain) throw new Error("Keeper contact does not belong to this tenant");
+  if (duplicate[0].tenantDomain !== tenantDomain) throw new Error("Duplicate contact does not belong to this tenant");
+
+  return db.transaction(async (tx) => {
+    const k = keeper[0];
+    const d = duplicate[0];
+    const now = new Date();
+
+    // 1. Back-fill missing person fields on the keeper.
+    const contactSet: Partial<typeof marketingContacts.$inferInsert> = {};
+    if (!k.email && d.email) contactSet.email = d.email;
+    if (!k.firstName && d.firstName) contactSet.firstName = d.firstName;
+    if (!k.lastName && d.lastName) contactSet.lastName = d.lastName;
+    if (!k.company && d.company) contactSet.company = d.company;
+    if (!k.jobTitle && d.jobTitle) contactSet.jobTitle = d.jobTitle;
+    if (!k.linkedinUrl && d.linkedinUrl) contactSet.linkedinUrl = d.linkedinUrl;
+    if (!k.hubspotContactId && d.hubspotContactId) contactSet.hubspotContactId = d.hubspotContactId;
+    if (!k.hubspotCompanyId && d.hubspotCompanyId) contactSet.hubspotCompanyId = d.hubspotCompanyId;
+    // Preserve the stricter opt-out state.
+    if (d.emailOptOut && !k.emailOptOut) {
+      contactSet.emailOptOut = true;
+      contactSet.emailOptOutAt = d.emailOptOutAt ?? now;
+      contactSet.emailOptOutSource = d.emailOptOutSource ?? "contact_merge";
+    }
+    if (Object.keys(contactSet).length > 0) {
+      await tx
+        .update(marketingContacts)
+        .set({ ...contactSet, updatedAt: now })
+        .where(eq(marketingContacts.id, keeperId));
+    }
+
+    // 2. Resolve prospect membership collisions.
+    const [dupMemberships, keeperMemberships] = await Promise.all([
+      tx
+        .select({ id: prospects.id, campaignId: prospects.campaignId, researchDossier: prospects.researchDossier, icpScore: prospects.icpScore, scoreBreakdown: prospects.scoreBreakdown, disqualifiedReason: prospects.disqualifiedReason, signals: prospects.signals, createdAt: prospects.createdAt })
+        .from(prospects)
+        .where(eq(prospects.contactId, duplicateId)),
+      tx
+        .select({ id: prospects.id, campaignId: prospects.campaignId, researchDossier: prospects.researchDossier, icpScore: prospects.icpScore, scoreBreakdown: prospects.scoreBreakdown, disqualifiedReason: prospects.disqualifiedReason, signals: prospects.signals, createdAt: prospects.createdAt })
+        .from(prospects)
+        .where(eq(prospects.contactId, keeperId)),
+    ]);
+
+    const keeperByCampaign = new Map(keeperMemberships.map((m) => [m.campaignId, m]));
+    const colliding = dupMemberships.filter((m) => keeperByCampaign.has(m.campaignId));
+    const nonColliding = dupMemberships.filter((m) => !keeperByCampaign.has(m.campaignId));
+
+    let prospectsRepointed = 0;
+
+    if (colliding.length > 0) {
+      for (const dup of colliding) {
+        const keeperMembership = keeperByCampaign.get(dup.campaignId)!;
+
+        // 2a-i. Repoint touches from the colliding duplicate membership → keeper membership
+        //       BEFORE deleting it (outreach_touches.prospect_id cascades on delete).
+        await tx
+          .update(outreachTouches)
+          .set({ prospectId: keeperMembership.id, updatedAt: now } as any)
+          .where(eq(outreachTouches.prospectId, dup.id));
+
+        // 2a-ii. Merge richer research/scoring data from the duplicate membership
+        //        onto the keeper's membership.
+        const membershipSet: Record<string, unknown> = { updatedAt: now };
+        if (!keeperMembership.researchDossier && dup.researchDossier) membershipSet.researchDossier = dup.researchDossier;
+        if (keeperMembership.icpScore === null && dup.icpScore !== null) membershipSet.icpScore = dup.icpScore;
+        if (!keeperMembership.scoreBreakdown && dup.scoreBreakdown) membershipSet.scoreBreakdown = dup.scoreBreakdown;
+        if (!keeperMembership.disqualifiedReason && dup.disqualifiedReason) membershipSet.disqualifiedReason = dup.disqualifiedReason;
+        if (!keeperMembership.signals && dup.signals) membershipSet.signals = dup.signals;
+        // Preserve the earliest created_at.
+        if (dup.createdAt < keeperMembership.createdAt) membershipSet.createdAt = dup.createdAt;
+
+        await tx
+          .update(prospects)
+          .set(membershipSet as any)
+          .where(eq(prospects.id, keeperMembership.id));
+
+        // 2a-iii. Delete the duplicate membership (all its touches have been repointed).
+        await tx.delete(prospects).where(eq(prospects.id, dup.id));
+      }
+    }
+
+    if (nonColliding.length > 0) {
+      // 2b. Non-colliding: repoint directly to the keeper contact.
+      await tx
+        .update(prospects)
+        .set({ contactId: keeperId, updatedAt: now })
+        .where(inArray(prospects.id, nonColliding.map((m) => m.id)));
+      prospectsRepointed = nonColliding.length;
+    }
+
+    // 3. Repoint timeline events.
+    const eventsResult = await tx
+      .update(marketingContactEvents)
+      .set({ contactId: keeperId, tenantDomain })
+      .where(eq(marketingContactEvents.contactId, duplicateId))
+      .returning({ id: marketingContactEvents.id });
+    const eventsRepointed = eventsResult.length;
+
+    // 4. Repoint segment memberships.
+    //    marketing_segment_members has PK (segmentId, contactId), so we must
+    //    delete any row where the keeper is already in the same segment.
+    const dupSegments = await tx
+      .select({ segmentId: marketingSegmentMembers.segmentId })
+      .from(marketingSegmentMembers)
+      .where(eq(marketingSegmentMembers.contactId, duplicateId));
+
+    if (dupSegments.length > 0) {
+      const dupSegmentIds = dupSegments.map((s) => s.segmentId);
+      const keeperSegments = await tx
+        .select({ segmentId: marketingSegmentMembers.segmentId })
+        .from(marketingSegmentMembers)
+        .where(and(eq(marketingSegmentMembers.contactId, keeperId), inArray(marketingSegmentMembers.segmentId, dupSegmentIds)));
+
+      const keeperSegmentSet = new Set(keeperSegments.map((s) => s.segmentId));
+      const segmentsToDelete = dupSegmentIds.filter((sid) => keeperSegmentSet.has(sid));
+      const segmentsToRepoint = dupSegmentIds.filter((sid) => !keeperSegmentSet.has(sid));
+
+      if (segmentsToDelete.length > 0) {
+        await tx
+          .delete(marketingSegmentMembers)
+          .where(and(eq(marketingSegmentMembers.contactId, duplicateId), inArray(marketingSegmentMembers.segmentId, segmentsToDelete)));
+      }
+      if (segmentsToRepoint.length > 0) {
+        await tx
+          .update(marketingSegmentMembers)
+          .set({ contactId: keeperId })
+          .where(and(eq(marketingSegmentMembers.contactId, duplicateId), inArray(marketingSegmentMembers.segmentId, segmentsToRepoint)));
+      }
+    }
+
+    // 5. Repoint workflow enrollments.
+    await tx
+      .update(marketingWorkflowEnrollments)
+      .set({ contactId: keeperId, updatedAt: now })
+      .where(eq(marketingWorkflowEnrollments.contactId, duplicateId));
+
+    // 6. Delete the duplicate contact (all FK children repointed above).
+    await tx.delete(marketingContacts).where(eq(marketingContacts.id, duplicateId));
+
+    return { keeperId, duplicateId, prospectsRepointed, eventsRepointed };
+  });
 }
 
 // ---------------------------------------------------------------------------

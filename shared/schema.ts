@@ -5563,6 +5563,11 @@ export const marketingContacts = pgTable(
     tenantEmailUniq: uniqueIndex("marketing_contacts_tenant_email_uniq")
       .on(table.tenantDomain, table.email)
       .where(sql`${table.email} IS NOT NULL`),
+    // One contact per (tenant, linkedin_url) — mirrors the email partial-unique
+    // constraint so LinkedIn-only imports never create duplicate contacts.
+    tenantLinkedinUniq: uniqueIndex("marketing_contacts_tenant_linkedin_uniq")
+      .on(table.tenantDomain, table.linkedinUrl)
+      .where(sql`${table.linkedinUrl} IS NOT NULL`),
     tenantDomainIdx: index("marketing_contacts_tenant_domain_idx").on(table.tenantDomain),
     lifecycleIdx: index("marketing_contacts_lifecycle_idx").on(
       table.tenantDomain,

@@ -720,6 +720,44 @@ export function registerMarketingContactsRoutes(app: Express) {
     }
   });
 
+  // ──────────────────────────────────────────────────────────
+  // ADMIN CONTACT MERGE — collapse a duplicate contact into a
+  // keeper, repointing prospect memberships and timeline events.
+  // Requires Domain Admin or Global Admin.
+  // ──────────────────────────────────────────────────────────
+  app.post("/api/admin/marketing-contacts/merge", async (req: Request, res: Response) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      if (!user || !["Domain Admin", "Global Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { keeperId, duplicateId } = req.body ?? {};
+      if (typeof keeperId !== "string" || !keeperId.trim()) {
+        return res.status(422).json({ error: "keeperId is required" });
+      }
+      if (typeof duplicateId !== "string" || !duplicateId.trim()) {
+        return res.status(422).json({ error: "duplicateId is required" });
+      }
+      if (keeperId === duplicateId) {
+        return res.status(422).json({ error: "keeperId and duplicateId must differ" });
+      }
+
+      const { mergeContacts } = await import("../services/prospect-contact-service");
+      const result = await mergeContacts(ctx.tenantDomain, keeperId.trim(), duplicateId.trim());
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[marketing-contacts] merge failed:", err.message);
+      const status = err.message?.includes("not found") ? 404
+        : err.message?.includes("not belong") ? 403
+        : 500;
+      res.status(status).json({ error: err.message || "Merge failed" });
+    }
+  });
+
   // NOTE: the HubSpot identity reconciliation sweep was retired with the
   // single contact table — sales and marketing share one hubspotContactId.
 

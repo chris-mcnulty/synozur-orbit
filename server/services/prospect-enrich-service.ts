@@ -16,9 +16,10 @@
  */
 
 import { db } from "../db";
-import { prospects, type ProspectWithContact, type ProspectSignals } from "@shared/schema";
-import { getProspectWithContact, updateContactPersonFields } from "./prospect-contact-service";
-import { eq } from "drizzle-orm";
+import { marketingContacts, prospects, type ProspectWithContact, type ProspectSignals } from "@shared/schema";
+import { getProspectWithContact, updateContactPersonFields, mergeContacts } from "./prospect-contact-service";
+import { and, eq } from "drizzle-orm";
+import { normaliseEmail } from "./marketing-contact-service";
 import { completeWithWebSearch, isWebSearchAvailable } from "./ai-provider";
 import { isApolloAvailable, matchApolloPerson } from "./apollo-discovery-provider";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
@@ -243,9 +244,48 @@ export async function enrichProspectContact(
   if (needLinkedin && linkedinUrl) contactPatch.linkedinUrl = linkedinUrl;
   if (needEmail && email) contactPatch.email = email;
 
+  let effectiveContactId = prospect.contactId;
+
+  // When enrichment discovers an email for a previously no-email contact, check
+  // whether a contact with that email already exists for this tenant. If so,
+  // merge the no-email contact (duplicate) INTO the existing emailed contact
+  // (keeper), repointing all prospect memberships and timeline events, rather
+  // than writing the email onto the duplicate and violating the partial unique
+  // index.
+  if (needEmail && email && !prospect.email) {
+    const normEmail = normaliseEmail(email);
+    if (normEmail && normEmail.includes("@")) {
+      const [existing] = await db
+        .select({ id: marketingContacts.id })
+        .from(marketingContacts)
+        .where(
+          and(
+            eq(marketingContacts.tenantDomain, tenantDomain),
+            eq(marketingContacts.email, normEmail),
+          ),
+        )
+        .limit(1);
+
+      if (existing && existing.id !== prospect.contactId) {
+        // Merge: keep the email-bearing contact, absorb the LinkedIn-only one.
+        await mergeContacts(tenantDomain, existing.id, prospect.contactId);
+        effectiveContactId = existing.id;
+        // No separate contactPatch needed — the merger already copied fields.
+        delete contactPatch.email;
+        // Still apply a linkedin patch if needed (to the keeper contact).
+        if (contactPatch.linkedinUrl) {
+          await updateContactPersonFields(existing.id, { linkedinUrl: contactPatch.linkedinUrl });
+          delete contactPatch.linkedinUrl;
+        }
+      }
+    }
+  }
+
   let updated = prospect;
   if (Object.keys(contactPatch).length > 0) {
-    await updateContactPersonFields(prospect.contactId, contactPatch);
+    await updateContactPersonFields(effectiveContactId, contactPatch);
+  }
+  if (Object.keys(contactPatch).length > 0 || effectiveContactId !== prospect.contactId) {
     const signals: ProspectSignals = { ...(prospect.signals ?? {}) };
     if (evidence.length > 0) {
       const existing = Array.isArray(signals.sources) ? signals.sources : [];
@@ -258,8 +298,8 @@ export async function enrichProspectContact(
     updated = {
       ...prospect,
       signals,
-      linkedinUrl: contactPatch.linkedinUrl ?? prospect.linkedinUrl,
-      email: contactPatch.email ?? prospect.email,
+      linkedinUrl: contactPatch.linkedinUrl ?? prospect.linkedinUrl ?? linkedinUrl ?? null,
+      email: contactPatch.email ?? prospect.email ?? email ?? null,
     };
   }
 
