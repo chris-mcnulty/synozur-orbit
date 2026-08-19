@@ -31,6 +31,8 @@ import {
   MoreHorizontal,
   Archive,
   Trash2,
+  Pause,
+  Play,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
@@ -398,6 +400,7 @@ function initEditForm(c: OutreachCampaign) {
   return {
     name: c.name,
     goalType: c.goalType,
+    status: c.status,
     salesGoal: c.salesGoal ?? "",
     productId: c.productId ?? "",
     conferenceId: c.conferenceId ?? "",
@@ -713,6 +716,26 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Couldn't archive campaign", description: err?.message, variant: "destructive" }),
   });
 
+  const updateCampaignStatus = useMutation({
+    mutationFn: async (status: "draft" | "active" | "paused" | "completed") => {
+      const res = await apiRequest("PATCH", `/api/sales-outreach/campaigns/${id}`, { status });
+      return res.json() as Promise<OutreachCampaign>;
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(campaignKey, updated);
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns"] });
+      const label = updated.status === "active"
+        ? "Campaign activated"
+        : updated.status === "paused"
+          ? "Campaign paused"
+          : updated.status === "completed"
+            ? "Campaign completed"
+            : "Campaign moved to draft";
+      toast({ title: label });
+    },
+    onError: (err: any) => toast({ title: "Couldn't update campaign status", description: err?.message, variant: "destructive" }),
+  });
+
   const deleteCampaign = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/sales-outreach/campaigns/${id}`, {
@@ -751,6 +774,7 @@ export default function OutreachCampaignDetailPage() {
       conferenceId: editForm.conferenceId || null,
       targetPersonaIds: editForm.targetPersonaIds,
       channels: editForm.channels,
+      status: editForm.status,
       targetingFilter: {
         geographies: editForm.geographies,
         industries: editForm.industries,
@@ -815,9 +839,11 @@ export default function OutreachCampaignDetailPage() {
   }, [prospects, searchQ, statusTab, sourceFilter, scoreFilter, sortKey, sortDir]);
 
   const { data: performance } = useQuery<{
+    total: number;
     contacted: number;
     replied: number;
     replyRate: number;
+    funnel: Record<string, number>;
     signals: { key: string; label: string; matched: number; lift: number | null }[];
     recommendations: string[];
   }>({
@@ -1279,8 +1305,47 @@ export default function OutreachCampaignDetailPage() {
             </div>
             <h1 className="text-2xl font-bold tracking-tight mt-1.5">{campaign.name}</h1>
             {campaign.salesGoal && <p className="text-muted-foreground mt-1 max-w-2xl">{campaign.salesGoal}</p>}
+            {campaign.status === "draft" && canEdit && (
+              <p className="text-xs text-muted-foreground mt-2">
+                This campaign is in setup. Activate it when you are ready for cadence follow-ups to advance; every outreach message still requires approval.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {canEdit && campaign.status === "draft" && (
+              <Button
+                size="sm"
+                onClick={() => updateCampaignStatus.mutate("active")}
+                disabled={updateCampaignStatus.isPending}
+                data-testid="button-activate-campaign"
+              >
+                {updateCampaignStatus.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Play className="w-4 h-4 mr-1.5" />}
+                Activate campaign
+              </Button>
+            )}
+            {canEdit && campaign.status === "paused" && (
+              <Button
+                size="sm"
+                onClick={() => updateCampaignStatus.mutate("active")}
+                disabled={updateCampaignStatus.isPending}
+                data-testid="button-resume-campaign"
+              >
+                {updateCampaignStatus.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Play className="w-4 h-4 mr-1.5" />}
+                Resume campaign
+              </Button>
+            )}
+            {canEdit && campaign.status === "active" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => updateCampaignStatus.mutate("paused")}
+                disabled={updateCampaignStatus.isPending}
+                data-testid="button-pause-campaign"
+              >
+                {updateCampaignStatus.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Pause className="w-4 h-4 mr-1.5" />}
+                Pause campaign
+              </Button>
+            )}
             {canEdit && (
               <Button variant="outline" size="sm" onClick={openEdit} data-testid="button-edit-campaign">
                 <Pencil className="w-4 h-4 mr-1.5" /> Edit campaign
@@ -1682,8 +1747,9 @@ export default function OutreachCampaignDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Performance — conversion-first, feeds ICP targeting */}
-        {performance && performance.contacted > 0 && (
+        {/* Performance — always visible so a campaign explains what is happening,
+            even before enough outreach has occurred to draw conclusions. */}
+        {performance && (
           <Card data-testid="campaign-performance">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -1691,25 +1757,62 @@ export default function OutreachCampaignDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-6 text-sm">
-                <div><span className="text-2xl font-bold tabular-nums">{Math.round(performance.replyRate * 100)}%</span><div className="text-xs text-muted-foreground">reply rate</div></div>
-                <div><span className="text-2xl font-bold tabular-nums">{performance.contacted}</span><div className="text-xs text-muted-foreground">contacted</div></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                <div><span className="text-2xl font-bold tabular-nums">{performance.total}</span><div className="text-xs text-muted-foreground">prospects</div></div>
+                <div><span className="text-2xl font-bold tabular-nums">{performance.contacted}</span><div className="text-xs text-muted-foreground">worked</div></div>
                 <div><span className="text-2xl font-bold tabular-nums">{performance.replied}</span><div className="text-xs text-muted-foreground">replied</div></div>
+                <div><span className="text-2xl font-bold tabular-nums">{Math.round(performance.replyRate * 100)}%</span><div className="text-xs text-muted-foreground">reply rate</div></div>
               </div>
-              {performance.signals.filter((s) => s.lift != null && s.matched >= 3).length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">What's converting</p>
-                  <div className="space-y-1">
-                    {performance.signals.filter((s) => s.lift != null && s.matched >= 3).slice(0, 4).map((s) => (
-                      <div key={s.key} className="flex items-center justify-between text-sm">
-                        <span>{s.label}</span>
-                        <span className={`tabular-nums ${(s.lift ?? 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
-                          {(s.lift ?? 0) > 0 ? "+" : ""}{Math.round((s.lift ?? 0) * 100)} pts
-                        </span>
-                      </div>
+              {performance.total === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Add or import prospects to start tracking campaign results. Metrics update as prospects are researched, contacted, and replied.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(performance.funnel).map(([status, count]) => (
+                      <Badge key={status} variant="outline" className="text-[10px] capitalize">
+                        {status.replace(/_/g, " ")} {count}
+                      </Badge>
                     ))}
                   </div>
-                </div>
+                  {performance.signals.filter((s) => s.lift != null && s.matched >= 3 && s.lift > 0.05).length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1.5">What's working</p>
+                      <div className="space-y-1">
+                        {performance.signals
+                          .filter((s) => s.lift != null && s.matched >= 3 && s.lift > 0.05)
+                          .slice(0, 4)
+                          .map((s) => (
+                            <div key={s.key} className="flex items-center justify-between text-sm">
+                              <span>{s.label}</span>
+                              <span className="tabular-nums text-emerald-600 dark:text-emerald-400">
+                                +{Math.round((s.lift ?? 0) * 100)} pts
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  {performance.signals.filter((s) => s.lift != null && s.matched >= 3 && s.lift < -0.05).length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1.5">Needs attention</p>
+                      <div className="space-y-1">
+                        {performance.signals
+                          .filter((s) => s.lift != null && s.matched >= 3 && s.lift < -0.05)
+                          .slice(0, 4)
+                          .map((s) => (
+                            <div key={s.key} className="flex items-center justify-between text-sm">
+                              <span>{s.label}</span>
+                              <span className="tabular-nums text-amber-600 dark:text-amber-400">
+                                {Math.round((s.lift ?? 0) * 100)} pts
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
               {performance.recommendations.length > 0 && (
                 <ul className="space-y-1 text-sm text-muted-foreground border-l-2 pl-3">
@@ -1740,6 +1843,27 @@ export default function OutreachCampaignDetailPage() {
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                   data-testid="input-edit-campaign-name"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="ec-status">Campaign status</Label>
+                <Select
+                  value={editForm.status}
+                  onValueChange={(v) => setEditForm({ ...editForm, status: v })}
+                >
+                  <SelectTrigger id="ec-status" data-testid="select-edit-campaign-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft — setup only</SelectItem>
+                    <SelectItem value="active">Active — cadence follow-ups can advance</SelectItem>
+                    <SelectItem value="paused">Paused — hold follow-ups</SelectItem>
+                    <SelectItem value="completed">Completed — campaign finished</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Only Active campaigns advance their cadence. Individual messages still require approval before they are sent.
+                </p>
               </div>
 
               {/* Goal type */}
