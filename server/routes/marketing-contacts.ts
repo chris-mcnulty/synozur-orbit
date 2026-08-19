@@ -53,6 +53,15 @@ const EMPTY_SALES_CONTEXT = {
   outreachCampaignName: null as string | null,
 };
 
+export interface CampaignMembership {
+  prospectId: string;
+  status: string | null;
+  icpScore: number | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  updatedAt: Date | null;
+}
+
 /**
  * Latest campaign membership per contact. A leftJoin would duplicate contact
  * rows when a contact is on multiple campaigns, so we merge in JS instead.
@@ -90,6 +99,38 @@ async function latestMembershipByContact(
     });
   }
   return map;
+}
+
+/**
+ * All campaign memberships for a single contact, ordered newest-first.
+ * Used by the contact detail endpoint so the drawer can show the full
+ * sales history rather than only the most recent membership.
+ */
+async function allMembershipsForContact(
+  tenantDomain: string,
+  contactId: string,
+): Promise<CampaignMembership[]> {
+  const rows = await db
+    .select({
+      prospectId: prospects.id,
+      status: prospects.status,
+      icpScore: prospects.icpScore,
+      campaignId: prospects.campaignId,
+      campaignName: outreachCampaignsTable.name,
+      updatedAt: prospects.updatedAt,
+    })
+    .from(prospects)
+    .leftJoin(outreachCampaignsTable, eq(prospects.campaignId, outreachCampaignsTable.id))
+    .where(and(eq(prospects.tenantDomain, tenantDomain), eq(prospects.contactId, contactId)))
+    .orderBy(desc(prospects.updatedAt), desc(prospects.id));
+  return rows.map((r) => ({
+    prospectId: r.prospectId,
+    status: r.status,
+    icpScore: r.icpScore,
+    campaignId: r.campaignId,
+    campaignName: r.campaignName,
+    updatedAt: r.updatedAt,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -412,8 +453,15 @@ export function registerMarketingContactsRoutes(app: Express) {
       .limit(1);
 
     if (!contact) return res.status(404).json({ error: "Contact not found" });
-    const memberships = await latestMembershipByContact(ctx.tenantDomain, [contact.id]);
-    res.json({ ...contact, ...(memberships.get(contact.id) ?? EMPTY_SALES_CONTEXT) });
+    const [memberships, campaignMemberships] = await Promise.all([
+      latestMembershipByContact(ctx.tenantDomain, [contact.id]),
+      allMembershipsForContact(ctx.tenantDomain, contact.id),
+    ]);
+    res.json({
+      ...contact,
+      ...(memberships.get(contact.id) ?? EMPTY_SALES_CONTEXT),
+      campaignMemberships,
+    });
   });
 
   // ──────────────────────────────────────────────────────────

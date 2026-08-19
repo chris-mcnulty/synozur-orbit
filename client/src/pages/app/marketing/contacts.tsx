@@ -68,6 +68,15 @@ import { apiRequest } from "@/lib/queryClient";
 // Types
 // ---------------------------------------------------------------------------
 
+interface CampaignMembership {
+  prospectId: string;
+  status: string | null;
+  icpScore: number | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  updatedAt: string | null;
+}
+
 interface MarketingContact {
   id: string;
   tenantDomain: string;
@@ -88,6 +97,8 @@ interface MarketingContact {
   prospectIcpScore: number | null;
   outreachCampaignId: string | null;
   outreachCampaignName: string | null;
+  // Full membership list — only populated on the single-contact endpoint
+  campaignMemberships?: CampaignMembership[];
 }
 
 interface ContactEvent {
@@ -515,6 +526,80 @@ function ProspectDossierModal({
   );
 }
 
+function CampaignMembershipList({
+  memberships,
+  onViewDossier,
+}: {
+  memberships: CampaignMembership[];
+  onViewDossier: (prospectId: string) => void;
+}) {
+  if (memberships.length === 0) return null;
+
+  return (
+    <div className="mt-4 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 flex flex-col gap-2">
+      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+        <Briefcase className="h-3.5 w-3.5" />
+        Campaign memberships ({memberships.length})
+      </p>
+      <div className="flex flex-col gap-2.5">
+        {memberships.map((m, idx) => (
+          <div
+            key={m.prospectId}
+            className={`flex flex-col gap-1 ${idx > 0 ? "pt-2 border-t border-amber-200 dark:border-amber-800" : ""}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-col gap-0.5 min-w-0">
+                {m.campaignName ? (
+                  <a
+                    href={`/app/sales/outreach/${m.campaignId}`}
+                    className="text-xs font-medium text-primary hover:underline flex items-center gap-0.5 truncate"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {m.campaignName}
+                    <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
+                  </a>
+                ) : (
+                  <span className="text-xs text-muted-foreground italic">No campaign</span>
+                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {m.status && (
+                    <span className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Status:</span>{" "}
+                      {PROSPECT_STATUS_LABELS[m.status] ?? m.status}
+                    </span>
+                  )}
+                  {m.icpScore != null && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+                      <TrendingUp className="h-3 w-3 text-amber-500" />
+                      <span className="font-medium text-foreground">ICP:</span>{" "}
+                      {m.icpScore}/100
+                    </span>
+                  )}
+                  {m.updatedAt && (
+                    <span className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(m.updatedAt), { addSuffix: true })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs shrink-0 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                onClick={() => onViewDossier(m.prospectId)}
+              >
+                <BookOpen className="h-3 w-3 mr-1" />
+                Dossier
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TimelinePanel({
   contact,
   open,
@@ -524,7 +609,20 @@ function TimelinePanel({
   open: boolean;
   onClose: () => void;
 }) {
-  const [dossierOpen, setDossierOpen] = useState(false);
+  const [dossierProspectId, setDossierProspectId] = useState<string | null>(null);
+
+  // Fetch the full contact detail to get all campaign memberships.
+  // The list endpoint only returns the latest membership.
+  const { data: fullContact } = useQuery<MarketingContact>({
+    queryKey: ["/api/marketing-contacts", contact?.id, "detail"],
+    queryFn: async () => {
+      const res = await fetch(`/api/marketing-contacts/${contact!.id}`);
+      if (!res.ok) throw new Error("Failed to load contact detail");
+      return res.json();
+    },
+    enabled: !!contact && open,
+  });
+
   const { data: events, isLoading } = useQuery<ContactEvent[]>({
     queryKey: ["/api/marketing-contacts", contact?.id, "events"],
     queryFn: async () => {
@@ -539,6 +637,8 @@ function TimelinePanel({
   const name = contact
     ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email
     : "";
+
+  const memberships = fullContact?.campaignMemberships ?? [];
 
   return (
     <>
@@ -574,53 +674,11 @@ function TimelinePanel({
           )}
         </SheetHeader>
 
-        {/* Sales context panel — only shown for contacts linked to a prospect */}
-        {contact?.outreachCampaignName && (
-          <div className="mt-4 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 flex flex-col gap-1.5">
-            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-              <Briefcase className="h-3.5 w-3.5" />
-              Sales context
-            </p>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <span className="font-medium text-foreground">Campaign:</span>
-                <a
-                  href={`/app/sales/outreach/${contact.outreachCampaignId}`}
-                  className="text-primary hover:underline flex items-center gap-0.5"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {contact.outreachCampaignName}
-                  <ExternalLink className="h-3 w-3 opacity-60" />
-                </a>
-              </span>
-              {contact.prospectStatus && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <span className="font-medium text-foreground">Prospect status:</span>
-                  {PROSPECT_STATUS_LABELS[contact.prospectStatus] ?? contact.prospectStatus}
-                </span>
-              )}
-              {contact.prospectIcpScore != null && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <TrendingUp className="h-3 w-3 text-amber-500" />
-                  <span className="font-medium text-foreground">ICP score:</span>
-                  {contact.prospectIcpScore}
-                </span>
-              )}
-            </div>
-            {contact.sourceProspectId && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-1 h-7 text-xs border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 self-start"
-                onClick={() => setDossierOpen(true)}
-              >
-                <BookOpen className="h-3.5 w-3.5 mr-1.5" />
-                View dossier
-              </Button>
-            )}
-          </div>
-        )}
+        {/* All campaign memberships — replaces the old single-membership amber panel */}
+        <CampaignMembershipList
+          memberships={memberships}
+          onViewDossier={(id) => setDossierProspectId(id)}
+        />
 
         <div className="pt-4">
           <Tabs defaultValue="timeline">
@@ -686,9 +744,9 @@ function TimelinePanel({
       </SheetContent>
     </Sheet>
     <ProspectDossierModal
-      prospectId={contact?.sourceProspectId ?? null}
-      open={dossierOpen}
-      onClose={() => setDossierOpen(false)}
+      prospectId={dossierProspectId}
+      open={!!dossierProspectId}
+      onClose={() => setDossierProspectId(null)}
     />
     </>
   );
