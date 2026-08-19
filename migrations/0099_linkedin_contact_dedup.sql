@@ -59,32 +59,39 @@ WHERE keeper.id = k.keeper_id;
 
 -- 3a. Back-fill membership fields from colliding duplicate memberships onto
 --     the keeper's existing membership (most-recently-updated duplicate first).
-UPDATE prospects keeper_m SET
-  research_dossier    = COALESCE(keeper_m.research_dossier,    agg.research_dossier),
-  icp_score           = COALESCE(keeper_m.icp_score,           agg.icp_score),
-  score_breakdown     = COALESCE(keeper_m.score_breakdown,     agg.score_breakdown),
-  disqualified_reason = COALESCE(keeper_m.disqualified_reason, agg.disqualified_reason),
-  signals             = COALESCE(keeper_m.signals,             agg.signals),
-  created_at          = LEAST(keeper_m.created_at, agg.min_created_at),
+--     Rewritten as a derived-table aggregation to avoid the PostgreSQL alias
+--     conflict that occurs when the UPDATE target table alias matches a FROM
+--     join alias (UPDATE prospects keeper_m ... JOIN prospects keeper_m ...).
+UPDATE prospects SET
+  research_dossier    = COALESCE(prospects.research_dossier,    vals.research_dossier),
+  icp_score           = COALESCE(prospects.icp_score,           vals.icp_score),
+  score_breakdown     = COALESCE(prospects.score_breakdown,     vals.score_breakdown),
+  disqualified_reason = COALESCE(prospects.disqualified_reason, vals.disqualified_reason),
+  signals             = COALESCE(prospects.signals,             vals.signals),
+  created_at          = LEAST(prospects.created_at, vals.min_created_at),
   updated_at          = now()
-FROM linkedin_dedup_keepers k
-JOIN prospects keeper_m ON keeper_m.contact_id = k.keeper_id
-CROSS JOIN LATERAL (
+FROM (
   SELECT
+    keeper_m.id AS keeper_m_id,
     (array_remove(array_agg(dup_m.research_dossier    ORDER BY dup_m.updated_at DESC), NULL))[1] AS research_dossier,
     (array_remove(array_agg(dup_m.icp_score           ORDER BY dup_m.updated_at DESC), NULL))[1] AS icp_score,
     (array_remove(array_agg(dup_m.score_breakdown     ORDER BY dup_m.updated_at DESC), NULL))[1] AS score_breakdown,
     (array_remove(array_agg(dup_m.disqualified_reason ORDER BY dup_m.updated_at DESC), NULL))[1] AS disqualified_reason,
     (array_remove(array_agg(dup_m.signals             ORDER BY dup_m.updated_at DESC), NULL))[1] AS signals,
     min(dup_m.created_at) AS min_created_at
-  FROM marketing_contacts dup_c
-  JOIN prospects dup_m ON dup_m.contact_id = dup_c.id
-  WHERE dup_c.tenant_domain = k.tenant_domain
-    AND dup_c.linkedin_url  = k.linkedin_url
-    AND dup_c.id            <> k.keeper_id
-    AND dup_m.campaign_id   = keeper_m.campaign_id
-) agg
-WHERE agg.min_created_at IS NOT NULL;
+  FROM linkedin_dedup_keepers k
+  JOIN prospects keeper_m ON keeper_m.contact_id = k.keeper_id
+  JOIN marketing_contacts dup_c
+    ON dup_c.tenant_domain = k.tenant_domain
+    AND dup_c.linkedin_url = k.linkedin_url
+    AND dup_c.id           <> k.keeper_id
+  JOIN prospects dup_m
+    ON dup_m.contact_id  = dup_c.id
+    AND dup_m.campaign_id = keeper_m.campaign_id
+  GROUP BY keeper_m.id
+) vals
+WHERE prospects.id = vals.keeper_m_id
+  AND vals.min_created_at IS NOT NULL;
 
 -- 3b. Repoint touch history from colliding duplicate memberships onto the
 --     keeper's membership before the duplicate memberships are deleted.
@@ -176,7 +183,7 @@ WHERE dup_c.linkedin_url  = k.linkedin_url
 
 DROP TABLE linkedin_dedup_keepers;
 
--- 6. Enforce uniqueness going forward.
+-- 8. Enforce uniqueness going forward.
 CREATE UNIQUE INDEX IF NOT EXISTS marketing_contacts_tenant_linkedin_uniq
   ON marketing_contacts (tenant_domain, linkedin_url)
   WHERE linkedin_url IS NOT NULL;
