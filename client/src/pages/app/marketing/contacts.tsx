@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,10 +60,15 @@ import {
   ShieldCheck,
   AlertCircle,
   RefreshCw,
+  Upload,
+  Linkedin,
+  UserPlus,
+  CloudDownload,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { parseCSV } from "@/lib/csv-export";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,6 +91,7 @@ interface MarketingContact {
   lastName: string | null;
   company: string | null;
   jobTitle: string | null;
+  linkedinUrl: string | null;
   lifecycleStage: string;
   hubspotContactId: string | null;
   source: string;
@@ -605,10 +611,12 @@ function TimelinePanel({
   contact,
   open,
   onClose,
+  onEditContact,
 }: {
   contact: MarketingContact | null;
   open: boolean;
   onClose: () => void;
+  onEditContact: (contact: MarketingContact) => void;
 }) {
   const [dossierProspectId, setDossierProspectId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -715,21 +723,44 @@ function TimelinePanel({
                 </span>
               )}
               <div className="pt-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => syncHubspotMutation.mutate()}
-                  disabled={syncHubspotMutation.isPending || !displayedContact.email}
-                  data-testid="button-sync-contact-hubspot"
-                >
-                  {syncHubspotMutation.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                  )}
-                  Sync with HubSpot
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onEditContact(displayedContact)}
+                    data-testid="button-edit-contact"
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                    Edit contact
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => syncHubspotMutation.mutate()}
+                    disabled={syncHubspotMutation.isPending || !displayedContact.email}
+                    data-testid="button-sync-contact-hubspot"
+                  >
+                    {syncHubspotMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    Sync with HubSpot
+                  </Button>
+                </div>
               </div>
+              {displayedContact.linkedinUrl && (
+                <a
+                  href={displayedContact.linkedinUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-primary inline-flex items-center gap-1 w-fit hover:underline"
+                >
+                  <Linkedin className="h-3.5 w-3.5" />
+                  View LinkedIn profile
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
           )}
         </SheetHeader>
@@ -933,6 +964,13 @@ export default function ContactsPage() {
   const [lifecycle, setLifecycle] = useState<string>("");
   const [origin, setOrigin] = useState<string>("");
   const [selectedContact, setSelectedContact] = useState<MarketingContact | null>(null);
+  const [contactEditorOpen, setContactEditorOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<MarketingContact | null>(null);
+  const [hubspotImportOpen, setHubspotImportOpen] = useState(false);
+  const [csvImport, setCsvImport] = useState<CsvImportData | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const debouncedQ = useDebouncedValue(q, 300);
 
@@ -953,11 +991,38 @@ export default function ContactsPage() {
   const contacts = data?.data ?? [];
   const pagination = data?.pagination;
 
+  const refreshContacts = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/marketing-contacts"] });
+  };
+
+  const openAddContact = () => {
+    setEditingContact(null);
+    setContactEditorOpen(true);
+  };
+
+  const openEditContact = (contact: MarketingContact) => {
+    setEditingContact(contact);
+    setContactEditorOpen(true);
+  };
+
+  const prepareCsvImport = async (file: File) => {
+    const rows = parseCSV(await file.text());
+    if (!rows.length) {
+      toast({
+        title: "No contacts found",
+        description: "Choose a CSV with a header row and at least one contact.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCsvImport({ fileName: file.name, rows });
+  };
+
   return (
     <AppLayout>
       <div className="flex flex-col gap-6 p-6 max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Users className="h-6 w-6 text-primary" />
@@ -967,6 +1032,37 @@ export default function ContactsPage() {
               Marketing contacts with lifecycle stage, activity timeline, and saved segments.
             </p>
           </div>
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  prepareCsvImport(file).catch((error: Error) => toast({
+                    title: "CSV import failed",
+                    description: error.message,
+                    variant: "destructive",
+                  }));
+                }}
+                data-testid="input-import-marketing-contacts-csv"
+              />
+              <Button variant="outline" size="sm" onClick={() => csvInputRef.current?.click()} data-testid="button-import-marketing-contacts-csv">
+                <Upload className="h-4 w-4 mr-1.5" />
+                Import CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setHubspotImportOpen(true)} data-testid="button-import-marketing-contacts-hubspot">
+                <CloudDownload className="h-4 w-4 mr-1.5" />
+                Import HubSpot
+              </Button>
+              <Button size="sm" onClick={openAddContact} data-testid="button-add-marketing-contact">
+                <UserPlus className="h-4 w-4 mr-1.5" />
+                Add contact
+              </Button>
+            </div>
         </div>
 
         <Tabs defaultValue="contacts">
@@ -1071,6 +1167,9 @@ export default function ContactsPage() {
                           <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden sm:table-cell">
                             Company
                           </th>
+                           <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">
+                             LinkedIn
+                           </th>
                           <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">
                             Stage
                           </th>
@@ -1108,6 +1207,22 @@ export default function ContactsPage() {
                                 <span className="text-muted-foreground/40">—</span>
                               )}
                             </td>
+                             <td className="px-4 py-3 hidden lg:table-cell">
+                               {contact.linkedinUrl ? (
+                                 <a
+                                   href={contact.linkedinUrl}
+                                   target="_blank"
+                                   rel="noreferrer"
+                                   onClick={(event) => event.stopPropagation()}
+                                   className="inline-flex items-center gap-1 text-primary hover:underline"
+                                 >
+                                   <Linkedin className="h-3.5 w-3.5" />
+                                   Profile
+                                 </a>
+                               ) : (
+                                 <span className="text-muted-foreground/40">—</span>
+                               )}
+                             </td>
                             <td className="px-4 py-3">
                               <LifecycleBadge stage={contact.lifecycleStage} />
                             </td>
@@ -1175,8 +1290,489 @@ export default function ContactsPage() {
         contact={selectedContact}
         open={!!selectedContact}
         onClose={() => setSelectedContact(null)}
+        onEditContact={openEditContact}
+      />
+      <ContactEditorDialog
+        open={contactEditorOpen}
+        contact={editingContact}
+        onClose={() => setContactEditorOpen(false)}
+        onSaved={(contactId) => {
+          refreshContacts();
+          if (selectedContact?.id === contactId) {
+            queryClient.invalidateQueries({
+              queryKey: ["/api/marketing-contacts", contactId, "detail"],
+            });
+          }
+          setContactEditorOpen(false);
+        }}
+      />
+      <HubspotContactImportDialog
+        open={hubspotImportOpen}
+        onClose={() => setHubspotImportOpen(false)}
+        onImported={() => {
+          refreshContacts();
+          setHubspotImportOpen(false);
+        }}
+      />
+      <CsvContactImportDialog
+        data={csvImport}
+        onClose={() => setCsvImport(null)}
+        onImported={() => {
+          refreshContacts();
+          setCsvImport(null);
+        }}
       />
     </AppLayout>
+  );
+}
+
+type CsvImportData = {
+  fileName: string;
+  rows: Record<string, string>[];
+};
+
+type CsvMappingKey = "email" | "firstName" | "lastName" | "company" | "jobTitle" | "linkedinUrl" | "lifecycleStage";
+
+const CSV_MAPPING_FIELDS: { key: CsvMappingKey; label: string; aliases: string[] }[] = [
+  { key: "email", label: "Email", aliases: ["email", "emailaddress"] },
+  { key: "firstName", label: "First name", aliases: ["firstname", "first"] },
+  { key: "lastName", label: "Last name", aliases: ["lastname", "last"] },
+  { key: "company", label: "Company", aliases: ["company", "companyname", "organization"] },
+  { key: "jobTitle", label: "Job title", aliases: ["jobtitle", "title", "role"] },
+  { key: "linkedinUrl", label: "LinkedIn profile", aliases: ["linkedin", "linkedinurl", "linkedinprofile"] },
+  { key: "lifecycleStage", label: "Lifecycle stage", aliases: ["lifecyclestage", "lifecycle"] },
+];
+
+function compactCsvHeader(header: string) {
+  return header.toLowerCase().replace(/[\s_-]/g, "");
+}
+
+function initialCsvMapping(headers: string[]): Record<CsvMappingKey, string> {
+  return Object.fromEntries(CSV_MAPPING_FIELDS.map((field) => [
+    field.key,
+    headers.find((header) => field.aliases.includes(compactCsvHeader(header))) ?? "",
+  ])) as Record<CsvMappingKey, string>;
+}
+
+function CsvContactImportDialog({
+  data,
+  onClose,
+  onImported,
+}: {
+  data: CsvImportData | null;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const headers = data?.rows[0] ? Object.keys(data.rows[0]) : [];
+  const [mapping, setMapping] = useState<Record<CsvMappingKey, string>>(() => initialCsvMapping(headers));
+
+  useEffect(() => {
+    setMapping(initialCsvMapping(headers));
+  }, [data?.fileName]);
+
+  const contacts = (data?.rows ?? []).map((row) => ({
+    email: mapping.email ? row[mapping.email] ?? "" : "",
+    firstName: mapping.firstName ? row[mapping.firstName] ?? "" : "",
+    lastName: mapping.lastName ? row[mapping.lastName] ?? "" : "",
+    company: mapping.company ? row[mapping.company] ?? "" : "",
+    jobTitle: mapping.jobTitle ? row[mapping.jobTitle] ?? "" : "",
+    linkedinUrl: mapping.linkedinUrl ? row[mapping.linkedinUrl] ?? "" : "",
+    lifecycleStage: mapping.lifecycleStage ? row[mapping.lifecycleStage] ?? "" : "",
+  })).filter((contact) => contact.email.trim() || contact.linkedinUrl.trim());
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/marketing-contacts/import-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ contacts }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || "CSV import failed");
+      return result as { created: number; updated: number; skipped: number };
+    },
+    onSuccess: (result) => {
+      toast({
+        title: "CSV import complete",
+        description: `${result.created} added · ${result.updated} updated · ${result.skipped} skipped`,
+      });
+      onImported();
+    },
+    onError: (error: Error) => toast({
+      title: "CSV import failed",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+
+  return (
+    <Dialog open={!!data} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Map CSV columns</DialogTitle>
+          <SheetDescription>
+            Review the columns from {data?.fileName ?? "your CSV"} before importing. An email or LinkedIn profile is required for each contact.
+          </SheetDescription>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {CSV_MAPPING_FIELDS.map((field) => (
+            <div key={field.key}>
+              <Label>{field.label}</Label>
+              <Select
+                value={mapping[field.key] || "__ignore"}
+                onValueChange={(value) => setMapping({ ...mapping, [field.key]: value === "__ignore" ? "" : value })}
+              >
+                <SelectTrigger><SelectValue placeholder="Do not import" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__ignore">Do not import</SelectItem>
+                  {headers.map((header) => (
+                    <SelectItem key={header} value={header}>{header}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+          {contacts.length.toLocaleString()} of {(data?.rows.length ?? 0).toLocaleString()} rows have an email or LinkedIn profile and will be imported. Existing email or LinkedIn matches are updated.
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => importMutation.mutate()}
+            disabled={!contacts.length || importMutation.isPending}
+          >
+            {importMutation.isPending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            Import {contacts.length.toLocaleString()} contacts
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type ContactForm = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  jobTitle: string;
+  linkedinUrl: string;
+  lifecycleStage: string;
+};
+
+function formFromContact(contact: MarketingContact | null): ContactForm {
+  return {
+    email: contact?.email ?? "",
+    firstName: contact?.firstName ?? "",
+    lastName: contact?.lastName ?? "",
+    company: contact?.company ?? "",
+    jobTitle: contact?.jobTitle ?? "",
+    linkedinUrl: contact?.linkedinUrl ?? "",
+    lifecycleStage: contact?.lifecycleStage ?? "subscriber",
+  };
+}
+
+function ContactEditorDialog({
+  open,
+  contact,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  contact: MarketingContact | null;
+  onClose: () => void;
+  onSaved: (contactId: string) => void;
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<ContactForm>(() => formFromContact(contact));
+
+  useEffect(() => {
+    if (open) setForm(formFromContact(contact));
+  }, [open, contact?.id]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const endpoint = contact
+        ? `/api/marketing-contacts/${contact.id}`
+        : "/api/marketing-contacts";
+      const res = await fetch(endpoint, {
+        method: contact ? "PATCH" : "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not save contact");
+      return body as { contactId?: string; contact?: { id: string } };
+    },
+    onSuccess: (result) => {
+      toast({ title: contact ? "Contact updated" : "Contact added" });
+      const contactId = result.contact?.id ?? result.contactId;
+      if (contactId) onSaved(contactId);
+      else onClose();
+    },
+    onError: (error: Error) => toast({
+      title: "Could not save contact",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{contact ? "Edit contact" : "Add contact"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-2 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label htmlFor="contact-email">Email</Label>
+            <Input
+              id="contact-email"
+              type="email"
+              value={form.email}
+              onChange={(event) => setForm({ ...form, email: event.target.value })}
+              placeholder="name@company.com"
+            />
+          </div>
+          <div>
+            <Label htmlFor="contact-first-name">First name</Label>
+            <Input
+              id="contact-first-name"
+              value={form.firstName}
+              onChange={(event) => setForm({ ...form, firstName: event.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="contact-last-name">Last name</Label>
+            <Input
+              id="contact-last-name"
+              value={form.lastName}
+              onChange={(event) => setForm({ ...form, lastName: event.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="contact-company">Company</Label>
+            <Input
+              id="contact-company"
+              value={form.company}
+              onChange={(event) => setForm({ ...form, company: event.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="contact-job-title">Job title</Label>
+            <Input
+              id="contact-job-title"
+              value={form.jobTitle}
+              onChange={(event) => setForm({ ...form, jobTitle: event.target.value })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="contact-linkedin">LinkedIn profile</Label>
+            <Input
+              id="contact-linkedin"
+              type="url"
+              value={form.linkedinUrl}
+              onChange={(event) => setForm({ ...form, linkedinUrl: event.target.value })}
+              placeholder="https://www.linkedin.com/in/name"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label>Lifecycle stage</Label>
+            <Select
+              value={form.lifecycleStage}
+              onValueChange={(lifecycleStage) => setForm({ ...form, lifecycleStage })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LIFECYCLE_STAGES.map((stage) => (
+                  <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || (!form.email.trim() && !form.linkedinUrl.trim())}
+          >
+            {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            {contact ? "Save changes" : "Add contact"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface HubSpotContactOption {
+  hubspotContactId: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  name: string;
+  jobTitle: string | null;
+  company: string | null;
+  linkedinUrl: string | null;
+}
+
+function HubspotContactImportDialog({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<HubSpotContactOption[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [searching, setSearching] = useState(false);
+
+  const search = async () => {
+    setSearching(true);
+    try {
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
+      const res = await fetch(`/api/marketing-contacts/hubspot/search?${params.toString()}`, {
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not search HubSpot");
+      setResults(data.contacts ?? []);
+      setSelectedIds(new Set());
+    } catch (error: any) {
+      toast({ title: "Could not search HubSpot", description: error.message, variant: "destructive" });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/marketing-contacts/hubspot/import", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactIds: [...selectedIds] }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "HubSpot import failed");
+      return body as { created: number; updated: number; skipped: number };
+    },
+    onSuccess: (result) => {
+      toast({
+        title: "HubSpot contacts imported",
+        description: `${result.created} added · ${result.updated} updated · ${result.skipped} skipped`,
+      });
+      onImported();
+    },
+    onError: (error: Error) => toast({
+      title: "HubSpot import failed",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+
+  const toggle = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Import contacts from HubSpot</DialogTitle>
+          <SheetDescription>
+            Search the connected HubSpot portal, select people, and add them to Marketing Contacts.
+          </SheetDescription>
+        </DialogHeader>
+        <div className="flex gap-2">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                search();
+              }
+            }}
+            placeholder="Search name, email, or company"
+          />
+          <Button variant="outline" onClick={search} disabled={searching}>
+            {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <span className="sr-only">Search HubSpot</span>
+          </Button>
+        </div>
+        {results.length > 0 ? (
+          <div className="rounded-md border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th className="w-10 px-3 py-2" />
+                  <th className="text-left px-3 py-2">Contact</th>
+                  <th className="text-left px-3 py-2 hidden sm:table-cell">Company</th>
+                  <th className="text-left px-3 py-2 hidden md:table-cell">Title</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((result) => (
+                  <tr
+                    key={result.hubspotContactId}
+                    className="border-t hover:bg-muted/30 cursor-pointer"
+                    onClick={() => toggle(result.hubspotContactId)}
+                  >
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(result.hubspotContactId)}
+                        onChange={() => toggle(result.hubspotContactId)}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={`Select ${result.name || result.email || "contact"}`}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{result.name || result.email || "Unnamed contact"}</div>
+                      {result.email && <div className="text-xs text-muted-foreground">{result.email}</div>}
+                    </td>
+                    <td className="px-3 py-2 hidden sm:table-cell">{result.company || "—"}</td>
+                    <td className="px-3 py-2 hidden md:table-cell">{result.jobTitle || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            Search HubSpot to choose contacts to import.
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => importMutation.mutate()}
+            disabled={selectedIds.size === 0 || importMutation.isPending}
+          >
+            {importMutation.isPending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            Import {selectedIds.size || ""} selected
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1384,9 +1980,10 @@ function SegmentDialog({
   };
 
   // Sync state when segment prop changes (dialog reopening)
-  const [lastSegmentId, setLastSegmentId] = useState<string | null>(segment?.id ?? null);
-  if (segment?.id !== lastSegmentId) {
-    setLastSegmentId(segment?.id ?? null);
+  const segmentId = segment?.id ?? null;
+  const [lastSegmentId, setLastSegmentId] = useState<string | null>(segmentId);
+  if (segmentId !== lastSegmentId) {
+    setLastSegmentId(segmentId);
     resetTo(segment);
   }
 

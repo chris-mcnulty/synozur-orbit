@@ -37,6 +37,8 @@ import {
   evaluateSegmentRules,
   resolveSegmentContacts,
   LIFECYCLE_STAGES,
+  normaliseEmail,
+  upsertContact,
   type ContactEventType,
   type SegmentRule,
 } from "../services/marketing-contact-service";
@@ -246,6 +248,99 @@ async function guardContacts(req: Request, res: Response): Promise<boolean> {
   }
 }
 
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normaliseLinkedInUrl(value: unknown): string | null {
+  const url = optionalText(value);
+  return url ? url.replace(/\/+$/, "") : null;
+}
+
+function contactInputFromBody(body: Record<string, unknown>) {
+  const lifecycleStage = optionalText(body.lifecycleStage) ?? "subscriber";
+  if (!(LIFECYCLE_STAGES as readonly string[]).includes(lifecycleStage)) {
+    const error = new Error("Invalid lifecycle stage");
+    (error as Error & { statusCode?: number }).statusCode = 400;
+    throw error;
+  }
+  return {
+    email: optionalText(body.email),
+    firstName: optionalText(body.firstName),
+    lastName: optionalText(body.lastName),
+    company: optionalText(body.company),
+    jobTitle: optionalText(body.jobTitle),
+    linkedinUrl: normaliseLinkedInUrl(body.linkedinUrl),
+    lifecycleStage,
+  };
+}
+
+async function importContactIntoMarketing(
+  tenantDomain: string,
+  input: ReturnType<typeof contactInputFromBody>,
+  source: string,
+) {
+  if (!input.email && !input.linkedinUrl) {
+    return { skipped: true, reason: "missing_contact_key" as const };
+  }
+  if (!input.email) {
+    const [existing] = await db
+      .select({ id: marketingContacts.id })
+      .from(marketingContacts)
+      .where(and(
+        eq(marketingContacts.tenantDomain, tenantDomain),
+        eq(marketingContacts.linkedinUrl, input.linkedinUrl!),
+      ))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(marketingContacts)
+        .set({
+          firstName: input.firstName ?? undefined,
+          lastName: input.lastName ?? undefined,
+          company: input.company ?? undefined,
+          jobTitle: input.jobTitle ?? undefined,
+          lifecycleStage: input.lifecycleStage,
+          updatedAt: new Date(),
+        })
+        .where(eq(marketingContacts.id, existing.id));
+      return { contactId: existing.id, created: false, skipped: false as const };
+    }
+    const id = randomUUID();
+    await db.insert(marketingContacts).values({
+      id,
+      tenantDomain,
+      email: null,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      company: input.company,
+      jobTitle: input.jobTitle,
+      linkedinUrl: input.linkedinUrl,
+      lifecycleStage: input.lifecycleStage,
+      source,
+      lastEventAt: new Date(),
+    });
+    return { contactId: id, created: true, skipped: false as const };
+  }
+  const { contact, created } = await upsertContact({
+    tenantDomain,
+    email: normaliseEmail(input.email!),
+    firstName: input.firstName,
+    lastName: input.lastName,
+    company: input.company,
+    jobTitle: input.jobTitle,
+    lifecycleStage: input.lifecycleStage,
+    source,
+  });
+  if (input.linkedinUrl) {
+    await db
+      .update(marketingContacts)
+      .set({ linkedinUrl: input.linkedinUrl, updatedAt: new Date() })
+      .where(eq(marketingContacts.id, contact.id));
+  }
+  return { contactId: contact.id, created, skipped: false as const };
+}
+
 // ---------------------------------------------------------------------------
 // Register routes
 // ---------------------------------------------------------------------------
@@ -383,6 +478,7 @@ export function registerMarketingContactsRoutes(app: Express) {
         lastName: marketingContacts.lastName,
         company: marketingContacts.company,
         jobTitle: marketingContacts.jobTitle,
+        linkedinUrl: marketingContacts.linkedinUrl,
         lifecycleStage: marketingContacts.lifecycleStage,
         score: marketingContacts.score,
         hubspotContactId: marketingContacts.hubspotContactId,
@@ -417,10 +513,123 @@ export function registerMarketingContactsRoutes(app: Express) {
   });
 
   // ──────────────────────────────────────────────────────────
+  // CONTACT CREATE / IMPORT
+  // ──────────────────────────────────────────────────────────
+  app.post("/api/marketing-contacts", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const input = contactInputFromBody(req.body ?? {});
+      if (!input.email && !input.linkedinUrl) {
+        return res.status(400).json({ error: "Add an email address or LinkedIn profile to create a contact." });
+      }
+      const result = await importContactIntoMarketing(ctx.tenantDomain, input, "manual");
+      res.status(result.created ? 201 : 200).json({ ok: true, ...result });
+    } catch (err: any) {
+      const status = err?.statusCode ?? (err?.code === "23505" ? 409 : 500);
+      res.status(status).json({ error: err.message || "Could not add contact" });
+    }
+  });
+
+  app.post("/api/marketing-contacts/import-csv", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const contacts = Array.isArray(req.body?.contacts) ? req.body.contacts.slice(0, 1000) : null;
+      if (!contacts?.length) return res.status(400).json({ error: "Upload a CSV containing at least one contact." });
+
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      for (const row of contacts) {
+        const result = await importContactIntoMarketing(
+          ctx.tenantDomain,
+          contactInputFromBody((row && typeof row === "object" ? row : {}) as Record<string, unknown>),
+          "import",
+        );
+        if (result.skipped) skipped++;
+        else if (result.created) created++;
+        else updated++;
+      }
+      res.json({ ok: true, created, updated, skipped, processed: contacts.length });
+    } catch (err: any) {
+      res.status(err?.statusCode ?? 500).json({ error: err.message || "CSV import failed" });
+    }
+  });
+
+  // Specific path must be registered before the generic /:id contact route.
+  app.get("/api/marketing-contacts/hubspot/search", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      if (!await storage.getHubspotConnection(ctx.tenantDomain)) {
+        return res.status(409).json({ error: "HubSpot is not connected for this organization." });
+      }
+      const { listContacts } = await import("../services/hubspot-integration");
+      const query = typeof req.query.q === "string" ? req.query.q : undefined;
+      const contacts = await listContacts(ctx.tenantDomain, { query, limit: 50 });
+      res.json({ contacts });
+    } catch (err: any) {
+      res.status(502).json({ error: err.message || "Could not search HubSpot contacts" });
+    }
+  });
+
+  app.post("/api/marketing-contacts/hubspot/import", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      if (!await storage.getHubspotConnection(ctx.tenantDomain)) {
+        return res.status(409).json({ error: "HubSpot is not connected for this organization." });
+      }
+      const ids = Array.isArray(req.body?.contactIds)
+        ? req.body.contactIds.filter((id: unknown): id is string => typeof id === "string").slice(0, 100)
+        : [];
+      if (!ids.length) return res.status(400).json({ error: "Select at least one HubSpot contact to import." });
+
+      const { getTenantClient } = await import("../services/hubspot-integration");
+      const { client } = await getTenantClient(ctx.tenantDomain);
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+      for (const id of ids) {
+        const hsContact = await client.crm.contacts.basicApi.getById(id, [
+          "firstname", "lastname", "email", "jobtitle", "company", "hs_linkedin_url",
+        ]);
+        const props = (hsContact.properties ?? {}) as Record<string, string | undefined>;
+        const result = await importContactIntoMarketing(ctx.tenantDomain, {
+          email: props.email ?? null,
+          firstName: props.firstname ?? null,
+          lastName: props.lastname ?? null,
+          company: props.company ?? null,
+          jobTitle: props.jobtitle ?? null,
+          linkedinUrl: props.hs_linkedin_url ?? null,
+          lifecycleStage: "subscriber",
+        }, "hubspot");
+        if (result.skipped) {
+          skipped++;
+          continue;
+        }
+        await db
+          .update(marketingContacts)
+          .set({ hubspotContactId: hsContact.id, updatedAt: new Date() })
+          .where(eq(marketingContacts.id, result.contactId!));
+        if (result.created) created++;
+        else updated++;
+      }
+      res.json({ ok: true, created, updated, skipped, processed: ids.length });
+    } catch (err: any) {
+      res.status(502).json({ error: err.message || "HubSpot import failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────
   // SINGLE CONTACT
   // ──────────────────────────────────────────────────────────
-  app.get("/api/marketing-contacts/:id", async (req: Request, res: Response) => {
+  app.get("/api/marketing-contacts/:id", async (req: Request, res: Response, next) => {
     if (!await guardContacts(req, res)) return;
+    // Keep the generic contact route from swallowing the Segments page routes
+    // registered later in this module.
+    if (req.params.id === "segments") return next();
     const ctx = await getRequestContext(req);
 
     const [contact] = await db
@@ -432,6 +641,7 @@ export function registerMarketingContactsRoutes(app: Express) {
         lastName: marketingContacts.lastName,
         company: marketingContacts.company,
         jobTitle: marketingContacts.jobTitle,
+        linkedinUrl: marketingContacts.linkedinUrl,
         lifecycleStage: marketingContacts.lifecycleStage,
         score: marketingContacts.score,
         hubspotContactId: marketingContacts.hubspotContactId,
@@ -463,6 +673,39 @@ export function registerMarketingContactsRoutes(app: Express) {
       ...(memberships.get(contact.id) ?? EMPTY_SALES_CONTEXT),
       campaignMemberships,
     });
+  });
+
+  app.patch("/api/marketing-contacts/:id", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const input = contactInputFromBody(req.body ?? {});
+      if (!input.email && !input.linkedinUrl) {
+        return res.status(400).json({ error: "Add an email address or LinkedIn profile to save a contact." });
+      }
+      const [updated] = await db
+        .update(marketingContacts)
+        .set({
+          email: input.email ? normaliseEmail(input.email) : null,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          company: input.company,
+          jobTitle: input.jobTitle,
+          linkedinUrl: input.linkedinUrl,
+          lifecycleStage: input.lifecycleStage,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(marketingContacts.id, req.params.id),
+          eq(marketingContacts.tenantDomain, ctx.tenantDomain),
+        ))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Contact not found" });
+      res.json({ ok: true, contact: updated });
+    } catch (err: any) {
+      const status = err?.statusCode ?? (err?.code === "23505" ? 409 : 500);
+      res.status(status).json({ error: err.message || "Could not update contact" });
+    }
   });
 
   // ──────────────────────────────────────────────────────────
