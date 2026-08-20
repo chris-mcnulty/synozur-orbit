@@ -14,7 +14,7 @@ import { CreditCard, Users, Palette, UserPlus, Trash2, Shield, Loader2, Lock, Us
 import { Ga4IntegrationCard } from "@/components/Ga4IntegrationCard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getTabMarketId } from "@/lib/tabContext";
+import { getTabContextHeaders, getTabMarketId, getTabTenantId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import type { HubspotContactEnrichmentSummary } from "@/lib/hubspot-enrichment";
 import { toast } from "sonner";
@@ -53,6 +53,11 @@ interface TenantSettings {
   entraTenantId: string | null;
   entraEnabled: boolean;
   allowedAuthProviders?: string[] | null;
+}
+
+interface EntraConsentStatus {
+  available: boolean;
+  tenantDomain: string | null;
 }
 
 interface ConsultantGrant {
@@ -383,6 +388,7 @@ export default function Settings() {
   const [allowEntra, setAllowEntra] = useState(true);
   const [allowGoogle, setAllowGoogle] = useState(true);
   const [allowPassword, setAllowPassword] = useState(true);
+  const [entraConsentNoticeHandled, setEntraConsentNoticeHandled] = useState(false);
 
   // Typography / font management
   const [fontAddOpen, setFontAddOpen] = useState(false);
@@ -399,6 +405,19 @@ export default function Settings() {
   const { data: tenant, isLoading: tenantLoading } = useQuery<TenantSettings>({
     queryKey: ["/api/tenant/settings"],
     enabled: !!user,
+  });
+
+  const { data: entraConsentStatus } = useQuery<EntraConsentStatus>({
+    queryKey: ["/api/team/entra/admin-consent-status", getTabTenantId()],
+    queryFn: async () => {
+      const res = await fetch("/api/team/entra/admin-consent-status", {
+        credentials: "include",
+        headers: getTabContextHeaders(),
+      });
+      if (!res.ok) return { available: false, tenantDomain: null };
+      return res.json();
+    },
+    enabled: isAdmin,
   });
 
   const { data: members = [], isLoading: membersLoading } = useQuery<TeamMember[]>({
@@ -853,6 +872,63 @@ export default function Settings() {
       toast.error(error.message);
     },
   });
+
+  const startEntraConsentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/team/entra/admin-consent-url", {
+        credentials: "include",
+        headers: getTabContextHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Unable to start Microsoft permission review");
+      }
+      return data as { url: string };
+    },
+    onSuccess: ({ url }) => {
+      window.location.assign(url);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  React.useEffect(() => {
+    if (entraConsentNoticeHandled) return;
+
+    const outcome = new URLSearchParams(window.location.search).get("entraConsent");
+    if (!outcome) return;
+
+    setEntraConsentNoticeHandled(true);
+    const messages: Record<string, { title: string; description: string }> = {
+      approved: {
+        title: "Microsoft permissions updated",
+        description: "The organization-wide consent review completed successfully.",
+      },
+      cancelled: {
+        title: "Microsoft permission review canceled",
+        description: "No new permissions were approved. Ask a Microsoft Entra Global Administrator to try again when ready.",
+      },
+      expired: {
+        title: "Microsoft permission review expired",
+        description: "Start the review again and complete it within 15 minutes.",
+      },
+      failed: {
+        title: "Microsoft permission review did not complete",
+        description: "No permission changes were confirmed. Try again with a Microsoft Entra Global Administrator.",
+      },
+    };
+    const message = messages[outcome];
+    if (message) {
+      toast[message.title === "Microsoft permissions updated" ? "success" : "error"](message.title, {
+        description: message.description,
+      });
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("entraConsent");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [entraConsentNoticeHandled]);
 
   const pendingInvites = invites.filter(i => i.status === "pending");
 
@@ -1727,6 +1803,33 @@ export default function Settings() {
                     <p className="text-xs text-muted-foreground">
                       Auto-detected from your first Microsoft sign-in
                     </p>
+                  </div>
+                )}
+
+                {isAdmin && entraConsentStatus?.available && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                    <div className="space-y-1">
+                      <Label>Organization-wide Microsoft permissions{entraConsentStatus.tenantDomain ? ` — ${entraConsentStatus.tenantDomain}` : ""}</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Reopen Microsoft Entra&apos;s consent page to approve permissions that Orbit has added since your organization first connected.
+                        This updates the existing Orbit Enterprise Application; it does not create another application.
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      A Microsoft Entra Global Administrator may need to sign in. Review the requested permissions before approving them; existing
+                      permissions remain in place unless Microsoft shows a change.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => startEntraConsentMutation.mutate()}
+                      disabled={startEntraConsentMutation.isPending}
+                      data-testid="button-update-entra-permissions"
+                    >
+                      {startEntraConsentMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      <Shield className="h-4 w-4 mr-2" />
+                      Update Microsoft permissions
+                    </Button>
                   </div>
                 )}
                 

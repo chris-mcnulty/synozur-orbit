@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import bcrypt from "bcrypt";
 import { storage } from "../storage";
 import { getRequestContext, ContextError, getActiveTenantId } from "../context";
@@ -9,8 +9,27 @@ import { getPlanFeatures, getPlanFeaturesAsync, getTenantCompetitorCount, getMon
 import { getManualActionUsageSummary, grantManualActionBonus } from "../services/manual-action-quota";
 import { isLinkedInDirectPublishEnabled } from "../services/platform-credentials-service";
 import { normalizeToCanonicalDomain } from "../utils/url-normalization";
+import { REDIRECT_URI } from "../auth/msal-config";
 
 export function registerTenantAdminRoutes(app: Express) {
+  const resolveEntraConsentTenant = async (req: any, currentUser: any) => {
+    // Domain Admins are always scoped to their own organization, even if a
+    // different tenant id is supplied in a browser header.
+    if (currentUser.role !== "Global Admin") {
+      const domain = currentUser.email.split("@")[1];
+      return storage.getTenantByDomain(domain);
+    }
+
+    // A Global Admin may intentionally work in a different active tenant.
+    const activeTenantId = getActiveTenantId(req);
+    if (activeTenantId) {
+      return storage.getTenant(activeTenantId);
+    }
+
+    const domain = currentUser.email.split("@")[1];
+    return storage.getTenantByDomain(domain);
+  };
+
   // ==================== TENANT ADMIN - TEAM MANAGEMENT ====================
 
   // Get team members for current tenant (Domain Admin or Global Admin)
@@ -338,7 +357,34 @@ export function registerTenantAdminRoutes(app: Express) {
     }
   });
 
-  // Get admin consent URL for a tenant (to grant Graph API permissions)
+  // Resolve whether the active tenant can review consent for the shared Orbit
+  // Entra app. Domain Admins remain scoped to their own tenant.
+  app.get("/api/team/entra/admin-consent-status", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (currentUser.role !== "Domain Admin" && currentUser.role !== "Global Admin") {
+        return res.status(403).json({ error: "Access denied - Admin only" });
+      }
+
+      const tenant = await resolveEntraConsentTenant(req, currentUser);
+      res.json({
+        available: Boolean(process.env.ENTRA_CLIENT_ID && tenant?.entraTenantId),
+        tenantDomain: tenant?.domain || null,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Return a tenant-specific consent URL using the established Entra callback,
+  // so the shared app does not need a second redirect URI.
   app.get("/api/team/entra/admin-consent-url", async (req, res) => {
     try {
       if (!req.session.userId) {
@@ -359,25 +405,29 @@ export function registerTenantAdminRoutes(app: Express) {
         return res.status(503).json({ error: "Entra ID not configured" });
       }
 
-      // Use active tenant context for Global Admins, otherwise use user's email domain
-      let tenant;
-      if (currentUser.role === "Global Admin" && getActiveTenantId(req)) {
-        tenant = await storage.getTenant(getActiveTenantId(req)!);
-      } else {
-        const userDomain = currentUser.email.split("@")[1];
-        tenant = await storage.getTenantByDomain(userDomain);
-      }
+      const tenant = await resolveEntraConsentTenant(req, currentUser);
       
       if (!tenant?.entraTenantId) {
         return res.status(400).json({ error: "Azure Tenant ID is not configured for this organization" });
       }
 
-      // Construct the admin consent URL
-      const redirectUri = `${req.protocol}://${req.get("host")}/team`;
-      const adminConsentUrl = `https://login.microsoftonline.com/${tenant.entraTenantId}/adminconsent?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+      const state = randomBytes(32).toString("base64url");
+      req.session.entraAdminConsent = {
+        state,
+        tenantId: tenant.entraTenantId,
+        initiatedAt: Date.now(),
+      };
+
+      const consentUrl = new URL(
+        `https://login.microsoftonline.com/${encodeURIComponent(tenant.entraTenantId)}/v2.0/adminconsent`
+      );
+      consentUrl.searchParams.set("client_id", clientId);
+      consentUrl.searchParams.set("scope", "https://graph.microsoft.com/.default");
+      consentUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+      consentUrl.searchParams.set("state", state);
 
       res.json({ 
-        url: adminConsentUrl,
+        url: consentUrl.toString(),
         tenantId: tenant.entraTenantId,
         tenantDomain: tenant.domain
       });

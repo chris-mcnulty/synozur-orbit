@@ -18,6 +18,58 @@ function getBaseUrl(req: Request): string {
   return `${protocol}://${host}`;
 }
 
+const ADMIN_CONSENT_STATE_TTL_MS = 15 * 60 * 1000;
+
+function redirectWithConsentOutcome(res: Response, outcome: "approved" | "cancelled" | "failed" | "expired") {
+  return res.redirect(`/app/settings?entraConsent=${outcome}`);
+}
+
+function statesMatch(expected: string, received: string): boolean {
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+  return expectedBuffer.length === receivedBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+function handleAdminConsentReturn(req: Request, res: Response): boolean {
+  const pending = req.session.entraAdminConsent;
+  if (!pending) {
+    return false;
+  }
+
+  const state = typeof req.query.state === "string" ? req.query.state : "";
+  if (!state || !statesMatch(pending.state, state)) {
+    redirectWithConsentOutcome(res, "failed");
+    return true;
+  }
+
+  // The consent state is single use once a callback proves it belongs to this
+  // request, whether Microsoft approved, denied, or returned an error.
+  req.session.entraAdminConsent = undefined;
+
+  if (Date.now() - pending.initiatedAt > ADMIN_CONSENT_STATE_TTL_MS) {
+    redirectWithConsentOutcome(res, "expired");
+    return true;
+  }
+
+  const error = typeof req.query.error === "string" ? req.query.error : "";
+  if (error) {
+    redirectWithConsentOutcome(res, error === "access_denied" ? "cancelled" : "failed");
+    return true;
+  }
+
+  const approved = typeof req.query.admin_consent === "string" &&
+    req.query.admin_consent.toLowerCase() === "true";
+  const returnedTenant = typeof req.query.tenant === "string" ? req.query.tenant : "";
+  if (!approved || returnedTenant !== pending.tenantId) {
+    redirectWithConsentOutcome(res, "failed");
+    return true;
+  }
+
+  redirectWithConsentOutcome(res, "approved");
+  return true;
+}
+
 export function registerEntraRoutes(app: Express) {
   app.get("/api/auth/entra/status", (req: Request, res: Response) => {
     res.json({ configured: isEntraConfigured() });
@@ -61,6 +113,10 @@ export function registerEntraRoutes(app: Express) {
   });
 
   app.get("/api/auth/entra/callback", async (req: Request, res: Response) => {
+    if (handleAdminConsentReturn(req, res)) {
+      return;
+    }
+
     const msalInstance = getMsalInstance();
     if (!msalInstance) {
       return res.redirect("/auth/signin?error=sso_not_configured");

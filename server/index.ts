@@ -37,6 +37,13 @@ declare module "express-session" {
     // Optional same-origin path the user should land on after sign-in
     // (used to resume `/oauth/authorize` flows after Entra/local login).
     postLoginRedirect?: string;
+    // Short-lived state for tenant-wide Microsoft Entra admin-consent returns.
+    // The state is verified before any result is surfaced in the Settings UI.
+    entraAdminConsent?: {
+      state: string;
+      tenantId: string;
+      initiatedAt: number;
+    };
     // Google OAuth state nonce + pending account-link payload (Task #105)
     googleOAuthState?: string;
     pendingGoogleLink?: {
