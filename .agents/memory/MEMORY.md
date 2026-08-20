@@ -72,3 +72,4 @@
 - [Marketing task approval gate + dedup](marketing-task-approval-gate.md) — AI task suggestions never sync to Planner until accepted; dismissed tasks are dedup history, never delete them.
 - [support_tickets tenant scope + runner rules](support-tickets-drift.md) — tenant_domain text, no tenants(id) FK; never edit applied migrations; backfill stamps alter-only files unless marked always-apply; DROP DEFAULT keeps sequence ownership.
 - [HubSpot contact sync UX](hubspot-contact-sync-ux.md) — every user needs a single-contact action; a capped enrichment batch must never be called “sync all.”
+- [HubSpot full-refresh job recovery](hubspot-full-refresh-jobs.md) — full CRM imports need tenant claim locks, page heartbeats, and atomic stale recovery to prevent duplicate scans.

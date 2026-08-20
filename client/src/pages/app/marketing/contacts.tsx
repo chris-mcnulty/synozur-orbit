@@ -25,6 +25,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -69,6 +70,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { parseCSV } from "@/lib/csv-export";
+import { useUser } from "@/lib/userContext";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -967,10 +969,13 @@ export default function ContactsPage() {
   const [contactEditorOpen, setContactEditorOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<MarketingContact | null>(null);
   const [hubspotImportOpen, setHubspotImportOpen] = useState(false);
+  const [hubspotFullRefreshOpen, setHubspotFullRefreshOpen] = useState(false);
   const [csvImport, setCsvImport] = useState<CsvImportData | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useUser();
+  const canRefreshAllHubSpotContacts = user?.role === "Domain Admin" || user?.role === "Global Admin";
 
   const debouncedQ = useDebouncedValue(q, 300);
 
@@ -1058,6 +1063,17 @@ export default function ContactsPage() {
                 <CloudDownload className="h-4 w-4 mr-1.5" />
                 Import HubSpot
               </Button>
+              {canRefreshAllHubSpotContacts && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setHubspotFullRefreshOpen(true)}
+                  data-testid="button-full-refresh-marketing-contacts-hubspot"
+                >
+                  <RefreshCw className="h-4 w-4 mr-1.5" />
+                  Full HubSpot refresh
+                </Button>
+              )}
               <Button size="sm" onClick={openAddContact} data-testid="button-add-marketing-contact">
                 <UserPlus className="h-4 w-4 mr-1.5" />
                 Add contact
@@ -1314,6 +1330,13 @@ export default function ContactsPage() {
           setHubspotImportOpen(false);
         }}
       />
+      {canRefreshAllHubSpotContacts && (
+        <FullHubSpotRefreshDialog
+          open={hubspotFullRefreshOpen}
+          onClose={() => setHubspotFullRefreshOpen(false)}
+          onFinished={refreshContacts}
+        />
+      )}
       <CsvContactImportDialog
         data={csvImport}
         onClose={() => setCsvImport(null)}
@@ -1621,6 +1644,145 @@ interface HubSpotContactOption {
   jobTitle: string | null;
   company: string | null;
   linkedinUrl: string | null;
+}
+
+interface FullHubSpotRefreshJob {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  result: {
+    scope?: string;
+    pages?: number;
+    processed?: number;
+    created?: number;
+    updated?: number;
+    skipped?: number;
+    failed?: number;
+    rateLimited?: number;
+  } | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+function FullHubSpotRefreshDialog({
+  open,
+  onClose,
+  onFinished,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onFinished: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const completedJobId = useRef<string | null>(null);
+  const { data, refetch } = useQuery<{ job: FullHubSpotRefreshJob | null }>({
+    queryKey: ["/api/marketing-contacts/hubspot/full-refresh/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/marketing-contacts/hubspot/full-refresh/status", { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load HubSpot refresh status");
+      return res.json();
+    },
+    enabled: open,
+    refetchInterval: open ? 2000 : false,
+  });
+  const job = data?.job ?? null;
+  const active = job?.status === "pending" || job?.status === "running";
+  const counts = job?.result ?? {};
+
+  const startMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/marketing-contacts/hubspot/full-refresh", {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not start the full HubSpot contact refresh");
+      return body;
+    },
+    onSuccess: async () => {
+      await refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing-contacts/hubspot/full-refresh/status"] });
+      toast({ title: "Full HubSpot refresh started", description: "Orbit is paging through every contact in the connected portal." });
+    },
+    onError: (error: Error) => toast({
+      title: "Full HubSpot refresh did not start",
+      description: error.message,
+      variant: "destructive",
+    }),
+  });
+
+  const completed = job?.status === "completed";
+  const failed = job?.status === "failed";
+
+  useEffect(() => {
+    if (job?.status === "completed" && completedJobId.current !== job.id) {
+      completedJobId.current = job.id;
+      onFinished();
+    }
+  }, [job?.id, job?.status, onFinished]);
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Refresh all HubSpot contacts</DialogTitle>
+          <DialogDescription>
+            This imports the complete population from the connected HubSpot portal. It creates or safely updates
+            Marketing Contacts, fills missing Orbit fields, and never deletes local contacts.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+          <p className="font-medium">This is separate from daily enrichment and Settings → Sync now.</p>
+          <p className="text-muted-foreground">
+            HubSpot is read in pages with automatic rate-limit retries. Leave this dialog open to follow progress.
+          </p>
+        </div>
+
+        {job && (
+          <div className="rounded-md border p-3 space-y-3" data-testid="hubspot-full-refresh-progress">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">
+                {active ? "Refresh in progress" : completed ? "Refresh complete" : "Refresh failed"}
+              </span>
+              {active && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <span className="text-muted-foreground">Pages read</span><span className="text-right">{counts.pages ?? 0}</span>
+              <span className="text-muted-foreground">Contacts processed</span><span className="text-right">{counts.processed ?? 0}</span>
+              <span className="text-muted-foreground">Created</span><span className="text-right">{counts.created ?? 0}</span>
+              <span className="text-muted-foreground">Updated</span><span className="text-right">{counts.updated ?? 0}</span>
+              <span className="text-muted-foreground">Skipped</span><span className="text-right">{counts.skipped ?? 0}</span>
+              <span className="text-muted-foreground">Failed records</span><span className="text-right">{counts.failed ?? 0}</span>
+            </div>
+            {(counts.rateLimited ?? 0) > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                HubSpot rate limits interrupted this refresh after its retry window ({counts.rateLimited}).
+              </p>
+            )}
+            {failed && <p className="text-sm text-destructive">{job.errorMessage || "The refresh stopped before completion."}</p>}
+            {completed && <p className="text-sm text-emerald-700 dark:text-emerald-400">No local Marketing Contacts were deleted.</p>}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          {!active && (
+            <Button
+              onClick={() => startMutation.mutate()}
+              disabled={startMutation.isPending}
+              data-testid="button-confirm-hubspot-full-refresh"
+            >
+              {startMutation.isPending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {completed ? "Start another full refresh" : "Start full refresh"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function HubspotContactImportDialog({

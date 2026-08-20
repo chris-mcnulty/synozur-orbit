@@ -133,14 +133,28 @@ async function trackJobComplete(
 // Clean up jobs that have been running for too long (stuck jobs)
 async function cleanupStuckJobs(): Promise<void> {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const fullRefreshHeartbeatCutoff = new Date(Date.now() - 6 * 60 * 60 * 1000);
+  const fullRefreshPendingCutoff = new Date(Date.now() - 15 * 60 * 1000);
   // Read/write stuck-job telemetry through the crawl pool (keeps the primary
   // pool free for time-sensitive work).
   const stuckJobs = await crawlDb
     .select()
     .from(scheduledJobRuns)
-    .where(eq(scheduledJobRuns.status, "running"));
+    .where(inArray(scheduledJobRuns.status, ["pending", "running"]));
   
   const jobsToFail = stuckJobs.filter(job => {
+    if (job.status === "pending") {
+      return job.jobType === "hubspotFullContactRefresh" && job.createdAt < fullRefreshPendingCutoff;
+    }
+    // A full HubSpot population refresh reports progress after every page.
+    // It has a longer queue deadline than ordinary scheduled work, so use
+    // that heartbeat rather than incorrectly failing a healthy large portal
+    // scan after the generic one-hour window.
+    if (job.jobType === "hubspotFullContactRefresh") {
+      const heartbeat = (job.result as { lastProgressAt?: string } | null)?.lastProgressAt;
+      const lastProgressAt = heartbeat ? new Date(heartbeat) : job.startedAt;
+      return !lastProgressAt || lastProgressAt < fullRefreshHeartbeatCutoff;
+    }
     if (!job.startedAt) return true;
     return new Date(job.startedAt) < oneHourAgo;
   });
@@ -149,15 +163,37 @@ async function cleanupStuckJobs(): Promise<void> {
     console.log(`[Scheduled Jobs] Cleaning up ${jobsToFail.length} stuck job(s)...`);
     for (const job of jobsToFail) {
       try {
-        await crawlDb
+        const staleWindow = job.status === "pending"
+          ? "15 minutes waiting for a worker"
+          : job.jobType === "hubspotFullContactRefresh"
+            ? "6 hours without progress"
+            : "1 hour";
+        const staleCondition = job.status === "pending"
+          ? and(
+              eq(scheduledJobRuns.status, "pending"),
+              eq(scheduledJobRuns.jobType, "hubspotFullContactRefresh"),
+              lt(scheduledJobRuns.createdAt, fullRefreshPendingCutoff),
+            )
+          : job.jobType === "hubspotFullContactRefresh"
+            ? and(
+                eq(scheduledJobRuns.status, "running"),
+                sql`COALESCE((${scheduledJobRuns.result}->>'lastProgressAt')::timestamptz, ${scheduledJobRuns.startedAt}) < ${fullRefreshHeartbeatCutoff}`,
+              )
+            : and(
+                eq(scheduledJobRuns.status, "running"),
+                sql`${scheduledJobRuns.startedAt} IS NULL OR ${scheduledJobRuns.startedAt} < ${oneHourAgo}`,
+              );
+        const [failed] = await crawlDb
           .update(scheduledJobRuns)
           .set({
             status: "failed",
             completedAt: new Date(),
             result: { error: "Stale job record swept - the job was likely interrupted by a server restart or its completion was never recorded" },
-            errorMessage: "Interrupted or unrecorded (stale record swept after 1 hour)",
+            errorMessage: `Interrupted or unrecorded (stale record swept after ${staleWindow})`,
           })
-          .where(eq(scheduledJobRuns.id, job.id));
+          .where(and(eq(scheduledJobRuns.id, job.id), staleCondition))
+          .returning({ id: scheduledJobRuns.id });
+        if (!failed) continue;
         console.log(`[Scheduled Jobs] Marked stuck job ${job.id} (${job.jobType}) as failed`);
       } catch (error) {
         console.error(`[Scheduled Jobs] Failed to clean up stuck job ${job.id}:`, error);

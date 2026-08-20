@@ -2,6 +2,11 @@
 // Uses Replit HubSpot connection for OAuth authentication
 
 import { Client } from '@hubspot/api-client';
+import { randomUUID } from "crypto";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { db } from "../db";
+import { marketingContacts, scheduledJobRuns } from "@shared/schema";
+import { enqueue } from "./job-queue";
 
 let connectionSettings: any;
 
@@ -650,6 +655,455 @@ export async function syncSingleContactWithHubSpot(opts: {
     email,
     hubspotContactId: hubspotContact.id,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Full inbound Marketing Contacts refresh
+// ---------------------------------------------------------------------------
+
+const FULL_REFRESH_CONTACT_PROPS = [
+  "firstname",
+  "lastname",
+  "email",
+  "jobtitle",
+  "company",
+  "hs_linkedin_url",
+  "lifecyclestage",
+];
+const FULL_REFRESH_PAGE_SIZE = 100;
+const FULL_REFRESH_PAGE_PAUSE_MS = 250;
+
+export interface FullHubSpotContact {
+  id: string;
+  properties: Record<string, string | null | undefined>;
+}
+
+export interface FullHubSpotRefreshCounts {
+  pages: number;
+  processed: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  rateLimited: number;
+}
+
+export interface FullHubSpotRefreshPage {
+  contacts: FullHubSpotContact[];
+  nextAfter: string | null;
+}
+
+export interface FullHubSpotRefreshDeps {
+  listPage: (after: string | null) => Promise<FullHubSpotRefreshPage>;
+  mergeContact: (contact: FullHubSpotContact) => Promise<"created" | "updated" | "skipped">;
+  onProgress?: (counts: FullHubSpotRefreshCounts, nextAfter: string | null) => Promise<void> | void;
+  pause?: (ms: number) => Promise<void>;
+  signal?: AbortSignal;
+  startAfter?: string | null;
+  initialCounts?: FullHubSpotRefreshCounts;
+}
+
+function emptyFullRefreshCounts(): FullHubSpotRefreshCounts {
+  return {
+    pages: 0,
+    processed: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    rateLimited: 0,
+  };
+}
+
+function throwIfFullRefreshCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new Error("Full HubSpot contact refresh was cancelled before completion.");
+  }
+}
+
+/**
+ * Paging core for the explicit operator-triggered refresh. It is deliberately
+ * separate from the daily email-search enrichment sweep: this path starts with
+ * the complete HubSpot population and never deletes local records.
+ */
+export async function _runFullHubSpotContactRefreshWithDeps(
+  deps: FullHubSpotRefreshDeps,
+): Promise<FullHubSpotRefreshCounts> {
+  const counts = { ...emptyFullRefreshCounts(), ...(deps.initialCounts ?? {}) };
+  const pause = deps.pause ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let after: string | null = deps.startAfter ?? null;
+
+  do {
+    throwIfFullRefreshCancelled(deps.signal);
+    const page = await deps.listPage(after);
+    counts.pages++;
+
+    for (const contact of page.contacts) {
+      throwIfFullRefreshCancelled(deps.signal);
+      counts.processed++;
+      try {
+        const outcome = await deps.mergeContact(contact);
+        counts[outcome]++;
+      } catch (err: any) {
+        counts.failed++;
+        console.error(`[HubSpot] full contact refresh failed to merge ${contact.id}: ${err?.message ?? err}`);
+      }
+    }
+
+    after = page.nextAfter;
+    await deps.onProgress?.(counts, after);
+    if (after) {
+      await pause(FULL_REFRESH_PAGE_PAUSE_MS);
+      throwIfFullRefreshCancelled(deps.signal);
+    }
+  } while (after);
+
+  return counts;
+}
+
+function normaliseFullRefreshLinkedInUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.replace(/\/+$/, "") : null;
+}
+
+function normaliseFullRefreshEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function fullRefreshLifecycleStage(value: string | null | undefined): string {
+  const stage = (value ?? "").trim().toLowerCase();
+  return ENRICHMENT_LIFECYCLE_MAP[stage] ?? "subscriber";
+}
+
+function shouldAdvanceFullRefreshLifecycleStage(current: string | null | undefined, incoming: string): boolean {
+  const stages = ["subscriber", "lead", "mql", "sql", "opportunity", "customer", "evangelist"];
+  const currentIndex = stages.indexOf((current ?? "subscriber").toLowerCase());
+  const incomingIndex = stages.indexOf(incoming);
+  return incomingIndex > Math.max(currentIndex, 0);
+}
+
+/**
+ * Match only inside the tenant, in the order of strongest identifiers:
+ * HubSpot ID, email, then LinkedIn URL. When two identifiers point to
+ * different local contacts we skip instead of guessing or merging records.
+ */
+async function mergeFullHubSpotContact(
+  tenantDomain: string,
+  hubspotContact: FullHubSpotContact,
+): Promise<"created" | "updated" | "skipped"> {
+  const props = hubspotContact.properties;
+  const email = props.email?.trim() ? normaliseFullRefreshEmail(props.email) : null;
+  const linkedinUrl = normaliseFullRefreshLinkedInUrl(props.hs_linkedin_url);
+
+  const identifiers = [eq(marketingContacts.hubspotContactId, hubspotContact.id)];
+  if (email) identifiers.push(eq(marketingContacts.email, email));
+  if (linkedinUrl) identifiers.push(eq(marketingContacts.linkedinUrl, linkedinUrl));
+
+  const matches = await db
+    .select()
+    .from(marketingContacts)
+    .where(and(eq(marketingContacts.tenantDomain, tenantDomain), or(...identifiers)));
+
+  // A direct ID/email/LinkedIn lookup should identify one record. Multiple
+  // rows mean a pre-existing conflict, so leave local records untouched.
+  if (matches.length > 1) {
+    console.warn(
+      `[HubSpot] full contact refresh skipped ${hubspotContact.id} for ${tenantDomain}: identifiers map to multiple Marketing Contacts`,
+    );
+    return "skipped";
+  }
+
+  const existing = matches[0];
+  const firstName = props.firstname?.trim() || null;
+  const lastName = props.lastname?.trim() || null;
+  const company = props.company?.trim() || null;
+  const jobTitle = props.jobtitle?.trim() || null;
+
+  if (existing) {
+    // An email or LinkedIn URL may be recycled or stale. Never relink an
+    // existing Orbit contact from one HubSpot person to another based on that
+    // weaker identifier; surface the record as skipped for operator review.
+    if (existing.hubspotContactId && existing.hubspotContactId !== hubspotContact.id) {
+      console.warn(
+        `[HubSpot] full contact refresh skipped ${hubspotContact.id} for ${tenantDomain}: local contact ${existing.id} is linked to a different HubSpot ID`,
+      );
+      return "skipped";
+    }
+
+    // Follow the normal HubSpot enrichment contract: only fill blanks, never
+    // overwrite Orbit-owned details, and only advance the lifecycle stage.
+    const update: Record<string, unknown> = {
+      hubspotContactId: hubspotContact.id,
+      updatedAt: new Date(),
+    };
+    if (!existing.firstName && firstName) update.firstName = firstName;
+    if (!existing.lastName && lastName) update.lastName = lastName;
+    if (!existing.company && company) update.company = company;
+    if (!existing.jobTitle && jobTitle) update.jobTitle = jobTitle;
+    if (!existing.linkedinUrl && linkedinUrl) update.linkedinUrl = linkedinUrl;
+
+    const incomingStage = fullRefreshLifecycleStage(props.lifecyclestage);
+    if (shouldAdvanceFullRefreshLifecycleStage(existing.lifecycleStage, incomingStage)) {
+      update.lifecycleStage = incomingStage;
+    }
+
+    await db.update(marketingContacts).set(update).where(eq(marketingContacts.id, existing.id));
+    return "updated";
+  }
+
+  await db.insert(marketingContacts).values({
+    id: randomUUID(),
+    tenantDomain,
+    email,
+    firstName,
+    lastName,
+    company,
+    jobTitle,
+    linkedinUrl,
+    lifecycleStage: fullRefreshLifecycleStage(props.lifecyclestage),
+    hubspotContactId: hubspotContact.id,
+    source: "hubspot",
+    lastEventAt: new Date(),
+  });
+  return "created";
+}
+
+interface FullHubSpotRefreshCheckpoint extends FullHubSpotRefreshCounts {
+  cursor?: string | null;
+  workerId?: string;
+}
+
+class FullHubSpotRefreshLeaseLostError extends Error {}
+
+function countsFromFullRefreshResult(result: unknown): FullHubSpotRefreshCounts {
+  const saved = result as Partial<FullHubSpotRefreshCounts> | null;
+  const empty = emptyFullRefreshCounts();
+  for (const key of Object.keys(empty) as (keyof FullHubSpotRefreshCounts)[]) {
+    const value = saved?.[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) empty[key] = value;
+  }
+  return empty;
+}
+
+function checkpointFromFullRefreshResult(result: unknown): FullHubSpotRefreshCheckpoint {
+  const saved = result as { cursor?: unknown } | null;
+  return {
+    ...countsFromFullRefreshResult(result),
+    cursor: typeof saved?.cursor === "string" ? saved.cursor : null,
+  };
+}
+
+function fullRefreshResult(
+  counts: FullHubSpotRefreshCounts,
+  cursor: string | null = null,
+  workerId?: string,
+) {
+  return {
+    scope: "all contacts in the connected HubSpot portal",
+    lastProgressAt: new Date().toISOString(),
+    cursor,
+    ...(workerId ? { workerId } : {}),
+    ...counts,
+  };
+}
+
+async function assertFullHubSpotRefreshLease(jobId: string, workerId: string): Promise<void> {
+  const [job] = await db
+    .select({ status: scheduledJobRuns.status, result: scheduledJobRuns.result })
+    .from(scheduledJobRuns)
+    .where(eq(scheduledJobRuns.id, jobId))
+    .limit(1);
+  if (
+    job?.status !== "running" ||
+    (job.result as { workerId?: string } | null)?.workerId !== workerId
+  ) {
+    throw new FullHubSpotRefreshLeaseLostError("Full HubSpot contact refresh lease is no longer active.");
+  }
+}
+
+const enqueuedFullHubSpotRefreshJobs = new Set<string>();
+
+export function enqueueFullHubSpotContactRefresh(jobId: string, tenantDomain: string): void {
+  if (enqueuedFullHubSpotRefreshJobs.has(jobId)) return;
+  enqueuedFullHubSpotRefreshJobs.add(jobId);
+  enqueue(
+    "other",
+    `hubspot-full-contact-refresh:${tenantDomain}`,
+    (signal?: AbortSignal) => runFullHubSpotContactRefresh({ jobId, tenantDomain, signal }),
+    {
+      timeoutMs: 6 * 60 * 60 * 1000,
+      maxRetries: 0,
+      ctx: { tenantDomain, targetId: jobId, targetName: "All HubSpot contacts" },
+    },
+  )
+    .catch((err) => console.error(`[HubSpot] full contact refresh job ${jobId} failed:`, err?.message))
+    .finally(() => enqueuedFullHubSpotRefreshJobs.delete(jobId));
+}
+
+/**
+ * On startup, resume every incomplete full refresh from its checkpoint. A
+ * fresh process has no old in-memory worker, so its persisted row is returned
+ * to pending before re-entering the regular lease claim path.
+ */
+export async function resumeFullHubSpotContactRefreshes(): Promise<void> {
+  const jobs = await db
+    .select({ id: scheduledJobRuns.id, tenantDomain: scheduledJobRuns.tenantDomain })
+    .from(scheduledJobRuns)
+    .where(and(
+      eq(scheduledJobRuns.jobType, "hubspotFullContactRefresh"),
+      inArray(scheduledJobRuns.status, ["pending", "running"]),
+    ))
+    .orderBy(desc(scheduledJobRuns.createdAt));
+
+  for (const job of jobs) {
+    if (!job.tenantDomain) continue;
+    const resumable = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`hubspot-full-contact-refresh:${job.tenantDomain}`}))`);
+      const [requeued] = await tx
+        .update(scheduledJobRuns)
+        .set({ status: "pending", startedAt: null, completedAt: null, errorMessage: null })
+        .where(and(
+          eq(scheduledJobRuns.id, job.id),
+          eq(scheduledJobRuns.tenantDomain, job.tenantDomain!),
+          inArray(scheduledJobRuns.status, ["pending", "running"]),
+        ))
+        .returning({ id: scheduledJobRuns.id });
+      return requeued;
+    });
+    if (resumable) enqueueFullHubSpotContactRefresh(job.id, job.tenantDomain);
+  }
+}
+
+/**
+ * Run a durable, tenant-scoped HubSpot population refresh. The scheduled job
+ * row is updated after each page so the Contacts UI can safely poll progress.
+ */
+export async function runFullHubSpotContactRefresh(opts: {
+  jobId: string;
+  tenantDomain: string;
+  signal?: AbortSignal;
+}): Promise<FullHubSpotRefreshCounts> {
+  const { jobId, tenantDomain, signal } = opts;
+  const workerId = randomUUID();
+
+  // Claim the pending row under the same per-tenant lock as route-side
+  // recovery. A delayed in-memory queue worker cannot race a new start that
+  // has just reclaimed an orphaned pending row.
+  const started = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`hubspot-full-contact-refresh:${tenantDomain}`}))`);
+    const [job] = await tx
+      .select({ result: scheduledJobRuns.result })
+      .from(scheduledJobRuns)
+      .where(and(
+        eq(scheduledJobRuns.id, jobId),
+        eq(scheduledJobRuns.tenantDomain, tenantDomain),
+        eq(scheduledJobRuns.status, "pending"),
+      ))
+      .limit(1);
+    if (!job) return null;
+    const checkpoint = checkpointFromFullRefreshResult(job.result);
+    const [row] = await tx
+      .update(scheduledJobRuns)
+      .set({
+        status: "running",
+        startedAt: new Date(),
+        result: fullRefreshResult(checkpoint, checkpoint.cursor ?? null, workerId),
+      })
+      .where(and(
+        eq(scheduledJobRuns.id, jobId),
+        eq(scheduledJobRuns.tenantDomain, tenantDomain),
+        eq(scheduledJobRuns.status, "pending"),
+      ))
+      .returning({ id: scheduledJobRuns.id });
+    return row ? checkpoint : null;
+  });
+  if (!started) {
+    throw new Error("Full HubSpot contact refresh was cancelled before its worker started.");
+  }
+  const counts = countsFromFullRefreshResult(started);
+  const initialCursor = started.cursor ?? null;
+
+  try {
+    const { getTenantClient, withHubspotRetry } = await import("./hubspot-integration");
+    const { client } = await getTenantClient(tenantDomain);
+    const completedCounts = await _runFullHubSpotContactRefreshWithDeps({
+      listPage: async (after) => {
+        throwIfFullRefreshCancelled(signal);
+        await assertFullHubSpotRefreshLease(jobId, workerId);
+        const page: any = await withHubspotRetry(
+          () => (client.crm.contacts.basicApi as any).getPage(
+            FULL_REFRESH_PAGE_SIZE,
+            after ?? undefined,
+            FULL_REFRESH_CONTACT_PROPS,
+          ),
+          { label: `full contact refresh page (${tenantDomain})` },
+        );
+        return {
+          contacts: (page.results ?? []).map((contact: any) => ({
+            id: contact.id,
+            properties: (contact.properties ?? {}) as Record<string, string | null | undefined>,
+          })),
+          nextAfter: page.paging?.next?.after ? String(page.paging.next.after) : null,
+        };
+      },
+      mergeContact: async (contact) => {
+        await assertFullHubSpotRefreshLease(jobId, workerId);
+        return mergeFullHubSpotContact(tenantDomain, contact);
+      },
+      onProgress: async (progress, nextAfter) => {
+        throwIfFullRefreshCancelled(signal);
+        Object.assign(counts, progress);
+        const [updated] = await db
+          .update(scheduledJobRuns)
+          .set({ result: fullRefreshResult(progress, nextAfter, workerId) })
+          .where(and(
+            eq(scheduledJobRuns.id, jobId),
+            eq(scheduledJobRuns.status, "running"),
+            sql`${scheduledJobRuns.result}->>'workerId' = ${workerId}`,
+          ))
+          .returning({ id: scheduledJobRuns.id });
+        if (!updated) throw new FullHubSpotRefreshLeaseLostError("Full HubSpot contact refresh lease is no longer active.");
+      },
+      signal,
+      startAfter: initialCursor,
+      initialCounts: counts,
+    });
+
+    const [completed] = await db
+      .update(scheduledJobRuns)
+      .set({
+        status: "completed",
+        completedAt: new Date(),
+        result: fullRefreshResult(completedCounts, null, workerId),
+        errorMessage: null,
+      })
+      .where(and(
+        eq(scheduledJobRuns.id, jobId),
+        eq(scheduledJobRuns.status, "running"),
+        sql`${scheduledJobRuns.result}->>'workerId' = ${workerId}`,
+      ))
+      .returning({ id: scheduledJobRuns.id });
+    if (!completed) throw new FullHubSpotRefreshLeaseLostError("Full HubSpot contact refresh lease is no longer active.");
+    return completedCounts;
+  } catch (err: any) {
+    if (err instanceof FullHubSpotRefreshLeaseLostError) throw err;
+    const { isHubspotRateLimitError } = await import("./hubspot-integration");
+    if (isHubspotRateLimitError(err)) counts.rateLimited++;
+    await db
+      .update(scheduledJobRuns)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+        result: fullRefreshResult(counts, initialCursor, workerId),
+        errorMessage: err?.message ?? "Full HubSpot contact refresh failed",
+      })
+      .where(and(
+        eq(scheduledJobRuns.id, jobId),
+        eq(scheduledJobRuns.status, "running"),
+        sql`${scheduledJobRuns.result}->>'workerId' = ${workerId}`,
+      ));
+    throw err;
+  }
 }
 
 export async function _syncHubSpotContactEnrichmentWithDeps(

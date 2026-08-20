@@ -326,6 +326,11 @@ app.use((req, res, next) => {
   
   // Recover stuck "generating" briefings from previous server restarts
   storage.recoverStuckBriefings().catch(err => console.error("[Startup] Briefing recovery error:", err));
+
+  // Resume any operator-triggered HubSpot population refresh from its
+  // persisted page checkpoint before accepting new operator work.
+  const { resumeFullHubSpotContactRefreshes } = await import("./services/hubspot-service");
+  await resumeFullHubSpotContactRefreshes();
   
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -13,7 +13,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, desc, asc, ilike, or, count, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, count, inArray, sql } from "drizzle-orm";
 import {
   marketingContacts,
   marketingContactEvents,
@@ -25,6 +25,7 @@ import {
   campaigns,
   prospects,
   outreachCampaigns as outreachCampaignsTable,
+  scheduledJobRuns,
 } from "@shared/schema";
 import { getRequestContext } from "../context";
 import { checkFeatureAccessAsync } from "../services/plan-policy";
@@ -219,6 +220,8 @@ async function getTenantPlan(tenantDomain: string): Promise<string> {
   const tenant = await storage.getTenantByDomain(tenantDomain);
   return tenant?.plan ?? "free";
 }
+
+const FULL_HUBSPOT_REFRESH_PENDING_TIMEOUT_MS = 15 * 60 * 1000;
 
 async function guardContacts(req: Request, res: Response): Promise<boolean> {
   if (!req.session?.userId) {
@@ -619,6 +622,158 @@ export function registerMarketingContactsRoutes(app: Express) {
       res.json({ ok: true, created, updated, skipped, processed: ids.length });
     } catch (err: any) {
       res.status(502).json({ error: err.message || "HubSpot import failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // FULL HUBSPOT CONTACT REFRESH
+  // ──────────────────────────────────────────────────────────
+  // This is intentionally not the daily bounded enrichment sweep, nor the
+  // Settings → HubSpot "Sync now" competitor/deal sync. It pages through the
+  // entire connected portal and retains a durable status record for Contacts.
+  app.post("/api/marketing-contacts/hubspot/full-refresh", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      if (!user || !["Domain Admin", "Global Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required to refresh all HubSpot contacts." });
+      }
+      if (!await storage.getHubspotConnection(ctx.tenantDomain)) {
+        return res.status(409).json({ error: "HubSpot is not connected for this organization." });
+      }
+
+      // Lock per tenant inside the same transaction that creates the row.
+      // A read-then-insert check alone can start two complete CRM scans if
+      // two admins click the control at almost the same time.
+      const start = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`hubspot-full-contact-refresh:${ctx.tenantDomain}`}))`);
+        const [initialExisting] = await tx
+          .select({
+            id: scheduledJobRuns.id,
+            status: scheduledJobRuns.status,
+            createdAt: scheduledJobRuns.createdAt,
+          })
+          .from(scheduledJobRuns)
+          .where(and(
+            eq(scheduledJobRuns.tenantDomain, ctx.tenantDomain),
+            eq(scheduledJobRuns.jobType, "hubspotFullContactRefresh"),
+            inArray(scheduledJobRuns.status, ["pending", "running"]),
+          ))
+          .orderBy(desc(scheduledJobRuns.createdAt))
+          .limit(1);
+        let existing: typeof initialExisting | undefined = initialExisting;
+        if (
+          existing?.status === "pending" &&
+          existing.createdAt.getTime() < Date.now() - FULL_HUBSPOT_REFRESH_PENDING_TIMEOUT_MS
+        ) {
+          const [reclaimed] = await tx
+            .update(scheduledJobRuns)
+            .set({
+              status: "failed",
+              completedAt: new Date(),
+              errorMessage: "The refresh worker did not start within 15 minutes. Start a new full refresh to retry.",
+            })
+            .where(and(
+              eq(scheduledJobRuns.id, existing.id),
+              eq(scheduledJobRuns.status, "pending"),
+              sql`${scheduledJobRuns.createdAt} < ${new Date(Date.now() - FULL_HUBSPOT_REFRESH_PENDING_TIMEOUT_MS)}`,
+            ))
+            .returning({ id: scheduledJobRuns.id });
+          if (reclaimed) {
+            existing = undefined;
+          } else {
+            [existing] = await tx
+              .select({
+                id: scheduledJobRuns.id,
+                status: scheduledJobRuns.status,
+                createdAt: scheduledJobRuns.createdAt,
+              })
+              .from(scheduledJobRuns)
+              .where(and(
+                eq(scheduledJobRuns.tenantDomain, ctx.tenantDomain),
+                eq(scheduledJobRuns.jobType, "hubspotFullContactRefresh"),
+                inArray(scheduledJobRuns.status, ["pending", "running"]),
+              ))
+              .orderBy(desc(scheduledJobRuns.createdAt))
+              .limit(1);
+          }
+        }
+        if (existing) return { existing, job: null };
+
+        const [job] = await tx
+          .insert(scheduledJobRuns)
+          .values({
+            id: randomUUID(),
+            jobType: "hubspotFullContactRefresh",
+            tenantDomain: ctx.tenantDomain,
+            targetName: "All HubSpot contacts",
+            status: "pending",
+            result: {
+              scope: "all contacts in the connected HubSpot portal",
+              pages: 0,
+              processed: 0,
+              created: 0,
+              updated: 0,
+              skipped: 0,
+              failed: 0,
+              rateLimited: 0,
+            },
+          })
+          .returning();
+        return { existing: null, job };
+      });
+
+      if (start.existing) {
+        return res.status(409).json({
+          error: "A full HubSpot contact refresh is already in progress.",
+          jobId: start.existing.id,
+          status: start.existing.status,
+        });
+      }
+      const job = start.job!;
+
+      const { enqueueFullHubSpotContactRefresh } = await import("../services/hubspot-service");
+      enqueueFullHubSpotContactRefresh(job.id, ctx.tenantDomain);
+
+      res.status(202).json({ ok: true, jobId: job.id, status: "pending" });
+    } catch (err: any) {
+      console.error("[marketing-contacts] could not start full HubSpot contact refresh:", err.message);
+      res.status(500).json({ error: err.message || "Could not start full HubSpot contact refresh" });
+    }
+  });
+
+  app.get("/api/marketing-contacts/hubspot/full-refresh/status", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const user = await storage.getUser(ctx.userId);
+      if (!user || !["Domain Admin", "Global Admin"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required to view full refresh status." });
+      }
+
+      const [job] = await db
+        .select({
+          id: scheduledJobRuns.id,
+          status: scheduledJobRuns.status,
+          result: scheduledJobRuns.result,
+          errorMessage: scheduledJobRuns.errorMessage,
+          startedAt: scheduledJobRuns.startedAt,
+          completedAt: scheduledJobRuns.completedAt,
+          createdAt: scheduledJobRuns.createdAt,
+        })
+        .from(scheduledJobRuns)
+        .where(and(
+          eq(scheduledJobRuns.tenantDomain, ctx.tenantDomain),
+          eq(scheduledJobRuns.jobType, "hubspotFullContactRefresh"),
+        ))
+        .orderBy(desc(scheduledJobRuns.createdAt))
+        .limit(1);
+
+      res.json({ job: job ?? null });
+    } catch (err: any) {
+      console.error("[marketing-contacts] could not read full HubSpot refresh status:", err.message);
+      res.status(500).json({ error: err.message || "Could not read full HubSpot refresh status" });
     }
   });
 
