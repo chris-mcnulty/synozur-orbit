@@ -59,6 +59,7 @@ import {
   BookOpen,
   ShieldCheck,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -610,6 +611,8 @@ function TimelinePanel({
   onClose: () => void;
 }) {
   const [dossierProspectId, setDossierProspectId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Fetch the full contact detail to get all campaign memberships.
   // The list endpoint only returns the latest membership.
@@ -634,8 +637,46 @@ function TimelinePanel({
     enabled: !!contact && open,
   });
 
-  const name = contact
-    ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email
+  const syncHubspotMutation = useMutation({
+    mutationFn: async () => {
+      if (!contact) throw new Error("No contact selected");
+      const res = await fetch(`/api/marketing-contacts/${contact.id}/sync-hubspot`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "HubSpot sync failed");
+      return body as { status: "matched" | "not_found"; email: string; hubspotContactId?: string };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketing-contacts"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketing-contacts", contact?.id, "detail"],
+      });
+      if (result.status === "matched") {
+        toast({
+          title: "HubSpot contact linked",
+          description: "A match was found. Missing contact details were filled without replacing Orbit values.",
+        });
+      } else {
+        toast({
+          title: "No HubSpot match found",
+          description: `${result.email} is not a contact in this organization's connected HubSpot portal.`,
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could not sync this contact",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const displayedContact = fullContact ?? contact;
+  const name = displayedContact
+    ? [displayedContact.firstName, displayedContact.lastName].filter(Boolean).join(" ") || displayedContact.email
     : "";
 
   const memberships = fullContact?.campaignMemberships ?? [];
@@ -652,24 +693,43 @@ function TimelinePanel({
           <SheetDescription>
             <span className="text-xs text-muted-foreground">{contact?.email}</span>
           </SheetDescription>
-          {contact && (
+          {displayedContact && (
             <div className="flex flex-col gap-1.5 pt-1">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <LifecycleBadge stage={contact.lifecycleStage} />
-                <OriginBadge source={contact.source} />
+                <LifecycleBadge stage={displayedContact.lifecycleStage} />
+                <OriginBadge source={displayedContact.source} />
+                <Badge variant="outline" className="text-xs">
+                  {displayedContact.hubspotContactId ? "HubSpot linked" : "Not linked to HubSpot"}
+                </Badge>
               </div>
-              {contact.company && (
+              {displayedContact.company && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                  <Building2 className="h-3 w-3" /> {contact.company}
-                  {contact.jobTitle ? ` · ${contact.jobTitle}` : ""}
+                  <Building2 className="h-3 w-3" /> {displayedContact.company}
+                  {displayedContact.jobTitle ? ` · ${displayedContact.jobTitle}` : ""}
                 </span>
               )}
-              {contact.lastEventAt && (
+              {displayedContact.lastEventAt && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-3 w-3" /> Last activity{" "}
-                  {formatDistanceToNow(new Date(contact.lastEventAt), { addSuffix: true })}
+                  {formatDistanceToNow(new Date(displayedContact.lastEventAt), { addSuffix: true })}
                 </span>
               )}
+              <div className="pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => syncHubspotMutation.mutate()}
+                  disabled={syncHubspotMutation.isPending || !displayedContact.email}
+                  data-testid="button-sync-contact-hubspot"
+                >
+                  {syncHubspotMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  Sync with HubSpot
+                </Button>
+              </div>
             </div>
           )}
         </SheetHeader>

@@ -5,6 +5,7 @@
  *   POST   /api/marketing-contacts/ingest-event   (HMAC-signed webhook for synozur-webbase)
  *   GET    /api/marketing-contacts                 list contacts (paginated, search, lifecycle filter)
  *   GET    /api/marketing-contacts/:id             single contact
+ *   POST   /api/marketing-contacts/:id/sync-hubspot resolve one contact against HubSpot
  *   GET    /api/marketing-contacts/:id/events      timeline events
  *   GET    /api/marketing-contacts/:id/journey     attribution journey
  *   POST   /api/admin/marketing-contacts/backfill  admin-only one-shot backfill
@@ -465,6 +466,40 @@ export function registerMarketingContactsRoutes(app: Express) {
   });
 
   // ──────────────────────────────────────────────────────────
+  // SINGLE-CONTACT HUBSPOT SYNC
+  // ──────────────────────────────────────────────────────────
+  // Available to normal Contacts users. This is the immediate, record-level
+  // alternative to waiting for the daily batch enrichment job.
+  app.post("/api/marketing-contacts/:id/sync-hubspot", async (req: Request, res: Response) => {
+    if (!await guardContacts(req, res)) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const connection = await storage.getHubspotConnection(ctx.tenantDomain);
+      if (!connection) {
+        return res.status(409).json({
+          error: "HubSpot is not connected for this organization. Ask an administrator to connect it in Settings.",
+        });
+      }
+
+      const { syncSingleContactWithHubSpot } = await import("../services/hubspot-service");
+      const result = await syncSingleContactWithHubSpot({
+        tenantDomain: ctx.tenantDomain,
+        contactId: req.params.id,
+      });
+
+      if (result.status === "no_email") {
+        return res.status(400).json({
+          error: "This contact has no email address, so it cannot be matched to HubSpot.",
+        });
+      }
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[marketing-contacts] single HubSpot sync failed:", err.message);
+      res.status(err?.statusCode ?? 500).json({ error: err.message || "HubSpot sync failed" });
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────
   // CONTACT TIMELINE
   // ──────────────────────────────────────────────────────────
   app.get("/api/marketing-contacts/:id/events", async (req: Request, res: Response) => {
@@ -682,7 +717,7 @@ export function registerMarketingContactsRoutes(app: Express) {
   });
 
   // ──────────────────────────────────────────────────────────
-  // ADMIN HUBSPOT ENRICHMENT — manually trigger per-tenant
+  // ADMIN HUBSPOT ENRICHMENT BATCH — manually trigger per-tenant
   // HubSpot contact enrichment using the tenant's connected
   // OAuth portal. Requires Domain Admin or Global Admin.
   // ──────────────────────────────────────────────────────────
@@ -713,7 +748,15 @@ export function registerMarketingContactsRoutes(app: Express) {
         limit,
         forceAll,
       });
-      res.json({ ok: true, ...result });
+      // This is intentionally a bounded batch, not a "sync all" operation.
+      // Expose its precise scope so callers cannot mistake it for a full CRM
+      // import or an all-contact refresh.
+      res.json({
+        ok: true,
+        scope: forceAll ? "contacts with an email, up to the requested limit" : "unlinked contacts, up to the requested limit",
+        limit,
+        ...result,
+      });
     } catch (err: any) {
       console.error("[marketing-contacts] HubSpot enrichment failed:", err.message);
       res.status(500).json({ error: err.message || "Enrichment failed" });

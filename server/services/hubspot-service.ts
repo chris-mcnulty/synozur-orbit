@@ -486,6 +486,11 @@ export interface HubSpotContactResult {
   properties: Record<string, string | null>;
 }
 
+export type SingleContactHubSpotSyncResult =
+  | { status: "matched"; email: string; hubspotContactId: string }
+  | { status: "not_found"; email: string }
+  | { status: "no_email" };
+
 export interface ContactEnrichmentDeps {
   /** Load unenriched contacts for a single tenant */
   loadContacts: (tenantDomain: string, limit: number, forceAll: boolean) => Promise<EnrichmentContact[]>;
@@ -536,6 +541,87 @@ const ENRICHMENT_LIFECYCLE_MAP: Record<string, string> = {
   evangelist: "evangelist",
   other: "lead",
 };
+
+/**
+ * Resolve one Orbit contact against the tenant's HubSpot portal immediately.
+ *
+ * This is deliberately separate from the scheduled batch sweep: a person
+ * working in Contacts needs an answer for the record they are looking at now,
+ * not a queue position in the next daily job. Orbit-owned values stay intact;
+ * HubSpot only fills blank details and establishes the shared HubSpot ID.
+ */
+export async function syncSingleContactWithHubSpot(opts: {
+  tenantDomain: string;
+  contactId: string;
+}): Promise<SingleContactHubSpotSyncResult> {
+  const { tenantDomain, contactId } = opts;
+  const { db } = await import("../db");
+  const { marketingContacts } = await import("@shared/schema");
+  const { eq, and } = await import("drizzle-orm");
+
+  const [contact] = await db
+    .select({
+      id: marketingContacts.id,
+      email: marketingContacts.email,
+    })
+    .from(marketingContacts)
+    .where(
+      and(
+        eq(marketingContacts.id, contactId),
+        eq(marketingContacts.tenantDomain, tenantDomain),
+      ),
+    )
+    .limit(1);
+
+  if (!contact) {
+    const error = new Error("Contact not found");
+    (error as Error & { statusCode?: number }).statusCode = 404;
+    throw error;
+  }
+  const email = contact.email;
+  if (!email) return { status: "no_email" };
+
+  const { getTenantClient, withHubspotRetry } = await import("./hubspot-integration");
+  const { client } = await getTenantClient(tenantDomain);
+  const result: any = await withHubspotRetry(
+    () =>
+      client.crm.contacts.searchApi.doSearch({
+        filterGroups: [
+          { filters: [{ propertyName: "email", operator: "EQ" as any, value: email }] },
+        ],
+        properties: ["email", "firstname", "lastname", "company", "jobtitle", "lifecyclestage"],
+        limit: 1,
+        after: "0",
+        sorts: [],
+      }),
+    { label: `single-contact email-search (${tenantDomain})` },
+  );
+
+  if (result.results.length === 0) {
+    return { status: "not_found", email };
+  }
+
+  const hubspotContact = result.results[0];
+  const props = hubspotContact.properties as Record<string, string | null>;
+  const { enrichContactFromHubSpot } = await import("./marketing-contact-service");
+  await enrichContactFromHubSpot({
+    tenantDomain,
+    email,
+    hubspotContactId: hubspotContact.id,
+    firstName: props.firstname || null,
+    lastName: props.lastname || null,
+    company: props.company || null,
+    jobTitle: props.jobtitle || null,
+    lifecycleStage: ENRICHMENT_LIFECYCLE_MAP[(props.lifecyclestage || "").toLowerCase()] || null,
+  });
+
+  console.log(`[HubSpot] single-contact enrichment matched ${email} for ${tenantDomain}`);
+  return {
+    status: "matched",
+    email,
+    hubspotContactId: hubspotContact.id,
+  };
+}
 
 export async function _syncHubSpotContactEnrichmentWithDeps(
   opts: { tenantDomain: string; limit?: number; forceAll?: boolean },
