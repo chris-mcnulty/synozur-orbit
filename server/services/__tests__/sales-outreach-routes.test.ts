@@ -439,6 +439,22 @@ describe("sales-outreach routes", () => {
       expect(createOutlookDraft).not.toHaveBeenCalled();
     });
 
+    it.each([null, "", "   "])(
+      "returns 422 missing_recipient when a LinkedIn URL is %s after compose",
+      async (linkedinUrl) => {
+        pushDb({ ...TOUCH, channel: "linkedin" });
+        pushDb({ ...PROSPECT, linkedinUrl });
+        vi.mocked(assertApprovalAllowed).mockResolvedValue({ allowed: true } as any);
+
+        const res = await request(app).post("/api/sales-outreach/touches/touch-1/approve");
+
+        expect(res.status).toBe(422);
+        expect(res.body).toMatchObject({ code: "missing_recipient" });
+        expect(res.body.error).toMatch(/no linkedin profile url/i);
+        expect(getLinkedInCapabilities).not.toHaveBeenCalled();
+      },
+    );
+
     it("succeeds (200) when an email touch has a valid recipient", async () => {
       // Mirrors the happy-path approval test to confirm the recipient guard does
       // not block legitimate sends with a real email address.

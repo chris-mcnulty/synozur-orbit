@@ -980,6 +980,12 @@ export function registerSalesOutreachRoutes(app: Express) {
           code: "missing_recipient",
         });
       }
+      if (touch.channel === "linkedin" && !prospect?.linkedinUrl?.trim()) {
+        return res.status(422).json({
+          error: "Prospect has no LinkedIn profile URL — add one before approving this LinkedIn touch.",
+          code: "missing_recipient",
+        });
+      }
 
       let outlookDraftId: string | null = null;
       let linkedinThreadRef: string | null = null;
