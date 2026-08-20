@@ -388,7 +388,7 @@ export async function syncHubSpotContactEnrichment(opts: {
   tenantDomain: string;
   limit?: number;
   forceAll?: boolean;
-}): Promise<{ enriched: number; notFound: number; errors: number; rateLimited: number }> {
+}): Promise<ContactEnrichmentStats> {
   const { tenantDomain, limit = 200, forceAll = false } = opts;
 
   // Use the per-tenant OAuth client — this is the same client the daily
@@ -402,7 +402,17 @@ export async function syncHubSpotContactEnrichment(opts: {
     console.warn(
       `[HubSpot] contact enrichment skipped for ${tenantDomain} — not connected: ${err.message}`,
     );
-    return { enriched: 0, notFound: 0, errors: 0, rateLimited: 0 };
+    return {
+      examined: 0,
+      matched: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      enriched: 0,
+      notFound: 0,
+      errors: 0,
+      rateLimited: 0,
+    };
   }
 
   const { db } = await import("../db");
@@ -464,7 +474,7 @@ export async function syncHubSpotContactEnrichment(opts: {
   const result = await _syncHubSpotContactEnrichmentWithDeps({ tenantDomain, limit, forceAll }, deps);
 
   console.log(
-    `[HubSpot] contact enrichment complete for ${tenantDomain} — enriched=${result.enriched} notFound=${result.notFound} errors=${result.errors} rateLimited=${result.rateLimited}`,
+    `[HubSpot] contact enrichment complete for ${tenantDomain} — examined=${result.examined} matched=${result.matched} updated=${result.updated} skipped=${result.skipped} failed=${result.failed} rateLimited=${result.rateLimited}`,
   );
   return result;
 }
@@ -484,6 +494,25 @@ export interface EnrichmentContact {
 export interface HubSpotContactResult {
   id: string;
   properties: Record<string, string | null>;
+}
+
+/**
+ * Contact-enrichment outcomes for one bounded sweep.
+ *
+ * The legacy names remain for API compatibility with the manual enrichment
+ * endpoint. The explicit names are used by scheduled-job history and the
+ * operator-facing HubSpot settings summary.
+ */
+export interface ContactEnrichmentStats {
+  examined: number;
+  matched: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  enriched: number;
+  notFound: number;
+  errors: number;
+  rateLimited: number;
 }
 
 export type SingleContactHubSpotSyncResult =
@@ -626,7 +655,7 @@ export async function syncSingleContactWithHubSpot(opts: {
 export async function _syncHubSpotContactEnrichmentWithDeps(
   opts: { tenantDomain: string; limit?: number; forceAll?: boolean },
   deps: ContactEnrichmentDeps,
-): Promise<{ enriched: number; notFound: number; errors: number; rateLimited: number }> {
+): Promise<ContactEnrichmentStats> {
   const { tenantDomain, limit = 200, forceAll = false } = opts;
 
   // HubSpot search API: max 5 req/s. Process contacts in batches with an
@@ -637,8 +666,25 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
   const pause = deps.pauseFn ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
   const contacts = await deps.loadContacts(tenantDomain, limit, forceAll);
-  if (contacts.length === 0) return { enriched: 0, notFound: 0, errors: 0, rateLimited: 0 };
+  if (contacts.length === 0) {
+    return {
+      examined: 0,
+      matched: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      enriched: 0,
+      notFound: 0,
+      errors: 0,
+      rateLimited: 0,
+    };
+  }
 
+  const examined = contacts.length;
+  let matched = 0;
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
   let enriched = 0;
   let notFound = 0;
   let errors = 0;
@@ -653,6 +699,7 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
         if (contact.sourceProspectId && deps.getProspectHubspotId) {
           const prospectHsId = await deps.getProspectHubspotId(contact.sourceProspectId);
           if (prospectHsId) {
+            matched++;
             await deps.enrichContact({
               tenantDomain,
               email: contact.email,
@@ -663,6 +710,7 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
               jobTitle: null,
               lifecycleStage: null,
             });
+            updated++;
             enriched++;
             continue;
           }
@@ -672,9 +720,11 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
 
         if (!hsContact) {
           notFound++;
+          skipped++;
           continue;
         }
 
+        matched++;
         const props = hsContact.properties;
         const hsStage = (props.lifecyclestage || "").toLowerCase();
         const mappedStage = ENRICHMENT_LIFECYCLE_MAP[hsStage] || null;
@@ -689,17 +739,20 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
           jobTitle: props.jobtitle || null,
           lifecycleStage: mappedStage,
         });
+        updated++;
         enriched++;
       } catch (err: any) {
         if (deps.isRateLimitError(err)) {
           // Contact left un-enriched; next sweep will retry naturally.
           rateLimited++;
+          skipped++;
           console.warn(
             `[HubSpot] contact enrichment rate-limited for ${contact.email} (${tenantDomain}) — deferred to next sweep`,
           );
         } else {
           console.error(`[HubSpot] enrichment failed for ${contact.email}: ${err.message}`);
           errors++;
+          failed++;
         }
       }
     }
@@ -708,7 +761,17 @@ export async function _syncHubSpotContactEnrichmentWithDeps(
     }
   }
 
-  return { enriched, notFound, errors, rateLimited };
+  return {
+    examined,
+    matched,
+    updated,
+    skipped,
+    failed,
+    enriched,
+    notFound,
+    errors,
+    rateLimited,
+  };
 }
 
 /**

@@ -4666,12 +4666,33 @@ export class DatabaseStorage implements IStorage {
     tenantDomain: string,
     result: { stats: any; error: string | null },
   ): Promise<void> {
+    // The manual CRM sync and the scheduled contact-enrichment pass both use
+    // this result field. Keep the last scheduled enrichment summary when a
+    // manual CRM-only sync refreshes the primary stats afterward.
+    const [existing] = await db
+      .select({ lastSyncStats: hubspotConnections.lastSyncStats })
+      .from(hubspotConnections)
+      .where(eq(hubspotConnections.tenantDomain, tenantDomain));
+    const existingStats = existing?.lastSyncStats;
+    const existingEnrichment = existingStats
+      && typeof existingStats === "object"
+      && !Array.isArray(existingStats)
+      ? (existingStats as Record<string, unknown>).enrichment
+      : undefined;
+    const hasEnrichment = result.stats
+      && typeof result.stats === "object"
+      && !Array.isArray(result.stats)
+      && Object.prototype.hasOwnProperty.call(result.stats, "enrichment");
+    const stats = existingEnrichment !== undefined && !hasEnrichment && result.stats
+      ? { ...result.stats, enrichment: existingEnrichment }
+      : result.stats;
+
     await db
       .update(hubspotConnections)
       .set({
         lastSyncAt: new Date(),
         lastSyncError: result.error,
-        lastSyncStats: result.stats,
+        lastSyncStats: stats,
         updatedAt: new Date(),
       })
       .where(eq(hubspotConnections.tenantDomain, tenantDomain));

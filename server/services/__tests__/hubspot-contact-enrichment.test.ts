@@ -105,6 +105,9 @@ describe("_syncHubSpotContactEnrichmentWithDeps — 429 rate-limit deferral", ()
     assert.equal(result.errors, 0, "errors must be 0 for a 429");
     assert.equal(result.enriched, 0, "enriched must be 0");
     assert.equal(result.notFound, 0, "notFound must be 0");
+    assert.equal(result.examined, 1, "one contact should be examined");
+    assert.equal(result.skipped, 1, "a rate-limited contact is deferred");
+    assert.equal(result.failed, 0, "a rate limit is not a contact failure");
   });
 
   it("does NOT call enrichContact when search throws 429 — contact row stays un-enriched", async () => {
@@ -247,11 +250,52 @@ describe("_syncHubSpotContactEnrichmentWithDeps — mixed outcomes", () => {
     );
 
     assert.equal(result.enriched, 1, "successful contact must be enriched");
+    assert.equal(result.matched, 1, "successful contact must match");
+    assert.equal(result.updated, 1, "successful contact must be updated");
     assert.equal(result.rateLimited, 1, "rate-limited contact must be deferred");
+    assert.equal(result.examined, 2, "both contacts should be examined");
+    assert.equal(result.skipped, 1, "the rate-limited contact is deferred");
     assert.equal(result.errors, 0);
     // enrichContact called only for the successful contact
     assert.equal(enrichContact.mock.calls.length, 1);
     assert.equal(enrichContact.mock.calls[0][0].email, okContact.email);
+  });
+
+  it("reports explicit matched, skipped, and failed counts", async () => {
+    const matchedContact = makeContact({ email: "matched@example.com" });
+    const missingContact = makeContact({ email: "missing@example.com" });
+    const failedContact = makeContact({ email: "failed@example.com" });
+    const { deps } = makeDeps(
+      [matchedContact, missingContact, failedContact],
+      async (email: string) => {
+        if (email === missingContact.email) return null;
+        if (email === failedContact.email) throw new Error("HubSpot search unavailable");
+        return {
+          id: "HS-MATCHED",
+          properties: {
+            email,
+            firstname: "Matched",
+            lastname: "User",
+            company: null,
+            jobtitle: null,
+            lifecyclestage: "lead",
+          },
+        };
+      },
+    );
+
+    const result = await _syncHubSpotContactEnrichmentWithDeps(
+      { tenantDomain: "acme.com" },
+      deps,
+    );
+
+    assert.equal(result.examined, 3);
+    assert.equal(result.matched, 1);
+    assert.equal(result.updated, 1);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.failed, 1);
+    assert.equal(result.notFound, 1);
+    assert.equal(result.errors, 1);
   });
 });
 
@@ -268,7 +312,17 @@ describe("_syncHubSpotContactEnrichmentWithDeps — edge cases", () => {
       deps,
     );
 
-    assert.deepEqual(result, { enriched: 0, notFound: 0, errors: 0, rateLimited: 0 });
+    assert.deepEqual(result, {
+      examined: 0,
+      matched: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      enriched: 0,
+      notFound: 0,
+      errors: 0,
+      rateLimited: 0,
+    });
     assert.equal(searchHubSpot.mock.calls.length, 0);
     assert.equal(enrichContact.mock.calls.length, 0);
   });

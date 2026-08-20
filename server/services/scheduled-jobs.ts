@@ -2270,23 +2270,53 @@ async function runHubspotSyncJob(): Promise<void> {
         async () => {
           const stats = await syncTenant(conn.tenantDomain);
           okCount += 1;
-          // Best-effort: enrich marketing_contacts for this tenant using the
-          // same per-tenant OAuth portal. Errors are caught inside the function.
-          try {
-            const { syncHubSpotContactEnrichment, pushLeadScoresToHubSpot } = await import("./hubspot-service");
-            const planAllowsContacts = await checkFeatureAccessAsync(tenant.plan, "marketingContacts");
-            if (planAllowsContacts.allowed) {
+          const { syncHubSpotContactEnrichment, pushLeadScoresToHubSpot } = await import("./hubspot-service");
+          const planAllowsContacts = await checkFeatureAccessAsync(tenant.plan, "marketingContacts");
+          if (planAllowsContacts.allowed) {
+            const completedAt = new Date().toISOString();
+            let enrichment: Record<string, unknown>;
+            try {
               const enrichResult = await syncHubSpotContactEnrichment({ tenantDomain: conn.tenantDomain });
+              enrichment = {
+                status: "completed",
+                completedAt,
+                ...enrichResult,
+              };
               if (enrichResult.rateLimited > 0) {
                 console.warn(
-                  `[HubSpot Sync] Contact enrichment rate-limited for ${conn.tenantDomain} — ${enrichResult.rateLimited} contact(s) deferred to next sweep (enriched=${enrichResult.enriched} notFound=${enrichResult.notFound} errors=${enrichResult.errors})`,
+                  `[HubSpot Sync] Contact enrichment rate-limited for ${conn.tenantDomain} — ${enrichResult.rateLimited} contact(s) deferred to next sweep (examined=${enrichResult.examined} matched=${enrichResult.matched} updated=${enrichResult.updated} failed=${enrichResult.failed})`,
                 );
               }
-              // Push Orbit lead scores back to HubSpot contact properties
-              await pushLeadScoresToHubSpot({ tenantDomain: conn.tenantDomain });
+            } catch (enrichErr: any) {
+              const error = enrichErr instanceof Error ? enrichErr.message : String(enrichErr);
+              console.warn(`[HubSpot Sync] Contact enrichment error for ${conn.tenantDomain}: ${error}`);
+              enrichment = {
+                status: "failed",
+                completedAt,
+                examined: 0,
+                matched: 0,
+                updated: 0,
+                skipped: 0,
+                failed: 0,
+                rateLimited: 0,
+                error,
+              };
             }
-          } catch (enrichErr: any) {
-            console.warn(`[HubSpot Sync] Contact enrichment error for ${conn.tenantDomain}: ${enrichErr.message}`);
+
+            // Persist the combined CRM and contact-enrichment result so both
+            // scheduled-job history and Settings show the same latest sweep.
+            const result = { ...stats, enrichment };
+            await storage.markHubspotSyncResult(conn.tenantDomain, { stats: result, error: null });
+
+            // Lead-score push is independent of contact enrichment. Keep its
+            // existing best-effort behavior without reporting it as a failed
+            // enrichment sweep.
+            try {
+              await pushLeadScoresToHubSpot({ tenantDomain: conn.tenantDomain });
+            } catch (scoreErr: any) {
+              console.warn(`[HubSpot Sync] Lead-score push error for ${conn.tenantDomain}: ${scoreErr.message}`);
+            }
+            return result;
           }
           return stats;
         },

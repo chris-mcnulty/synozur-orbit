@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { checkArtifactFreshness, formatShortDate, getFullStalenessInfo } from "@/lib/staleness";
 import { getTabMarketId } from "@/lib/tabContext";
+import { getHubspotEnrichmentHistorySummary } from "@/lib/hubspot-enrichment";
 import StalenessDot from "@/components/ui/StalenessDot";
 
 interface QuickAction {
@@ -851,13 +852,17 @@ export default function RefreshCenter() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {recentJobs.map((job: any) => (
+                    {recentJobs.map((job: any) => {
+                      const enrichment = job.jobType === "hubspotSync"
+                        ? getHubspotEnrichmentHistorySummary(job.result)
+                        : null;
+                      return (
                       <div
                         key={job.id}
                         className={cn(
                           "flex items-center justify-between p-3 rounded-lg border",
                           job.status === "running" && "bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800",
-                          job.status === "failed" && "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
+                          (job.status === "failed" || enrichment?.status === "failed") && "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
                         )}
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -873,6 +878,23 @@ export default function RefreshCenter() {
                             {job.errorMessage && (
                               <p className="text-xs text-red-500 truncate mt-1">{job.errorMessage}</p>
                             )}
+                            {enrichment && (
+                              <div
+                                className={cn(
+                                  "mt-1 text-xs",
+                                  enrichment.status === "failed" && "text-red-600 dark:text-red-400",
+                                  enrichment.status === "partial" && "text-amber-700 dark:text-amber-400",
+                                  enrichment.status === "completed" && "text-muted-foreground",
+                                )}
+                                data-testid={`hubspot-enrichment-history-${job.id}`}
+                              >
+                                <p className="font-medium">
+                                  {enrichment.headline}
+                                  {enrichment.completedAt ? ` · ${new Date(enrichment.completedAt).toLocaleString()}` : ""}
+                                </p>
+                                <p>{enrichment.details}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0 ml-4">
@@ -886,7 +908,8 @@ export default function RefreshCenter() {
                           )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

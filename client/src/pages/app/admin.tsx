@@ -40,6 +40,7 @@ import { useUser } from "@/lib/userContext";
 import { useToast } from "@/hooks/use-toast";
 import type { Tenant } from "@shared/schema";
 import { setTabTenantId, setTabMarketId } from "@/lib/tabContext";
+import { getHubspotEnrichmentHistorySummary } from "@/lib/hubspot-enrichment";
 
 type TenantWithCounts = Tenant & { actualUserCount: number };
 type Ga4HealthEntry = { status: string; propertyId: string | null; propertyName: string | null; lastSyncAt: string | null; consecutiveErrors: number };
@@ -2579,8 +2580,13 @@ export default function AdminPage() {
                         const duration = run.startedAt && run.completedAt
                           ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
                           : null;
+                        const enrichment = run.jobType === "hubspotSync"
+                          ? getHubspotEnrichmentHistorySummary(run.result)
+                          : null;
                         const resultDetails = run.result ? (
-                          run.jobType === "websiteCrawl" && run.result.pagesCrawled
+                          enrichment
+                            ? null
+                            : run.jobType === "websiteCrawl" && run.result.pagesCrawled
                             ? `${run.result.pagesCrawled} pages, ${run.result.totalWordCount?.toLocaleString() || 0} words`
                             : run.jobType === "socialMonitor"
                             ? `${run.result.entityType || "entity"}`
@@ -2625,8 +2631,19 @@ export default function AdminPage() {
                                 <Badge variant="secondary">{run.status}</Badge>
                               )}
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={typeof resultDetails === 'string' ? resultDetails : undefined}>
-                              {resultDetails}
+                            <TableCell className="text-sm text-muted-foreground max-w-[360px]">
+                              {enrichment ? (
+                                <div
+                                  className={enrichment.status === "failed" ? "text-red-600 dark:text-red-400" : enrichment.status === "partial" ? "text-amber-700 dark:text-amber-400" : undefined}
+                                  data-testid={`hubspot-enrichment-admin-history-${run.id}`}
+                                >
+                                  <p className="font-medium">{enrichment.headline}</p>
+                                  <p className="text-xs">
+                                    {enrichment.completedAt ? `${new Date(enrichment.completedAt).toLocaleString()} · ` : ""}
+                                    {enrichment.details}
+                                  </p>
+                                </div>
+                              ) : resultDetails}
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {run.startedAt ? new Date(run.startedAt).toLocaleString() : "-"}

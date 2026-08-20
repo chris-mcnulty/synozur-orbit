@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTabMarketId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
+import type { HubspotContactEnrichmentSummary } from "@/lib/hubspot-enrichment";
 import { toast } from "sonner";
 
 interface TeamMember {
@@ -2115,7 +2116,15 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
   }
 
   const conn = status?.connection;
-  const stats = (conn?.lastSyncStats || {}) as { matched?: number; enriched?: number; dealsAggregated?: number; errors?: number };
+  const stats = (conn?.lastSyncStats || {}) as {
+    matched?: number;
+    enriched?: number;
+    dealsAggregated?: number;
+    errors?: number;
+    enrichment?: HubspotContactEnrichmentSummary;
+  };
+  const enrichment = stats.enrichment;
+  const enrichmentFailed = enrichment?.status === "failed" || (enrichment?.failed ?? 0) > 0;
 
   return (
     <div className="space-y-4" data-testid="section-hubspot-integration">
@@ -2253,6 +2262,31 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
             <div className="text-muted-foreground" data-testid="text-hubspot-stats">
               Matched {stats.matched ?? 0} competitors · Enriched {stats.enriched ?? 0} · Competitor-deals {stats.dealsAggregated ?? 0}
               {stats.errors ? ` · ${stats.errors} errors` : ""}
+            </div>
+          )}
+          {enrichment && (
+            <div
+              className={enrichmentFailed ? "text-destructive" : "text-muted-foreground"}
+              data-testid="text-hubspot-enrichment-summary"
+            >
+              <span className="font-medium">
+                Latest contact enrichment{enrichment.completedAt ? ` (${new Date(enrichment.completedAt).toLocaleString()})` : ""}:
+              </span>{" "}
+              <span data-testid="text-hubspot-enrichment-status">
+                {enrichment.status === "failed"
+                  ? "Failed"
+                  : enrichmentFailed
+                    ? "Completed with contact failures"
+                    : "Completed"}
+              </span>
+              {enrichment.status === "failed" ? (
+                <span data-testid="text-hubspot-enrichment-error"> — {enrichment.error || "The sweep could not complete."}</span>
+              ) : (
+                <span>
+                  {" "}· Examined {enrichment.examined ?? 0} · Matched {enrichment.matched ?? 0} · Updated {enrichment.updated ?? 0} · Skipped {enrichment.skipped ?? 0} · Failed {enrichment.failed ?? 0}
+                  {(enrichment.rateLimited ?? 0) > 0 ? ` (${enrichment.rateLimited} rate-limited)` : ""}
+                </span>
+              )}
             </div>
           )}
           {Array.isArray(conn.scopes) && conn.scopes.length > 0 && (
