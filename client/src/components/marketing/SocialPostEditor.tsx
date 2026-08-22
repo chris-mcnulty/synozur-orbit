@@ -186,9 +186,12 @@ export default function SocialPostEditor({
   });
 
   const { data: allSocialAccounts = [] } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts", getTabMarketId()],
+    // Include the account currently attached to a failed post so the editor
+    // can explain what will be replaced. Inactive rows remain display-only;
+    // only active accounts are offered as new targets below.
+    queryKey: ["/api/social-accounts", getTabMarketId(), "includeInactive"],
     queryFn: async () => {
-      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      const r = await fetch("/api/social-accounts?includeInactive=true", { credentials: "include" });
       if (!r.ok) return [];
       return r.json();
     },
@@ -209,6 +212,34 @@ export default function SocialPostEditor({
   const isOverdue = isApproved && !!post?.scheduledDate && new Date(post.scheduledDate) < new Date();
   const isStaleOverdue = isOverdue && !!post?.scheduledDate &&
     new Date(post.scheduledDate) < new Date(Date.now() - SEVEN_DAYS_MS);
+
+  // The API uses "twitter" for some older X records. Treat those as the same
+  // platform when resolving the current account and replacement choices.
+  const samePlatform = (accountPlatform: string, postPlatform: string) =>
+    accountPlatform === postPlatform ||
+    (accountPlatform === "twitter" && postPlatform === "x") ||
+    (accountPlatform === "x" && postPlatform === "twitter");
+  // During the initial render selectedAccountId is still null while the
+  // existing post is being copied into local editor state. Once initialized,
+  // null is an intentional "No account assigned" choice.
+  const effectiveAccountId = didInit ? selectedAccountId : (selectedAccountId ?? post?.socialAccountId ?? null);
+  const currentPostingAccount = post
+    ? allSocialAccounts.find(a => a.id === effectiveAccountId && samePlatform(a.platform, post.platform))
+    : undefined;
+  const activePlatformAccounts = post
+    ? allSocialAccounts.filter(a =>
+        samePlatform(a.platform, post.platform) &&
+        a.status === "active" &&
+        a.hasAccessToken !== false
+      )
+    : [];
+  const accountOptions = currentPostingAccount && !activePlatformAccounts.some(a => a.id === currentPostingAccount.id)
+    ? [currentPostingAccount, ...activePlatformAccounts]
+    : activePlatformAccounts;
+  const selectableAccountIds = new Set(activePlatformAccounts.map(a => a.id));
+  const selectValue = effectiveAccountId && accountOptions.some(a => a.id === effectiveAccountId)
+    ? effectiveAccountId
+    : "__none__";
 
   const scheduledTooSoon =
     isMissed && !postNow && !!scheduledValue &&
@@ -694,40 +725,60 @@ export default function SocialPostEditor({
             )}
 
             {/* Social account selector — visible when editable */}
-            {!isReadOnly && (() => {
-              const platformAccounts = allSocialAccounts.filter(
-                (a) => a.platform === post.platform && a.status === "active" && a.hasAccessToken !== false
-              );
-              if (platformAccounts.length === 0) return null;
-              return (
-                <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
-                    <AtSign className="w-3.5 h-3.5 text-muted-foreground" />
-                    Social account
-                    {missedReason?.kind === "no_social_account" && (
-                      <span className="text-destructive text-[11px] font-normal">— required to publish</span>
-                    )}
-                  </Label>
-                  <Select
-                    value={selectedAccountId ?? "__none__"}
-                    onValueChange={(v) => setSelectedAccountId(v === "__none__" ? null : v)}
-                    disabled={isBusy}
-                  >
-                    <SelectTrigger data-testid="edit-dialog-social-account" className="w-full">
-                      <SelectValue placeholder="Select an account…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">No account assigned</SelectItem>
-                      {platformAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.accountName || a.platform}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            })()}
+            {!isReadOnly && (
+              <div className="space-y-1.5" data-testid="edit-dialog-account-section">
+                <Label className="flex items-center gap-1.5">
+                  <AtSign className="w-3.5 h-3.5 text-muted-foreground" />
+                  Posting account
+                  {missedReason?.kind === "no_social_account" && (
+                    <span className="text-destructive text-[11px] font-normal">— required to publish</span>
+                  )}
+                </Label>
+                <p className="text-xs text-muted-foreground" data-testid="edit-dialog-current-account">
+                  Current:{" "}
+                  <strong className="font-medium text-foreground">
+                    {currentPostingAccount?.accountName || (effectiveAccountId ? "Unavailable account" : "No account assigned")}
+                  </strong>
+                  {currentPostingAccount && currentPostingAccount.status !== "active" && (
+                    <span className="ml-1.5 text-amber-600 dark:text-amber-400">
+                      ({currentPostingAccount.status === "needs_reconnect" ? "needs reconnect" : currentPostingAccount.status})
+                    </span>
+                  )}
+                </p>
+                <Select
+                  value={selectValue}
+                  onValueChange={(v) => setSelectedAccountId(v === "__none__" ? null : v)}
+                  disabled={isBusy || activePlatformAccounts.length === 0}
+                >
+                  <SelectTrigger data-testid="edit-dialog-social-account" className="w-full">
+                    <SelectValue placeholder="Select an active account…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No account assigned</SelectItem>
+                    {accountOptions.map((a) => (
+                      <SelectItem
+                        key={a.id}
+                        value={a.id}
+                        disabled={!selectableAccountIds.has(a.id)}
+                      >
+                        {a.accountName || a.platform}
+                        {!selectableAccountIds.has(a.id) ? " (needs reconnect)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {activePlatformAccounts.length === 0 && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    No active {PLATFORM_LABELS[post.platform] ?? post.platform} account is available. Reconnect an account in Social Accounts before retrying.
+                  </p>
+                )}
+                {activePlatformAccounts.length > 0 && currentPostingAccount && currentPostingAccount.status !== "active" && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    Choose an active account above to replace this unavailable posting account.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Platform + image */}
             <div className="space-y-2">

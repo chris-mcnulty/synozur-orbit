@@ -447,6 +447,64 @@ describe("SocialPostEditor — save mutation", () => {
   });
 });
 
+describe("SocialPostEditor — posting account visibility", () => {
+  it("shows the current account and replacement control when the current account needs reconnect", async () => {
+    const failedPost = {
+      ...FAILED_FULL_POST,
+      socialAccountId: "old-acct",
+      publishError: "LinkedIn account is missing author URN — reconnect to refresh identity.",
+    };
+    const stub = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method !== "GET") return ok({ id: "post-abc", status: failedPost.status });
+      if (url.includes("/api/generated-posts/")) return ok(failedPost);
+      if (url.includes("/api/social-accounts")) {
+        return ok([
+          { id: "old-acct", platform: "linkedin", accountName: "Old LinkedIn page", status: "needs_reconnect", hasAccessToken: false },
+          { id: "new-acct", platform: "linkedin", accountName: "Active LinkedIn page", status: "active", hasAccessToken: true },
+        ]);
+      }
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", stub);
+    renderEditor();
+
+    await waitForEditorReady();
+
+    expect(screen.getByTestId("edit-dialog-account-section")).not.toBeNull();
+    expect(screen.getByTestId("edit-dialog-current-account").textContent).toContain("Old LinkedIn page");
+    expect(screen.getByTestId("edit-dialog-social-account")).not.toBeNull();
+    expect(screen.getByText(/Choose an active account above/i)).not.toBeNull();
+  });
+
+  it("keeps the account section visible and explains when no active replacement exists", async () => {
+    const failedPost = {
+      ...FAILED_FULL_POST,
+      socialAccountId: "old-acct",
+      publishError: "LinkedIn account is missing author URN — reconnect to refresh identity.",
+    };
+    const stub = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method !== "GET") return ok({ id: "post-abc", status: failedPost.status });
+      if (url.includes("/api/generated-posts/")) return ok(failedPost);
+      if (url.includes("/api/social-accounts")) {
+        return ok([
+          { id: "old-acct", platform: "linkedin", accountName: "Old LinkedIn page", status: "needs_reconnect", hasAccessToken: false },
+        ]);
+      }
+      return ok([]);
+    });
+    vi.stubGlobal("fetch", stub);
+    renderEditor();
+
+    await waitForEditorReady();
+
+    expect(screen.getByTestId("edit-dialog-current-account").textContent).toContain("Old LinkedIn page");
+    expect(screen.getByTestId("edit-dialog-social-account").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/No active LinkedIn account is available/i)).not.toBeNull();
+  });
+});
+
 describe("SocialPostEditor — approve mutation", () => {
   it("shows the Save & approve button for a draft post", async () => {
     const { stub } = makeFetchStub();
