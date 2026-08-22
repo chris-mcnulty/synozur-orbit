@@ -99,6 +99,10 @@ import { storeArtifact } from "../services/artifact-storage-helper";
 import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons, CURATED_EMAIL_FONTS, buildFontStack, buildFontHeadCss, getFontWarning } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
+import {
+  findSocialPostSlopViolations,
+  SOCIAL_POST_NO_SLOP_RULES,
+} from "../services/social-post-writing-quality";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -5895,18 +5899,18 @@ function buildFallbackVariants(raw: string): any[] {
  * days never reuse the same hook, structure, or rhetorical device.
  */
 const CONTENT_ANGLES: { name: string; directive: string }[] = [
-  { name: "thought-provoking question",  directive: "Open with a thought-provoking question that challenges a common assumption the audience holds." },
+  { name: "concrete observation",        directive: "Lead with a specific observation from the source. State it plainly; do not use a question or a generalization." },
   { name: "surprising statistic",        directive: "Lead with a specific, surprising statistic or data point that anchors the reader's attention." },
   { name: "short story / anecdote",      directive: "Tell a short, concrete story or anecdote (2-3 sentences) that illustrates the theme through a real situation." },
-  { name: "contrarian hot take",         directive: "Open with a bold, contrarian claim or hot take that respectfully pushes back on conventional wisdom." },
-  { name: "before-and-after",            directive: "Frame the message as a before-vs-after transformation — paint the old reality, then the new one." },
-  { name: "actionable tip",              directive: "Deliver a single actionable tip or insight in the form 'Here's how to ___' or 'Did you know ___'." },
+  { name: "informed point of view",      directive: "State a well-supported point of view based on the supplied material. Never call it a hot take or set it up as contrarian." },
+  { name: "practical tradeoff",          directive: "Explain a concrete choice, what changed, and the practical consequence. Do not frame it as a binary contrast." },
+  { name: "specific recommendation",    directive: "Give one precise recommendation and the reason it works. State it directly; do not use 'Here's how' or 'Did you know'." },
   { name: "behind-the-scenes",           directive: "Pull back the curtain — show the process, the decision, or the work behind the result." },
-  { name: "trend commentary",            directive: "React to a current industry trend or shift, positioning the theme inside that broader movement." },
-  { name: "aspirational vision",         directive: "Paint an aspirational vision of what becomes possible — appeal to the audience's ambition." },
+  { name: "trend commentary",            directive: "Explain a current industry shift through a specific implication for the reader. Avoid vague trend commentary." },
+  { name: "concrete outcome",            directive: "Describe a useful outcome in concrete terms: who benefits, what changes, and why it matters." },
   { name: "step-by-step breakdown",      directive: "Lay out 3 concrete steps or principles as a short numbered or bullet-style list inside the body." },
-  { name: "comparison / contrast",       directive: "Use a clear comparison or contrast — old way vs new way, common approach vs better approach, X vs Y." },
-  { name: "quote-led reflection",        directive: "Lead with a strong, original quote or paraphrased line of insight, then unpack it briefly." },
+  { name: "case comparison",             directive: "Compare two specific approaches using facts from the source. Explain the relevant difference without a binary 'not X, but Y' construction." },
+  { name: "insight-led explanation",     directive: "Lead with a concise, original observation and explain the evidence or mechanism behind it. Do not invent a quote." },
 ];
 
 /**
@@ -6245,6 +6249,9 @@ CRITICAL ANTI-REPETITION RULES — follow strictly:
 - Vary sentence structure, rhythm, and rhetorical device across variants.
 - Do NOT start two variants with the same word, the same phrase, or the same sentence pattern.
 
+NO-AI-SLOP REQUIREMENTS — follow strictly:
+- ${SOCIAL_POST_NO_SLOP_RULES}
+
 ASSIGNED ANGLES (one per variant, in order):
 ${anglesBlock}${avoidBlock}
 
@@ -6301,6 +6308,13 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
           }
         }
         const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+        const slopViolations = findSocialPostSlopViolations(adapted.content);
+        if (slopViolations.length > 0) {
+          console.warn(
+            `[Saturn] Rejecting no-slop violation for ${account.platform}: ${slopViolations.join(", ")}`,
+          );
+          continue;
+        }
         cleanedVariantsForAccount.push({
           content: adapted.content,
           hashtags: adapted.hashtags,
@@ -6651,7 +6665,7 @@ function getPlatformGuide(platform: string): string {
     linkedin: "Professional tone. 150-300 words. Include a clear value proposition and a call to action. Use line breaks for readability. Include the source URL once as a call-to-action link — never repeat it.",
     twitter: "HARD LIMIT: 280 characters TOTAL for content + hashtags combined. Keep post body under 180 characters to leave room for hashtags and a URL. One punchy sentence + URL. NEVER duplicate the URL. Do NOT write long-form content. Count characters carefully.",
     instagram: "Engaging and visual. 150-200 words. Use emojis sparingly. Strong opening line. Include the source URL once — never repeat it.",
-    facebook: "Friendly and informative. 100-250 words. Encourage engagement with a question or CTA. Include the source URL once — never repeat it.",
+    facebook: "Friendly and informative. 100-250 words. End with a plain CTA, not a rhetorical question. Include the source URL once — never repeat it.",
   };
   return guides[platform] ?? "Professional and engaging. Clear call to action.";
 }

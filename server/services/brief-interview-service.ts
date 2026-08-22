@@ -24,6 +24,10 @@ import {
   clampForPlatform,
   coercePlatform,
 } from "./repurpose-core";
+import {
+  findSocialPostSlopViolations,
+  SOCIAL_POST_NO_SLOP_RULES,
+} from "./social-post-writing-quality";
 
 const SYSTEM_PROMPT =
   "You are a B2B content strategist and an honest critic. You turn a short campaign interview into a " +
@@ -139,7 +143,8 @@ const SOCIAL_SYSTEM_PROMPT =
   SYNOZUR_VOICE_RULES +
   "\n- No faux-insight setups (\"Here's the thing:\", \"What many don't realize is\"), fake-profound kickers (\"At the end of the day\"), or importance puffery." +
   "\n- No emoji in posts. No mid-sentence **bold** for dramatic emphasis." +
-  "\n- Open every post with a concrete hook — a specific fact, a tension, or a hard-won lesson. Never open with a generalizing statement about the world or industry.";
+   "\n- Open every post with a concrete hook — a specific fact, a tension, or a hard-won lesson. Never open with a generalizing statement about the world or industry." +
+   "\n- " + SOCIAL_POST_NO_SLOP_RULES;
 
 const PLATFORM_GUIDANCE: Record<string, string> = {
   linkedin:
@@ -230,7 +235,7 @@ export async function generateInterviewSocialPosts(params: {
       const platform = coercePlatform(item?.platform);
       if (!wanted.has(platform)) return null;
       const content = clampForPlatform(applySynozurVoice(String(item?.content ?? "").trim()), platform);
-      if (!content) return null;
+      if (!content || findSocialPostSlopViolations(content).length > 0) return null;
       return { platform, content };
     })
     .filter((p): p is GeneratedSocialPostCopy => p !== null);
