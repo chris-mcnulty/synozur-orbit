@@ -37,15 +37,20 @@ const API_HOST = "https://api.twitter.com";
 // upload.twitter.com endpoint now returns 403 for OAuth 2.0 apps).
 const DEFAULT_SCOPE = "tweet.read tweet.write users.read media.write offline.access";
 
+export function isXWritePermissionFailure(status: number, payload: unknown): boolean {
+  if (status !== 403) return false;
+  const text = typeof payload === "string"
+    ? payload
+    : JSON.stringify(payload ?? "");
+  return /not\s+(?:permitted|authorized|allowed)\s+to\s+(?:perform|create|post)|tweet\.write|write\s+(?:access|permission)/i.test(text);
+}
+
 export function classifyTwitterCreateError(
   status: number,
   payload: unknown,
   rawText: string,
 ): Pick<PublishResult, "success" | "errorCode" | "errorMessage"> | null {
-  const detail = payload && typeof payload === "object" && "detail" in payload
-    ? String((payload as { detail?: unknown }).detail ?? "")
-    : "";
-  if (status === 403 && /not permitted to perform this action/i.test(detail || rawText)) {
+  if (isXWritePermissionFailure(status, payload ?? rawText)) {
     return {
       success: false,
       errorCode: "write_permission_missing",

@@ -79,7 +79,11 @@ vi.mock("../social-publishers", () => ({
   }),
 }));
 
-import { tickMarketingPublishWorker, preflightImageCheck } from "../marketing-publish-worker";
+import {
+  getPublishFailureDisposition,
+  tickMarketingPublishWorker,
+  preflightImageCheck,
+} from "../marketing-publish-worker";
 
 const postUpdate = () =>
   state.updates.find(u => "status" in u && ("publishError" in u || "publishedAt" in u));
@@ -196,6 +200,17 @@ describe("image-error retry classification", () => {
     const u = postUpdate();
     expect(u.status).toBe("published");
     expect(u.imageIssue).toBeNull();
+  });
+});
+
+describe("provider-remediation retry behavior", () => {
+  it("pauses X write-permission failures without consuming retry capacity", () => {
+    expect(getPublishFailureDisposition("write_permission_missing", 3)).toEqual({
+      requiresRemediation: true,
+      attemptCount: 3,
+      isPermanentImageError: false,
+      shouldRetry: false,
+    });
   });
 });
 

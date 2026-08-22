@@ -185,6 +185,31 @@ describe("TwitterPublisher.publish — revoked token (401)", () => {
     assert.equal(result.success, false);
     assert.equal(result.errorCode, "token_expired");
   });
+
+  it("X's 403 not-permitted response → actionable write-permission remediation", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({
+        title: "Forbidden",
+        detail: "You are not permitted to perform this action.",
+      }),
+    });
+    const result = await publisher.publish({
+      account: makeAccount({
+        platform: "twitter",
+        encryptedAccessToken: "enc:mock-token",
+        tokenExpiresAt: null,
+      }),
+      post: makePost({ platform: "twitter" }),
+      attemptedBy: "user-1",
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.errorCode, "write_permission_missing");
+    assert.match(result.errorMessage ?? "", /Read and write permission/i);
+    assert.match(result.errorMessage ?? "", /reconnect/i);
+  });
 });
 
 // ── FacebookPublisher.publish ─────────────────────────────────────────────────

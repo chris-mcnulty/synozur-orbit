@@ -40,6 +40,10 @@ import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { guardFeature } from "./helpers";
 import {
+  CampaignAccountLinkError,
+  ensureCampaignSocialAccountLink,
+} from "../services/campaign-social-account-link";
+import {
   fetchVoiceProfile,
   fetchPersona,
   resolveFrameworkRefs,
@@ -627,6 +631,9 @@ export function registerMarketingPostsRoutes(app: Express) {
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
       ));
       if (!account) return res.status(404).json({ error: "Social account not found" });
+      if (account.status !== "active") {
+        return res.status(409).json({ error: "Reconnect this social account before reassigning posts." });
+      }
       const scopedIds: string[] = Array.isArray(postIds) ? postIds.filter((x: any) => typeof x === "string") : [];
       const condition = and(
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
@@ -638,6 +645,31 @@ export function registerMarketingPostsRoutes(app: Express) {
         inArray(generatedPosts.status, ["draft", "approved", "publish_failed"]),
         scopedIds.length ? inArray(generatedPosts.id, scopedIds) : undefined,
       );
+      // Reassignment is an explicit account choice, so restore any missing
+      // campaign links before moving the posts. Repaired links intentionally
+      // keep auto-publishing off for unrelated campaign posts.
+      const campaignPosts = await db.select({
+        campaignId: generatedPosts.campaignId,
+      }).from(generatedPosts).where(condition);
+      const campaignIds = [...new Set(
+        campaignPosts
+          .map(row => row.campaignId)
+          .filter((id): id is string => Boolean(id)),
+      )];
+      for (const campaignId of campaignIds) {
+        try {
+          await ensureCampaignSocialAccountLink({
+            campaignId,
+            socialAccountId: account.id,
+            tenantDomain: ctx.tenantDomain,
+          });
+        } catch (err) {
+          if (err instanceof CampaignAccountLinkError) {
+            return res.status(err.status).json({ error: err.message });
+          }
+          throw err;
+        }
+      }
       const rows = await db.update(generatedPosts)
         .set({ socialAccountId: account.id, updatedAt: new Date() })
         .where(condition)

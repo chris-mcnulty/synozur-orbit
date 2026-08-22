@@ -34,6 +34,10 @@ import { getPublisher } from "./social-publishers";
 import { encryptSecret } from "../utils/encryption";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
+import {
+  CampaignAccountLinkError,
+  ensureCampaignSocialAccountLink,
+} from "./campaign-social-account-link";
 
 // LinkedIn and other platforms enforce daily caps and flag rapid-fire posting
 // as spam. Keep per-tick batch small and space posts out within each tick so
@@ -460,6 +464,23 @@ function toJsonPayload(value: unknown): unknown {
   return null;
 }
 
+export function getPublishFailureDisposition(errorCode: string | null, prevAttempts: number) {
+  const requiresRemediation = Boolean(
+    errorCode && NON_CONSUMING_ERROR_CODES.has(errorCode),
+  );
+  const attemptCount = nextPublishFailureAttemptCount(prevAttempts, errorCode);
+  const isPermanentImageError = errorCode ? PERMANENT_IMAGE_ERROR_CODES.has(errorCode) : false;
+  const isPermanent =
+    (errorCode ? PERMANENT_ERROR_CODES.has(errorCode) : false) ||
+    isPermanentImageError;
+  return {
+    requiresRemediation,
+    attemptCount,
+    isPermanentImageError,
+    shouldRetry: !isPermanent && attemptCount < MAX_ATTEMPTS,
+  };
+}
+
 /**
  * Persist a failed publish attempt. Transient failures (network, 5xx,
  * unknown errorCode) re-queue the post with exponential backoff while
@@ -475,12 +496,11 @@ async function markFailed(
   prevAttempts = 0,
 ) {
   const errorCode = result.errorCode ?? null;
-  const newAttemptCount = nextPublishFailureAttemptCount(prevAttempts, errorCode);
-  const isPermanentImageError = errorCode ? PERMANENT_IMAGE_ERROR_CODES.has(errorCode) : false;
+  const disposition = getPublishFailureDisposition(errorCode, prevAttempts);
+  const newAttemptCount = disposition.attemptCount;
+  const isPermanentImageError = disposition.isPermanentImageError;
   const isImageError = errorCode ? IMAGE_ERROR_CODES.has(errorCode) : false;
-  const isPermanent =
-    (errorCode ? PERMANENT_ERROR_CODES.has(errorCode) : false) || isPermanentImageError;
-  const shouldRetry = !isPermanent && newAttemptCount < MAX_ATTEMPTS;
+  const shouldRetry = disposition.shouldRetry;
   // Stamp the typed image code on the post so the UI can show a distinct
   // "Image problem" badge instead of a generic publish failure.
   const imageIssuePatch = isImageError ? { imageIssue: errorCode } : {};
@@ -549,6 +569,7 @@ async function markFailed(
       attempt: newAttemptCount,
       maxAttempts: MAX_ATTEMPTS,
       retrying: shouldRetry,
+      remediationRequired: disposition.requiresRemediation,
     },
   });
 }
@@ -591,21 +612,17 @@ export async function publishPostNow(
   if (!account.encryptedAccessToken) {
     return { success: false, errorMessage: "Account is not connected" };
   }
-  if (post.campaignId) {
-    const [campaign] = await db.select({ id: campaigns.id }).from(campaigns).where(and(
-      eq(campaigns.id, post.campaignId),
-      eq(campaigns.tenantDomain, post.tenantDomain),
-    ));
-    if (!campaign) {
-      return { success: false, errorMessage: "The post's campaign is not available in this workspace." };
-    }
-    // Manual publish is explicit permission to use this account for this post,
-    // but it must not silently enable scheduled publishing for other posts.
-    await db.insert(campaignSocialAccounts).values({
-      campaignId: campaign.id,
+  try {
+    await ensureCampaignSocialAccountLink({
+      campaignId: post.campaignId,
       socialAccountId: account.id,
-      autoPublish: false,
-    }).onConflictDoNothing();
+      tenantDomain: post.tenantDomain,
+    });
+  } catch (err) {
+    if (err instanceof CampaignAccountLinkError) {
+      return { success: false, errorMessage: err.message };
+    }
+    throw err;
   }
   if (!bumpAndCheckDailyCap(post.tenantDomain)) {
     return { success: false, errorMessage: `Daily publish cap of ${MAX_PER_TENANT_PER_DAY} reached` };
