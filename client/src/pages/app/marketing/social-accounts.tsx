@@ -992,9 +992,12 @@ export default function SocialAccountsPage() {
   const linkedinPublishEnabled = tenantInfo?.linkedinDirectPublishEnabled === true;
 
   const { data: accounts = [], isLoading } = useQuery<SocialAccount[]>({
-    queryKey: ["/api/social-accounts", getTabMarketId()],
+    queryKey: ["/api/social-accounts", getTabMarketId(), "includeReconnectNeeded"],
     queryFn: async () => {
-      const r = await fetch("/api/social-accounts", { credentials: "include" });
+      // A connection that needs reconnection must stay visible here. Otherwise
+      // the editor tells users to reconnect but hides the only account whose
+      // Reconnect action can repair the blocked posts.
+      const r = await fetch("/api/social-accounts?includeReconnectNeeded=true", { credentials: "include" });
       return r.ok ? r.json() : [];
     },
     enabled: isAllowed,

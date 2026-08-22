@@ -5,6 +5,7 @@
 - [logo_composite render chain](logo-composite-render.md) — logo_composite branch in renderConferenceImage: bg photo → scrim → event logo → white_horizontal company logo → conf name. Falls back to brand-gradient if no backgroundBytes.
 - [Unified Marketing Calendar](unified-marketing-calendar.md) — aggregates social/email/content; social scoped tenant-only (no marketId), emails+briefs tenant+market; lifecycle derived; gated on editorialCalendar feature.
 - [LinkedIn global app + posting gate](linkedin-global-app.md) — LinkedIn uses one Synozur-owned OAuth app (env vars, not per-tenant); direct posting gated by LINKEDIN_DIRECT_PUBLISH_ENABLED until LinkedIn approves.
+- [LinkedIn page-access checks](linkedin-page-access-checks.md) — a saved OAuth page selection survives one conflicting ACL response; hide only after an independent confirmation or publish failure.
 - [Global social OAuth apps (no per-tenant)](global-social-oauth-apps.md) — X/Facebook/Instagram now use ONE shared Synozur app each (global_platform_credentials table, Global Admin UI), not per-tenant; tenants connect one-click; per-tenant credentials retired.
 - [Social provider identity consolidation](social-provider-identity-consolidation.md) — reconnects merge exact provider identities; LinkedIn page URN is authoritative, and published history never moves.
 - [GNews ideation scan relevance](gnews-scan-relevance.md) — ideation/founding-signals news scan must phrase-quote + sortby=relevance + in=title,description; competitor path keeps publishedAt recency.

@@ -262,7 +262,22 @@ export class LinkedInPublisher implements SocialPublisher {
     encryptedAccessToken: string | null;
     tokenExpiresAt: Date | null;
     authorUrn: string | null;
-  }): Promise<{ ok: boolean; reason?: string }> {
+  }): Promise<{
+    ok: boolean;
+    reason?: string;
+    /**
+     * Present only when LinkedIn returned an authoritative ACL list that does
+     * not contain the configured company page. Callers can use the observed
+     * list to require a second confirmation before disabling an account that
+     * was just authorized for that page.
+     */
+    observedAuthors?: Array<{
+      mode: "organization";
+      urn: string;
+      name: string;
+      vanityName?: string | null;
+    }>;
+  }> {
     if (!account.encryptedAccessToken) {
       return { ok: false, reason: "No access token stored — reconnect the account." };
     }
@@ -286,7 +301,12 @@ export class LinkedInPublisher implements SocialPublisher {
       return { ok: false, reason: "Stored token could not be decrypted — reconnect the account." };
     }
 
-    let orgs: Array<{ urn: string }>;
+    let orgs: Array<{
+      mode: "organization";
+      urn: string;
+      name: string;
+      vanityName?: string | null;
+    }>;
     try {
       orgs = await this.fetchAdminOrganizations(accessToken);
     } catch (err) {
@@ -301,6 +321,7 @@ export class LinkedInPublisher implements SocialPublisher {
         reason:
           `Page admin access lost — the connected LinkedIn account is no longer an administrator of the target company page (${account.authorUrn}). ` +
           "Reconnect the account or ask a current page admin to restore administrator access.",
+        observedAuthors: orgs,
       };
     }
     return { ok: true };

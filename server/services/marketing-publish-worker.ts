@@ -1262,6 +1262,30 @@ export async function tickLinkedInAdminHealthCheck(): Promise<{ checked: number;
 
       if (!result.ok) {
         const reason = result.reason ?? "LinkedIn page admin access lost — reconnect the account.";
+
+        // A successful OAuth callback has just proven that the saved page was
+        // selectable. LinkedIn's ACL endpoint can subsequently return a
+        // conflicting but otherwise successful snapshot. Do not strand every
+        // pending post because of one such response: record its observed list
+        // and require a second independent check before disabling the account.
+        const previouslyAuthorizedForSelectedPage = Boolean(
+          result.observedAuthors &&
+          (account.availableAuthors ?? []).some(author => author.urn === account.authorUrn),
+        );
+        if (previouslyAuthorizedForSelectedPage) {
+          const preservedPersonalAuthors = (account.availableAuthors ?? [])
+            .filter(author => author.mode === "person");
+          console.warn(
+            `[LinkedIn Admin Check] Account ${account.id} returned a conflicting page list; ` +
+            "keeping the connection active until the next independent check.",
+          );
+          await db.update(socialAccounts).set({
+            availableAuthors: [...preservedPersonalAuthors, ...result.observedAuthors!],
+            updatedAt: new Date(),
+          }).where(eq(socialAccounts.id, account.id));
+          continue;
+        }
+
         console.warn(`[LinkedIn Admin Check] Account ${account.id} lost page admin access: ${reason}`);
 
         await db.update(socialAccounts).set({

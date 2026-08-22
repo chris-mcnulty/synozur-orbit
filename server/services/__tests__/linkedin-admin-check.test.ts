@@ -149,6 +149,7 @@ function makeAccount(overrides: Partial<{
   encryptedAccessToken: string | null;
   tokenExpiresAt: Date | null;
   authorUrn: string | null;
+  availableAuthors: Array<{ mode: "person" | "organization"; urn: string; name: string }>;
   publishingPaused: boolean;
   lastPublishError: string | null;
 }>): any {
@@ -161,6 +162,7 @@ function makeAccount(overrides: Partial<{
     encryptedAccessToken: "enc:valid-token",
     tokenExpiresAt: FUTURE,
     authorUrn: "urn:li:organization:123456",
+    availableAuthors: [],
     publishingPaused: false,
     lastPublishError: null,
     ...overrides,
@@ -394,6 +396,31 @@ describe("tickLinkedInAdminHealthCheck", () => {
     expect(result.checked).toBe(1);
     expect(result.flagged).toBe(0);
     expect(mockState.updates.find((u) => u.status === "needs_reconnect")).toBeUndefined();
+  });
+
+  it("keeps a newly authorized page connected after one conflicting ACL response", async () => {
+    const id = freshId();
+    mockState.accounts.push(makeAccount({
+      id,
+      availableAuthors: [
+        { mode: "organization", urn: "urn:li:organization:123456", name: "Configured company page" },
+      ],
+    }));
+    // LinkedIn returns an authoritative-but-conflicting page list. The current
+    // page was present in the saved OAuth result, so a single mismatch must not
+    // hide the account from every pending post.
+    mockState.fetchResponse = { status: 200, body: aclsBody([999]) };
+
+    const result = await tickLinkedInAdminHealthCheck();
+
+    expect(result.checked).toBe(1);
+    expect(result.flagged).toBe(0);
+    expect(mockState.updates.find((u) => u.status === "needs_reconnect")).toBeUndefined();
+    expect(mockState.updates).toContainEqual(expect.objectContaining({
+      availableAuthors: [
+        { mode: "organization", urn: "urn:li:organization:999", name: "Org 999", vanityName: null },
+      ],
+    }));
   });
 
   it("does NOT flag a personal-profile author account even when organizationAcls shows no orgs", async () => {

@@ -2097,11 +2097,16 @@ export function registerSaturnMarketingRoutes(app: Express) {
       .where(and(
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
         eq(socialAccounts.marketId, ctx.marketId),
-        // Default: active accounts only. ?includeInactive=true also returns
-        // disconnected/needs_reconnect rows so UIs can resolve names for
-        // posts that still reference an old account (otherwise dropdowns
-        // show a raw GUID).
-        req.query.includeInactive === "true" ? undefined : eq(socialAccounts.status, "active"),
+        // Default: active accounts only. Settings adds
+        // ?includeReconnectNeeded=true so users can actually see and reconnect
+        // an account that is blocking their posts, without surfacing retired
+        // duplicate rows. ?includeInactive=true remains for editors that need
+        // to resolve every historical posting-account reference.
+        req.query.includeInactive === "true"
+          ? undefined
+          : req.query.includeReconnectNeeded === "true"
+            ? inArray(socialAccounts.status, ["active", "needs_reconnect"])
+            : eq(socialAccounts.status, "active"),
       ))
       .orderBy(socialAccounts.platform, socialAccounts.accountName);
     // Map hasAccessToken → encryptedAccessToken-shaped boolean field for
