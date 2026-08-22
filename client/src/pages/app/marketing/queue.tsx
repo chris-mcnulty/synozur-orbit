@@ -84,6 +84,9 @@ interface FullPost {
 }
 
 type Stage = "scheduled" | "failed" | "posted" | "exported" | "missed";
+type QueueFilter = "current" | "all" | Stage;
+
+const CURRENT_STAGES: Stage[] = ["failed", "missed", "scheduled"];
 
 function queueStage(p: CalendarPost): Stage | null {
   if (p.status === "missed") return "missed";
@@ -117,7 +120,9 @@ function platformOf(platform: string) {
 }
 
 function postTime(p: CalendarPost): Date | null {
-  const t = p.scheduledDate ?? p.publishedAt;
+  // A retry keeps its original scheduledDate for audit/history, but once the
+  // platform accepts it, publishedAt is the timestamp users need to see.
+  const t = p.publishedAt ?? p.scheduledDate;
   return t ? new Date(t) : null;
 }
 
@@ -127,13 +132,14 @@ function dayKey(d: Date) {
   return format(d, "EEEE · MMM d");
 }
 
-const FILTERS: { key: "all" | Stage; label: string }[] = [
-  { key: "all", label: "All" },
+const FILTERS: { key: QueueFilter; label: string }[] = [
+  { key: "current", label: "Current" },
   { key: "scheduled", label: "Scheduled" },
   { key: "missed", label: "Missed" },
   { key: "failed", label: "Failed" },
   { key: "posted", label: "Posted" },
   { key: "exported", label: "Exported" },
+  { key: "all", label: "All in window" },
 ];
 
 // ── Account Pause Panel ─────────────────────────────────────────────────────
@@ -239,7 +245,7 @@ function AccountPausePanel() {
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function QueuePage() {
-  const [filter, setFilter] = useState<"all" | Stage>("all");
+  const [filter, setFilter] = useState<QueueFilter>("current");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editPost, setEditPost] = useState<CalendarPost | null>(null);
   const queryClient = useQueryClient();
@@ -314,24 +320,36 @@ export default function QueuePage() {
   });
 
   const items = useMemo(() => {
-    // Priority order for sort: failed first, then missed, then by date
-    const stagePriority = (s: Stage) => (s === "failed" ? 0 : s === "missed" ? 1 : 2);
+    const isCurrent = (stage: Stage) => CURRENT_STAGES.includes(stage);
+    // Current work is ordered by urgency. Historical views are newest-first so
+    // the latest published/exported activity is immediately visible.
+    const currentPriority = (s: Stage) => (s === "failed" ? 0 : s === "missed" ? 1 : 2);
     return posts
       .map((p) => ({ post: p, stage: queueStage(p), when: postTime(p) }))
       .filter((x): x is { post: CalendarPost; stage: Stage; when: Date | null } => x.stage !== null)
       .sort((a, b) => {
-        const pa = stagePriority(a.stage);
-        const pb = stagePriority(b.stage);
-        if (pa !== pb) return pa - pb;
         const at = a.when?.getTime() ?? Infinity;
         const bt = b.when?.getTime() ?? Infinity;
+        if (filter === "current") {
+          const pa = currentPriority(a.stage);
+          const pb = currentPriority(b.stage);
+          if (pa !== pb) return pa - pb;
+          return at - bt;
+        }
+        if (filter === "all") {
+          const pa = isCurrent(a.stage) ? currentPriority(a.stage) : 3;
+          const pb = isCurrent(b.stage) ? currentPriority(b.stage) : 3;
+          if (pa !== pb) return pa - pb;
+        }
+        if (filter === "posted" || filter === "exported" || filter === "all") return bt - at;
         return at - bt;
       });
-  }, [posts]);
+  }, [filter, posts]);
 
   const counts = useMemo(() => {
-    const c = { all: items.length, scheduled: 0, failed: 0, missed: 0, posted: 0, exported: 0 } as Record<string, number>;
+    const c = { current: 0, all: items.length, scheduled: 0, failed: 0, missed: 0, posted: 0, exported: 0 } as Record<string, number>;
     for (const it of items) c[it.stage]++;
+    c.current = CURRENT_STAGES.reduce((total, stage) => total + c[stage], 0);
     return c;
   }, [items]);
 
@@ -342,7 +360,11 @@ export default function QueuePage() {
       .sort((a, b) => (a.when!.getTime() - b.when!.getTime()))[0]?.when ?? null;
   }, [items]);
 
-  const visible = filter === "all" ? items : items.filter((it) => it.stage === filter);
+  const visible = filter === "current"
+    ? items.filter((it) => CURRENT_STAGES.includes(it.stage))
+    : filter === "all"
+      ? items
+      : items.filter((it) => it.stage === filter);
 
   const groups = useMemo(() => {
     const map = new Map<string, typeof visible>();
@@ -362,7 +384,7 @@ export default function QueuePage() {
             <ListChecks className="w-6 h-6" /> Posting Queue
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Click any post to edit, reschedule, or cancel it. Failures appear at the top.
+            Current work is shown first. Click any post to edit, reschedule, or cancel it.
           </p>
           <CalendarViewSwitcher className="mt-3" />
         </div>
@@ -426,12 +448,14 @@ export default function QueuePage() {
             icon={<Calendar className="w-8 h-8" />}
             title={filter === "all" ? "Nothing in the queue yet" : "No posts in this view"}
             description={
-              filter === "all"
+              filter === "current"
+                ? "There are no scheduled posts or items needing attention in the current window."
+                : filter === "all"
                 ? "When you approve and schedule posts for Orbit to publish, they'll line up here."
                 : "Try a different filter to see other posts."
             }
             primaryAction={
-              filter === "all"
+              filter === "current" || filter === "all"
                 ? { label: "Go to Campaigns", href: "/app/marketing/campaigns" }
                 : undefined
             }
