@@ -55,6 +55,110 @@ interface SocialAccount {
   lastPublishError?: string | null;
 }
 
+interface RecoveryCandidate {
+  id: string;
+  accountName: string;
+  accountId?: string | null;
+  authorUrn?: string | null;
+  status: string;
+}
+
+function ConnectionRecoveryDialog({
+  account,
+  open,
+  onOpenChange,
+}: {
+  account: SocialAccount;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [previousAccountId, setPreviousAccountId] = useState("");
+  const { data: candidates = [], isLoading } = useQuery<RecoveryCandidate[]>({
+    queryKey: ["/api/social-accounts", account.id, "recovery-candidates"],
+    queryFn: async () => {
+      const response = await fetch(`/api/social-accounts/${account.id}/recovery-candidates`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Could not load prior connections");
+      return response.json();
+    },
+    enabled: open,
+  });
+  const recoveryMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/social-accounts/${account.id}/recover-previous-connection`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ previousAccountId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "Could not restore the previous connection");
+      return body as Promise<{ movedPendingPosts: number; mergedCampaignLinks: number }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
+      toast({
+        title: "Previous connection restored",
+        description: `${result.movedPendingPosts} pending post${result.movedPendingPosts === 1 ? "" : "s"} and ${result.mergedCampaignLinks} campaign link${result.mergedCampaignLinks === 1 ? "" : "s"} were recovered.`,
+      });
+      setPreviousAccountId("");
+      onOpenChange(false);
+    },
+    onError: (error: Error) => toast({ title: "Recovery failed", description: error.message, variant: "destructive" }),
+  });
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) setPreviousAccountId("");
+      onOpenChange(nextOpen);
+    }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Restore a previous connection</DialogTitle>
+          <DialogDescription>
+            Choose the disconnected record that this connected account replaces. Orbit restores the old record so its campaign settings, voice profile, and linked posts continue to work. Published history is not moved.
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Looking for prior connections…</p>
+        ) : candidates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No disconnected {account.platform} connections are available in this workspace and market.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <Label>Previous connection</Label>
+            <Select value={previousAccountId} onValueChange={setPreviousAccountId}>
+              <SelectTrigger data-testid={`select-recovery-source-${account.id}`}>
+                <SelectValue placeholder="Choose a disconnected account…" />
+              </SelectTrigger>
+              <SelectContent>
+                {candidates.map(candidate => (
+                  <SelectItem key={candidate.id} value={candidate.id}>
+                    {candidate.accountName} {candidate.accountId ? `(${candidate.accountId})` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button
+                disabled={!previousAccountId || recoveryMutation.isPending}
+                onClick={() => recoveryMutation.mutate()}
+                data-testid={`button-confirm-recover-${account.id}`}
+              >
+                {recoveryMutation.isPending ? "Restoring…" : "Restore connection"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -838,6 +942,7 @@ export default function SocialAccountsPage() {
   const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; accountId: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
   const [voiceAccount, setVoiceAccount] = useState<SocialAccount | null>(null);
   const [blueskyAccount, setBlueskyAccount] = useState<SocialAccount | null>(null);
+  const [recoveryAccount, setRecoveryAccount] = useState<SocialAccount | null>(null);
 
   const { data: tenantInfo } = useQuery<{ features?: Record<string, boolean>; linkedinDirectPublishEnabled?: boolean }>({
     queryKey: ["/api/tenant/info"],
@@ -1154,6 +1259,17 @@ export default function SocialAccountsPage() {
                               <Unlink className="w-3 h-3 mr-1" /> Disconnect
                             </Button>
                           </div>
+                           {account.platform === "linkedin" && account.status === "active" && (
+                             <Button
+                               variant="ghost"
+                               size="sm"
+                               className="w-full h-7 text-xs text-muted-foreground"
+                               onClick={() => setRecoveryAccount(account)}
+                               data-testid={`button-recover-previous-${account.id}`}
+                             >
+                               Replaced this connection? Restore its previous record
+                             </Button>
+                           )}
                         </>
                       ) : account.platform === "linkedin" && !linkedinPublishEnabled ? (
                         <div
@@ -1247,6 +1363,14 @@ export default function SocialAccountsPage() {
             account={blueskyAccount}
             open={!!blueskyAccount}
             onOpenChange={(open) => { if (!open) setBlueskyAccount(null); }}
+          />
+        )}
+
+        {recoveryAccount && (
+          <ConnectionRecoveryDialog
+            account={recoveryAccount}
+            open={!!recoveryAccount}
+            onOpenChange={(open) => { if (!open) setRecoveryAccount(null); }}
           />
         )}
       </div>

@@ -23,6 +23,8 @@ const mockState = vi.hoisted(() => ({
   updateSets: [] as any[],
   /** Captured values passed to db.insert().values() */
   insertValues: [] as any[],
+  /** Queue of DB rows returned by update(...).returning() */
+  updateReturningQueue: [] as any[][],
 }));
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
@@ -34,7 +36,11 @@ vi.mock("../../db", () => {
       where: (_cond: any) => Promise.resolve(mockState.selectQueue.shift() ?? []),
       set: (payload: any) => {
         mockState.updateSets.push(payload);
-        return { where: (_cond: any) => Promise.resolve([]) };
+        return {
+          where: (_cond: any) => ({
+            returning: () => Promise.resolve(mockState.updateReturningQueue.shift() ?? [{ id: "updated-account" }]),
+          }),
+        };
       },
       values: (v: any) => {
         mockState.insertValues.push(v);
@@ -185,6 +191,7 @@ beforeEach(() => {
   mockState.selectQueue.length = 0;
   mockState.updateSets.length = 0;
   mockState.insertValues.length = 0;
+  mockState.updateReturningQueue.length = 0;
   _oauthStates.clear();
 });
 
@@ -238,6 +245,27 @@ describe("OAuth callback — clears lastPublishError on successful token exchang
     expect(tokenUpdate.lastPublishError).toBeNull();
   });
 
+  it("restores an account marked needs_reconnect after a successful OAuth callback", async () => {
+    const app = buildApp();
+    const STATE = "needs-reconnect-state";
+    seedOAuthState(STATE, "acct-1");
+    mockState.selectQueue.push(
+      [makeAccountRow({ status: "needs_reconnect", lastPublishError: "needs_reauth" } as any)],
+      [],
+    );
+
+    const res = await request(app)
+      .get("/api/social-accounts/oauth/callback")
+      .query({ state: STATE, code: "fresh-auth-code" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Connected");
+    const tokenUpdate = mockState.updateSets.find(
+      (set) => set.status === "active" && set.lastPublishError === null,
+    );
+    expect(tokenUpdate).toBeDefined();
+  });
+
   it("returns 400 when the OAuth state is missing or expired", async () => {
     const app = buildApp();
 
@@ -248,5 +276,42 @@ describe("OAuth callback — clears lastPublishError on successful token exchang
     expect(res.status).toBe(400);
     // No DB update should have been attempted.
     expect(mockState.updateSets.length).toBe(0);
+  });
+
+  it("does not reactivate a replacement account already restored in another session", async () => {
+    const app = buildApp();
+    const STATE = "restored-concurrently";
+    seedOAuthState(STATE, "acct-1");
+    mockState.selectQueue.push(
+      [makeAccountRow()],
+      [],
+    );
+    // Simulate a manual recovery committing after OAuth starts but before this
+    // callback persists its token: conditional UPDATE affects no active row.
+    mockState.updateReturningQueue.push([]);
+
+    const res = await request(app)
+      .get("/api/social-accounts/oauth/callback")
+      .query({ state: STATE, code: "late-auth-code" });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Connection restored elsewhere");
+    expect(mockState.insertValues).toHaveLength(0);
+  });
+
+  it("refuses manual recovery when the replacement token needs reconnection", async () => {
+    const app = buildApp();
+    mockState.selectQueue.push(
+      [makeAccountRow({ status: "needs_reconnect", encryptedAccessToken: "enc:rejected-token" } as any)],
+      [makeAccountRow({ id: "old-account", status: "inactive" } as any)],
+    );
+
+    const res = await request(app)
+      .post("/api/social-accounts/acct-1/recover-previous-connection")
+      .send({ previousAccountId: "old-account" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("Reconnect this account successfully");
+    expect(mockState.updateSets).toHaveLength(0);
   });
 });

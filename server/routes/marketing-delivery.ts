@@ -72,6 +72,11 @@ import { pushEmailTimelineEvent } from "../services/hubspot-timeline";
 import { timelineEventId, type TimelineEventKey } from "../services/hubspot-email-sync-core";
 import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
 import { buildExternalSendRow, mergeSendHistory } from "../services/email-sends-history-core";
+import {
+  findSafePreviousLinkedInConnection,
+  recoverPreviousConnectionFromOAuth,
+  recoverPreviousConnectionManually,
+} from "../services/social-connection-recovery";
 
 /**
  * Resolve the Orbit email subscription type name for a given send so the
@@ -910,40 +915,68 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         tenantDomain: ctx.tenantDomain,
         codeVerifier: ctx.codeVerifier,
       });
-      await db.update(socialAccounts).set({
-        encryptedAccessToken: encryptSecret(result.accessToken),
-        encryptedRefreshToken: result.refreshToken ? encryptSecret(result.refreshToken) : null,
-        tokenExpiresAt: result.expiresAt ?? null,
-        tokenScope: result.scope ?? null,
-        authorMode: result.authorMode,
-        authorUrn: result.authorUrn,
-        // Persist the list of identities the user can publish as so the
-        // author-picker UI and /linkedin/select-author endpoint have data
-        // to work with without re-querying LinkedIn on every page load.
-        availableAuthors: result.availableAuthors ?? null,
-        accountId: result.accountId ?? account.accountId,
-        accountName: result.accountName ?? account.accountName,
-        profileUrl: result.profileUrl ?? account.profileUrl,
-        connectedAt: new Date(),
-        connectedBy: ctx.userId,
-        lastPublishError: null,
-        status: "active",
-        updatedAt: new Date(),
-      }).where(eq(socialAccounts.id, account.id));
+      // A normal reconnect always updates this same account record. If an
+      // operator accidentally created a replacement row first, safely restore
+      // the unique inactive LinkedIn match instead so its posts, campaigns,
+      // and voice profile remain linked to their original record.
+      const previousConnection = await findSafePreviousLinkedInConnection(account, result);
+      const recovery = previousConnection
+        ? await recoverPreviousConnectionFromOAuth(account, previousConnection, result, ctx.userId)
+        : null;
+      if (!recovery) {
+        // A manual recovery may have claimed this replacement row while the
+        // provider was completing OAuth. Never let a late callback reactivate
+        // the replacement after its linked work was restored to the original.
+        // `needs_reconnect` is an expected OAuth starting state and must be
+        // allowed to become active again after the provider accepts new tokens.
+        const [persistedAccount] = await db.update(socialAccounts).set({
+          encryptedAccessToken: encryptSecret(result.accessToken),
+          encryptedRefreshToken: result.refreshToken ? encryptSecret(result.refreshToken) : null,
+          tokenExpiresAt: result.expiresAt ?? null,
+          tokenScope: result.scope ?? null,
+          authorMode: result.authorMode,
+          authorUrn: result.authorUrn,
+          // Persist the list of identities the user can publish as so the
+          // author-picker UI and /linkedin/select-author endpoint have data
+          // to work with without re-querying LinkedIn on every page load.
+          availableAuthors: result.availableAuthors ?? null,
+          accountId: result.accountId ?? account.accountId,
+          accountName: result.accountName ?? account.accountName,
+          profileUrl: result.profileUrl ?? account.profileUrl,
+          connectedAt: new Date(),
+          connectedBy: ctx.userId,
+          lastPublishError: null,
+          status: "active",
+          updatedAt: new Date(),
+        }).where(and(
+          eq(socialAccounts.id, account.id),
+          eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+          inArray(socialAccounts.status, ["active", "needs_reconnect"]),
+        )).returning({ id: socialAccounts.id });
+        if (!persistedAccount) {
+          return res.send(`<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto;padding:24px;text-align:center;">
+            <h2>Connection restored elsewhere</h2>
+            <p>This account was restored to its previous record while authorization completed. Return to Social Accounts to continue.</p>
+            <script>setTimeout(()=>{ window.location.href='/app/marketing/social-accounts'; }, 1800);</script>
+          </body></html>`);
+        }
+      }
 
       await db.insert(marketingAuditLog).values({
         tenantDomain: ctx.tenantDomain,
         userId: ctx.userId,
         action: "social_oauth_connect",
         entityType: "social_account",
-        entityId: account.id,
+        entityId: recovery?.recoveredAccountId ?? account.id,
         status: "ok",
-        message: `Connected ${account.platform}`,
-        details: { authorUrn: result.authorUrn },
+        message: recovery
+          ? `Connected ${account.platform} and restored its previous account record`
+          : `Connected ${account.platform}`,
+        details: { authorUrn: result.authorUrn, recovered: Boolean(recovery) },
       });
       res.send(`<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto;padding:24px;text-align:center;">
         <h2>Connected!</h2>
-        <p>${escapeHtml(account.platform)} account is now connected. You can close this window and return to Orbit.</p>
+        <p>${escapeHtml(account.platform)} account is now connected.${recovery ? " Your existing posts and campaign settings were restored." : ""} You can close this window and return to Orbit.</p>
         <script>setTimeout(()=>{ try { window.close(); } catch{} window.location.href='/app/marketing/social-accounts'; }, 1500);</script>
       </body></html>`);
     } catch (err: any) {
@@ -980,6 +1013,71 @@ export function registerMarketingDeliveryRoutes(app: Express) {
       updatedAt: new Date(),
     }).where(eq(socialAccounts.id, account.id));
     res.json({ success: true });
+  });
+
+  // Lists prior disconnected rows an operator can explicitly restore. The
+  // automatic OAuth path only restores an unambiguous LinkedIn identity match;
+  // this is the deliberate, confirmed fallback when that match is unavailable.
+  app.get("/api/social-accounts/:id/recovery-candidates", async (req, res) => {
+    if (!await guardFeature(req, res, "directPublishing")) return;
+    const ctx = await getRequestContext(req);
+    const [replacement] = await db.select().from(socialAccounts).where(and(
+      eq(socialAccounts.id, req.params.id),
+      eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+    ));
+    if (!replacement) return res.status(404).json({ error: "Social account not found" });
+    if (replacement.status !== "active" || !replacement.encryptedAccessToken) {
+      return res.status(409).json({ error: "Reconnect this account successfully before restoring a previous connection." });
+    }
+    const marketCondition = replacement.marketId
+      ? eq(socialAccounts.marketId, replacement.marketId)
+      : sql`${socialAccounts.marketId} IS NULL`;
+    const candidates = await db.select({
+      id: socialAccounts.id,
+      accountName: socialAccounts.accountName,
+      accountId: socialAccounts.accountId,
+      authorUrn: socialAccounts.authorUrn,
+      status: socialAccounts.status,
+    }).from(socialAccounts).where(and(
+      eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+      eq(socialAccounts.platform, replacement.platform),
+      marketCondition,
+      inArray(socialAccounts.status, ["inactive", "needs_reconnect"]),
+    ));
+    res.json(candidates.filter(candidate => candidate.id !== replacement.id));
+  });
+
+  app.post("/api/social-accounts/:id/recover-previous-connection", async (req, res) => {
+    if (!await guardFeature(req, res, "directPublishing")) return;
+    const ctx = await getRequestContext(req);
+    const previousAccountId = typeof req.body?.previousAccountId === "string"
+      ? req.body.previousAccountId
+      : "";
+    if (!previousAccountId) {
+      return res.status(400).json({ error: "previousAccountId is required" });
+    }
+    const [replacement] = await db.select().from(socialAccounts).where(and(
+      eq(socialAccounts.id, req.params.id),
+      eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+    ));
+    const [previous] = await db.select().from(socialAccounts).where(and(
+      eq(socialAccounts.id, previousAccountId),
+      eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+    ));
+    if (!replacement || !previous) return res.status(404).json({ error: "Social account not found" });
+    if (replacement.status !== "active" || !replacement.encryptedAccessToken) {
+      return res.status(409).json({ error: "Reconnect this account successfully before restoring a previous connection." });
+    }
+    try {
+      const recovery = await recoverPreviousConnectionManually(
+        replacement,
+        previous,
+        ctx.userId,
+      );
+      res.json(recovery);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Could not restore the previous connection." });
+    }
   });
 
   // ───── Publish now / attempts log ─────

@@ -1219,6 +1219,8 @@ function MissedReasonPanel({ reason }: { reason: MissedReason | null }) {
             <p className="text-[12px] mt-0.5 opacity-80">
               This account isn't connected to campaign <strong>{reason.campaignName}</strong>.{" "}
               <a href={`/app/marketing/campaigns/${reason.campaignId}#accounts`} target="_blank" rel="noreferrer" className="underline underline-offset-2 font-medium hover:opacity-70">Add it in Campaign → Social Accounts →</a>
+              {" "}If this followed a recreated connection, restore the previous record in{" "}
+              <a href="/app/marketing/social-accounts" target="_blank" rel="noreferrer" className="underline underline-offset-2 font-medium hover:opacity-70">Social Accounts →</a>
             </p></>
           )}
           {reason.kind === "campaign_inactive" && (
