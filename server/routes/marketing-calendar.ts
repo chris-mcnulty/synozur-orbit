@@ -1016,7 +1016,12 @@ export function registerMarketingCalendarRoutes(app: Express) {
       const undated = allPosts.filter((p) => !p.scheduledDate || new Date(p.scheduledDate) < now);
 
       const activeAccounts = await db
-        .select({ id: socialAccounts.id, accountId: socialAccounts.accountId, platform: socialAccounts.platform })
+        .select({
+          id: socialAccounts.id,
+          accountId: socialAccounts.accountId,
+          socialPilotAccountId: socialAccounts.socialPilotAccountId,
+          platform: socialAccounts.platform,
+        })
         .from(socialAccounts)
         .where(and(
           eq(socialAccounts.tenantDomain, ctx.tenantDomain),
@@ -1025,8 +1030,9 @@ export function registerMarketingCalendarRoutes(app: Express) {
         ));
       const platformAccountFallback = new Map<string, string>();
       for (const a of activeAccounts) {
-        if (a.accountId && a.platform && !platformAccountFallback.has(a.platform)) {
-          platformAccountFallback.set(a.platform, a.accountId);
+        const socialPilotAccountId = a.socialPilotAccountId?.trim() || a.accountId;
+        if (socialPilotAccountId && a.platform && !platformAccountFallback.has(a.platform)) {
+          platformAccountFallback.set(a.platform, socialPilotAccountId);
         }
       }
       const acctFor = (p: any) => p.socialAccountId ? p.socialAccountId : (platformAccountFallback.get(p.platform) || p.platform);

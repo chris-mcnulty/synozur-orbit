@@ -7,8 +7,29 @@
  * the paused-but-autoPublish edge case that triggered the original bug.
  */
 
-import { describe, it, expect } from "vitest";
-import { isOrbitDirectPost } from "../posts-csv-export";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const { selectRows } = vi.hoisted(() => ({ selectRows: [] as any[][] }));
+
+vi.mock("../../db", () => ({
+  db: {
+    select: () => ({
+      from: () => ({
+        where: () => Promise.resolve(selectRows.shift() ?? []),
+      }),
+    }),
+  },
+}));
+
+import {
+  buildPostsCsv,
+  isOrbitDirectPost,
+  resolveSocialPilotAccountId,
+} from "../posts-csv-export";
+
+beforeEach(() => {
+  selectRows.length = 0;
+});
 
 function makeMap(entries: [string, boolean][]): Map<string, boolean> {
   return new Map(entries);
@@ -92,5 +113,48 @@ describe("isOrbitDirectPost", () => {
       const xCsvPost = { deliveryMode: "csv", socialAccountId: "x-acct" };
       expect(isOrbitDirectPost(xCsvPost, autoPublishMap)).toBe(false);
     });
+  });
+});
+
+describe("SocialPilot account ID resolution", () => {
+  it("prefers the separately configured SocialPilot ID over the OAuth provider ID", () => {
+    expect(resolveSocialPilotAccountId({
+      socialPilotAccountId: " socialpilot-profile-42 ",
+      accountId: "urn:li:organization:provider-page",
+    })).toBe("socialpilot-profile-42");
+  });
+
+  it("uses the historic provider ID only until a dedicated SocialPilot ID is saved", () => {
+    expect(resolveSocialPilotAccountId({
+      socialPilotAccountId: null,
+      accountId: "legacy-socialpilot-id",
+    })).toBe("legacy-socialpilot-id");
+  });
+
+  it("writes the dedicated SocialPilot ID to the SocialPilot CSV account column", async () => {
+    selectRows.push([{
+      id: "account-1",
+      platform: "linkedin",
+      accountName: "Orbit company page",
+      accountId: "urn:li:organization:provider-page",
+      socialPilotAccountId: "socialpilot-profile-42",
+    }]);
+
+    const csv = await buildPostsCsv({
+      posts: [{
+        id: "post-1",
+        platform: "linkedin",
+        socialAccountId: "account-1",
+        content: "A post for SocialPilot",
+        hashtags: [],
+        scheduledDate: new Date("2030-01-10T15:00:00Z"),
+      }],
+      tenantDomain: "tenant.example.com",
+      format: "socialpilot",
+      tzOffset: 0,
+    });
+
+    expect(csv).toContain('"socialpilot-profile-42"');
+    expect(csv).not.toContain('"urn:li:organization:provider-page"');
   });
 });

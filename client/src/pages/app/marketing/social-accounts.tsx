@@ -43,6 +43,7 @@ interface SocialAccount {
   platform: string;
   accountName: string;
   accountId?: string;
+  socialPilotAccountId?: string | null;
   profileUrl?: string;
   notes?: string;
   status?: string | null;
@@ -53,6 +54,40 @@ interface SocialAccount {
   connectedAt?: string | null;
   tokenExpiresAt?: string | null;
   lastPublishError?: string | null;
+}
+
+export function resolveLinkedInPublishingIdentity(account: Pick<SocialAccount, "accountName" | "authorMode" | "authorUrn" | "availableAuthors">) {
+  const selected = account.availableAuthors?.find(author => author.urn === account.authorUrn);
+  const mode = selected?.mode ?? account.authorMode;
+  return {
+    name: selected?.name || account.accountName || "Unknown identity",
+    type: mode === "organization" ? "Company page" : "Personal profile",
+  };
+}
+
+export function LinkedInPublishingIdentity({ account }: { account: SocialAccount }) {
+  const identity = resolveLinkedInPublishingIdentity(account);
+  return (
+    <p className="text-xs text-muted-foreground" data-testid={`text-publishing-identity-${account.id}`}>
+      Publishing as: <strong>{identity.name}</strong> · {identity.type}
+    </p>
+  );
+}
+
+export function SocialAccountEditButton({ accountId, onEdit }: { accountId: string; onEdit: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 shrink-0"
+      onClick={onEdit}
+      title="Edit account settings"
+      aria-label="Edit account settings"
+      data-testid={`button-edit-account-${accountId}`}
+    >
+      <Pencil className="w-3.5 h-3.5" />
+    </Button>
+  );
 }
 
 interface RecoveryCandidate {
@@ -159,7 +194,7 @@ function ConnectionRecoveryDialog({
   );
 }
 
-function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
+export function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -196,10 +231,9 @@ function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
   };
   if (authors.length <= 1) {
     return (
-      <div className="text-xs text-muted-foreground" data-testid={`text-author-${account.id}`}>
-        Publishing as: <strong>{account.accountName}</strong> (personal)
+      <div className="text-xs text-muted-foreground">
         <Button variant="ghost" size="sm" className="text-xs h-6 ml-2" onClick={refresh} disabled={refreshing} data-testid={`button-refresh-orgs-${account.id}`}>
-          {refreshing ? "Refreshing..." : "Refresh company pages"}
+          {refreshing ? "Refreshing..." : "Refresh authorized identities"}
         </Button>
       </div>
     );
@@ -215,7 +249,7 @@ function LinkedInAuthorPicker({ account }: { account: SocialAccount }) {
           <SelectContent>
             {authors.map(a => (
               <SelectItem key={a.urn} value={a.urn}>
-                {a.name} ({a.mode === "organization" ? "Company page" : "Personal"})
+                {a.name} ({a.mode === "organization" ? "Company page" : "Personal profile"})
               </SelectItem>
             ))}
           </SelectContent>
@@ -937,9 +971,9 @@ export default function SocialAccountsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
+  const [form, setForm] = useState({ platform: "linkedin", accountName: "", socialPilotAccountId: "", profileUrl: "", notes: "" });
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState<{ id: string; platform: string; accountName: string; accountId: string; profileUrl: string; notes: string }>({ id: "", platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
+  const [editForm, setEditForm] = useState<{ id: string; accountName: string; socialPilotAccountId: string; profileUrl: string; notes: string }>({ id: "", accountName: "", socialPilotAccountId: "", profileUrl: "", notes: "" });
   const [voiceAccount, setVoiceAccount] = useState<SocialAccount | null>(null);
   const [blueskyAccount, setBlueskyAccount] = useState<SocialAccount | null>(null);
   const [recoveryAccount, setRecoveryAccount] = useState<SocialAccount | null>(null);
@@ -980,7 +1014,7 @@ export default function SocialAccountsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/social-accounts"] });
       setAddOpen(false);
-      setForm({ platform: "linkedin", accountName: "", accountId: "", profileUrl: "", notes: "" });
+      setForm({ platform: "linkedin", accountName: "", socialPilotAccountId: "", profileUrl: "", notes: "" });
       toast({ title: "Social account added" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -992,7 +1026,7 @@ export default function SocialAccountsPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ platform: data.platform, accountName: data.accountName, accountId: data.accountId, profileUrl: data.profileUrl, notes: data.notes }),
+        body: JSON.stringify({ accountName: data.accountName, socialPilotAccountId: data.socialPilotAccountId, profileUrl: data.profileUrl, notes: data.notes }),
       });
       if (!r.ok) throw new Error((await r.json()).error);
       return r.json();
@@ -1121,9 +1155,9 @@ export default function SocialAccountsPage() {
                   <Input value={form.accountName} onChange={e => setForm(f => ({ ...f, accountName: e.target.value }))} placeholder="Synozur Alliance" data-testid="input-add-account-name" />
                 </div>
                 <div>
-                  <Label>Account ID <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                  <Input value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))} placeholder="e.g. SocialPilot or Hootsuite account ID" data-testid="input-add-account-id" />
-                  <p className="text-xs text-muted-foreground mt-1">Only needed if you export CSV files for a scheduling tool. Leave blank for manual copy/paste workflows.</p>
+                  <Label>SocialPilot account ID <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input value={form.socialPilotAccountId} onChange={e => setForm(f => ({ ...f, socialPilotAccountId: e.target.value }))} placeholder="e.g. your SocialPilot profile ID" data-testid="input-add-socialpilot-account-id" />
+                  <p className="text-xs text-muted-foreground mt-1">Used only in SocialPilot CSV exports. It does not change the account connected for direct publishing.</p>
                 </div>
                 <div className="flex gap-4 pt-2">
                   <Button variant="outline" className="flex-1" onClick={() => setAddOpen(false)} data-testid="button-cancel-add-account">Cancel</Button>
@@ -1170,18 +1204,13 @@ export default function SocialAccountsPage() {
                       >
                         <Mic className="w-3.5 h-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="opacity-0 group-hover:opacity-100 h-7 w-7 shrink-0"
-                        onClick={() => {
-                          setEditForm({ id: account.id, platform: account.platform, accountName: account.accountName, accountId: account.accountId || "", profileUrl: account.profileUrl || "", notes: account.notes || "" });
+                      <SocialAccountEditButton
+                        accountId={account.id}
+                        onEdit={() => {
+                          setEditForm({ id: account.id, accountName: account.accountName, socialPilotAccountId: account.socialPilotAccountId || "", profileUrl: account.profileUrl || "", notes: account.notes || "" });
                           setEditOpen(true);
                         }}
-                        data-testid={`button-edit-account-${account.id}`}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
+                      />
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1195,8 +1224,8 @@ export default function SocialAccountsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 space-y-2">
-                  {account.accountId && (
-                    <p className="text-xs text-muted-foreground">ID: <span className="font-mono">{account.accountId}</span></p>
+                  {account.socialPilotAccountId && (
+                    <p className="text-xs text-muted-foreground">SocialPilot ID: <span className="font-mono">{account.socialPilotAccountId}</span></p>
                   )}
                   {account.profileUrl && (
                     <a href={account.profileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate block">
@@ -1206,11 +1235,12 @@ export default function SocialAccountsPage() {
                   {account.notes && <p className="text-xs text-muted-foreground">{account.notes}</p>}
                   {DIRECT_PUBLISH_PLATFORMS.has(account.platform) && (
                     <div className="pt-2 border-t mt-2 space-y-2">
+                      {account.platform === "linkedin" && <LinkedInPublishingIdentity account={account} />}
                       {account.encryptedAccessToken ? (
                         <>
                           {account.status === "needs_reconnect" ? (
-                            <div className="flex items-center gap-1.5 text-xs text-red-600 font-medium" data-testid={`status-needs-reconnect-${account.id}`}>
-                              <AlertTriangle className="w-3.5 h-3.5" /> Reconnection required — token rejected by platform
+                            <div className="flex items-start gap-1.5 text-xs text-red-600 font-medium" data-testid={`status-needs-reconnect-${account.id}`}>
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> Reconnection required — reconnect to refresh or change your authorized LinkedIn publishing identities.
                             </div>
                           ) : (
                             <div className="flex items-center gap-1.5 text-xs text-green-600" data-testid={`status-connected-${account.id}`}>
@@ -1311,26 +1341,13 @@ export default function SocialAccountsPage() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>Platform</Label>
-                <Select value={editForm.platform} onValueChange={v => setEditForm(f => ({ ...f, platform: v }))}>
-                  <SelectTrigger data-testid="select-edit-platform">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PLATFORMS.map(p => (
-                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
                 <Label>Account Name</Label>
                 <Input value={editForm.accountName} onChange={e => setEditForm(f => ({ ...f, accountName: e.target.value }))} data-testid="input-edit-account-name" />
               </div>
               <div>
-                <Label>Account ID <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input value={editForm.accountId} onChange={e => setEditForm(f => ({ ...f, accountId: e.target.value }))} placeholder="e.g. SocialPilot or Hootsuite account ID" data-testid="input-edit-account-id" />
-                <p className="text-xs text-muted-foreground mt-1">Only needed if you export CSV files for a scheduling tool.</p>
+                <Label>SocialPilot account ID <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input value={editForm.socialPilotAccountId} onChange={e => setEditForm(f => ({ ...f, socialPilotAccountId: e.target.value }))} placeholder="e.g. your SocialPilot profile ID" data-testid="input-edit-socialpilot-account-id" />
+                <p className="text-xs text-muted-foreground mt-1">Used only in SocialPilot CSV exports. Your connected provider identity is managed by the social platform.</p>
               </div>
               <div className="flex gap-4 pt-2">
                 <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)} data-testid="button-cancel-edit-account">Cancel</Button>

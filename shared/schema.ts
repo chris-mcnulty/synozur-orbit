@@ -2855,7 +2855,12 @@ export const socialAccounts = pgTable("social_accounts", {
   marketId: varchar("market_id").references(() => markets.id, { onDelete: "set null" }),
   platform: text("platform").notNull(), // linkedin, twitter, instagram, facebook
   accountName: text("account_name").notNull(), // Display name / handle
-  accountId: text("account_id"), // Platform-specific ID
+  // OAuth-derived provider identity. This is system-managed after a connection
+  // succeeds and is used for reconnect, deduplication, and direct publishing.
+  accountId: text("account_id"),
+  // External scheduler destination. Kept independent from accountId so changing
+  // a SocialPilot CSV target can never change the connected provider identity.
+  socialPilotAccountId: text("socialpilot_account_id"),
   profileUrl: text("profile_url"),
   notes: text("notes"),
   status: text("status").notNull().default("active"), // active, inactive

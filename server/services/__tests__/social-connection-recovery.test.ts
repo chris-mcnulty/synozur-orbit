@@ -7,6 +7,7 @@ import {
   isRecoverablePostStatus,
   linkedinIdentityMatches,
   mergedAutoPublish,
+  preservedSocialPilotAccountId,
   socialIdentityMatches,
 } from "../social-connection-recovery";
 
@@ -126,6 +127,14 @@ describe("social connection recovery guards", () => {
     expect(mergedAutoPublish(false, true)).toBe(true);
     expect(mergedAutoPublish(true, false)).toBe(true);
     expect(mergedAutoPublish(false, false)).toBe(false);
+  });
+
+  it("preserves scheduler configuration during recovery without using it as provider identity", () => {
+    expect(preservedSocialPilotAccountId("canonical-socialpilot-id", "replacement-socialpilot-id"))
+      .toBe("canonical-socialpilot-id");
+    expect(preservedSocialPilotAccountId(null, "replacement-socialpilot-id"))
+      .toBe("replacement-socialpilot-id");
+    expect(preservedSocialPilotAccountId(null, null)).toBeNull();
   });
 
   it("can recover inactive or reconnect-required history, but only from a verified active replacement", () => {

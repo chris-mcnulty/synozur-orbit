@@ -96,6 +96,7 @@ import { guardManualAction, denyReadOnly } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv, isOrbitDirectPost } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
+import { buildSocialAccountSettingsPatch } from "../services/social-account-settings";
 import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, prepareEmailImages, hardenCtaButtons, CURATED_EMAIL_FONTS, buildFontStack, buildFontHeadCss, getFontWarning } from "../services/email-campaign-sender";
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
@@ -2080,6 +2081,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       platform: socialAccounts.platform,
       accountName: socialAccounts.accountName,
       accountId: socialAccounts.accountId,
+      socialPilotAccountId: socialAccounts.socialPilotAccountId,
       profileUrl: socialAccounts.profileUrl,
       notes: socialAccounts.notes,
       status: socialAccounts.status,
@@ -2115,7 +2117,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.post("/api/social-accounts", async (req, res) => {
     if (!await guardFeature(req, res, "socialAccounts")) return;
     const ctx = await getRequestContext(req);
-    const { platform, accountName, accountId, profileUrl, notes } = req.body;
+    const { platform, accountName, socialPilotAccountId, profileUrl, notes } = req.body;
     if (!platform?.trim() || !accountName?.trim()) {
       return res.status(400).json({ error: "platform and accountName are required" });
     }
@@ -2125,7 +2127,7 @@ export function registerSaturnMarketingRoutes(app: Express) {
       marketId: ctx.marketId,
       platform: platform.trim(),
       accountName: accountName.trim(),
-      accountId,
+      socialPilotAccountId: typeof socialPilotAccountId === "string" ? socialPilotAccountId.trim() || null : null,
       profileUrl,
       notes,
       createdBy: ctx.userId,
@@ -2136,20 +2138,26 @@ export function registerSaturnMarketingRoutes(app: Express) {
   app.patch("/api/social-accounts/:id", async (req, res) => {
     if (!await guardFeature(req, res, "socialAccounts")) return;
     const ctx = await getRequestContext(req);
-    const { accountName, accountId, profileUrl, notes, status, publishingPaused, platform } = req.body;
-    const patch: Record<string, unknown> = { updatedAt: new Date() };
-    if (accountName !== undefined) patch.accountName = accountName;
-    if (accountId !== undefined) patch.accountId = accountId;
-    if (profileUrl !== undefined) patch.profileUrl = profileUrl;
-    if (notes !== undefined) patch.notes = notes;
-    if (status !== undefined) patch.status = status;
-    if (publishingPaused !== undefined) patch.publishingPaused = Boolean(publishingPaused);
-    if (platform !== undefined) patch.platform = platform;
+    // accountId / authorUrn are OAuth-derived provider identity. Never accept
+    // them through account settings: changing an external scheduler ID must not
+    // interfere with reconnect, deduplication, or direct publishing.
+    const providerIdentityFields = ["accountId", "authorUrn", "authorMode", "availableAuthors"];
+    const attemptedProviderIdentityEdit = providerIdentityFields.find(field =>
+      Object.prototype.hasOwnProperty.call(req.body ?? {}, field),
+    );
+    if (attemptedProviderIdentityEdit) {
+      return res.status(400).json({ error: "Provider identity is managed by the connected social platform." });
+    }
+    const patch: Record<string, unknown> = {
+      ...buildSocialAccountSettingsPatch(req.body ?? {}),
+      updatedAt: new Date(),
+    };
     const [row] = await db.update(socialAccounts)
       .set(patch)
       .where(and(
         eq(socialAccounts.id, req.params.id),
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
+        eq(socialAccounts.marketId, ctx.marketId),
       ))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });

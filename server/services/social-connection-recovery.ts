@@ -159,6 +159,19 @@ export function mergedAutoPublish(previous: boolean, replacement: boolean): bool
   return previous || replacement;
 }
 
+/**
+ * Scheduler configuration is unrelated to provider identity. During a safe
+ * account consolidation, retain the canonical account's deliberate value; if
+ * it has none, carry forward the replacement's configured SocialPilot ID.
+ * This must never participate in identity matching or canonical selection.
+ */
+export function preservedSocialPilotAccountId(
+  canonicalId: string | null | undefined,
+  replacementId: string | null | undefined,
+): string | null {
+  return canonicalId?.trim() || replacementId?.trim() || null;
+}
+
 function sameMarketCondition(account: Pick<SocialAccount, "marketId">) {
   return account.marketId
     ? eq(socialAccounts.marketId, account.marketId)
@@ -333,6 +346,10 @@ export async function consolidateDuplicateConnectionsFromOAuth(
 
     await tx.update(socialAccounts).set({
       ...connection,
+      socialPilotAccountId: uniqueAccounts
+        .map(account => account.id === canonical.id ? account.socialPilotAccountId : null)
+        .concat(uniqueAccounts.filter(account => account.id !== canonical.id).map(account => account.socialPilotAccountId))
+        .reduce((savedId, candidateId) => preservedSocialPilotAccountId(savedId, candidateId), null),
       status: "active",
       lastPublishError: null,
       updatedAt: new Date(),
@@ -498,6 +515,10 @@ async function restorePreviousConnection(
       : copiedConnectionFields(claimedReplacement, recoveredBy);
     await tx.update(socialAccounts).set({
       ...connectionToRestore,
+      socialPilotAccountId: preservedSocialPilotAccountId(
+        previous.socialPilotAccountId,
+        replacement.socialPilotAccountId,
+      ),
       status: "active",
       lastPublishError: null,
       updatedAt: new Date(),

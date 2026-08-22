@@ -12,9 +12,16 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import React from "react";
-import { SocialAccountReauthBanner } from "../social-accounts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  LinkedInAuthorPicker,
+  LinkedInPublishingIdentity,
+  resolveLinkedInPublishingIdentity,
+  SocialAccountEditButton,
+  SocialAccountReauthBanner,
+} from "../social-accounts";
 
 afterEach(cleanup);
 
@@ -111,5 +118,84 @@ describe("SocialAccountReauthBanner — conditional rendering", () => {
     expect(
       screen.queryByTestId(`banner-reauth-${ACCOUNT_ID}`),
     ).toBeNull();
+  });
+});
+
+describe("LinkedIn publishing identity", () => {
+  const linkedinAccount = {
+    id: ACCOUNT_ID,
+    platform: "linkedin",
+    accountName: "Personal name fallback",
+    authorUrn: "urn:li:organization:orbit",
+    authorMode: "organization" as const,
+    availableAuthors: [
+      { mode: "person" as const, urn: "urn:li:person:person-1", name: "Personal name" },
+      { mode: "organization" as const, urn: "urn:li:organization:orbit", name: "Orbit company page" },
+    ],
+  };
+
+  it("shows the currently selected company page rather than assuming a personal profile", () => {
+    render(<LinkedInPublishingIdentity account={linkedinAccount} />);
+
+    const identity = screen.getByTestId(`text-publishing-identity-${ACCOUNT_ID}`);
+    expect(identity.textContent).toContain("Orbit company page");
+    expect(identity.textContent).toContain("Company page");
+  });
+
+  it("resolves an authorized personal profile when that is the selected publishing identity", () => {
+    expect(resolveLinkedInPublishingIdentity({
+      ...linkedinAccount,
+      authorUrn: "urn:li:person:person-1",
+      authorMode: "person",
+    })).toEqual({
+      name: "Personal name",
+      type: "Personal profile",
+    });
+  });
+
+  it("lets an operator choose a different authorized publishing identity", async () => {
+    // Radix Select scrolls its focused option into view. jsdom intentionally
+    // omits this browser method, so provide the no-op browser contract needed
+    // to exercise the real selection interaction.
+    (HTMLElement.prototype as any).scrollIntoView = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LinkedInAuthorPicker account={linkedinAccount} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId(`select-author-${ACCOUNT_ID}`));
+    fireEvent.click(await screen.findByText("Personal name (Personal profile)"));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/social-accounts/${ACCOUNT_ID}/linkedin/select-author`,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ authorUrn: "urn:li:person:person-1" }),
+        }),
+      );
+    });
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("Social account edit access", () => {
+  it("keeps the edit action visible and usable without hover, including on touch devices", () => {
+    const onEdit = vi.fn();
+    render(<SocialAccountEditButton accountId={ACCOUNT_ID} onEdit={onEdit} />);
+
+    const button = screen.getByTestId(`button-edit-account-${ACCOUNT_ID}`);
+    expect(button.getAttribute("class")).not.toContain("opacity-0");
+    expect(button.getAttribute("aria-label")).toBe("Edit account settings");
+    button.click();
+    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });

@@ -37,6 +37,18 @@ export interface BuildPostsCsvOptions {
 }
 
 /**
+ * SocialPilot's destination ID is unrelated to the OAuth provider identity.
+ * Existing accounts fall back to their historic accountId until an operator
+ * explicitly saves a dedicated SocialPilot ID.
+ */
+export function resolveSocialPilotAccountId(
+  account: { socialPilotAccountId?: string | null; accountId?: string | null } | null | undefined,
+): string {
+  const socialPilotAccountId = account?.socialPilotAccountId?.trim();
+  return socialPilotAccountId || account?.accountId || "";
+}
+
+/**
  * Returns true when a post should be published by Orbit's native publisher
  * rather than exported to an external scheduler CSV.
  *
@@ -80,10 +92,15 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     for (const a of accts) accountMap.set(a.id, a);
   }
   const platformAccountFallback = new Map<string, string>();
+  const platformSocialPilotFallback = new Map<string, string>();
   for (const id of fallbackAccountIds) {
     const acct = accountMap.get(id);
     if (acct?.accountId && acct.platform && !platformAccountFallback.has(acct.platform)) {
       platformAccountFallback.set(acct.platform, acct.accountId);
+    }
+    const socialPilotAccountId = resolveSocialPilotAccountId(acct);
+    if (socialPilotAccountId && acct?.platform && !platformSocialPilotFallback.has(acct.platform)) {
+      platformSocialPilotFallback.set(acct.platform, socialPilotAccountId);
     }
   }
 
@@ -137,9 +154,15 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     const acctId = (() => {
       if (post.socialAccountId) {
         const acct = accountMap.get(post.socialAccountId);
-        if (acct?.accountId) return acct.accountId;
+        const accountId = format === "socialpilot"
+          ? resolveSocialPilotAccountId(acct)
+          : acct?.accountId;
+        if (accountId) return accountId;
       }
-      return platformAccountFallback.get(post.platform) || post.platform;
+      const fallback = format === "socialpilot"
+        ? platformSocialPilotFallback.get(post.platform)
+        : platformAccountFallback.get(post.platform);
+      return fallback || post.platform;
     })();
     const key = `${sd.toISOString()}|${acctId}`;
     if (slotUsed.has(key)) {
@@ -241,6 +264,14 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       if (acct?.accountId) return acct.accountId;
     }
     return platformAccountFallback.get(post.platform) || "";
+  };
+
+  const getSocialPilotAccountId = (post: any): string => {
+    if (post.socialAccountId) {
+      const accountId = resolveSocialPilotAccountId(accountMap.get(post.socialAccountId));
+      if (accountId) return accountId;
+    }
+    return platformSocialPilotFallback.get(post.platform) || "";
   };
 
   const getAccountName = (post: any): string => {
@@ -359,7 +390,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
 
         const imageUrl = getPostImageUrl(post);
         const dateStr = fmtSocialPilotDate(sd);
-        const platformAccountId = getAccountId(post);
+        const platformAccountId = getSocialPilotAccountId(post);
         const accountName = getAccountName(post);
         // Tags column = SocialPilot's internal label field (semicolon-separated,
         // no # prefix). Keep populated so SP's library filtering still works.
