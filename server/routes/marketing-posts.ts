@@ -24,6 +24,7 @@ import { randomUUID } from "crypto";
 import {
   generatedPosts,
   socialAccounts,
+  campaignSocialAccounts,
   socialAccountVoiceProfiles,
   campaigns,
   marketingAuditLog,
@@ -302,29 +303,43 @@ export function registerMarketingPostsRoutes(app: Express) {
         eq(socialAccounts.tenantDomain, ctx.tenantDomain),
       ));
       if (!account) return res.status(404).json({ error: "Social account not found" });
+      if (account.status !== "active") {
+        return res.status(409).json({ error: "Reconnect this social account before assigning posts to it." });
+      }
 
       // If campaignId was supplied, verify ownership. Null is allowed (standalone).
+      let ownedCampaignId: string | null = null;
       if (campaignId) {
         const [campaign] = await db.select({ id: campaigns.id }).from(campaigns).where(and(
           eq(campaigns.id, campaignId),
           eq(campaigns.tenantDomain, ctx.tenantDomain),
         ));
         if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+        ownedCampaignId = campaign.id;
       }
 
-      const [row] = await db.insert(generatedPosts).values({
-        id: randomUUID(),
-        campaignId: campaignId || null,
-        socialAccountId: account.id,
-        tenantDomain: ctx.tenantDomain,
-        platform: account.platform,
-        content: content.trim(),
-        editedContent: editedContent ?? null,
-        hashtags: Array.isArray(hashtags) ? hashtags : [],
-        scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
-        sourceUrl: sourceUrl ?? null,
-        status: "draft",
-      } as any).returning();
+      const [row] = await db.transaction(async (tx) => {
+        if (ownedCampaignId) {
+          await tx.insert(campaignSocialAccounts).values({
+            campaignId: ownedCampaignId,
+            socialAccountId: account.id,
+            autoPublish: false,
+          }).onConflictDoNothing();
+        }
+        return tx.insert(generatedPosts).values({
+          id: randomUUID(),
+          campaignId: ownedCampaignId,
+          socialAccountId: account.id,
+          tenantDomain: ctx.tenantDomain,
+          platform: account.platform,
+          content: content.trim(),
+          editedContent: editedContent ?? null,
+          hashtags: Array.isArray(hashtags) ? hashtags : [],
+          scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
+          sourceUrl: sourceUrl ?? null,
+          status: "draft",
+        } as any).returning();
+      });
 
       res.status(201).json(row);
     } catch (err: any) {
@@ -429,13 +444,19 @@ export function registerMarketingPostsRoutes(app: Express) {
         if (socialAccountId === null) {
           (updateFields as any).socialAccountId = null;
         } else if (typeof socialAccountId === "string") {
-          const [acct] = await db.select({ id: socialAccounts.id })
+          const [acct] = await db.select({
+            id: socialAccounts.id,
+            status: socialAccounts.status,
+          })
             .from(socialAccounts)
             .where(and(
               eq(socialAccounts.id, socialAccountId),
               eq(socialAccounts.tenantDomain, ctx.tenantDomain),
             ));
           if (!acct) return res.status(404).json({ error: "Social account not found" });
+          if (acct.status !== "active") {
+            return res.status(409).json({ error: "Reconnect this social account before assigning posts to it." });
+          }
           (updateFields as any).socialAccountId = socialAccountId;
         }
       }
@@ -483,10 +504,22 @@ export function registerMarketingPostsRoutes(app: Express) {
         }
       }
 
-      const [row] = await db.update(generatedPosts)
-        .set(updateFields as any)
-        .where(eq(generatedPosts.id, post.id))
-        .returning();
+      const [row] = await db.transaction(async (tx) => {
+        if (post.campaignId && typeof socialAccountId === "string") {
+          // Keep the post assignment and campaign association consistent in
+          // one transaction. Assignment alone does not opt the campaign into
+          // automatic publishing.
+          await tx.insert(campaignSocialAccounts).values({
+            campaignId: post.campaignId,
+            socialAccountId,
+            autoPublish: false,
+          }).onConflictDoNothing();
+        }
+        return tx.update(generatedPosts)
+          .set(updateFields as any)
+          .where(eq(generatedPosts.id, post.id))
+          .returning();
+      });
       res.json(row);
     } catch (err: any) {
       console.error("[Post Patch Error]", err.message);

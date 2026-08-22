@@ -73,8 +73,8 @@ import { timelineEventId, type TimelineEventKey } from "../services/hubspot-emai
 import { pushUnsubscribe, pushSubscribe } from "../services/hubspot-email-sync";
 import { buildExternalSendRow, mergeSendHistory } from "../services/email-sends-history-core";
 import {
-  findSafePreviousLinkedInConnection,
-  recoverPreviousConnectionFromOAuth,
+  alignOAuthResultToExistingIdentity,
+  consolidateDuplicateConnectionsFromOAuth,
   recoverPreviousConnectionManually,
 } from "../services/social-connection-recovery";
 
@@ -915,14 +915,17 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         tenantDomain: ctx.tenantDomain,
         codeVerifier: ctx.codeVerifier,
       });
-      // A normal reconnect always updates this same account record. If an
-      // operator accidentally created a replacement row first, safely restore
-      // the unique inactive LinkedIn match instead so its posts, campaigns,
-      // and voice profile remain linked to their original record.
-      const previousConnection = await findSafePreviousLinkedInConnection(account, result);
-      const recovery = previousConnection
-        ? await recoverPreviousConnectionFromOAuth(account, previousConnection, result, ctx.userId)
-        : null;
+      const oauthResult = alignOAuthResultToExistingIdentity(account, result);
+      // Provider IDs/URNs are stable across reconnects. If delete/recreate or
+      // earlier recovery attempts produced multiple Orbit rows for the same
+      // provider identity, collapse all of them before persisting the fresh
+      // credential. This works for X, LinkedIn, and other providers that return
+      // a stable account identity.
+      const recovery = await consolidateDuplicateConnectionsFromOAuth(
+        account,
+        oauthResult,
+        ctx.userId,
+      );
       if (!recovery) {
         // A manual recovery may have claimed this replacement row while the
         // provider was completing OAuth. Never let a late callback reactivate
@@ -930,19 +933,19 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         // `needs_reconnect` is an expected OAuth starting state and must be
         // allowed to become active again after the provider accepts new tokens.
         const [persistedAccount] = await db.update(socialAccounts).set({
-          encryptedAccessToken: encryptSecret(result.accessToken),
-          encryptedRefreshToken: result.refreshToken ? encryptSecret(result.refreshToken) : null,
-          tokenExpiresAt: result.expiresAt ?? null,
-          tokenScope: result.scope ?? null,
-          authorMode: result.authorMode,
-          authorUrn: result.authorUrn,
+          encryptedAccessToken: encryptSecret(oauthResult.accessToken),
+          encryptedRefreshToken: oauthResult.refreshToken ? encryptSecret(oauthResult.refreshToken) : null,
+          tokenExpiresAt: oauthResult.expiresAt ?? null,
+          tokenScope: oauthResult.scope ?? null,
+          authorMode: oauthResult.authorMode,
+          authorUrn: oauthResult.authorUrn,
           // Persist the list of identities the user can publish as so the
           // author-picker UI and /linkedin/select-author endpoint have data
           // to work with without re-querying LinkedIn on every page load.
-          availableAuthors: result.availableAuthors ?? null,
-          accountId: result.accountId ?? account.accountId,
-          accountName: result.accountName ?? account.accountName,
-          profileUrl: result.profileUrl ?? account.profileUrl,
+          availableAuthors: oauthResult.availableAuthors ?? null,
+          accountId: oauthResult.accountId ?? account.accountId,
+          accountName: oauthResult.accountName ?? account.accountName,
+          profileUrl: oauthResult.profileUrl ?? account.profileUrl,
           connectedAt: new Date(),
           connectedBy: ctx.userId,
           lastPublishError: null,
@@ -972,7 +975,7 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         message: recovery
           ? `Connected ${account.platform} and restored its previous account record`
           : `Connected ${account.platform}`,
-        details: { authorUrn: result.authorUrn, recovered: Boolean(recovery) },
+        details: { authorUrn: oauthResult.authorUrn, recovered: Boolean(recovery) },
       });
       res.send(`<!doctype html><html><body style="font-family:sans-serif;max-width:480px;margin:48px auto;padding:24px;text-align:center;">
         <h2>Connected!</h2>

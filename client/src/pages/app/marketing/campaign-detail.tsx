@@ -2036,7 +2036,11 @@ export default function CampaignDetailPage() {
   const filteredAvailableAssets = availableAssets.filter(a =>
     !assetSearch || a.title?.toLowerCase().includes(assetSearch.toLowerCase()) || a.description?.toLowerCase().includes(assetSearch.toLowerCase())
   );
-  const availableSocial = allSocialAccounts.filter(a => !linkedSocialIds.has(a.id));
+  // includeInactive is needed above to resolve labels for historical posts,
+  // but retired/replaced rows must never be offered as new campaign targets.
+  const availableSocial = allSocialAccounts.filter(
+    a => a.status === "active" && !linkedSocialIds.has(a.id),
+  );
 
   const isGenerating = jobStatus?.status === "running" || jobStatus?.status === "pending";
   const postsGenJobStatus = useJobStatus(id ? `campaign-posts:${id}` : null, isGenerating);

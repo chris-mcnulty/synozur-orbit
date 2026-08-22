@@ -51,12 +51,106 @@ export function linkedinIdentityMatches(
   account: Pick<SocialAccount, "accountId" | "authorUrn">,
   oauthResult: Pick<OAuthCallbackResult, "accountId" | "authorUrn">,
 ): boolean {
-  const identifiers = [oauthResult.accountId, oauthResult.authorUrn]
-    .filter((identifier): identifier is string => Boolean(identifier?.trim()));
-  if (!identifiers.length) return false;
-  return identifiers.some(identifier =>
-    account.accountId === identifier || account.authorUrn === identifier,
+  return socialIdentityMatches(account, oauthResult, "linkedin");
+}
+
+function providerIdentifiers(
+  identity: Pick<SocialAccount, "accountId" | "authorUrn"> | Pick<OAuthCallbackResult, "accountId" | "authorUrn">,
+): Set<string> {
+  return new Set([identity.accountId, identity.authorUrn]
+    .filter((identifier): identifier is string => Boolean(identifier?.trim())));
+}
+
+function linkedinOrganizationUrn(
+  identity: Pick<SocialAccount, "accountId" | "authorUrn"> | Pick<OAuthCallbackResult, "accountId" | "authorUrn">,
+): string | null {
+  return [identity.authorUrn, identity.accountId]
+    .find(identifier => identifier?.startsWith("urn:li:organization:")) ?? null;
+}
+
+export function socialIdentityMatches(
+  account: Pick<SocialAccount, "accountId" | "authorUrn">,
+  oauthResult: Pick<OAuthCallbackResult, "accountId" | "authorUrn">,
+  platform?: string,
+): boolean {
+  if (platform === "linkedin") {
+    // Different LinkedIn pages can share the same human administrator. An
+    // organization URN, whether stored in accountId or authorUrn by an older
+    // row, is authoritative and must match on both sides.
+    const accountOrganization = linkedinOrganizationUrn(account);
+    const oauthOrganization = linkedinOrganizationUrn(oauthResult);
+    if (accountOrganization || oauthOrganization) {
+      return Boolean(
+        accountOrganization &&
+        oauthOrganization &&
+        accountOrganization === oauthOrganization,
+      );
+    }
+    if (account.authorUrn || oauthResult.authorUrn) {
+      return Boolean(
+        account.authorUrn &&
+        oauthResult.authorUrn &&
+        account.authorUrn === oauthResult.authorUrn,
+      );
+    }
+  }
+  const accountIdentifiers = providerIdentifiers(account);
+  const oauthIdentifiers = providerIdentifiers(oauthResult);
+  if (!accountIdentifiers.size || !oauthIdentifiers.size) return false;
+  return [...oauthIdentifiers].some(identifier => accountIdentifiers.has(identifier));
+}
+
+export function alignOAuthResultToExistingIdentity(
+  account: Pick<
+    SocialAccount,
+    "platform" | "accountId" | "authorUrn" | "authorMode" | "connectedAt"
+  >,
+  result: OAuthCallbackResult,
+): OAuthCallbackResult {
+  let aligned = result;
+
+  if (account.platform === "linkedin" && account.authorUrn) {
+    if (result.authorUrn !== account.authorUrn) {
+      const priorAuthor = result.availableAuthors?.find(author => author.urn === account.authorUrn);
+      if (!priorAuthor) {
+        throw new Error(
+          "This LinkedIn authorization no longer includes the page previously selected for this account. " +
+          "Restore page-admin access or connect it as a separate social account.",
+        );
+      }
+      aligned = {
+        ...result,
+        authorMode: priorAuthor.mode,
+        authorUrn: priorAuthor.urn,
+        accountName: priorAuthor.name,
+      };
+    }
+  }
+
+  const hasEstablishedIdentity = Boolean(
+    account.connectedAt && (account.accountId || account.authorUrn),
   );
+  if (
+    hasEstablishedIdentity &&
+    !socialIdentityMatches(account, aligned, account.platform)
+  ) {
+    throw new Error(
+      "The authorized provider account does not match this existing social account. " +
+      "Reconnect the original account or create a separate social account.",
+    );
+  }
+
+  return aligned;
+}
+
+export function chooseCanonicalSocialConnection<T extends Pick<SocialAccount, "id" | "createdAt">>(
+  accounts: T[],
+): T {
+  if (!accounts.length) throw new Error("At least one social account is required.");
+  return [...accounts].sort((a, b) => {
+    const createdDelta = a.createdAt.getTime() - b.createdAt.getTime();
+    return createdDelta || a.id.localeCompare(b.id);
+  })[0];
 }
 
 export function mergedAutoPublish(previous: boolean, replacement: boolean): boolean {
@@ -126,6 +220,163 @@ export async function findSafePreviousLinkedInConnection(
     account.id !== replacement.id && linkedinIdentityMatches(account, result),
   );
   return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * Collapse every Orbit row that represents the same provider identity into one
+ * canonical connection. Provider IDs/URNs are the proof of sameness; display
+ * names and row age are never used to decide whether records may be merged.
+ *
+ * Published/exported history remains attached to the row that performed it.
+ * Pending posts and campaign settings move to the canonical row so future
+ * delete/recreate/reconnect cycles cannot strand work or multiply choices.
+ */
+export async function consolidateDuplicateConnectionsFromOAuth(
+  replacement: SocialAccount,
+  result: OAuthCallbackResult,
+  recoveredBy: string,
+) {
+  if (!result.accountId && !result.authorUrn) return null;
+
+  const possibleDuplicates = await db.select().from(socialAccounts).where(and(
+    eq(socialAccounts.tenantDomain, replacement.tenantDomain),
+    eq(socialAccounts.platform, replacement.platform),
+    sameMarketCondition(replacement),
+    inArray(socialAccounts.status, ["active", ...RECOVERABLE_PREVIOUS_STATUSES]),
+  ));
+  const matchingAccounts = possibleDuplicates.filter(account =>
+    account.id === replacement.id || socialIdentityMatches(account, result, replacement.platform),
+  );
+  const uniqueAccounts = [...new Map(
+    [replacement, ...matchingAccounts].map(account => [account.id, account]),
+  ).values()];
+  if (uniqueAccounts.length <= 1) return null;
+
+  const canonical = chooseCanonicalSocialConnection(uniqueAccounts);
+  const duplicateIds = uniqueAccounts
+    .filter(account => account.id !== canonical.id)
+    .map(account => account.id);
+  const allIds = [canonical.id, ...duplicateIds];
+  const connection = oauthConnectionFields(result, recoveredBy, replacement);
+
+  return db.transaction(async (tx) => {
+    // Claim every row using the status observed before the transaction. If an
+    // overlapping callback already consolidated the identity, at least one
+    // conditional claim fails and this transaction exits without moving data
+    // or overwriting the winning callback's fresh credentials.
+    for (const account of uniqueAccounts) {
+      const [claimed] = await tx.update(socialAccounts).set({
+        status: "recovering",
+        updatedAt: new Date(),
+      }).where(and(
+        eq(socialAccounts.id, account.id),
+        eq(socialAccounts.tenantDomain, replacement.tenantDomain),
+        eq(socialAccounts.status, account.status),
+      )).returning({ id: socialAccounts.id });
+      if (!claimed) {
+        throw new Error("This provider identity was already consolidated by another authorization.");
+      }
+    }
+
+    // campaign_social_accounts has no tenant column, so join through campaigns
+    // before consolidating links to preserve the tenant boundary.
+    const links = (await tx.select({ link: campaignSocialAccounts })
+      .from(campaignSocialAccounts)
+      .innerJoin(campaigns, eq(campaigns.id, campaignSocialAccounts.campaignId))
+      .where(and(
+        inArray(campaignSocialAccounts.socialAccountId, allIds),
+        eq(campaigns.tenantDomain, replacement.tenantDomain),
+      ))).map(row => row.link);
+
+    const linksByCampaign = new Map<string, typeof links>();
+    for (const link of links) {
+      const campaignLinks = linksByCampaign.get(link.campaignId) ?? [];
+      campaignLinks.push(link);
+      linksByCampaign.set(link.campaignId, campaignLinks);
+    }
+
+    for (const [campaignId, campaignLinks] of linksByCampaign) {
+      const canonicalLink = campaignLinks.find(link => link.socialAccountId === canonical.id);
+      const autoPublish = campaignLinks.some(link => Boolean(link.autoPublish));
+      if (canonicalLink) {
+        if (Boolean(canonicalLink.autoPublish) !== autoPublish) {
+          await tx.update(campaignSocialAccounts)
+            .set({ autoPublish })
+            .where(eq(campaignSocialAccounts.id, canonicalLink.id));
+        }
+      } else {
+        await tx.insert(campaignSocialAccounts).values({
+          id: randomUUID(),
+          campaignId,
+          socialAccountId: canonical.id,
+          autoPublish,
+        }).onConflictDoNothing();
+      }
+    }
+
+    const duplicateLinkIds = links
+      .filter(link => link.socialAccountId !== canonical.id)
+      .map(link => link.id);
+    if (duplicateLinkIds.length) {
+      await tx.delete(campaignSocialAccounts)
+        .where(inArray(campaignSocialAccounts.id, duplicateLinkIds));
+    }
+
+    const movedPosts = await tx.update(generatedPosts)
+      .set({ socialAccountId: canonical.id, updatedAt: new Date() })
+      .where(and(
+        eq(generatedPosts.tenantDomain, replacement.tenantDomain),
+        inArray(generatedPosts.socialAccountId, duplicateIds),
+        inArray(generatedPosts.status, [...RECOVERABLE_POST_STATUSES]),
+      ))
+      .returning({ id: generatedPosts.id });
+
+    await tx.update(socialAccounts).set({
+      ...connection,
+      status: "active",
+      lastPublishError: null,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(socialAccounts.id, canonical.id),
+      eq(socialAccounts.tenantDomain, replacement.tenantDomain),
+    ));
+
+    await tx.update(socialAccounts).set({
+      encryptedAccessToken: null,
+      encryptedRefreshToken: null,
+      tokenExpiresAt: null,
+      tokenScope: null,
+      status: "inactive",
+      lastPublishError: "Duplicate provider identity consolidated into the active account.",
+      updatedAt: new Date(),
+    }).where(and(
+      inArray(socialAccounts.id, duplicateIds),
+      eq(socialAccounts.tenantDomain, replacement.tenantDomain),
+    ));
+
+    await tx.insert(marketingAuditLog).values({
+      tenantDomain: replacement.tenantDomain,
+      marketId: replacement.marketId ?? null,
+      userId: recoveredBy,
+      action: "social_connection_recovered",
+      entityType: "social_account",
+      entityId: canonical.id,
+      status: "ok",
+      message: `Consolidated ${replacement.platform} records for one provider identity.`,
+      details: {
+        duplicateAccountIds: duplicateIds,
+        movedPendingPosts: movedPosts.length,
+        mergedCampaignLinks: duplicateLinkIds.length,
+      },
+    });
+
+    return {
+      recoveredAccountId: canonical.id,
+      movedPendingPosts: movedPosts.length,
+      mergedCampaignLinks: duplicateLinkIds.length,
+      duplicateAccountsMerged: duplicateIds.length,
+    };
+  });
 }
 
 async function restorePreviousConnection(

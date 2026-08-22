@@ -3320,6 +3320,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
       }
       const [socialAccount] = await db.select().from(socialAccounts).where(and(...socialAccountConditions));
       if (!socialAccount) return res.status(404).json({ error: "Social account not found" });
+      if (socialAccount.status !== "active") {
+        return res.status(409).json({ error: "Reconnect this social account before adding it to a campaign." });
+      }
       const [row] = await db.insert(campaignSocialAccounts).values({
         id: randomUUID(),
         campaignId: campaign.id,
@@ -3549,14 +3552,20 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (socialAccountId !== null && typeof socialAccountId !== "string") {
         return res.status(400).json({ error: "socialAccountId must be a string or null" });
       }
-      // If setting an account, verify it belongs to this campaign
+      // If setting an account, validate the tenant-owned active connection.
       if (socialAccountId) {
-        const [linked] = await db.select().from(campaignSocialAccounts)
+        const [ownedAccount] = await db.select({
+          id: socialAccounts.id,
+          status: socialAccounts.status,
+        }).from(socialAccounts)
           .where(and(
-            eq(campaignSocialAccounts.campaignId, campaign.id),
-            eq(campaignSocialAccounts.socialAccountId, socialAccountId),
+            eq(socialAccounts.id, socialAccountId),
+            eq(socialAccounts.tenantDomain, ctx.tenantDomain),
           ));
-        if (!linked) return res.status(400).json({ error: "Social account is not linked to this campaign" });
+        if (!ownedAccount) return res.status(404).json({ error: "Social account not found" });
+        if (ownedAccount.status !== "active") {
+          return res.status(409).json({ error: "Reconnect this social account before assigning posts to it." });
+        }
       }
       const scopedIds: string[] = Array.isArray(postIds) && postIds.length > 0 ? postIds : [];
       const baseCondition = and(
@@ -3566,10 +3575,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const condition = scopedIds.length
         ? and(baseCondition, inArray(generatedPosts.id, scopedIds))
         : baseCondition;
-      const rows = await db.update(generatedPosts)
-        .set({ socialAccountId: socialAccountId ?? null, updatedAt: new Date() })
-        .where(condition)
-        .returning();
+      const rows = await db.transaction(async (tx) => {
+        if (socialAccountId) {
+          await tx.insert(campaignSocialAccounts).values({
+            campaignId: campaign.id,
+            socialAccountId,
+            autoPublish: false,
+          }).onConflictDoNothing();
+        }
+        return tx.update(generatedPosts)
+          .set({ socialAccountId: socialAccountId ?? null, updatedAt: new Date() })
+          .where(condition)
+          .returning();
+      });
       res.json({ updated: rows.length });
     } catch (err: any) {
       console.error("[Generated Posts Bulk Assign Account Error]", err.message);
@@ -3685,11 +3703,17 @@ export function registerSaturnMarketingRoutes(app: Express) {
           updateFields.socialAccountId = null;
         } else {
           // Tenant boundary: only allow social accounts belonging to this tenant.
-          const [ownedAccount] = await db.select({ id: socialAccounts.id }).from(socialAccounts).where(and(
+          const [ownedAccount] = await db.select({
+            id: socialAccounts.id,
+            status: socialAccounts.status,
+          }).from(socialAccounts).where(and(
             eq(socialAccounts.id, socialAccountId),
             eq(socialAccounts.tenantDomain, ctx.tenantDomain),
           ));
           if (!ownedAccount) return res.status(404).json({ error: "Social account not found" });
+          if (ownedAccount.status !== "active") {
+            return res.status(409).json({ error: "Reconnect this social account before assigning posts to it." });
+          }
           updateFields.socialAccountId = socialAccountId;
         }
       }
@@ -3730,10 +3754,19 @@ export function registerSaturnMarketingRoutes(app: Express) {
       if (linkUrl !== undefined) updateFields.linkUrl = linkUrl || null;
       if (linkLabel !== undefined) updateFields.linkLabel = linkLabel || null;
       if (deliveryMode !== undefined) updateFields.deliveryMode = deliveryMode === "csv" ? "csv" : null;
-      const [row] = await db.update(generatedPosts)
-        .set(updateFields)
-        .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
-        .returning();
+      const [row] = await db.transaction(async (tx) => {
+        if (typeof socialAccountId === "string" && socialAccountId) {
+          await tx.insert(campaignSocialAccounts).values({
+            campaignId: campaign.id,
+            socialAccountId,
+            autoPublish: false,
+          }).onConflictDoNothing();
+        }
+        return tx.update(generatedPosts)
+          .set(updateFields)
+          .where(and(eq(generatedPosts.id, req.params.postId), eq(generatedPosts.campaignId, campaign.id)))
+          .returning();
+      });
       if (!row) return res.status(404).json({ error: "Not found" });
       res.json(row);
     } catch (err: any) {

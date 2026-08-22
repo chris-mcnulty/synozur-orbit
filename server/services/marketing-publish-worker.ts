@@ -61,6 +61,13 @@ const PERMANENT_ERROR_CODES = new Set([
   // Bluesky: createSession rejected the stored app password (invalid or revoked).
   // Retrying with the same credentials will always fail — reconnect required.
   "session_failed",
+  // X returned a provider-level authorization/configuration rejection. Retrying
+  // the same grant cannot work; the app permission must be fixed and regranted.
+  "write_permission_missing",
+]);
+
+const NON_CONSUMING_ERROR_CODES = new Set([
+  "write_permission_missing",
 ]);
 
 // Image-related error codes (Task #777). Confirmed-permanent image errors
@@ -84,7 +91,21 @@ const AUTH_ERROR_CODES = new Set([
   "token_refresh_failed",
   // Bluesky: createSession rejected the stored app password (invalid or revoked).
   "session_failed",
+  "write_permission_missing",
 ]);
+
+export function nextPublishFailureAttemptCount(
+  previousAttempts: number,
+  errorCode: string | null | undefined,
+): number {
+  return errorCode && NON_CONSUMING_ERROR_CODES.has(errorCode)
+    ? previousAttempts
+    : previousAttempts + 1;
+}
+
+export function canPublishFromAccountStatus(status: string): boolean {
+  return status === "active";
+}
 
 const dailyCounters = new Map<string, { day: string; count: number }>();
 
@@ -453,8 +474,8 @@ async function markFailed(
   result: { success: boolean; errorCode?: string; errorMessage?: string; responsePayload?: unknown },
   prevAttempts = 0,
 ) {
-  const newAttemptCount = prevAttempts + 1;
   const errorCode = result.errorCode ?? null;
+  const newAttemptCount = nextPublishFailureAttemptCount(prevAttempts, errorCode);
   const isPermanentImageError = errorCode ? PERMANENT_IMAGE_ERROR_CODES.has(errorCode) : false;
   const isImageError = errorCode ? IMAGE_ERROR_CODES.has(errorCode) : false;
   const isPermanent =
@@ -552,6 +573,15 @@ export async function publishPostNow(
   if (!account) {
     return { success: false, errorMessage: "No social account linked to this post. Open the post and assign an account before publishing." };
   }
+  if (account.tenantDomain !== post.tenantDomain) {
+    return { success: false, errorMessage: "The assigned social account is not available in this workspace." };
+  }
+  if (!canPublishFromAccountStatus(account.status)) {
+    return {
+      success: false,
+      errorMessage: "Reconnect this social account before publishing. Deleted, replaced, or disconnected account records cannot be used.",
+    };
+  }
   if (post.status !== "approved" && post.status !== "publish_failed") {
     return {
       success: false,
@@ -560,6 +590,22 @@ export async function publishPostNow(
   }
   if (!account.encryptedAccessToken) {
     return { success: false, errorMessage: "Account is not connected" };
+  }
+  if (post.campaignId) {
+    const [campaign] = await db.select({ id: campaigns.id }).from(campaigns).where(and(
+      eq(campaigns.id, post.campaignId),
+      eq(campaigns.tenantDomain, post.tenantDomain),
+    ));
+    if (!campaign) {
+      return { success: false, errorMessage: "The post's campaign is not available in this workspace." };
+    }
+    // Manual publish is explicit permission to use this account for this post,
+    // but it must not silently enable scheduled publishing for other posts.
+    await db.insert(campaignSocialAccounts).values({
+      campaignId: campaign.id,
+      socialAccountId: account.id,
+      autoPublish: false,
+    }).onConflictDoNothing();
   }
   if (!bumpAndCheckDailyCap(post.tenantDomain)) {
     return { success: false, errorMessage: `Daily publish cap of ${MAX_PER_TENANT_PER_DAY} reached` };

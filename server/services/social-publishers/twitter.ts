@@ -37,6 +37,27 @@ const API_HOST = "https://api.twitter.com";
 // upload.twitter.com endpoint now returns 403 for OAuth 2.0 apps).
 const DEFAULT_SCOPE = "tweet.read tweet.write users.read media.write offline.access";
 
+export function classifyTwitterCreateError(
+  status: number,
+  payload: unknown,
+  rawText: string,
+): Pick<PublishResult, "success" | "errorCode" | "errorMessage"> | null {
+  const detail = payload && typeof payload === "object" && "detail" in payload
+    ? String((payload as { detail?: unknown }).detail ?? "")
+    : "";
+  if (status === 403 && /not permitted to perform this action/i.test(detail || rawText)) {
+    return {
+      success: false,
+      errorCode: "write_permission_missing",
+      errorMessage:
+        "X rejected this post because the connected app or account cannot create posts. " +
+        "Verify that the X developer app has Read and Write permission and access to POST /2/tweets, " +
+        "then reconnect this X account in Settings → Social Accounts and retry.",
+    };
+  }
+  return null;
+}
+
 function generateCodeVerifier(): string {
   // RFC 7636 §4.1: 43–128 chars, [A-Z a-z 0-9 -._~]. base64url(48 bytes) = 64 chars.
   return randomBytes(48).toString("base64url");
@@ -392,6 +413,16 @@ export class TwitterPublisher implements SocialPublisher {
           success: false,
           errorCode: "token_expired",
           errorMessage: "X / Twitter access token has been revoked — reconnect the account.",
+          responsePayload: parsed ?? errText,
+          refreshedAccessToken,
+          refreshedRefreshToken,
+          refreshedTokenExpiresAt,
+        };
+      }
+      const permissionError = classifyTwitterCreateError(resp.status, parsed, errText);
+      if (permissionError) {
+        return {
+          ...permissionError,
           responsePayload: parsed ?? errText,
           refreshedAccessToken,
           refreshedRefreshToken,
