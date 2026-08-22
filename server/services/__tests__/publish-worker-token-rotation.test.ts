@@ -49,14 +49,19 @@ vi.mock("../../db", () => ({
     },
     update: () => ({
       set: (payload: any) => ({
-        where: async () => {
+        where: () => {
           state.updates.push(payload);
           // Token persistence targets social_accounts — mirror it into the
           // live row so the next account re-fetch sees the rotated tokens.
           if ("encryptedAccessToken" in payload) {
             Object.assign(state.accountRow, payload);
           }
-          return [];
+          const result = [{ id: "updated" }];
+          const query: any = {
+            returning: async () => result,
+            then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
+          };
+          return query;
         },
       }),
     }),

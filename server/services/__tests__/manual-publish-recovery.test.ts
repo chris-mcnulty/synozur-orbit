@@ -20,9 +20,14 @@ vi.mock("../../db", () => ({
     },
     update: () => ({
       set: (payload: any) => ({
-        where: async () => {
+        where: () => {
           state.updates.push(payload);
-          return [];
+          const result = [{ id: "updated" }];
+          const query: any = {
+            returning: async () => result,
+            then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
+          };
+          return query;
         },
       }),
     }),

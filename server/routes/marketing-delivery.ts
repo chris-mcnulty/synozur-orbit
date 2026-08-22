@@ -1101,7 +1101,14 @@ export function registerMarketingDeliveryRoutes(app: Express) {
     }
     const result = await publishPostNow(post.id, req.session.userId!);
     if (!result.success) {
-      return res.status(502).json({ error: result.errorMessage || "Publish failed" });
+      const status = result.errorCode === "publish_in_progress" ||
+        result.errorCode === "publish_outcome_unknown"
+        ? 409
+        : 502;
+      return res.status(status).json({
+        error: result.errorMessage || "Publish failed",
+        code: result.errorCode,
+      });
     }
     res.json({ success: true, publishedUrl: result.publishedUrl });
   });

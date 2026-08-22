@@ -22,6 +22,7 @@
 
 import { db } from "../db";
 import { eq, and, lte, gte, isNotNull, or, isNull, sql, ne, inArray } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import {
   generatedPosts,
   socialAccounts,
@@ -29,8 +30,10 @@ import {
   campaigns,
   socialPublishAttempts,
   marketingAuditLog,
+  type GeneratedPost,
+  type SocialAccount,
 } from "@shared/schema";
-import { getPublisher } from "./social-publishers";
+import { getPublisher, type PublishResult } from "./social-publishers";
 import { encryptSecret } from "../utils/encryption";
 import { checkFeatureAccessAsync } from "./plan-policy";
 import { tenants } from "@shared/schema";
@@ -48,6 +51,11 @@ const MAX_POSTS_PER_TICK = 3;
 const DELAY_BETWEEN_POSTS_MS = 12_000; // 12 seconds between posts within a tick
 const MAX_PER_TENANT_PER_DAY = Number(process.env.MARKETING_DAILY_PUBLISH_CAP || 25);
 const MAX_ATTEMPTS = 5;
+export const PUBLISH_CLAIM_TTL_MS = 15 * 60_000;
+export const PUBLISH_CLAIM_BUSY_MESSAGE =
+  "This post is already being published by another request. Wait for it to finish before trying again.";
+export const PUBLISH_CLAIM_EXPIRED_MESSAGE =
+  "A previous publish request expired before Orbit could confirm the result. Check the social platform before retrying this post.";
 
 // Exponential backoff in minutes for retries (1-indexed by attempt count).
 const RETRY_BACKOFF_MINUTES = [5, 15, 60, 240, 1440];
@@ -125,10 +133,211 @@ function bumpAndCheckDailyCap(tenantDomain: string): boolean {
   return true;
 }
 
+type PublishClaim = {
+  token: string;
+  owner: string;
+  expiresAt: Date;
+};
+
+type PublishClaimResult =
+  | { status: "acquired"; claim: PublishClaim }
+  | { status: "busy" }
+  | { status: "expired_recovered" };
+
+function publishClaimOwnershipWhere(postId: string, claim: PublishClaim) {
+  return and(
+    eq(generatedPosts.id, postId),
+    eq(generatedPosts.publishClaimToken, claim.token),
+    eq(generatedPosts.publishClaimOwner, claim.owner),
+  );
+}
+
+/**
+ * Atomically claim a post before any provider call begins.
+ *
+ * Expired claims are deliberately recovered to publish_failed instead of
+ * being acquired by this request. A provider request may still be running
+ * after its lease expires, so immediately stealing the claim would turn a
+ * slow response into an automatic duplicate post. Recovery leaves the post
+ * available to the existing explicit/manual retry flow.
+ */
+async function acquirePublishClaim(
+  postId: string,
+  owner: string,
+  allowedStatuses: string[],
+): Promise<PublishClaimResult> {
+  const now = new Date();
+  const claim: PublishClaim = {
+    token: randomUUID(),
+    owner,
+    expiresAt: new Date(now.getTime() + PUBLISH_CLAIM_TTL_MS),
+  };
+
+  const claimed = await db
+    .update(generatedPosts)
+    .set({
+      publishClaimToken: claim.token,
+      publishClaimOwner: claim.owner,
+      publishClaimExpiresAt: claim.expiresAt,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(generatedPosts.id, postId),
+        inArray(generatedPosts.status, allowedStatuses),
+        isNull(generatedPosts.publishClaimToken),
+      ),
+    )
+    .returning({ id: generatedPosts.id });
+
+  if (claimed.length > 0) {
+    return { status: "acquired", claim };
+  }
+
+  const recovered = await db
+    .update(generatedPosts)
+    .set({
+      status: "publish_failed",
+      publishError: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+      publishNextAttemptAt: null,
+      publishClaimToken: null,
+      publishClaimOwner: null,
+      publishClaimExpiresAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(generatedPosts.id, postId),
+        inArray(generatedPosts.status, allowedStatuses),
+        isNotNull(generatedPosts.publishClaimToken),
+        isNotNull(generatedPosts.publishClaimExpiresAt),
+        lte(generatedPosts.publishClaimExpiresAt, now),
+      ),
+    )
+    .returning({ id: generatedPosts.id });
+
+  return recovered.length > 0
+    ? { status: "expired_recovered" }
+    : { status: "busy" };
+}
+
+async function releasePublishClaim(postId: string, claim: PublishClaim): Promise<boolean> {
+  const released = await db
+    .update(generatedPosts)
+    .set({
+      publishClaimToken: null,
+      publishClaimOwner: null,
+      publishClaimExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(publishClaimOwnershipWhere(postId, claim))
+    .returning({ id: generatedPosts.id });
+  return released.length > 0;
+}
+
+export async function recoverExpiredPublishClaims(): Promise<number> {
+  const now = new Date();
+  const recovered = await db
+    .update(generatedPosts)
+    .set({
+      status: "publish_failed",
+      publishError: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+      publishNextAttemptAt: null,
+      publishClaimToken: null,
+      publishClaimOwner: null,
+      publishClaimExpiresAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        inArray(generatedPosts.status, ["approved", "publish_failed"]),
+        isNotNull(generatedPosts.publishClaimToken),
+        isNotNull(generatedPosts.publishClaimExpiresAt),
+        lte(generatedPosts.publishClaimExpiresAt, now),
+      ),
+    )
+    .returning({ id: generatedPosts.id });
+
+  if (recovered.length > 0) {
+    console.warn(
+      `[Marketing Publish Worker] Recovered ${recovered.length} expired publish claim(s); manual review required before retry.`,
+    );
+  }
+  return recovered.length;
+}
+
+async function markPublished(
+  post: GeneratedPost,
+  account: SocialAccount,
+  claim: PublishClaim,
+  result: PublishResult,
+  attemptedBy: string | null,
+): Promise<boolean> {
+  const updated = await db
+    .update(generatedPosts)
+    .set({
+      status: "published",
+      publishedAt: new Date(),
+      publishedUrl: result.publishedUrl ?? null,
+      publishError: null,
+      publishNextAttemptAt: null,
+      imageIssue: null,
+      publishAttemptCount: (post.publishAttemptCount ?? 0) + 1,
+      publishClaimToken: null,
+      publishClaimOwner: null,
+      publishClaimExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(publishClaimOwnershipWhere(post.id, claim))
+    .returning({ id: generatedPosts.id });
+
+  if (updated.length === 0) return false;
+
+  await db.insert(socialPublishAttempts).values({
+    postId: post.id,
+    socialAccountId: account.id,
+    tenantDomain: post.tenantDomain,
+    platform: post.platform,
+    status: "success",
+    publishedUrl: result.publishedUrl ?? null,
+    errorCode: null,
+    errorMessage: null,
+    responsePayload: toJsonPayload(result.responsePayload),
+    attemptedBy,
+  });
+  await db.insert(marketingAuditLog).values({
+    tenantDomain: post.tenantDomain,
+    marketId: account.marketId ?? null,
+    userId: attemptedBy,
+    action: "social_publish",
+    entityType: "generated_post",
+    entityId: post.id,
+    status: "ok",
+    message: attemptedBy
+      ? `Manually published to ${post.platform}`
+      : `Published to ${post.platform}`,
+    details: { url: result.publishedUrl, accountId: account.id },
+  });
+  return true;
+}
+
 let inFlight = false;
 
 export async function tickMarketingPublishWorker(): Promise<{ processed: number; published: number; failed: number }> {
-  if (inFlight) return { processed: 0, published: 0, failed: 0 };
+  // Recovery is global and independent of current publish eligibility. A post
+  // may have become stale, paused, disconnected, campaign-closed, or CSV-only
+  // while its former owner was crashed/hung; none of those changes may leave
+  // an expired database claim stranded forever.
+  try {
+    await recoverExpiredPublishClaims();
+  } catch (recoveryErr) {
+    console.error("[Marketing Publish Worker] Expired-claim recovery failed:", recoveryErr);
+  }
+
+  if (inFlight) {
+    // Recovery above still runs while the prior provider request is in flight.
+    return { processed: 0, published: 0, failed: 0 };
+  }
   inFlight = true;
   let published = 0;
   let failed = 0;
@@ -171,6 +380,13 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           or(
             isNull(generatedPosts.publishNextAttemptAt),
             lte(generatedPosts.publishNextAttemptAt, now),
+          ),
+          // Active claims are owned by another request. Expired claims remain
+          // visible so this tick can recover them to publish_failed without
+          // making another provider call.
+          or(
+            isNull(generatedPosts.publishClaimToken),
+            lte(generatedPosts.publishClaimExpiresAt, now),
           ),
           // Naturalistic delay gate: skip posts that haven't reached their
           // jitter-deferred time yet. publishNotBefore IS NULL means the worker
@@ -330,30 +546,58 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
       // Pace posts: wait before each post (except the first) so they go out
       // 12 seconds apart — looks human, avoids LinkedIn burst-spam detection.
       if (processed > 0) await sleep(DELAY_BETWEEN_POSTS_MS);
-      processed += 1;
       const { post, account } = row;
+
+      const claimResult = await acquirePublishClaim(
+        post.id,
+        `worker:${process.pid}:${randomUUID()}`,
+        ["approved"],
+      );
+      if (claimResult.status === "busy") {
+        console.log(`[Marketing Publish Worker] Post ${post.id} is already claimed; skipping.`);
+        continue;
+      }
+      if (claimResult.status === "expired_recovered") {
+        console.warn(
+          `[Marketing Publish Worker] Recovered expired claim for post ${post.id}; manual review required before retry.`,
+        );
+        continue;
+      }
+      const { claim } = claimResult;
+      processed += 1;
+
       if (!await isAllowed(post.tenantDomain)) {
-        await db.update(generatedPosts).set({
-          status: "publish_failed",
-          publishError: "Direct publishing is not enabled on this tenant's plan.",
-          publishNextAttemptAt: null,
-          updatedAt: new Date(),
-        }).where(eq(generatedPosts.id, post.id));
-        await db.insert(marketingAuditLog).values({
-          tenantDomain: post.tenantDomain,
-          marketId: account.marketId ?? null,
-          userId: null,
-          action: "social_publish",
-          entityType: "generated_post",
-          entityId: post.id,
-          status: "error",
-          message: "Plan does not include direct publishing",
-          details: { platform: post.platform },
-        });
+        const updated = await db
+          .update(generatedPosts)
+          .set({
+            status: "publish_failed",
+            publishError: "Direct publishing is not enabled on this tenant's plan.",
+            publishNextAttemptAt: null,
+            publishClaimToken: null,
+            publishClaimOwner: null,
+            publishClaimExpiresAt: null,
+            updatedAt: new Date(),
+          })
+          .where(publishClaimOwnershipWhere(post.id, claim))
+          .returning({ id: generatedPosts.id });
+        if (updated.length > 0) {
+          await db.insert(marketingAuditLog).values({
+            tenantDomain: post.tenantDomain,
+            marketId: account.marketId ?? null,
+            userId: null,
+            action: "social_publish",
+            entityType: "generated_post",
+            entityId: post.id,
+            status: "error",
+            message: "Plan does not include direct publishing",
+            details: { platform: post.platform },
+          });
+        }
         failed += 1;
         continue;
       }
       if (!bumpAndCheckDailyCap(post.tenantDomain)) {
+        await releasePublishClaim(post.id, claim);
         await db.insert(marketingAuditLog).values({
           tenantDomain: post.tenantDomain,
           marketId: account.marketId ?? null,
@@ -374,11 +618,13 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
           success: false,
           errorCode: "platform_unsupported",
           errorMessage: `Direct publishing is not implemented for ${post.platform}.`,
-        }, post.publishAttemptCount ?? 0);
+        }, post.publishAttemptCount ?? 0, claim);
         failed += 1;
         continue;
       }
 
+      let liveAccount = account;
+      let result: PublishResult;
       try {
         // Re-fetch the account row immediately before publishing. The
         // candidates list was loaded at tick start; if an earlier post in
@@ -389,11 +635,30 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
         // until the user reconnects, only to be burned again next tick.
         const [freshAccount] = await db.select().from(socialAccounts)
           .where(eq(socialAccounts.id, account.id));
-        const liveAccount = freshAccount ?? account;
-        const result = await publisher.publish({ account: liveAccount, post });
-        // Always persist refreshed tokens immediately — even on a failed
-        // publish — so the next attempt doesn't reuse a now-consumed token.
-        if (result.refreshedAccessToken) {
+        liveAccount = freshAccount ?? account;
+        result = await publisher.publish({ account: liveAccount, post });
+      } catch (err: any) {
+        try {
+          await markFailed(post.id, account.id, post.platform, post.tenantDomain, {
+            success: false,
+            errorCode: "exception",
+            errorMessage: err?.message || String(err),
+          }, post.publishAttemptCount ?? 0, claim);
+        } catch (recordErr) {
+          console.error(
+            `[Marketing Publish Worker] Failed to record provider exception for post ${post.id}:`,
+            recordErr,
+          );
+        }
+        failed += 1;
+        continue;
+      }
+
+      // Persistence after a provider response is intentionally outside the
+      // provider try/catch. A confirmed provider success must never be turned
+      // into a retry merely because a later database write failed.
+      if (result.refreshedAccessToken) {
+        try {
           await db.update(socialAccounts).set({
             encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
             encryptedRefreshToken: result.refreshedRefreshToken
@@ -402,52 +667,51 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
             tokenExpiresAt: result.refreshedTokenExpiresAt ?? liveAccount.tokenExpiresAt,
             updatedAt: new Date(),
           }).where(eq(socialAccounts.id, account.id));
+        } catch (tokenPersistErr) {
+          console.error(
+            `[Marketing Publish Worker] Provider responded for post ${post.id}, but refreshed tokens could not be persisted:`,
+            tokenPersistErr,
+          );
         }
-        if (result.success) {
-          await db.update(generatedPosts).set({
-            status: "published",
-            publishedAt: new Date(),
-            publishedUrl: result.publishedUrl ?? null,
-            publishError: null,
-            publishNextAttemptAt: null,
-            imageIssue: null,
-            publishAttemptCount: (post.publishAttemptCount ?? 0) + 1,
-            updatedAt: new Date(),
-          }).where(eq(generatedPosts.id, post.id));
-          await db.insert(socialPublishAttempts).values({
-            postId: post.id,
-            socialAccountId: account.id,
-            tenantDomain: post.tenantDomain,
-            platform: post.platform,
-            status: "success",
-            publishedUrl: result.publishedUrl ?? null,
-            errorCode: null,
-            errorMessage: null,
-            responsePayload: toJsonPayload(result.responsePayload),
-            attemptedBy: null,
-          });
-          await db.insert(marketingAuditLog).values({
-            tenantDomain: post.tenantDomain,
-            marketId: account.marketId ?? null,
-            userId: null,
-            action: "social_publish",
-            entityType: "generated_post",
-            entityId: post.id,
-            status: "ok",
-            message: `Published to ${post.platform}`,
-            details: { url: result.publishedUrl, accountId: account.id },
-          });
-          published += 1;
-        } else {
-          await markFailed(post.id, account.id, post.platform, post.tenantDomain, result, post.publishAttemptCount ?? 0);
+      }
+
+      if (result.success) {
+        try {
+          const recorded = await markPublished(post, account, claim, result, null);
+          if (recorded) {
+            published += 1;
+          } else {
+            console.error(
+              `[Marketing Publish Worker] Provider accepted post ${post.id}, but claim ownership was lost before completion.`,
+            );
+            failed += 1;
+          }
+        } catch (completionErr) {
+          // Leave the claim intact. A later tick will recover it to an
+          // unconfirmed failure for manual review, never an automatic repost.
+          console.error(
+            `[Marketing Publish Worker] Provider accepted post ${post.id}, but completion could not be recorded:`,
+            completionErr,
+          );
           failed += 1;
         }
-      } catch (err: any) {
-        await markFailed(post.id, account.id, post.platform, post.tenantDomain, {
-          success: false,
-          errorCode: "exception",
-          errorMessage: err?.message || String(err),
-        }, post.publishAttemptCount ?? 0);
+      } else {
+        try {
+          await markFailed(
+            post.id,
+            account.id,
+            post.platform,
+            post.tenantDomain,
+            result,
+            post.publishAttemptCount ?? 0,
+            claim,
+          );
+        } catch (failurePersistErr) {
+          console.error(
+            `[Marketing Publish Worker] Provider failure for post ${post.id} could not be recorded:`,
+            failurePersistErr,
+          );
+        }
         failed += 1;
       }
     }
@@ -494,7 +758,8 @@ async function markFailed(
   tenantDomain: string,
   result: { success: boolean; errorCode?: string; errorMessage?: string; responsePayload?: unknown },
   prevAttempts = 0,
-) {
+  claim: PublishClaim,
+): Promise<boolean> {
   const errorCode = result.errorCode ?? null;
   const disposition = getPublishFailureDisposition(errorCode, prevAttempts);
   const newAttemptCount = disposition.attemptCount;
@@ -505,33 +770,50 @@ async function markFailed(
   // "Image problem" badge instead of a generic publish failure.
   const imageIssuePatch = isImageError ? { imageIssue: errorCode } : {};
 
+  let updated: Array<{ id: string }>;
   if (shouldRetry) {
     // Transient image errors use a faster early backoff: a momentary storage
     // or network blip should never push a healthy image hours out.
     const schedule = isImageError ? IMAGE_RETRY_BACKOFF_MINUTES : RETRY_BACKOFF_MINUTES;
     const backoffMins = schedule[Math.min(newAttemptCount - 1, schedule.length - 1)];
     const nextAttemptAt = new Date(Date.now() + backoffMins * 60_000);
-    await db.update(generatedPosts).set({
-      // keep status as 'approved' so the worker re-picks it up after backoff
-      status: "approved",
-      publishError: result.errorMessage ?? "Publish failed",
-      publishAttemptCount: newAttemptCount,
-      publishNextAttemptAt: nextAttemptAt,
-      ...imageIssuePatch,
-      updatedAt: new Date(),
-    }).where(eq(generatedPosts.id, postId));
+    updated = await db
+      .update(generatedPosts)
+      .set({
+        // keep status as 'approved' so the worker re-picks it up after backoff
+        status: "approved",
+        publishError: result.errorMessage ?? "Publish failed",
+        publishAttemptCount: newAttemptCount,
+        publishNextAttemptAt: nextAttemptAt,
+        publishClaimToken: null,
+        publishClaimOwner: null,
+        publishClaimExpiresAt: null,
+        ...imageIssuePatch,
+        updatedAt: new Date(),
+      })
+      .where(publishClaimOwnershipWhere(postId, claim))
+      .returning({ id: generatedPosts.id });
   } else {
-    await db.update(generatedPosts).set({
-      status: "publish_failed",
-      publishError: isPermanentImageError
-        ? (result.errorMessage ?? "The post's image is broken — replace the image, then retry.")
-        : (result.errorMessage ?? "Publish failed"),
-      publishAttemptCount: newAttemptCount,
-      publishNextAttemptAt: null,
-      ...imageIssuePatch,
-      updatedAt: new Date(),
-    }).where(eq(generatedPosts.id, postId));
+    updated = await db
+      .update(generatedPosts)
+      .set({
+        status: "publish_failed",
+        publishError: isPermanentImageError
+          ? (result.errorMessage ?? "The post's image is broken — replace the image, then retry.")
+          : (result.errorMessage ?? "Publish failed"),
+        publishAttemptCount: newAttemptCount,
+        publishNextAttemptAt: null,
+        publishClaimToken: null,
+        publishClaimOwner: null,
+        publishClaimExpiresAt: null,
+        ...imageIssuePatch,
+        updatedAt: new Date(),
+      })
+      .where(publishClaimOwnershipWhere(postId, claim))
+      .returning({ id: generatedPosts.id });
   }
+
+  if (updated.length === 0) return false;
 
   const isAuthError = errorCode ? AUTH_ERROR_CODES.has(errorCode) : false;
   // Use the sentinel "needs_reauth" for auth errors so the Social Accounts UI
@@ -572,6 +854,7 @@ async function markFailed(
       remediationRequired: disposition.requiresRemediation,
     },
   });
+  return true;
 }
 
 /**
@@ -583,7 +866,12 @@ async function markFailed(
 export async function publishPostNow(
   postId: string,
   attemptedBy: string,
-): Promise<{ success: boolean; publishedUrl?: string | null; errorMessage?: string }> {
+): Promise<{
+  success: boolean;
+  publishedUrl?: string | null;
+  errorMessage?: string;
+  errorCode?: "publish_in_progress" | "publish_outcome_unknown";
+}> {
   const [row] = await db
     .select({ post: generatedPosts, account: socialAccounts })
     .from(generatedPosts)
@@ -624,7 +912,30 @@ export async function publishPostNow(
     }
     throw err;
   }
+
+  const claimResult = await acquirePublishClaim(
+    post.id,
+    `manual:${attemptedBy}:${randomUUID()}`,
+    ["approved", "publish_failed"],
+  );
+  if (claimResult.status === "busy") {
+    return {
+      success: false,
+      errorCode: "publish_in_progress",
+      errorMessage: PUBLISH_CLAIM_BUSY_MESSAGE,
+    };
+  }
+  if (claimResult.status === "expired_recovered") {
+    return {
+      success: false,
+      errorCode: "publish_outcome_unknown",
+      errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+    };
+  }
+  const { claim } = claimResult;
+
   if (!bumpAndCheckDailyCap(post.tenantDomain)) {
+    await releasePublishClaim(post.id, claim);
     return { success: false, errorMessage: `Daily publish cap of ${MAX_PER_TENANT_PER_DAY} reached` };
   }
   const publisher = getPublisher(post.platform);
@@ -633,59 +944,103 @@ export async function publishPostNow(
       success: false,
       errorCode: "platform_unsupported",
       errorMessage: `Direct publishing is not implemented for ${post.platform}.`,
-    }, post.publishAttemptCount ?? 0);
+    }, post.publishAttemptCount ?? 0, claim);
     return { success: false, errorMessage: `Direct publishing is not implemented for ${post.platform}.` };
   }
 
-  const result = await publisher.publish({ account, post, attemptedBy });
-  // Always persist refreshed tokens immediately — even on a failed publish —
-  // so the next attempt doesn't reuse a now-consumed rotating refresh token.
+  let result: PublishResult;
+  try {
+    result = await publisher.publish({ account, post, attemptedBy });
+  } catch (err: any) {
+    const errorMessage = err?.message || String(err);
+    try {
+      const recorded = await markFailed(post.id, account.id, post.platform, post.tenantDomain, {
+        success: false,
+        errorCode: "exception",
+        errorMessage,
+      }, post.publishAttemptCount ?? 0, claim);
+      return recorded
+        ? { success: false, errorMessage }
+        : {
+            success: false,
+            errorCode: "publish_outcome_unknown",
+            errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+          };
+    } catch {
+      return {
+        success: false,
+        errorCode: "publish_outcome_unknown",
+        errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+      };
+    }
+  }
+
+  // Once the provider has answered, persistence failures must not enter the
+  // provider-failure retry path. In particular, a confirmed success can never
+  // be re-queued just because token or completion storage had a transient error.
   if (result.refreshedAccessToken) {
-    await db.update(socialAccounts).set({
-      encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
-      encryptedRefreshToken: result.refreshedRefreshToken
-        ? encryptSecret(result.refreshedRefreshToken)
-        : account.encryptedRefreshToken,
-      tokenExpiresAt: result.refreshedTokenExpiresAt ?? account.tokenExpiresAt,
-      updatedAt: new Date(),
-    }).where(eq(socialAccounts.id, account.id));
+    try {
+      await db.update(socialAccounts).set({
+        encryptedAccessToken: encryptSecret(result.refreshedAccessToken),
+        encryptedRefreshToken: result.refreshedRefreshToken
+          ? encryptSecret(result.refreshedRefreshToken)
+          : account.encryptedRefreshToken,
+        tokenExpiresAt: result.refreshedTokenExpiresAt ?? account.tokenExpiresAt,
+        updatedAt: new Date(),
+      }).where(eq(socialAccounts.id, account.id));
+    } catch (tokenPersistErr) {
+      console.error(
+        `[Manual Publish] Provider responded for post ${post.id}, but refreshed tokens could not be persisted:`,
+        tokenPersistErr,
+      );
+    }
   }
+
   if (result.success) {
-    await db.update(generatedPosts).set({
-      status: "published",
-      publishedAt: new Date(),
-      publishedUrl: result.publishedUrl ?? null,
-      publishError: null,
-      publishNextAttemptAt: null,
-      imageIssue: null,
-      publishAttemptCount: (post.publishAttemptCount ?? 0) + 1,
-      updatedAt: new Date(),
-    }).where(eq(generatedPosts.id, post.id));
-    await db.insert(socialPublishAttempts).values({
-      postId: post.id,
-      socialAccountId: account.id,
-      tenantDomain: post.tenantDomain,
-      platform: post.platform,
-      status: "success",
-      publishedUrl: result.publishedUrl ?? null,
-      responsePayload: toJsonPayload(result.responsePayload),
-      attemptedBy,
-    });
-    await db.insert(marketingAuditLog).values({
-      tenantDomain: post.tenantDomain,
-      marketId: account.marketId ?? null,
-      userId: attemptedBy,
-      action: "social_publish",
-      entityType: "generated_post",
-      entityId: post.id,
-      status: "ok",
-      message: `Manually published to ${post.platform}`,
-      details: { url: result.publishedUrl, accountId: account.id },
-    });
-    return { success: true, publishedUrl: result.publishedUrl };
+    try {
+      const recorded = await markPublished(post, account, claim, result, attemptedBy);
+      if (!recorded) {
+        return {
+          success: false,
+          errorCode: "publish_outcome_unknown",
+          errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+        };
+      }
+      return { success: true, publishedUrl: result.publishedUrl };
+    } catch {
+      // Keep the claim in place until bounded expiry recovery terminalizes it.
+      return {
+        success: false,
+        errorCode: "publish_outcome_unknown",
+        errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+      };
+    }
   }
-  await markFailed(post.id, account.id, post.platform, post.tenantDomain, result, post.publishAttemptCount ?? 0);
-  return { success: false, errorMessage: result.errorMessage };
+
+  try {
+    const recorded = await markFailed(
+      post.id,
+      account.id,
+      post.platform,
+      post.tenantDomain,
+      result,
+      post.publishAttemptCount ?? 0,
+      claim,
+    );
+    return recorded
+      ? { success: false, errorMessage: result.errorMessage }
+      : {
+          success: false,
+          errorCode: "publish_outcome_unknown",
+          errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+        };
+  } catch {
+    return {
+      success: false,
+      errorCode: "publish_outcome_unknown",
+      errorMessage: PUBLISH_CLAIM_EXPIRED_MESSAGE,
+    };
+  }
 }
 
 /**

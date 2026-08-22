@@ -3372,6 +3372,12 @@ export const generatedPosts = pgTable("generated_posts", {
   publishError: text("publish_error"),
   publishAttemptCount: integer("publish_attempt_count").notNull().default(0),
   publishNextAttemptAt: timestamp("publish_next_attempt_at"),
+  // Durable publish ownership. A provider call may begin only after an atomic
+  // claim is stored. Expired claims are recovered to publish_failed for manual
+  // review instead of being stolen and automatically reposted.
+  publishClaimToken: varchar("publish_claim_token"),
+  publishClaimOwner: text("publish_claim_owner"),
+  publishClaimExpiresAt: timestamp("publish_claim_expires_at"),
   // Task #777: image pre-flight / publish-time image failures.
   // imageIssue holds a typed image error code (image_not_found /
   // image_forbidden / image_fetch_failed) when the post's image is known to

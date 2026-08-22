@@ -37,9 +37,20 @@ vi.mock("../../db", () => ({
     },
     update: () => ({
       set: (payload: any) => ({
-        where: async () => {
-          state.updates.push(payload);
-          return [];
+        where: () => {
+          const isEmptyRecoverySweep =
+            payload.publishClaimToken === null &&
+            typeof payload.publishError === "string" &&
+            payload.publishError.includes("previous publish request expired");
+          if (!isEmptyRecoverySweep) {
+            state.updates.push(payload);
+          }
+          const result = isEmptyRecoverySweep ? [] : [{ id: "updated" }];
+          const query: any = {
+            returning: async () => result,
+            then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
+          };
+          return query;
         },
       }),
     }),
