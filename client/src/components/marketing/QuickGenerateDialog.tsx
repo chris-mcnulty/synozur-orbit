@@ -112,6 +112,7 @@ export function QuickGenerateDialog({ open, onOpenChange, campaignId, campaignNa
   const [angles, setAngles] = useState<QuickAngle[]>([]);
   const [selectedAngle, setSelectedAngle] = useState<number | null>(null);
   const [response, setResponse] = useState<GenerateResponse | null>(null);
+  const [retryCampaignId, setRetryCampaignId] = useState<string | null>(null);
 
   const { data: campaignList = [] } = useQuery<{ id: string; name: string; status: string }[]>({
     queryKey: ["/api/campaigns", getTabMarketId(), "quick-generate"],
@@ -149,13 +150,14 @@ export function QuickGenerateDialog({ open, onOpenChange, campaignId, campaignNa
         prompt: prompt.trim(),
         deliverables,
         platforms: socialSelected ? platforms : [],
-        campaignId: campaignChoice === "new" ? undefined : campaignChoice,
+        campaignId: retryCampaignId ?? (campaignChoice === "new" ? undefined : campaignChoice),
         angle: angle ?? undefined,
       });
       return (await res.json()) as GenerateResponse;
     },
     onSuccess: (data) => {
       setResponse(data);
+      setRetryCampaignId(data.campaign.id);
       setStep("results");
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/planning-hub"] });
@@ -183,7 +185,20 @@ export function QuickGenerateDialog({ open, onOpenChange, campaignId, campaignNa
       setAngles([]);
       setSelectedAngle(null);
       setResponse(null);
+      setRetryCampaignId(null);
     }
+  };
+
+  const tryAnotherAngle = () => {
+    setSelectedAngle(null);
+    setResponse(null);
+
+    if (angles.length > 0) {
+      setStep("angles");
+      return;
+    }
+
+    anglesMutation.mutate();
   };
 
   const toggleDeliverable = (d: Deliverable) => {
@@ -460,7 +475,19 @@ export function QuickGenerateDialog({ open, onOpenChange, campaignId, campaignNa
               ))}
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                disabled={busy}
+                onClick={tryAnotherAngle}
+                data-testid="button-try-another-angle"
+              >
+                {anglesMutation.isPending
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Lightbulb className="w-4 h-4" />}
+                Try another angle
+              </Button>
               <Button variant="outline" asChild className="gap-1.5">
                 <Link href={`/app/marketing/campaigns/${response.campaign.id}#hub`} data-testid="link-open-campaign-hub">
                   <ExternalLink className="w-4 h-4" /> Open campaign hub
