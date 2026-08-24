@@ -73,6 +73,7 @@ import AIRewritePanel from "@/components/marketing/AIRewritePanel";
 import SocialPostEditor from "@/components/marketing/SocialPostEditor";
 import { PostStageBadge } from "@/components/marketing/post-stage";
 import { CampaignNextActions } from "@/components/marketing/NextActionsByBatch";
+import { QuickGenerateDialog } from "@/components/marketing/QuickGenerateDialog";
 import { CAMPAIGN_TABS, type CampaignTab, tabFromHash, filterFromSearch } from "@/lib/campaign-url-helpers";
 import { useDeepLinkFocus } from "@/lib/use-deep-link-focus";
 import { Textarea } from "@/components/ui/textarea";
@@ -401,6 +402,7 @@ export default function CampaignDetailPage() {
   const [editCampaignThematicUrl, setEditCampaignThematicUrl] = useState("");
   const [editCampaignThematicBrief, setEditCampaignThematicBrief] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [quickGenerateOpen, setQuickGenerateOpen] = useState(false);
   const [linkChildOpen, setLinkChildOpen] = useState(false);
   const [copyBriefOpen, setCopyBriefOpen] = useState(false);
   const [copyBriefId, setCopyBriefId] = useState<string | null>(null);
@@ -2406,6 +2408,16 @@ export default function CampaignDetailPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setQuickGenerateOpen(true)}
+              data-testid="button-quick-generate"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Quick Generate
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -6367,6 +6379,13 @@ export default function CampaignDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <QuickGenerateDialog
+        open={quickGenerateOpen}
+        onOpenChange={setQuickGenerateOpen}
+        campaignId={campaign?.id}
+        campaignName={campaign?.name}
+      />
 
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-[400px]">

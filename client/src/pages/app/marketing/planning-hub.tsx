@@ -22,6 +22,7 @@ import {
   RollupStat, HubItemsList, AttachDialog, CreateActionDialog,
   STAGE_META, STAGE_ORDER,
 } from "./hub-components";
+import { QuickGenerateDialog } from "@/components/marketing/QuickGenerateDialog";
 
 interface ScopesResponse {
   campaigns: { id: string; name: string; status: string }[];
@@ -95,6 +96,7 @@ export default function PlanningHubPage() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [scopeCreateOpen, setScopeCreateOpen] = useState(false);
+  const [quickGenerateOpen, setQuickGenerateOpen] = useState(false);
 
   const scopeList = scopes?.themes ?? [];
 
@@ -112,6 +114,9 @@ export default function PlanningHubPage() {
                 One place to see and plan every piece of marketing for a solution-area theme.
               </p>
             </div>
+            <Button className="gap-1.5" onClick={() => setQuickGenerateOpen(true)} data-testid="button-quick-generate">
+              <Sparkles className="w-4 h-4" /> Quick Generate
+            </Button>
           </div>
 
           {/* Theme picker */}
@@ -225,6 +230,8 @@ export default function PlanningHubPage() {
           setScopeParam(newId);
         }}
       />
+
+      <QuickGenerateDialog open={quickGenerateOpen} onOpenChange={setQuickGenerateOpen} />
     </AppLayout>
   );
 }

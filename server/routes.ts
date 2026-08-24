@@ -45,6 +45,7 @@ import { registerTenantFontRoutes } from "./routes/tenant-fonts";
 import { registerMarketingContextRoutes } from "./routes/marketing-context";
 import { registerEditorialCalendarRoutes } from "./routes/editorial-calendar";
 import { registerBriefInterviewRoutes } from "./routes/brief-interview";
+import { registerQuickGenerateRoutes } from "./routes/quick-generate";
 import { registerMarketingCalendarRoutes } from "./routes/marketing-calendar";
 import { registerContentProductionRoutes } from "./routes/content-production";
 import { registerCampaignIdeationRoutes } from "./routes/campaign-ideation";
@@ -142,6 +143,7 @@ export async function registerRoutes(
   registerMarketingContextRoutes(app);
   registerEditorialCalendarRoutes(app);
   registerBriefInterviewRoutes(app);
+  registerQuickGenerateRoutes(app);
   registerMarketingCalendarRoutes(app);
   registerContentProductionRoutes(app);
   registerCampaignIdeationRoutes(app);

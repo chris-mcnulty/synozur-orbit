@@ -128,7 +128,7 @@ export interface DraftFromBriefResult extends ParsedDraft {
 
 export async function draftFromBrief(
   brief: ContentBrief,
-  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null; soundLikeMeInstructions?: string | null; sourceContext?: string | null } = {},
+  opts: { isDefaultMarket?: boolean; instructions?: string; guest?: string | null; soundLikeMeInstructions?: string | null; sourceContext?: string | null; promptGrounded?: boolean } = {},
 ): Promise<DraftFromBriefResult> {
   const format = coerceFormat(brief.format);
 
@@ -138,6 +138,13 @@ export async function draftFromBrief(
   // produce irrelevant output. Strip those sections but keep messaging
   // framework, GTM plan, personas, and brand identity — those are still
   // appropriate voice/positioning grounding.
+  //
+  // promptGrounded goes further (Quick Generate): the sourceContext is the
+  // ONLY factual source, so of the strategic context only brand identity is
+  // kept (deliberate product decision — it grounds character and style).
+  // Messaging/positioning, GTM plans, recommendations, and personas carry
+  // tenant facts and claims that must not leak into the output. Voice
+  // enforcement still comes from the system prompt.
   const hasSourceContext = !!opts.sourceContext?.trim();
 
   const strategicCtx = await loadStrategicContext(
@@ -145,12 +152,20 @@ export async function draftFromBrief(
     brief.marketId || undefined,
     opts.isDefaultMarket,
   );
-  // For source-driven drafts, zero out competitive intel and briefing action
-  // items before formatting so they never reach the prompt.
   const strategicBlock = formatStrategicContextForPrompt(
-    hasSourceContext
-      ? { ...strategicCtx, competitiveIntelligence: "", briefingActionItems: "" }
-      : strategicCtx,
+    opts.promptGrounded
+      ? {
+          messagingFramework: "",
+          competitiveIntelligence: "",
+          gtmPlanSummary: "",
+          briefingActionItems: "",
+          recommendations: "",
+          personas: "",
+          brandIdentity: strategicCtx.brandIdentity,
+        }
+      : hasSourceContext
+        ? { ...strategicCtx, competitiveIntelligence: "", briefingActionItems: "" }
+        : strategicCtx,
   );
 
   let personaBlock = "";
