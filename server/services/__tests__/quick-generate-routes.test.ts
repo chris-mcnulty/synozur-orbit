@@ -25,7 +25,7 @@ const { dbQ, capturedInserts, makeMockDb } = vi.hoisted(() => {
       catch: (reject: any) => Promise.resolve(val).catch(reject),
       finally: (cb: any) => Promise.resolve(val).finally(cb),
       returning: () => Promise.resolve(val),
-      orderBy: () => Promise.resolve(val),
+       orderBy: () => ({ limit: () => Promise.resolve(val) }),
       limit: () => Promise.resolve(val),
     };
   }
@@ -39,7 +39,7 @@ const { dbQ, capturedInserts, makeMockDb } = vi.hoisted(() => {
         capturedInserts.push(v);
         return terminal();
       },
-      orderBy: () => Promise.resolve(dbQ.shift() ?? []),
+       orderBy: () => mkChain(),
       returning: () => Promise.resolve(dbQ.shift() ?? []),
       limit: () => mkChain(),
       leftJoin: () => mkChain(),
@@ -155,6 +155,9 @@ const NEWSLETTER_RESULT = {
   model: "test-model",
 };
 
+const TENANT_BRAND = { primaryColor: "#123456", secondaryColor: "#654321" };
+const TENANT_BODY_FONT = { fontFamily: "MetroNova" };
+
 function buildApp() {
   const app = express();
   app.use(express.json());
@@ -253,6 +256,8 @@ describe("quick-generate routes", () => {
       pushDb({ id: "brief-1" }); // brief insert returning
       pushDb({ id: "asset-1" }); // asset insert returning
       pushDb(); // update brief contentAssetId
+       pushDb(TENANT_BRAND); // tenant colors for deterministic newsletter presentation
+       pushDb(TENANT_BODY_FONT); // tenant body font
       pushDb({ id: "email-1", subject: NEWSLETTER_RESULT.subject }); // email insert returning
 
       const res = await request(app).post("/api/quick-generate").send({
@@ -289,10 +294,16 @@ describe("quick-generate routes", () => {
       const emailRow = inserts.find((v) => v.subject);
       expect(emailRow).toMatchObject({
         campaignId: "camp-1",
-        platform: "outlook",
+        platform: "hubspot-marketing",
         textBody: "Newsletter body",
-        htmlBody: "",
+        fontFamily: "MetroNova",
       });
+      expect(emailRow.htmlBody).toContain('width="560"');
+      expect(emailRow.htmlBody).toContain("#123456");
+      expect(emailRow.htmlBody).toContain("#654321");
+      expect(emailRow.htmlBody).toContain("font-size:16px");
+      expect(emailRow.htmlBody).toContain("font-family:&quot;MetroNova&quot;");
+      expect(emailRow.htmlBody).not.toMatch(/About|footer/i);
 
       // Manual-action guards applied for social + newsletter.
       const guardKeys = vi.mocked(guardManualAction).mock.calls.map((c) => c[2]);
@@ -334,6 +345,8 @@ describe("quick-generate routes", () => {
 
       pushDb(CAMPAIGN);
       pushDb({ id: "post-1", platform: "linkedin" });
+       pushDb(TENANT_BRAND); // tenant colors
+       pushDb(TENANT_BODY_FONT); // tenant body font
       pushDb({ id: "email-1", subject: "S" });
 
       const angle = {
@@ -433,6 +446,8 @@ describe("quick-generate routes", () => {
       pushDb({ id: "brief-1" }); // brief insert
       pushDb({ id: "asset-1" }); // asset insert
       pushDb(); // brief update
+       pushDb(TENANT_BRAND); // tenant colors
+       pushDb(TENANT_BODY_FONT); // tenant body font
       pushDb({ id: "email-1", subject: "S" }); // email insert
 
       const res = await request(app).post("/api/quick-generate").send({

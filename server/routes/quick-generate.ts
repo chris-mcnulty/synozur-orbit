@@ -20,6 +20,8 @@ import {
   generatedPosts,
   generatedEmails,
   editorialCalendars,
+  tenantFonts,
+  tenants,
 } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "crypto";
@@ -42,6 +44,13 @@ import {
 } from "../services/quick-generate-core";
 import { coercePlatform, type RepurposePlatform } from "../services/repurpose-core";
 import { DEFAULT_FUNNEL_TARGETS } from "../services/editorial-calendar-core";
+import {
+  buildFontStack,
+  CURATED_EMAIL_FONTS,
+  enforceMinimumFontSize,
+  normalizeFontFamily,
+} from "../services/email-campaign-sender";
+import { renderQuickNewsletterHtml } from "../services/quick-newsletter-layout";
 
 const MIN_PROMPT_LENGTH = 12;
 const MAX_PROMPT_LENGTH = 5000;
@@ -363,6 +372,45 @@ export function registerQuickGenerateRoutes(app: Express) {
 
         if (generated.newsletter) {
           const nl = generated.newsletter;
+          // Presentation is deliberately assembled after generation, rather
+          // than passed to the AI: tenant colors and fonts are style only, and
+          // the newsletter's facts remain solely those in the user's prompt.
+          const [tenant] = await tx
+            .select({
+              primaryColor: tenants.primaryColor,
+              secondaryColor: tenants.secondaryColor,
+            })
+            .from(tenants)
+            .where(eq(tenants.domain, ctx.tenantDomain))
+            .limit(1);
+          const [bodyFont] = await tx
+            .select({ fontFamily: tenantFonts.fontFamily })
+            .from(tenantFonts)
+            .where(
+              and(
+                eq(tenantFonts.tenantDomain, ctx.tenantDomain),
+                eq(tenantFonts.fontUsage, "body"),
+              ),
+            )
+            .orderBy(tenantFonts.sortOrder)
+            .limit(1);
+          const configuredFont = bodyFont?.fontFamily ?? null;
+          const fontFamily = configuredFont
+            ? CURATED_EMAIL_FONTS.find(
+                (font) => font.label.toLowerCase() === configuredFont.toLowerCase(),
+              )?.value ?? configuredFont
+            : null;
+          const htmlBody = normalizeFontFamily(
+            enforceMinimumFontSize(
+              renderQuickNewsletterHtml({
+                subject: nl.subject,
+                body: nl.body,
+                primaryColor: tenant?.primaryColor,
+                secondaryColor: tenant?.secondaryColor,
+              }),
+            ),
+            buildFontStack(fontFamily),
+          );
           const [email] = await tx
             .insert(generatedEmails)
             .values({
@@ -370,13 +418,16 @@ export function registerQuickGenerateRoutes(app: Express) {
               tenantDomain: ctx.tenantDomain,
               marketId: ctx.marketId || null,
               campaignId: campaign!.id,
-              platform: "outlook",
+              // The editor keys its visual HTML mode and responsive export
+              // controls off this platform value.
+              platform: "hubspot-marketing",
               tone: "professional",
               subject: nl.subject,
               previewText: null,
-              htmlBody: "",
+              htmlBody,
               textBody: nl.body,
               subjectLineSuggestions: nl.subjectSuggestions?.length ? nl.subjectSuggestions : null,
+              fontFamily,
               status: "draft",
               createdBy: ctx.userId,
             })
