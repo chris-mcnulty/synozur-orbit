@@ -61,12 +61,14 @@ describe("social connection recovery guards", () => {
     expect(aligned.accountName).toBe("Page B");
   });
 
-  it("rejects a LinkedIn reconnect that no longer grants the selected page", () => {
-    expect(() => alignOAuthResultToExistingIdentity({
+  it("preserves a known LinkedIn page when a fresh ACL listing omits it", () => {
+    const aligned = alignOAuthResultToExistingIdentity({
       platform: "linkedin",
       accountId: "urn:li:organization:page-b",
+      accountName: "Page B",
       authorUrn: "urn:li:organization:page-b",
       authorMode: "organization",
+      availableAuthors: [],
       connectedAt: new Date("2026-07-01T00:00:00Z"),
     } as any, {
       accessToken: "fresh",
@@ -81,7 +83,39 @@ describe("social connection recovery guards", () => {
       availableAuthors: [
         { mode: "organization", urn: "urn:li:organization:page-a", name: "Page A" },
       ],
-    })).toThrow(/no longer includes the page/i);
+    }, { verifiedSameLinkedInPrincipal: true });
+
+    expect(aligned.authorUrn).toBe("urn:li:organization:page-b");
+    expect(aligned.accountName).toBe("Page B");
+    expect(aligned.availableAuthors).toEqual([
+      { mode: "organization", urn: "urn:li:organization:page-a", name: "Page A" },
+      { mode: "organization", urn: "urn:li:organization:page-b", name: "Page B" },
+    ]);
+  });
+
+  it("rejects an omitted LinkedIn page when the old and fresh member identities were not verified", () => {
+    expect(() => alignOAuthResultToExistingIdentity({
+      platform: "linkedin",
+      accountId: "urn:li:person:member-a",
+      accountName: "Page B",
+      authorUrn: "urn:li:organization:page-b",
+      authorMode: "organization",
+      availableAuthors: [],
+      connectedAt: new Date("2026-07-01T00:00:00Z"),
+    } as any, {
+      accessToken: "fresh",
+      refreshToken: null,
+      expiresAt: null,
+      scope: "w_organization_social",
+      authorMode: "organization",
+      authorUrn: "urn:li:organization:page-a",
+      accountId: "urn:li:person:member-b",
+      accountName: "Page A",
+      profileUrl: null,
+      availableAuthors: [
+        { mode: "organization", urn: "urn:li:organization:page-a", name: "Page A" },
+      ],
+    })).toThrow(/could not verify that the same LinkedIn member/i);
   });
 
   it("rejects reconnecting an established X row as a different provider account", () => {

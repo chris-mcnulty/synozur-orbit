@@ -915,7 +915,32 @@ export function registerMarketingDeliveryRoutes(app: Express) {
         tenantDomain: ctx.tenantDomain,
         codeVerifier: ctx.codeVerifier,
       });
-      const oauthResult = alignOAuthResultToExistingIdentity(account, result);
+      let verifiedSameLinkedInPrincipal = false;
+      if (
+        account.platform === "linkedin" &&
+        account.authorUrn &&
+        result.authorUrn !== account.authorUrn &&
+        account.encryptedAccessToken &&
+        result.accountId?.startsWith("urn:li:person:")
+      ) {
+        try {
+          const linkedInPublisher = publisher instanceof LinkedInPublisher
+            ? publisher
+            : new LinkedInPublisher();
+          const previousAccess = await linkedInPublisher.fetchAdminOrganizationAccess(
+            decryptSecret(account.encryptedAccessToken),
+          );
+          verifiedSameLinkedInPrincipal = previousAccess.memberUrn === result.accountId;
+        } catch (identityErr: any) {
+          console.warn(
+            "[OAuth Callback] Could not verify previous LinkedIn member identity:",
+            identityErr?.message || identityErr,
+          );
+        }
+      }
+      const oauthResult = alignOAuthResultToExistingIdentity(account, result, {
+        verifiedSameLinkedInPrincipal,
+      });
       // Provider IDs/URNs are stable across reconnects. If delete/recreate or
       // earlier recovery attempts produced multiple Orbit rows for the same
       // provider identity, collapse all of them before persisting the fresh

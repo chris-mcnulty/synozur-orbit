@@ -223,6 +223,15 @@ describe("provider-remediation retry behavior", () => {
       shouldRetry: false,
     });
   });
+
+  it("pauses rejected LinkedIn page posts without consuming retry capacity", () => {
+    expect(getPublishFailureDisposition("page_admin_access_lost", 3)).toEqual({
+      requiresRemediation: true,
+      attemptCount: 3,
+      isPermanentImageError: false,
+      shouldRetry: false,
+    });
+  });
 });
 
 describe("preflightImageCheck", () => {

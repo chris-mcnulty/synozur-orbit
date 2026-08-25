@@ -170,11 +170,22 @@ function makeAccount(overrides: Partial<{
 }
 
 /** Build an organizationAcls 200 response body */
-function aclsBody(orgIds: number[]) {
+function aclsBody(orgIds: number[], memberUrn = "urn:li:person:member-1") {
   return {
     elements: orgIds.map((id) => ({
+      roleAssignee: memberUrn,
       "organization~": { id, localizedName: `Org ${id}`, vanityName: null },
     })),
+  };
+}
+
+function fetchResponse(body: object, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
   };
 }
 
@@ -246,6 +257,76 @@ describe("LinkedInPublisher.checkPageAdminAccess", () => {
       authorUrn: "urn:li:organization:123456",
     });
     expect(result.ok).toBe(true);
+  });
+
+  it("follows organizationAcls pagination and finds a configured page after page 1", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch as any);
+    fetchMock
+      .mockResolvedValueOnce(fetchResponse({
+        elements: [{
+          roleAssignee: "urn:li:person:member-1",
+          "organization~": { id: 999, localizedName: "Other Org", vanityName: null },
+        }],
+        paging: {
+          start: 0,
+          count: 1,
+          links: [{ rel: "next", href: "/v2/organizationAcls?start=1&count=1" }],
+        },
+      }))
+      .mockResolvedValueOnce(fetchResponse({
+        elements: [{
+          roleAssignee: "urn:li:person:member-1",
+          "organization~": { id: 123456, localizedName: "Configured Org", vanityName: null },
+        }],
+        paging: { start: 1, count: 100, links: [] },
+      }));
+
+    const result = await publisher.checkPageAdminAccess({
+      encryptedAccessToken: "enc:valid-token",
+      tokenExpiresAt: FUTURE,
+      authorUrn: "urn:li:organization:123456",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("start=1");
+    const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(firstUrl.searchParams.get("projection")).toContain("roleAssignee");
+  });
+
+  it("deduplicates organizations and returns the OAuth member identity", async () => {
+    mockState.fetchResponse = {
+      status: 200,
+      body: aclsBody([123456, 123456], "urn:li:person:member-42"),
+    };
+
+    const access = await publisher.fetchAdminOrganizationAccess("valid-token");
+
+    expect(access.complete).toBe(true);
+    expect(access.memberUrn).toBe("urn:li:person:member-42");
+    expect(access.organizations).toHaveLength(1);
+    expect(access.organizations[0]?.urn).toBe("urn:li:organization:123456");
+  });
+
+  it("marks a repeating pagination link as incomplete instead of trusting an omission", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch as any);
+    fetchMock.mockResolvedValueOnce(fetchResponse({
+      elements: [{
+        roleAssignee: "urn:li:person:member-1",
+        "organization~": { id: 999, localizedName: "Other Org", vanityName: null },
+      }],
+      paging: {
+        start: 0,
+        count: 1,
+        links: [{ rel: "next", href: "/v2/organizationAcls?start=0&count=1" }],
+      },
+    }));
+
+    const access = await publisher.fetchAdminOrganizationAccess("valid-token");
+
+    expect(access.complete).toBe(false);
+    expect(access.organizations).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns ok:false when organizationAcls 200 does not include the configured authorUrn (access lost)", async () => {
@@ -418,6 +499,7 @@ describe("tickLinkedInAdminHealthCheck", () => {
     expect(mockState.updates.find((u) => u.status === "needs_reconnect")).toBeUndefined();
     expect(mockState.updates).toContainEqual(expect.objectContaining({
       availableAuthors: [
+        { mode: "organization", urn: "urn:li:organization:123456", name: "Configured company page" },
         { mode: "organization", urn: "urn:li:organization:999", name: "Org 999", vanityName: null },
       ],
     }));

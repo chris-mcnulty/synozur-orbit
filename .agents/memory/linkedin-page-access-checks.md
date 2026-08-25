@@ -3,8 +3,8 @@ name: LinkedIn page-access checks
 description: Prevent LinkedIn ACL health checks from incorrectly hiding a newly reconnected company-page account.
 ---
 
-A successful LinkedIn OAuth callback that includes the selected organization page is stronger evidence than one later conflicting organization-ACL response. Preserve the usable connection after the first discrepancy, refresh the cached authors from that response, and require a later independent mismatch—or a real publishing failure—before moving the account to `needs_reconnect`.
+A successful LinkedIn OAuth callback that includes the selected organization page is stronger evidence than a conflicting organization-ACL response. The ACL finder is paginated and can repeatedly omit valid pages, so absence is advisory—not authoritative. Enumerate all pages, deduplicate organizations, preserve known authors, and move an account to `needs_reconnect` only after an actual organization-post rejection (or a definitive token failure).
 
-**Why:** A one-off ACL response marked a freshly authorized company-page account as disconnected, hiding it from post editors and stranding pending work despite a usable token and recent authorization.
+**Why:** Repeated successful ACL responses omitted a page whose owner remained a full admin, falsely disconnecting the account and then blocking reconnect. The same API had previously returned that page for the same credential.
 
-**How to apply:** Treat the saved selected author in `availableAuthors` as the first-confirmation marker. The account settings view must include `needs_reconnect` rows so the user can reach the same record's reconnect action; keep retired inactive duplicates hidden by default.
+**How to apply:** On reconnect, an omitted selected page may be preserved only when the old and fresh OAuth grants expose the same immutable LinkedIn `roleAssignee` person URN; otherwise fail closed. Explicitly project `roleAssignee`. The settings view must include `needs_reconnect` rows while hiding retired inactive duplicates.

@@ -76,10 +76,14 @@ const PERMANENT_ERROR_CODES = new Set([
   // X returned a provider-level authorization/configuration rejection. Retrying
   // the same grant cannot work; the app permission must be fixed and regranted.
   "write_permission_missing",
+  // LinkedIn rejected an actual organization post for the selected page. This
+  // is authoritative; unlike an ACL listing mismatch, retrying cannot help.
+  "page_admin_access_lost",
 ]);
 
 const NON_CONSUMING_ERROR_CODES = new Set([
   "write_permission_missing",
+  "page_admin_access_lost",
 ]);
 
 // Image-related error codes (Task #777). Confirmed-permanent image errors
@@ -104,6 +108,7 @@ const AUTH_ERROR_CODES = new Set([
   // Bluesky: createSession rejected the stored app password (invalid or revoked).
   "session_failed",
   "write_permission_missing",
+  "page_admin_access_lost",
 ]);
 
 export function nextPublishFailureAttemptCount(
@@ -1263,24 +1268,29 @@ export async function tickLinkedInAdminHealthCheck(): Promise<{ checked: number;
       if (!result.ok) {
         const reason = result.reason ?? "LinkedIn page admin access lost — reconnect the account.";
 
-        // A successful OAuth callback has just proven that the saved page was
-        // selectable. LinkedIn's ACL endpoint can subsequently return a
-        // conflicting but otherwise successful snapshot. Do not strand every
-        // pending post because of one such response: record its observed list
-        // and require a second independent check before disabling the account.
+        // A successful OAuth callback has already established the selected
+        // page. LinkedIn's ACL finder can return incomplete successful
+        // snapshots, including repeatedly, so absence from that list is not an
+        // authoritative revocation signal. Preserve the selected author and
+        // keep the connection active. An actual rejected organization POST is
+        // typed as page_admin_access_lost and will disable the account.
         const previouslyAuthorizedForSelectedPage = Boolean(
           result.observedAuthors &&
           (account.availableAuthors ?? []).some(author => author.urn === account.authorUrn),
         );
         if (previouslyAuthorizedForSelectedPage) {
-          const preservedPersonalAuthors = (account.availableAuthors ?? [])
-            .filter(author => author.mode === "person");
+          const mergedAuthors = [
+            ...(account.availableAuthors ?? []),
+            ...result.observedAuthors!,
+          ].filter((author, index, authors) =>
+            authors.findIndex(candidate => candidate.urn === author.urn) === index
+          );
           console.warn(
             `[LinkedIn Admin Check] Account ${account.id} returned a conflicting page list; ` +
-            "keeping the connection active until the next independent check.",
+            "keeping the connection active until an actual publish is rejected.",
           );
           await db.update(socialAccounts).set({
-            availableAuthors: [...preservedPersonalAuthors, ...result.observedAuthors!],
+            availableAuthors: mergedAuthors,
             updatedAt: new Date(),
           }).where(eq(socialAccounts.id, account.id));
           continue;

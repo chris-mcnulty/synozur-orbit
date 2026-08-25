@@ -103,26 +103,47 @@ export function socialIdentityMatches(
 export function alignOAuthResultToExistingIdentity(
   account: Pick<
     SocialAccount,
-    "platform" | "accountId" | "authorUrn" | "authorMode" | "connectedAt"
+    "platform" | "accountId" | "accountName" | "authorUrn" | "authorMode" | "availableAuthors" | "connectedAt"
   >,
   result: OAuthCallbackResult,
+  options: { verifiedSameLinkedInPrincipal?: boolean } = {},
 ): OAuthCallbackResult {
   let aligned = result;
 
   if (account.platform === "linkedin" && account.authorUrn) {
     if (result.authorUrn !== account.authorUrn) {
       const priorAuthor = result.availableAuthors?.find(author => author.urn === account.authorUrn);
-      if (!priorAuthor) {
+      if (!priorAuthor && !options.verifiedSameLinkedInPrincipal) {
         throw new Error(
-          "This LinkedIn authorization no longer includes the page previously selected for this account. " +
-          "Restore page-admin access or connect it as a separate social account.",
+          "This LinkedIn authorization no longer includes the page previously selected for this account, " +
+          "and Orbit could not verify that the same LinkedIn member reauthorized it. " +
+          "Try reconnecting again or connect it as a separate social account.",
         );
       }
+      // LinkedIn's organizationAcls finder is not a reliable revocation signal:
+      // it is paginated and has returned incomplete but successful snapshots in
+      // production. A fresh OAuth grant with the required scopes should refresh
+      // the credential without silently changing the page the user selected,
+      // but only after the old and fresh roleAssignee member URNs match.
+      // If the page is genuinely unavailable, the provider's POST request will
+      // return page_admin_access_lost and the worker will require reconnection.
+      const selectedAuthor = priorAuthor ?? {
+        mode: account.authorMode === "person" ? "person" as const : "organization" as const,
+        urn: account.authorUrn,
+        name: account.accountName || "LinkedIn Page",
+      };
+      const availableAuthors = [
+        ...(result.availableAuthors ?? []),
+        selectedAuthor,
+      ].filter((author, index, authors) =>
+        authors.findIndex(candidate => candidate.urn === author.urn) === index
+      );
       aligned = {
         ...result,
-        authorMode: priorAuthor.mode,
-        authorUrn: priorAuthor.urn,
-        accountName: priorAuthor.name,
+        authorMode: selectedAuthor.mode,
+        authorUrn: selectedAuthor.urn,
+        accountName: selectedAuthor.name,
+        availableAuthors,
       };
     }
   }

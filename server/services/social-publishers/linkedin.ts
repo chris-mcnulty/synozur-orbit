@@ -216,8 +216,11 @@ export class LinkedInPublisher implements SocialPublisher {
       : null;
 
     let orgs: Array<{ mode: "organization"; urn: string; name: string; vanityName?: string | null }> = [];
+    let memberUrn: string | null = null;
     try {
-      orgs = await this.fetchAdminOrganizations(tok.access_token);
+      const access = await this.fetchAdminOrganizationAccess(tok.access_token);
+      orgs = access.organizations;
+      memberUrn = access.memberUrn;
     } catch (err: unknown) {
       console.warn("[LinkedIn] organizationAcls fetch failed:", (err as Error)?.message ?? err);
     }
@@ -244,7 +247,10 @@ export class LinkedInPublisher implements SocialPublisher {
       authorUrn,
       accountName,
       profileUrl: null,
-      accountId: primaryOrg?.urn ?? null,
+      // roleAssignee is the immutable LinkedIn member identity behind this
+      // OAuth grant. Organization URNs identify publish destinations, not the
+      // human credential owner, and multiple admins can share the same page.
+      accountId: memberUrn ?? primaryOrg?.urn ?? null,
       availableAuthors,
     };
   }
@@ -308,7 +314,13 @@ export class LinkedInPublisher implements SocialPublisher {
       vanityName?: string | null;
     }>;
     try {
-      orgs = await this.fetchAdminOrganizations(accessToken);
+      const access = await this.fetchAdminOrganizationAccess(accessToken);
+      if (!access.complete) {
+        // A bounded/capped ACL scan is not authoritative evidence that a page
+        // is absent. Keep the connection active and try again later.
+        return { ok: true };
+      }
+      orgs = access.organizations;
     } catch (err) {
       // Network / 5xx — treat as transient; don't flip the account to needs_reconnect.
       return { ok: true };
@@ -335,42 +347,147 @@ export class LinkedInPublisher implements SocialPublisher {
       vanityName?: string | null;
     }>
   > {
-    const url = `${API_HOST}/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organization~(id,localizedName,vanityName)))`;
-    const resp = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "X-Restli-Protocol-Version": "2.0.0",
-      },
-    });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      // Non-200 responses (401, 403, 429, 5xx, etc.) are thrown so callers can
-      // treat them as transient failures rather than as "the account has no orgs".
-      // An empty org list is only meaningful when we receive a genuine 200 response.
-      throw new Error(
-        `[LinkedIn] organizationAcls HTTP ${resp.status} — treating as transient. Body: ${body.slice(0, 300)}`,
-      );
-    }
-    const json = (await resp.json().catch(() => null)) as any;
-    const elements: any[] = Array.isArray(json?.elements) ? json.elements : [];
-    const out: Array<{
+    return (await this.fetchAdminOrganizationAccess(accessToken)).organizations;
+  }
+
+  /**
+   * Fetch every organization ACL plus the immutable member URN that owns the
+   * OAuth grant. The member identity lets reconnect preserve a previously
+   * selected page only when both the old and fresh grants belong to the same
+   * LinkedIn principal.
+   */
+  async fetchAdminOrganizationAccess(accessToken: string): Promise<{
+    organizations: Array<{
       mode: "organization";
       urn: string;
       name: string;
       vanityName?: string | null;
-    }> = [];
-    for (const el of elements) {
-      const org = el?.["organization~"];
-      const id = org?.id;
-      if (!id) continue;
-      out.push({
-        mode: "organization",
-        urn: `urn:li:organization:${id}`,
-        name: org.localizedName || `Organization ${id}`,
-        vanityName: org.vanityName ?? null,
+    }>;
+    memberUrn: string | null;
+    complete: boolean;
+  }> {
+    // LinkedIn defaults collection responses to 10 records. Administrators of
+    // many customer/company pages can therefore have the selected page on a
+    // later ACL page. Treating only page 1 as the full list caused valid pages
+    // to disappear on reconnect and made the health sweep report false access
+    // loss. Follow LinkedIn's paging links and deduplicate ACL rows (the API can
+    // return the same organization more than once).
+    const pageSize = 100;
+    const maxPages = 25;
+    const byUrn = new Map<string, {
+      mode: "organization";
+      urn: string;
+      name: string;
+      vanityName?: string | null;
+    }>();
+    let start = 0;
+    let complete = false;
+    const memberUrns = new Set<string>();
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const params = new URLSearchParams({
+        q: "roleAssignee",
+        role: "ADMINISTRATOR",
+        state: "APPROVED",
+        projection: "(elements*(roleAssignee,organization~(id,localizedName,vanityName)))",
+        start: String(start),
+        count: String(pageSize),
       });
+      const resp = await fetch(`${API_HOST}/v2/organizationAcls?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Restli-Protocol-Version": "2.0.0",
+        },
+      });
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        // Non-200 responses (401, 403, 429, 5xx, etc.) are thrown so callers can
+        // treat them as transient failures rather than as "the account has no orgs".
+        // An empty org list is only meaningful when every requested page returned 200.
+        throw new Error(
+          `[LinkedIn] organizationAcls HTTP ${resp.status} — treating as transient. Body: ${body.slice(0, 300)}`,
+        );
+      }
+
+      const json = (await resp.json().catch(() => null)) as any;
+      const elements: any[] = Array.isArray(json?.elements) ? json.elements : [];
+      for (const el of elements) {
+        if (
+          typeof el?.roleAssignee === "string" &&
+          el.roleAssignee.startsWith("urn:li:person:")
+        ) {
+          memberUrns.add(el.roleAssignee);
+        }
+        const org = el?.["organization~"];
+        const id = org?.id;
+        if (!id) continue;
+        const urn = `urn:li:organization:${id}`;
+        if (!byUrn.has(urn)) {
+          byUrn.set(urn, {
+            mode: "organization",
+            urn,
+            name: org.localizedName || `Organization ${id}`,
+            vanityName: org.vanityName ?? null,
+          });
+        }
+      }
+
+      const paging = json?.paging;
+      const nextHref = Array.isArray(paging?.links)
+        ? paging.links.find((link: any) => link?.rel === "next" && typeof link?.href === "string")?.href
+        : null;
+      let nextStart: number | null = null;
+      if (nextHref) {
+        try {
+          const nextUrl = new URL(nextHref, API_HOST);
+          const parsed = Number(nextUrl.searchParams.get("start"));
+          if (Number.isFinite(parsed)) nextStart = parsed;
+        } catch {
+          // Fall back to the numeric paging fields below.
+        }
+      }
+      const pagingStart = Number(paging?.start);
+      const pagingCount = Number(paging?.count);
+      const total = Number(paging?.total);
+      if (
+        nextStart == null &&
+        Number.isFinite(total) &&
+        Number.isFinite(pagingStart) &&
+        Number.isFinite(pagingCount) &&
+        pagingStart + pagingCount < total
+      ) {
+        nextStart = pagingStart + pagingCount;
+      }
+      const effectivePageCount =
+        Number.isFinite(pagingCount) && pagingCount > 0 ? pagingCount : pageSize;
+      if (nextStart == null && elements.length >= effectivePageCount) {
+        nextStart = start + effectivePageCount;
+      }
+      if (nextStart == null || elements.length === 0) {
+        complete = true;
+        break;
+      }
+      if (nextStart <= start) {
+        // A malformed/repeating next link is not a complete listing.
+        break;
+      }
+      start = nextStart;
     }
-    return out;
+
+    if (!complete) {
+      console.warn(
+        `[LinkedIn] organizationAcls listing stopped before completion after at most ${maxPages} page(s); ` +
+        "treating page absence as inconclusive.",
+      );
+    }
+    if (memberUrns.size > 1) {
+      console.warn("[LinkedIn] organizationAcls returned multiple roleAssignee identities; principal is inconclusive.");
+    }
+    return {
+      organizations: [...byUrn.values()],
+      memberUrn: memberUrns.size === 1 ? [...memberUrns][0] : null,
+      complete,
+    };
   }
 
   async publish(ctx: PublishContext): Promise<PublishResult> {
@@ -657,7 +774,12 @@ export class LinkedInPublisher implements SocialPublisher {
         : rawMessage || `LinkedIn post failed: ${resp.status}`;
       return {
         success: false,
-        errorCode: serviceCode ?? `http_${resp.status}`,
+        // An actual rejected organization post is stronger evidence than the
+        // occasionally incomplete organizationAcls listing. Give the worker a
+        // stable typed code so it can stop retries and require remediation.
+        errorCode: notPermitted && String(postBody.author).startsWith("urn:li:organization:")
+          ? "page_admin_access_lost"
+          : (serviceCode ?? `http_${resp.status}`),
         errorMessage,
         responsePayload: parsed ?? errText,
       };

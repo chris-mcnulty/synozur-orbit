@@ -9,6 +9,7 @@ import { BlueskyPublisher, BlueskySessionError } from "../social-publishers/blue
 import { TwitterPublisher } from "../social-publishers/twitter";
 import { FacebookPublisher } from "../social-publishers/facebook";
 import { InstagramPublisher } from "../social-publishers/instagram";
+import { LinkedInPublisher } from "../social-publishers/linkedin";
 
 // ── encryption mock ──────────────────────────────────────────────────────────
 // Publishers call decryptSecret to read the stored token. We return a fixed
@@ -209,6 +210,46 @@ describe("TwitterPublisher.publish — revoked token (401)", () => {
     assert.equal(result.errorCode, "write_permission_missing");
     assert.match(result.errorMessage ?? "", /Read and write permission/i);
     assert.match(result.errorMessage ?? "", /reconnect/i);
+  });
+});
+
+// ── LinkedInPublisher.publish — actual page permission rejection ─────────────
+
+describe("LinkedInPublisher.publish — page permission rejection", () => {
+  const publisher = new LinkedInPublisher();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("403 from an organization post → page_admin_access_lost", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({
+        serviceErrorCode: 100,
+        message: "You are not permitted to perform this action.",
+      }),
+    });
+
+    const result = await publisher.publish({
+      account: makeAccount({
+        platform: "linkedin",
+        encryptedAccessToken: "enc:mock-token",
+        tokenExpiresAt: null,
+        authorUrn: "urn:li:organization:91099089",
+        authorMode: "organization",
+      }),
+      post: makePost({ platform: "linkedin" }),
+      attemptedBy: "user-1",
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(result.errorCode, "page_admin_access_lost");
+    assert.match(result.errorMessage ?? "", /reconnecting the LinkedIn account/i);
   });
 });
 
