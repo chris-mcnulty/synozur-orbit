@@ -179,6 +179,7 @@ import {
   type CompetitorEngagementSnapshot,
   type InsertCompetitorEngagementSnapshot,
 } from "@shared/schema";
+import { enforceGeneratedTaskReviewOnCreate } from "./services/marketing-task-review-policy";
 import { db } from "./db";
 import { eq, desc, and, gte, sql, count, countDistinct, isNull, isNotNull, or, inArray } from "drizzle-orm";
 import { timedQuery } from "./utils/query-timer";
@@ -3388,7 +3389,9 @@ export class DatabaseStorage implements IStorage {
     const plan = await this.getMarketingPlan(task.planId, ctx);
     if (!plan) return null;
     
-    const [created] = await db.insert(marketingTasks).values(task).returning();
+    const [created] = await db.insert(marketingTasks)
+      .values(enforceGeneratedTaskReviewOnCreate(task))
+      .returning();
     return created;
   }
 
@@ -3400,7 +3403,9 @@ export class DatabaseStorage implements IStorage {
     const plan = await this.getMarketingPlan(planId, ctx);
     if (!plan) return [];
     
-    const created = await db.insert(marketingTasks).values(tasks).returning();
+    const created = await db.insert(marketingTasks)
+      .values(tasks.map(enforceGeneratedTaskReviewOnCreate))
+      .returning();
     return created;
   }
 

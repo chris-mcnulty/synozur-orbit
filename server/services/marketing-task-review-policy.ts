@@ -14,8 +14,57 @@ export interface ReviewableTask {
   status: string;
 }
 
+export interface GeneratedTaskProvenance {
+  aiGenerated?: boolean | null;
+  sourceRecommendationId?: string | null;
+  sourceGenerationId?: string | null;
+  sourceGenerationLabel?: string | null;
+  sourceBriefId?: string | null;
+}
+
 export const REVIEW_STATES = new Set(["suggested", "dismissed"]);
 export const REVIEW_TRANSITIONS = new Set(["suggested", "accepted", "dismissed"]);
+
+/**
+ * AI provenance is authoritative even when a buggy caller forgets or falsely
+ * clears aiGenerated. Report, recommendation, generation-run, and brief
+ * derivatives must all pass through the suggestion review queue.
+ */
+export function hasGeneratedTaskProvenance(task: GeneratedTaskProvenance): boolean {
+  return Boolean(
+    task.aiGenerated ||
+    task.sourceRecommendationId ||
+    task.sourceGenerationId ||
+    task.sourceGenerationLabel ||
+    task.sourceBriefId
+  );
+}
+
+/**
+ * Defense-in-depth creation policy. Storage applies this to every insert so a
+ * route or background generator cannot accidentally create a Planner-eligible
+ * lifecycle task from AI/report output.
+ */
+export function enforceGeneratedTaskReviewOnCreate<
+  T extends GeneratedTaskProvenance & {
+    status?: string | null;
+    acceptedAt?: Date | null;
+    plannerTaskId?: string | null;
+    plannerEtag?: string | null;
+    plannerLastSyncedAt?: Date | null;
+  },
+>(task: T): T {
+  if (!hasGeneratedTaskProvenance(task)) return task;
+  return {
+    ...task,
+    aiGenerated: true,
+    status: "suggested",
+    acceptedAt: null,
+    plannerTaskId: null,
+    plannerEtag: null,
+    plannerLastSyncedAt: null,
+  };
+}
 
 export function isInReviewState(task: ReviewableTask): boolean {
   return task.aiGenerated && REVIEW_STATES.has(task.status);

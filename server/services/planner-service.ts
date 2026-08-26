@@ -37,6 +37,7 @@ import {
   type PlannerTask,
 } from "./planner-graph-client";
 import { enqueuePlannerSync, getJobStatusByLabel } from "./job-queue";
+import { hasGeneratedTaskProvenance } from "./marketing-task-review-policy";
 
 /** Stable label prefix for queued plan sync jobs — used by status polling. */
 export function plannerSyncJobLabel(planId: string): string {
@@ -90,9 +91,15 @@ const PRESERVED_STATUSES = new Set(["cancelled", "removed", "dismissed"]);
  * acceptance stamp (`acceptedAt`, recorded server-side on the accepted
  * transition) — later lifecycle statuses can never substitute for consent.
  */
-export function isPlannerSyncEligible(task: Pick<MarketingTask, "aiGenerated" | "status" | "acceptedAt">): boolean {
+export function isPlannerSyncEligible(
+  task: Pick<MarketingTask, "aiGenerated" | "status" | "acceptedAt"> &
+    Partial<Pick<
+      MarketingTask,
+      "sourceRecommendationId" | "sourceGenerationId" | "sourceGenerationLabel" | "sourceBriefId"
+    >>,
+): boolean {
   if (task.status === "dismissed") return false;
-  if (!task.aiGenerated) return true;
+  if (!hasGeneratedTaskProvenance(task)) return true;
   if (task.status === "suggested") return false;
   return task.acceptedAt != null;
 }

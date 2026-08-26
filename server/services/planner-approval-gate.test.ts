@@ -129,6 +129,28 @@ describe("isPlannerSyncEligible", () => {
       expect(isPlannerSyncEligible({ aiGenerated: true, status, acceptedAt: accepted })).toBe(true);
     }
   });
+
+  it("blocks report-derived tasks even when a caller incorrectly marks them as human", () => {
+    for (const provenance of [
+      { sourceRecommendationId: "recommendation-1" },
+      { sourceGenerationId: "report-run-1" },
+      { sourceGenerationLabel: "Market report generation" },
+      { sourceBriefId: "brief-1" },
+    ]) {
+      expect(isPlannerSyncEligible({
+        aiGenerated: false,
+        status: "planned",
+        acceptedAt: null,
+        ...provenance,
+      })).toBe(false);
+      expect(isPlannerSyncEligible({
+        aiGenerated: false,
+        status: "accepted",
+        acceptedAt: accepted,
+        ...provenance,
+      })).toBe(true);
+    }
+  });
 });
 
 describe("full sync — linked suggested AI task with Planner progress", () => {
@@ -182,6 +204,36 @@ describe("legacy linked AI task in a lifecycle state without acceptance proof", 
     await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
 
     expect(graphMocks.deleteTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("misclassified generated task with durable provenance", () => {
+  beforeEach(() => {
+    mockState.orbitTask.aiGenerated = false;
+    mockState.orbitTask.status = "planned";
+    mockState.orbitTask.acceptedAt = null;
+    mockState.orbitTask.sourceRecommendationId = "recommendation-1";
+  });
+
+  it("full sync retracts it instead of trusting the false human-task flag", async () => {
+    await syncMarketingPlanToPlanner("plan-1", { tenantDomain: "t", marketId: null } as any);
+
+    expect(graphMocks.deleteTask).toHaveBeenCalledWith("token", "pt-1", "etag-new");
+    expect(graphMocks.updateTask).not.toHaveBeenCalled();
+    expect(graphMocks.createTask).not.toHaveBeenCalled();
+    expect(dbUpdateCalls.some(c => c.set.plannerTaskId === null && c.set.plannerEtag === null)).toBe(true);
+  });
+
+  it("webhook reconcile retracts it instead of pulling Planner progress", async () => {
+    const res = await pullAndReconcileTask("pt-1");
+
+    expect(res.matched).toBe(true);
+    expect(graphMocks.deleteTask).toHaveBeenCalledWith("token", "pt-1", "etag-new");
+    expect(dbUpdateCalls.some(c => c.set.plannerTaskId === null && c.set.plannerEtag === null)).toBe(true);
+    for (const call of dbUpdateCalls) {
+      expect(call.set.status).not.toBe("in_progress");
+      expect(call.set.status).not.toBe("completed");
+    }
   });
 });
 

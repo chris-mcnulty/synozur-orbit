@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isAllowedStatusTransition, deleteActionForTask, isInReviewState } from "./marketing-task-review-policy";
+import {
+  deleteActionForTask,
+  enforceGeneratedTaskReviewOnCreate,
+  hasGeneratedTaskProvenance,
+  isAllowedStatusTransition,
+  isInReviewState,
+} from "./marketing-task-review-policy";
 
 describe("isInReviewState", () => {
   it("only AI tasks in suggested/dismissed are in review", () => {
@@ -41,5 +47,47 @@ describe("deleteActionForTask", () => {
   it("human or accepted tasks are hard-deleted as before", () => {
     expect(deleteActionForTask({ aiGenerated: false, status: "planned" })).toBe("delete");
     expect(deleteActionForTask({ aiGenerated: true, status: "accepted" })).toBe("delete");
+  });
+});
+
+describe("generated task creation policy", () => {
+  it("recognizes every server-supported source of generated task provenance", () => {
+    expect(hasGeneratedTaskProvenance({ aiGenerated: true })).toBe(true);
+    expect(hasGeneratedTaskProvenance({ sourceRecommendationId: "rec-1" })).toBe(true);
+    expect(hasGeneratedTaskProvenance({ sourceGenerationId: "run-1" })).toBe(true);
+    expect(hasGeneratedTaskProvenance({ sourceGenerationLabel: "Market report" })).toBe(true);
+    expect(hasGeneratedTaskProvenance({ sourceBriefId: "brief-1" })).toBe(true);
+    expect(hasGeneratedTaskProvenance({ aiGenerated: false })).toBe(false);
+  });
+
+  it("forces misclassified report output back into unapproved review state", () => {
+    const normalized = enforceGeneratedTaskReviewOnCreate({
+      aiGenerated: false,
+      sourceRecommendationId: "rec-1",
+      status: "planned",
+      acceptedAt: new Date("2026-08-25T00:00:00Z"),
+      plannerTaskId: "planner-1",
+      plannerEtag: "etag-1",
+      plannerLastSyncedAt: new Date("2026-08-25T00:00:00Z"),
+    });
+
+    expect(normalized).toMatchObject({
+      aiGenerated: true,
+      status: "suggested",
+      acceptedAt: null,
+      plannerTaskId: null,
+      plannerEtag: null,
+      plannerLastSyncedAt: null,
+    });
+  });
+
+  it("does not alter a genuinely manual task", () => {
+    const manual = {
+      aiGenerated: false,
+      status: "planned",
+      acceptedAt: null,
+      title: "Call the venue",
+    };
+    expect(enforceGeneratedTaskReviewOnCreate(manual)).toEqual(manual);
   });
 });
