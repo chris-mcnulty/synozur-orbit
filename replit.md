@@ -33,6 +33,7 @@ Orbit is an AI-driven platform that centralizes and enhances go-to-market strate
 - `shared/schema.ts`: Database schema definition (source-of-truth).
 - `migrations/`: Drizzle migration files.
 - `server/routes/`: API route definitions, organized by domain.
+- `public/backlog.md`: Canonical, publicly viewable roadmap and backlog. Roadmap items require a committed timeframe, normally a quarter; undated ideas remain backlog items. Do not add new planning items to the root `backlog.md` mirror.
 - `server/services/`: Backend services (e.g., AI, PDF generation, social publishers).
 - `client/src/lib/tabContext.ts`: Client-side tab context management.
 - `server/context.ts`: Server-side request context helpers.

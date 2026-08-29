@@ -1,5 +1,7 @@
 # Orbit MVP Feature Backlog
 
+> **Deprecated planning mirror:** The canonical, publicly viewable roadmap and backlog is `public/backlog.md`. Add and update planning items there. Roadmap items require a committed timeframe, normally a quarter; undated ideas remain backlog items.
+
 ## Priority 1: Critical (Must Have for Launch)
 
 ### 1.1 SSO Authentication (Microsoft Entra ID + Google)

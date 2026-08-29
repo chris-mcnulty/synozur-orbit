@@ -1,4 +1,6 @@
-# Orbit MVP Feature Backlog
+# Orbit Roadmap & Backlog
+
+> This is the canonical, publicly viewable planning document. The Roadmap contains work committed to a dated timeframe, usually a quarter. The Backlog contains undated ideas and work that has not been committed to a delivery date. Completed work dated before June 30, 2026 is recorded in the history section at the bottom.
 
 ## Priority 1: Critical (Must Have for Launch)
 
@@ -115,28 +117,6 @@
 - [x] Poorly-rated recommendations are avoided in future suggestions
 **Effort**: Medium - COMPLETED
 
-### 3.4 Trial & Feature Gating System ✅
-**Status**: Implemented (April 2026)
-**Spec Requirement**: "60-day trial, then Free tier with limited functionality"
-- [x] Add `trialStartDate` and `trialEndsAt` to tenants (60-day trial period)
-- [x] Implement trial countdown and expiration logic
-- [x] Automatic plan reversion to Free tier when trial expires
-- [x] Trial reminder emails (day 7, 30, 46, 53, 57, 59, 60) with contact CTA in final 14 days
-- [x] Scheduled job to check trial status and send reminders every 6 hours
-- [x] Feature gating middleware on API routes (`guardFeature`, `guardCompetitorLimit`, `guardAnalysisLimit` in `server/routes/helpers.ts`; applied across competitor, analysis, regenerate, marketing, briefing routes)
-- [x] UI upgrade prompts when hitting limits (`UpgradeModalProvider` auto-handles 403s with `upgradeRequired`; proactive `PlanLimitBanner` on competitors and analysis pages when usage ≥ 80% of plan limit)
-**Effort**: Medium - COMPLETED
-
-### 3.5 Global Company Directory ✅
-**Status**: Implemented (April 2026)
-**Spec Requirement**: Build a shared company database for competitor suggestions
-- [x] Global directory table (uses `organizations` table — non-tenant-scoped, reference-counted)
-- [x] Capture name, company URL, category, SIC code, brief description, industry
-- [x] Auto-populate when users add competitors (AI extraction in `POST /api/competitors` and `/api/competitors/:id/ai-research` backfill `description`, `category`, `sicCode`, `industry` on the org row)
-- [x] Use directory for typeahead suggestions when adding competitors (`/api/organizations/search` powers the dropdown in the Add Competitor dialog; rows now show category and description)
-- [x] Deduplicate by canonical domain (`findOrCreateOrganization` keys on normalized domain)
-**Effort**: Medium - COMPLETED
-
 ### 3.6 Visual Competitor Assets ✅
 **Status**: Implemented
 **Spec Requirement**: Capture visual assets for richer competitor profiles
@@ -185,100 +165,11 @@
 
 **Effort**: Completed
 
-### 3.9 Marketing Content Library ✅
-**Status**: Implemented (March 2026)
-**Spec Requirement**: Enterprise-gated content asset management
-- [x] Content asset CRUD with title, URL, description, and metadata
-- [x] URL auto-extraction with AI-generated summaries
-- [x] Lead image capture from source URLs
-- [x] Customizable categories, product tagging, season tagging, topic tagging
-- [x] Bulk AI summarization
-- [x] CSV import/export
-- [x] Archive workflow
-**Effort**: High - COMPLETED
-
-### 3.10 Marketing Brand Library ✅
-**Status**: Implemented (March 2026)
-**Spec Requirement**: Enterprise-gated brand asset management
-- [x] Brand asset CRUD with file upload to object storage
-- [x] Product cross-linking and customizable categories
-- [x] Save lead images from Content Library to Brand Library
-**Effort**: Medium - COMPLETED
-
-### 3.11 Social Campaigns ✅
-**Status**: Implemented (March 2026)
-**Spec Requirement**: Social-only campaigns for content distribution
-- [x] Campaign wizard (Details → Assets → Accounts → Schedule)
-- [x] AI-powered post generation across multiple platforms
-- [x] Per-asset post generation with correct image resolution
-- [x] Intelligent scheduling with weekend preferences
-- [x] Post review, approve/reject workflow
-- [x] CSV export with SocialPilot format and schedule guard
-- [x] Automatic hashtag merging
-**Effort**: High - COMPLETED
-
-### 3.12 Email Newsletters ✅
-**Status**: Implemented (March 2026)
-**Spec Requirement**: AI-powered email generation from content assets
-- [x] Platform-specific formatting (Outlook, HubSpot, Dynamics 365)
-- [x] Tone and CTA customization
-- [x] Subject line coaching and AI suggestions
-- [x] Save/label generated email drafts
-- [x] Strategic context grounding
-**Effort**: Medium - COMPLETED
-
-### 3.13 Intelligence Briefing Podcasts ✅
-**Status**: Implemented (March 2026)
-- [x] Two-host conversational audio summaries using OpenAI TTS
-- [x] In-browser playback and MP3 download
-- [x] Audio stored in object storage
-**Effort**: Medium - COMPLETED
-
-### 3.14 Intelligence Briefing Subscriptions ✅
-**Status**: Implemented (March 2026)
-- [x] Per-user email subscription management
-- [x] Admin-configurable scheduled weekly briefing generation
-- [x] Automated weekly digest job with SendGrid email delivery
-**Effort**: Medium - COMPLETED
-
-### 3.15 Intelligence Freshness UX ✅
-**Status**: Implemented (March 2026)
-- [x] Intelligence Health dashboard with health percentage score
-- [x] "Needs Attention" card for stale sources and artifacts
-- [x] "Built from data as of" banners with inline rebuild buttons
-- [x] Data Currency badges on Reports list
-- [x] Refresh Center renamed to Intelligence Health, relocated to Insights
-**Effort**: Medium - COMPLETED
-
-### 3.16 Action Item Lifecycle Management ✅
-**Status**: Implemented (March 2026)
-- [x] Dismiss with reason dialog
-- [x] Bulk accept and bulk dismiss via multi-select toolbar
-- [x] Status tabs (Active, Accepted, Dismissed)
-- [x] Gap analysis deduplication for dismissed items
-**Effort**: Medium - COMPLETED
-
-### 3.17 Support Ticket System ✅
-**Status**: Implemented (March 2026, expanded May 2026)
-- [x] User ticket submission with category and priority (Bug, Feature Request, Question, Feedback, Account, Billing, Other)
-- [x] Threaded discussion with support staff
-- [x] Admin management with internal notes and assignment
-- [x] Email notifications for new tickets, confirmations, and **ticket replies (admin → owner, owner → assignee/admins)**
-- [x] **In-app notifications on ticket replies** via existing notification centre (`support_reply` type)
-- [x] **File attachments** on tickets and replies (PDF, DOCX, TXT, images up to 10 MB) backed by object storage
-- [x] **Admin triage UX**: search, filters (status / priority / category / assignee / tenant), age column with staleness colouring, bulk status/priority/assignee updates, CSV export
-**Effort**: Medium - COMPLETED
-
-### 3.18 SEO Optimization ✅
-**Status**: Implemented (March 2026)
-- [x] Semantic HTML improvements
-- [x] Open Graph and Twitter Card meta tags
-- [x] Structured page titles and descriptions
-**Effort**: Low - COMPLETED
-
 ---
 
-## Post-MVP Roadmap (Year One)
+## Committed Roadmap (time-bound commitments)
+
+Items in this section have a committed timeframe, such as a quarter or named delivery period.
 
 ### Competitive Battlecards (Q1 Post-Launch) ✅
 Generate competitive battlecards for sales enablement:
@@ -306,63 +197,6 @@ Generate competitive battlecards for sales enablement:
 - [x] Customizable alert preferences (per-user significance threshold: high / medium / all)
 - [x] Email alerts via `sendCompetitorAlertEmail` and weekly competitor update digests
 - [x] `competitorAlerts` plan feature gates Pro / Enterprise access
-
-### Area-Based Navigation & Home Page ✅
-**Status**: Implemented (May 2026)
-- [x] Value-chain header: Research / Product / Marketing / Sales tabs (desktop)
-- [x] Sidebar shows only the active area's items
-- [x] Global Home page (`/app`) with Orbit Score, area scorecards, live signals, and needs-attention list
-- [x] Sales Hub landing page with staleness indicators for battlecards, reports, plans, and assessments
-- [x] Admin & Settings area for Social Accounts, Platform Credentials, and Browser Extension
-- [x] Mobile drawer lists all areas; mobile bottom nav maps to Home/Research/Marketing
-
-### Content Pipeline Board ✅
-**Status**: Implemented (May 2026)
-- [x] Unified kanban board across social posts, saved emails, and content briefs
-- [x] Five canonical stages: Draft → In Review → Approved → Scheduled → Published/Sent
-- [x] Drag-and-drop stage transitions with per-type rules; illegal moves rejected with toast
-- [x] Board / List view toggle (persisted per user via localStorage)
-- [x] Type filter, campaign filter (restored after campaigns endpoint fix), and full-text search
-- [x] Date picker dialog when dropping onto Scheduled stage
-- [x] Publish-failed posts surface as alerts in Scheduled; drag back to Approved to retry
-- [x] Published/Sent archive loads collapsed by default
-
-### Editorial Calendar — Full Content Execution Stack ✅
-**Status**: Implemented (May 2026)
-- [x] AI content brief generation with demand scoring, funnel-mix targeting (40/35/25), and quality warnings
-- [x] Multi-format copywriter: blog post, landing page, LinkedIn/X post, newsletter, video script, case study, whitepaper
-- [x] Content repurposing engine: one asset → batch of LinkedIn + X/Twitter social variants with distinct angles
-- [x] SEO/AEO optimizer: SEO title/description/slug, answer-engine blocks, FAQ pairs, validated internal links, content gaps
-- [x] In-editor repurpose and SEO/AEO action dialogs on drafted briefs
-- [x] Long-form AI rewrite: inline revision from editorial calendar with brand-voice grounding
-- [x] Distribution planner: channel-aware posting schedule, deterministic across date range, materializes into Marketing Planner tasks
-- [x] Timezone-aware scheduling (client sends `tzOffsetMinutes`)
-
-### Conference Social Promotion ✅
-**Status**: Implemented (May 2026)
-- [x] Conference + session CRUD with bulk paste/CSV session import
-- [x] AI generation: 1-2 anchor posts + one post per session, 2-3 copy variations each
-- [x] Hero graphics composited from brand template (Sharp) with event logo and session data
-- [x] Promotion window, posts-per-day, and weekend toggle controls
-- [x] Posts flow into shared social posts/calendar/publishing pipeline
-- [x] Dedicated archivable conference image space (kept separate from Brand Library)
-- [x] One-click "Archive conference" + restore
-
-### Marketing Performance Report ✅
-**Status**: Implemented (May 2026)
-- [x] Closed-loop content report: tracked-link clicks + GA4 conversions joined through campaigns
-- [x] Benchmark indices vs. prior equal-length period (clicks, conversions)
-- [x] By-campaign and by-content breakdown tables
-- [x] AI analyst summary + specific recommendations
-- [x] Emitted recommendations written as `recommendations` rows (area "Marketing")
-- [x] Editorial calendar generation folds open marketing recs into grounding
-- [x] Marketing → Performance page
-
-### Marketing Context Readiness ✅
-**Status**: Implemented (May 2026)
-- [x] Scores company profile, ICP personas, messaging framework, GTM plan, products, competitors, and brand kit
-- [x] Per-field fix hints and a 0–100 readiness score
-- [x] Surfaces as a readiness banner/card in the Marketing hub
 
 ### Strategic Intelligence Stack ✅
 **Status**: Implemented (August 2026)
@@ -399,10 +233,13 @@ Generate competitive battlecards for sales enablement:
 - [x] Import blog posts, events, and case studies from the live website (MCP) with image/category/summary enrichment
 - [x] Multi-format repurposer: one asset → social posts, carousels with rendered graphics, and long-form content briefs
 
-### CRM Integration - HubSpot (Q2)
-- [ ] Competitor sync from HubSpot
-- [ ] Push Orbit insights back to CRM
-- [ ] Lead generation insights
+### CRM Integration - HubSpot (Q2) ✅
+**Status**: Implemented (two-way)
+- [x] OAuth connection and status
+- [x] Competitor sync and suggested competitors from HubSpot
+- [x] Prospect imports and per-prospect sync
+- [x] Push Orbit insights, notes, tasks, briefings, battlecards, and summaries back to CRM
+- [x] HubSpot actions surfaced in the relevant Orbit interfaces
 
 ### Advanced AI Features (Q2-Q3)
 - [ ] Sentiment and tone analysis
@@ -414,19 +251,18 @@ Generate competitive battlecards for sales enablement:
 - [ ] Vega integration (recommendations → tasks)
 - [ ] Team usage analytics
 
-### Outcome Metrics & ROI Dashboard (Q4)
-- [ ] Google Analytics integration
-- [ ] Orbit Score / Index
-- [ ] Industry benchmarks
-
-### Billing Integration
-- [ ] Stripe integration for payment processing
-- [ ] Plan upgrade/downgrade flows
-- [ ] Usage-based billing
+### Outcome Metrics & ROI Dashboard (Q4) ✅
+**Status**: Implemented
+- [x] Google Analytics integration
+- [x] Orbit Score / Index
+- [x] Industry benchmarks
+- [x] ROI dashboard linking marketing activity to GA4 conversions
 
 ---
 
-## Strategic Backlog (From replit.md)
+## Undated Backlog (not committed to a date)
+
+Items in this section are logged for consideration but do not have a committed delivery timeframe.
 
 ### High Priority
 
@@ -531,6 +367,35 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 **Reference**: Constellation (`server/services/planner-service.ts`, `planner-graph-client.ts`)
 **Effort**: High - Phase 1 COMPLETED
 
+#### AI Recommendation Approval History
+**Status**: Proposed
+Make AI-generated action items auditable before and after they reach execution systems:
+- [ ] Show the source report or recommendation that produced each task
+- [ ] Record and display who approved, dismissed, or re-suggested it and when
+- [ ] Show the current approval and Planner sync state, including blocked/unapproved status
+- [ ] Preserve dismissal reasons and approval history for support and compliance investigations
+**Effort**: Medium
+
+#### Mandatory LinkedIn Page Selection
+**Status**: Proposed
+Prevent new social connections from silently selecting the wrong company page:
+- [ ] Automatically select a page only when exactly one is authorized
+- [ ] Require an explicit user choice when multiple pages are available
+- [ ] Preserve the existing page selection during a verified reconnect
+**Effort**: Low-Medium
+
+#### Billing Integration
+**Status**: Proposed
+- [ ] Stripe integration for payment processing
+- [ ] Plan upgrade/downgrade flows
+- [ ] Usage-based billing
+**Effort**: High
+
+#### HubSpot Lead Generation Insights
+**Status**: Proposed
+- [ ] Add lead-generation insights from HubSpot deal and pipeline signals
+**Effort**: Medium
+
 #### Competitor Document Uploads
 **Status**: Not implemented
 Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence:
@@ -557,15 +422,6 @@ Reduce ticket volume by surfacing relevant help-content suggestions before a tic
 - [ ] Track which suggestions were viewed before ticket submission to measure deflection
 - [ ] Optional: AI-summarised user-guide answers for the top categories
 **Effort**: Medium
-
-#### Headless Browser Crawling ✅
-**Status**: Implemented (January 2026)
-- [x] Bypass bot detection (stealth mode with anti-fingerprinting)
-- [x] Handle JavaScript-rendered content (waits for networkidle2)
-- [x] Improve crawl success rate for protected sites
-- [x] Automatic fallback to HTTP fetch when headless fails
-- [x] Browser instance pooling for efficiency
-**Effort**: Medium - COMPLETED
 
 #### Consolidated Action Items ✅
 **Status**: Implemented (Phase 2 Complete)
@@ -654,6 +510,7 @@ Several issues identified in the Full Analysis Report PDF generation:
 - [ ] **Active Products Section**: Needs more high-level findings content about product analysis results rather than minimal summary
 - [ ] **Messaging Framework Formatting**: Should use proper markdown/HTML formatting instead of raw verbatim quotes - improve visual presentation
 - [ ] **GTM Plan Missing**: The generated GTM Plan is not included in the full report - should be added as a section when available
+- [ ] **Report Version Comparison**: Compare the current report with a previous generation and highlight changes in competitors, recommendations, messaging, and market signals
 **Files**: `server/routes.ts` (PDF generation endpoint), `server/services/report-generator.ts` (if exists)
 **Effort**: Medium
 
@@ -678,3 +535,250 @@ Features:
 - [ ] **Draft Product Roadmap**: Visual roadmap generation with timeline, milestones, and feature releases
 - [ ] **Vega Launchpad Export**: Generate document optimized for Vega to create Big Rocks (Projects) and OKRs based on product roadmap
 **Effort**: MVP Complete, additional features ongoing
+
+---
+
+## Undated Backlog Additions
+
+These candidates are logged for consideration and are not committed to a quarter or delivery date.
+
+### Chat & Collaboration Surfaces
+
+#### Slack & Microsoft Teams Integration
+**Status**: Proposed
+**Why**: Customers live in chat. Pushing competitor alerts, briefing summaries, and action-item notifications into Slack/Teams channels turns Orbit from a destination into an always-on signal.
+- [ ] OAuth app for Slack (bot token) and Teams (Graph + bot framework)
+- [ ] Channel routing per tenant: competitor alerts, briefing digests, support replies, plan-limit warnings
+- [ ] Slash commands: `/orbit competitor <name>`, `/orbit briefing latest`, `/orbit action items`
+- [ ] Per-user mute / per-channel digest cadence settings
+- [ ] Reuse `alert-dispatch` service as the delivery fan-out
+**Effort**: High
+
+#### AI Conversational Intelligence Assistant ("Ask Orbit")
+**Status**: Proposed
+**Why**: Natural-language Q&A over the tenant's competitive corpus is faster than navigating pages. Pairs well with the existing AI-usage logging and plan gating.
+- [ ] Retrieval-augmented chat grounded in competitor profiles, activity log, briefings, marketing plan, and product roadmap
+- [ ] Inline citations linking back to the underlying source (competitor card, change diff, briefing section)
+- [ ] Saved conversations, sharable answer cards, "Pin to dashboard" widget
+- [ ] Streaming responses with cost & token reporting via existing `logAiUsage`
+- [ ] Enterprise-only gating with per-tenant monthly quota
+**Effort**: High
+
+### Reach & Mobility
+
+#### Mobile-First Progressive Web App (PWA)
+**Status**: Proposed
+**Why**: Field-facing roles (sales, exec) consume briefings on phones. A PWA shell gives installable, offline-capable access without app-store overhead.
+- [ ] Installable manifest + service worker with cached briefings and competitor cards
+- [ ] Responsive redesign for the Briefings, Action Items, and Competitor Detail pages
+- [ ] Push notification channel reusing the alert-dispatch threshold settings
+- [ ] Touch-optimized command palette and refresh center
+**Effort**: Medium-High
+
+#### Calendar Sync for Marketing Plan & Briefings
+**Status**: Proposed
+**Why**: Marketing tasks and weekly briefings should live next to the user's other commitments. Mirrors the Planner integration pattern.
+- [ ] One-way push of marketing tasks (with due dates) to Outlook / Google Calendar
+- [ ] Briefing publish events appear as calendar entries with deep link
+- [ ] Per-user toggle and reconnect flow; reuse Entra refresh-token pattern
+- [ ] ICS feed fallback for tenants without delegated OAuth
+**Effort**: Medium
+
+### Analyst Workflows
+
+#### Custom Dashboard Builder
+**Status**: Proposed
+**Why**: Different personas need different glances. A widget-based home page reduces dependency on hard-coded layouts and is a natural pair with interactive visualisations.
+- [ ] Widget library: competitor activity feed, action-item queue, freshness gauges, SEO movers, plan-limit usage
+- [ ] Drag-and-drop layout with persisted per-user configuration
+- [ ] Shareable dashboard templates (tenant-level, with "Apply to my view" copy)
+- [ ] Foundation for embedding interactive charts
+**Effort**: High
+
+#### Persona-Driven Workspace Modes
+**Status**: Proposed
+**Why**: Sales, Marketing, PM, and Exec each have a narrow happy-path through Orbit. Surfacing a "mode" selector tailors navigation, default filters, and home-page widgets.
+- [ ] Mode selector on first login and in user menu (Sales / Marketing / Product / Executive)
+- [ ] Per-mode default landing page, sidebar emphasis, and command-palette suggestions
+- [ ] Per-mode briefing template (sales talk tracks vs. marketing themes vs. product gaps)
+- [ ] Telemetry on mode usage to inform future packaging
+**Effort**: Medium
+
+### New Intelligence Domains
+
+#### Competitor Pricing Intelligence Tracker
+**Status**: Proposed
+**Why**: Pricing changes are among the most actionable competitive signals but get lost in generic page diffs. A specialised extractor and change feed is high-leverage.
+- [ ] Dedicated pricing-page URL on each competitor with structured-data extraction (plans, tiers, monthly/annual, features)
+- [ ] Change history with side-by-side diff and AI-summarised "what changed and why it matters"
+- [ ] Pricing-event alerts routed through existing alert thresholds
+- [ ] Pricing snapshot section in battlecards and PDF reports
+**Effort**: Medium-High
+
+#### Win/Loss Analysis Module
+**Status**: Proposed
+**Why**: Closes the loop from competitive intel to revenue outcomes. Pairs with the planned HubSpot CRM integration.
+- [ ] Deal-outcome log with competitor tagging, deal size, segment, and reason codes
+- [ ] CRM sync (HubSpot first) to auto-import closed deals and competitor stamps
+- [ ] AI-generated win/loss themes and trend reports per competitor
+- [ ] Surface themes into the battlecard "Sales challenges" section
+**Effort**: High
+
+#### Industry Benchmarking (Anonymous Aggregates)
+**Status**: Proposed
+**Why**: Multi-tenant data is a moat. Opt-in, anonymised aggregates ("how often peers refresh", "share of competitors in your industry tracking pricing", "median action-item velocity") drive stickiness and inform plan upgrades.
+- [ ] Tenant opt-in with clear data-use disclosure and per-metric toggles
+- [ ] Aggregation job producing industry/segment baselines (k-anonymity threshold)
+- [ ] Benchmark widgets on Intelligence Health and Insights pages
+- [ ] Quarterly anonymised "State of Competitive Intelligence" report
+**Effort**: High (privacy review required)
+
+### Platform Extensibility & Trust
+
+#### Public REST API + Webhooks
+**Status**: Proposed
+**Why**: Enterprise buyers ask for programmatic access. A versioned read API plus outbound webhooks unlocks Zapier/Make/Power Automate and customer-built workflows.
+- [ ] OAuth-scoped API keys with per-tenant and per-user scopes
+- [ ] Read endpoints for competitors, activity log, recommendations, action items, briefings
+- [ ] Write endpoints for action-item status, support tickets, marketing tasks
+- [ ] Outbound webhook subscriptions per event type (competitor change, briefing published, ticket reply)
+- [ ] Rate-limit middleware and usage dashboard
+- [ ] Public docs site (OpenAPI spec + examples)
+**Effort**: High
+
+#### Audit Log & Data Export Center
+**Status**: Proposed
+**Why**: Enterprise security reviews and GDPR/CCPA postures expect tenant-scoped audit trails and self-serve data export. Centralising these also helps Support resolve "who changed what" tickets.
+- [ ] Append-only `audit_log` capturing principal, action, resource, before/after diff
+- [ ] Filterable admin view (user, date range, resource, action type) with CSV export
+- [ ] Full-tenant export bundle (JSON + assets) triggered from Settings, delivered via signed URL
+- [ ] Right-to-erasure workflow for individual users with admin confirmation
+**Effort**: Medium-High
+
+### User Journey Enhancements
+
+#### Guided First-Value Onboarding
+**Status**: Proposed
+**Why**: The onboarding checklist is passive. Activating the path shortens time-to-first-value, the main activation/retention lever.
+- [ ] Detect step completion live and celebrate it
+- [ ] Present the next step's CTA with context
+- [ ] After the first analysis completes, surface the first concrete insight prominently
+- [ ] Optional: collapse completed steps so the path always foregrounds "what's next"
+**Effort**: Medium
+
+#### Persistent & Saved Views
+**Status**: Proposed
+**Why**: Returning to a working filter and sort context is repeated friction.
+- [ ] Persist last-used filters/sort per surface
+- [ ] Let users name and save a segment
+- [ ] Optional: pin saved views to the sidebar; shareable view links
+**Effort**: Low to Medium
+
+### Website Integration
+
+#### Published-Content Round-Trip from Website MCP
+**Status**: Proposed
+**Why**: Published Orbit content should flow back into Orbit with its live URL and performance data, eliminating manual reconciliation.
+- [ ] Write the canonical published URL back to the originating content asset
+- [ ] Reconcile published status and publish date, including externally published edits
+- [ ] Pull performance data as a time series
+- [ ] Surface published URL and performance trend on assets and campaign rollups
+- [ ] Link externally authored website posts by URL
+- [ ] Backfill existing published posts into the content library
+**Effort**: Medium-High
+
+### Technical Debt
+
+#### Unify the Three Post-Creation Backends
+**Status**: Proposed
+Unify manual composition, campaign generation, and brief repurposing behind one output contract while preserving asynchronous AI job behavior.
+- [ ] Define one `createOutput` contract
+- [ ] Fold the manual, repurpose, and campaign engines behind it
+- [ ] Normalize the response shape
+- [ ] Keep existing UI entry points as thin shortcuts
+- [ ] Add regression coverage for each engine
+**Effort**: High
+
+#### Split the Overloaded Content Brief Status Model
+**Status**: Proposed
+Move authoritative output state to content assets and separate idea, production, scheduling, and archival lifecycle states.
+- [ ] Migrate readers and gates off the legacy brief-side asset link
+- [ ] Stop writing and then drop the legacy column in a migration
+- [ ] Split idea status from draft/production state
+- [ ] Update planning, export, conversion, calendar, and client status behavior
+- [ ] Backfill existing rows and add regression coverage
+**Effort**: High
+
+---
+
+## Completed History
+
+Completed items dated before June 30, 2026 are kept here for reference rather than being presented as current roadmap commitments.
+
+### January 2026
+
+#### Headless Browser Crawling
+- [x] JavaScript-rendered crawling, stealth protections, HTTP fallback, and browser pooling
+
+### March 2026
+
+#### Marketing Content Library
+- [x] Content asset management, URL extraction, AI summaries, lead images, tagging, bulk summarization, CSV transfer, and archiving
+
+#### Marketing Brand Library
+- [x] Brand asset uploads, product/category links, and saving Content Library images
+
+#### Social Campaigns
+- [x] Campaign wizard, multi-platform generation, scheduling, review, SocialPilot export, and hashtag handling
+
+#### Email Newsletters
+- [x] Platform-specific generation, tone and CTA controls, subject coaching, saved drafts, and strategic grounding
+
+#### Intelligence Briefing Podcasts
+- [x] Two-host audio generation, playback, download, and object storage
+
+#### Intelligence Briefing Subscriptions
+- [x] User subscriptions, scheduled generation, and automated weekly delivery
+
+#### Intelligence Freshness UX
+- [x] Intelligence Health scoring, stale-source attention cards, freshness banners, currency badges, and navigation
+
+#### Action Item Lifecycle Management
+- [x] Dismissal reasons, bulk review, status views, and dismissed-item deduplication
+
+#### Support Ticket System
+- [x] Ticket submission, threaded support, assignment, email/in-app notifications, attachments, and admin triage
+
+#### SEO Optimization
+- [x] Semantic markup, social metadata, and structured titles and descriptions
+
+### April 2026
+
+#### Trial & Feature Gating System
+- [x] Trial lifecycle, reminders, automatic plan reversion, server-side feature gates, quotas, and upgrade prompts
+
+#### Global Company Directory
+- [x] Shared company records, metadata extraction, competitor suggestions, typeahead, and domain deduplication
+
+### May 2026
+
+#### Area-Based Navigation & Home Page
+- [x] Value-chain header: Research / Product / Marketing / Sales tabs
+- [x] Area-specific sidebar, global home, Sales Hub, Admin & Settings, and mobile navigation
+
+#### Content Pipeline Board
+- [x] Unified kanban board across social posts, saved emails, and content briefs
+- [x] Canonical lifecycle stages, drag-and-drop transitions, filters, search, scheduling, retry, and archive behavior
+
+#### Editorial Calendar — Full Content Execution Stack
+- [x] AI briefs, multi-format copywriter, content repurposing, SEO/AEO optimization, rewrite tools, distribution planning, and timezone-aware scheduling
+
+#### Conference Social Promotion
+- [x] Conference/session management, AI post generation, branded hero graphics, promotion controls, shared publishing pipeline, archiving, and restore
+
+#### Marketing Performance Report
+- [x] Closed-loop content reporting, benchmark comparisons, campaign/content breakdowns, AI recommendations, and Marketing → Performance page
+
+#### Marketing Context Readiness
+- [x] Readiness scoring across company profile, ICP, messaging, GTM plan, products, competitors, and brand kit
+- [x] Per-field fix hints and readiness surfaces in the Marketing hub
