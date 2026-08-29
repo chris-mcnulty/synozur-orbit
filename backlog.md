@@ -336,6 +336,7 @@ Generate competitive battlecards for sales enablement:
 - [x] Direct X publishing with images (v2 media pipeline, hardened token rotation)
 - [x] Unified Social Post Editor across queue, calendar, pipeline, and campaign detail (with link preview editing)
 - [x] Content-to-post multi-channel fan-out (native verbatim + AI-tailored variants)
+- [ ] **Mandatory LinkedIn page selection**: automatically select a page only when exactly one is authorized; require an explicit choice when multiple pages are available during a new connection
 
 ### Website Content Import & Repurposing ✅
 **Status**: Implemented (July 2026)
@@ -480,6 +481,15 @@ Break down AI-generated GTM plan into actionable tasks that can be accepted/remo
 **Reference**: Constellation (`server/services/planner-service.ts`, `planner-graph-client.ts`)
 **Effort**: High - Phase 1 COMPLETED
 
+#### AI Recommendation Approval History
+**Status**: Proposed
+Make AI-generated action items auditable before and after they reach execution systems:
+- [ ] Show the source report or recommendation that produced each task
+- [ ] Record and display who approved, dismissed, or re-suggested it and when
+- [ ] Show the current approval and Planner sync state, including blocked/unapproved status
+- [ ] Preserve dismissal reasons and approval history for support and compliance investigations
+**Effort**: Medium
+
 #### Competitor Document Uploads
 **Status**: Not implemented
 Allow users to upload documents about competitors (whitepapers, case studies, sales collateral, product sheets) to enrich competitive intelligence:
@@ -603,6 +613,7 @@ Several issues identified in the Full Analysis Report PDF generation:
 - [ ] **Active Products Section**: Needs more high-level findings content about product analysis results rather than minimal summary
 - [ ] **Messaging Framework Formatting**: Should use proper markdown/HTML formatting instead of raw verbatim quotes - improve visual presentation
 - [ ] **GTM Plan Missing**: The generated GTM Plan is not included in the full report - should be added as a section when available
+- [ ] **Report Version Comparison**: Compare the current report with a previous generation and highlight changes in competitors, recommendations, messaging, and market signals
 **Files**: `server/routes.ts` (PDF generation endpoint), `server/services/report-generator.ts` (if exists)
 **Effort**: Medium
 
