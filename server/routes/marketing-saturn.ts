@@ -4244,7 +4244,7 @@ Return ONLY a valid JSON object (no markdown fences) with:
       enqueue(
         "analysis",
         `campaign-posts:${campaign.id}`,
-        (_signal, reportProgress) => generatePostsAsync(
+        (signal, reportProgress) => generatePostsAsync(
           campaign.id,
           ctx.tenantDomain,
           ctx.marketId,
@@ -4255,8 +4255,13 @@ Return ONLY a valid JSON object (no markdown fences) with:
           useThematicMode ? thematicUrl : "",
           { wrapLinks, ownerUserId, redirectProtocol: reqProtocol, redirectHost: reqHost, includeAssetLeadImages, variantsPerPlatform, sourceBriefId: sourceBriefId ?? undefined, sourceBriefContentAsset: sourceBriefContentAsset ?? undefined, accountIds: accountIds.length > 0 ? accountIds : undefined, onePostPerAsset },
           reportProgress,
+          signal,
         ),
-        { ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name } },
+        {
+          ctx: { tenantDomain: ctx.tenantDomain, targetId: campaign.id, targetName: campaign.name },
+          timeoutMs: CAMPAIGN_POST_GENERATION_TIMEOUT_MS,
+          maxRetries: 0,
+        },
       ).catch(err => {
         console.error("[Saturn] Post generation error:", err.message);
       });
@@ -5972,6 +5977,9 @@ const MIN_VARIANTS_PER_PLATFORM = 3;
 // Raised from 10 → 30 to support product campaigns where each asset needs its
 // own post (e.g. 25 products × 3 platforms = 75 posts minimum per run).
 const MAX_VARIANTS_PER_PLATFORM = 30;
+// Maximum-volume, multi-platform campaigns make dozens of sequential AI calls.
+// The queue's five-minute default can expire shortly before valid completion.
+const CAMPAIGN_POST_GENERATION_TIMEOUT_MS = 30 * 60 * 1000;
 // Hard cap on how many draft rows a single generation run may persist, across
 // all platforms and image variations combined. Raised from 60 → 150 to match
 // the higher per-platform cap (30 variants × 3 platforms + image grid buffer).
@@ -6004,15 +6012,38 @@ async function generatePostsAsync(
   thematicUrl: string = "",
   wrapOpts: { wrapLinks?: boolean; ownerUserId?: string; redirectProtocol?: string; redirectHost?: string; includeAssetLeadImages?: boolean; variantsPerPlatform?: number | null; sourceBriefId?: string; sourceBriefContentAsset?: typeof contentAssets.$inferSelect; accountIds?: string[]; onePostPerAsset?: boolean } = {},
   reportProgress?: (patch: { phase?: string; percent?: number; currentItem?: number; totalItems?: number; currentItemName?: string }) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
+  const ensureNotAborted = () => {
+    if (signal?.aborted) {
+      throw new Error("Campaign post generation was cancelled or timed out");
+    }
+  };
+  ensureNotAborted();
+  const createdLinkSlugs: string[] = [];
+  const markAborted = () => {
+    void db.update(scheduledJobRuns)
+      .set({
+        status: "failed",
+        completedAt: new Date(),
+        errorMessage: "Campaign post generation was cancelled or timed out",
+      })
+      .where(eq(scheduledJobRuns.id, jobId))
+      .catch(err => {
+        console.error("[Saturn] Failed to mark aborted post generation:", err.message);
+      });
+  };
+  signal?.addEventListener("abort", markAborted, { once: true });
+
   // Default ON: lead images from source content assets are folded into the
   // image-variation grid alongside selected brand-library images.
   const includeAssetLeadImages = wrapOpts.includeAssetLeadImages !== false;
-  await db.update(scheduledJobRuns)
-    .set({ status: "running", startedAt: new Date() })
-    .where(eq(scheduledJobRuns.id, jobId));
 
   try {
+    await db.update(scheduledJobRuns)
+      .set({ status: "running", startedAt: new Date() })
+      .where(eq(scheduledJobRuns.id, jobId));
+    ensureNotAborted();
     reportProgress?.({ phase: "Loading context", percent: 5 });
     const [campaignRow] = await db.select().from(campaigns)
       .where(eq(campaigns.id, campaignId));
@@ -6380,6 +6411,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
     // in outer scope; it's set at the top of the loop body.
     let account: typeof platformTargets[number] = platformTargets[0];
     for (const acct of platformTargets) {
+      ensureNotAborted();
       account = acct;
       platformIdx++;
       const platformPct = 15 + Math.round((platformIdx - 1) / platformTargets.length * 75);
@@ -6417,8 +6449,11 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
           const prompt = buildGenerationPrompt(pool, [angle], usedOpenings);
           let result;
           try {
+            ensureNotAborted();
             result = await completeForFeature("marketing_tasks", prompt);
+            ensureNotAborted();
           } catch (err: any) {
+            if (signal?.aborted) throw err;
             console.error(`[Saturn][one-per-asset] AI call failed for ${account.platform} pool "${pool.label}":`, err.message);
             continue;
           }
@@ -6460,8 +6495,11 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
 
         let result;
         try {
+          ensureNotAborted();
           result = await completeForFeature("marketing_tasks", prompt);
+          ensureNotAborted();
         } catch (err: any) {
+          if (signal?.aborted) throw err;
           console.error(`[Saturn] AI call failed for ${account.platform} batch (angles: ${batchAngles.map(a => a.name).join(", ")}):`, err.message);
           continue; // try next batch
         }
@@ -6568,44 +6606,8 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
       );
     }
 
-    // Optional wrap-on-generate. Done as a final pass so the AI never has to
-    // think about redirect URLs — we rewrite the URLs it produced into tracked
-    // /r/:slug equivalents and persist a marketing_links row per unique URL.
-    if (wrapOpts.wrapLinks && wrapOpts.ownerUserId && generatedRows.length > 0) {
-      const utmCampaign = slugifyForUtm(campaignRow?.name, "campaign");
-      let wrappedCount = 0;
-      for (const row of generatedRows) {
-        if (!row.content) continue;
-        const platformSource = (row.platform || "social");
-        try {
-          const wrapped = await wrapOutboundLinksInText(row.content, {
-            tenantDomain,
-            marketId,
-            campaignId,
-            userId: wrapOpts.ownerUserId,
-            utm: {
-              source: platformSource,
-              medium: "social",
-              campaign: utmCampaign,
-            },
-            source: "post-wrap",
-            redirectBase: { protocol: wrapOpts.redirectProtocol, host: wrapOpts.redirectHost },
-            label: `${platformSource} · ${campaignRow?.name ?? "campaign"}`,
-          });
-          if (wrapped.createdSlugs.length > 0) {
-            row.content = wrapped.text;
-            wrappedCount += wrapped.createdSlugs.length;
-          }
-        } catch (err: any) {
-          console.warn(`[Saturn] Link wrap failed for post:`, err.message);
-        }
-      }
-      if (wrappedCount > 0) {
-        console.log(`[Saturn] Wrapped ${wrappedCount} outbound links across ${generatedRows.length} posts`);
-      }
-    }
-
     reportProgress?.({ phase: "Saving posts", percent: 95 });
+    ensureNotAborted();
 
     // ── Cap / truncation ─────────────────────────────────────────────────────
     // In one-post-per-asset mode we must not let a simple slice() discard
@@ -6645,10 +6647,6 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
         );
         rowsToInsert = rowsToInsert.slice(0, MAX_DRAFTS_PER_GENERATION);
       }
-    }
-
-    if (rowsToInsert.length) {
-      await db.insert(generatedPosts).values(rowsToInsert);
     }
 
     // Build per-asset coverage summary from the PERSISTED rows (post-truncation)
@@ -6695,14 +6693,78 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
       );
     }
 
-    await db.update(scheduledJobRuns)
-      .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: rowsToInsert.length, ...(assetCoverage ? { assetCoverage } : {}) } })
-      .where(eq(scheduledJobRuns.id, jobId));
+    await db.transaction(async (tx) => {
+      // Wrap and save in one transaction. If the timeout signal arrives during
+      // either write, the post-await abort check throws and rolls back every
+      // link and post created by this generation.
+      if (wrapOpts.wrapLinks && wrapOpts.ownerUserId && rowsToInsert.length > 0) {
+        const utmCampaign = slugifyForUtm(campaignRow?.name, "campaign");
+        let wrappedCount = 0;
+        for (const row of rowsToInsert) {
+          ensureNotAborted();
+          if (!row.content) continue;
+          const platformSource = row.platform || "social";
+          const wrapped = await wrapOutboundLinksInText(row.content, {
+            tenantDomain,
+            marketId,
+            campaignId,
+            userId: wrapOpts.ownerUserId,
+            utm: {
+              source: platformSource,
+              medium: "social",
+              campaign: utmCampaign,
+            },
+            source: "post-wrap",
+            redirectBase: { protocol: wrapOpts.redirectProtocol, host: wrapOpts.redirectHost },
+            label: `${platformSource} · ${campaignRow?.name ?? "campaign"}`,
+          }, { signal, database: tx, failOnInsertError: true });
+          ensureNotAborted();
+          if (wrapped.createdSlugs.length > 0) {
+            row.content = wrapped.text;
+            wrappedCount += wrapped.createdSlugs.length;
+            createdLinkSlugs.push(...wrapped.createdSlugs);
+          }
+        }
+        if (wrappedCount > 0) {
+          console.log(`[Saturn] Wrapped ${wrappedCount} outbound links across ${rowsToInsert.length} posts`);
+        }
+      }
+
+      ensureNotAborted();
+      if (rowsToInsert.length) {
+        await tx.insert(generatedPosts).values(rowsToInsert);
+        ensureNotAborted();
+      }
+
+      await tx.update(scheduledJobRuns)
+        .set({ status: "completed", completedAt: new Date(), result: { postsGenerated: rowsToInsert.length, ...(assetCoverage ? { assetCoverage } : {}) } })
+        .where(eq(scheduledJobRuns.id, jobId));
+      ensureNotAborted();
+    });
+    // The transaction callback completes before the driver finishes COMMIT.
+    // If the deadline arrived during COMMIT, remove exactly this run's rows.
+    ensureNotAborted();
   } catch (err: any) {
     console.error("[Saturn] Post generation failed:", err.message, err.stack);
+    if (signal?.aborted) {
+      await db.delete(generatedPosts)
+        .where(eq(generatedPosts.generationJobId, jobId));
+      if (createdLinkSlugs.length > 0) {
+        await db.delete(marketingLinks)
+          .where(and(
+            eq(marketingLinks.tenantDomain, tenantDomain),
+            eq(marketingLinks.campaignId, campaignId),
+            eq(marketingLinks.source, "post-wrap"),
+            inArray(marketingLinks.slug, createdLinkSlugs),
+          ));
+      }
+    }
     await db.update(scheduledJobRuns)
       .set({ status: "failed", completedAt: new Date(), errorMessage: err.message })
       .where(eq(scheduledJobRuns.id, jobId));
+    throw err;
+  } finally {
+    signal?.removeEventListener("abort", markAborted);
   }
 }
 

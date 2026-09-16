@@ -11,6 +11,14 @@ import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import { marketingLinks, type InsertMarketingLink } from "@shared/schema";
 
+type MarketingLinksDb = Pick<typeof db, "select" | "insert">;
+
+function ensureNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error("Link wrapping was cancelled or timed out");
+  }
+}
+
 const BOT_UA_PATTERN = /bot|crawl|spider|slurp|preview|fetch|monitor|wget|curl|headless|lighthouse|pingdom|uptimerobot|gtmetrix|whatsapp|facebookexternalhit|linkedinbot|twitterbot|telegrambot|slackbot|discordbot|googleimage|bingpreview/i;
 
 export function isLikelyBot(userAgent: string | undefined | null): boolean {
@@ -56,13 +64,19 @@ function generateSlugCandidate(): string {
  * Generate a slug that is not already in use. Slugs are globally unique (DB
  * has a UNIQUE constraint), so retry until we hit an unused value.
  */
-export async function generateUniqueSlug(maxAttempts = 8): Promise<string> {
+export async function generateUniqueSlug(
+  maxAttempts = 8,
+  options: { signal?: AbortSignal; database?: MarketingLinksDb } = {},
+): Promise<string> {
+  const database = options.database ?? db;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    ensureNotAborted(options.signal);
     const candidate = generateSlugCandidate();
-    const [existing] = await db.select({ id: marketingLinks.id })
+    const [existing] = await database.select({ id: marketingLinks.id })
       .from(marketingLinks)
       .where(eq(marketingLinks.slug, candidate))
       .limit(1);
+    ensureNotAborted(options.signal);
     if (!existing) return candidate;
   }
   // Fall back to a longer candidate if we somehow keep colliding.
@@ -145,7 +159,10 @@ export async function wrapOutboundLinksInText(
     redirectBase: { protocol?: string; host?: string };
     label?: string | null;
   },
+  options: { signal?: AbortSignal; database?: MarketingLinksDb; failOnInsertError?: boolean } = {},
 ): Promise<{ text: string; createdSlugs: string[] }> {
+  const database = options.database ?? db;
+  ensureNotAborted(options.signal);
   if (!text) return { text, createdSlugs: [] };
 
   const urlsFound = Array.from(new Set(text.match(URL_REGEX) || []));
@@ -153,11 +170,12 @@ export async function wrapOutboundLinksInText(
   const createdSlugs: string[] = [];
 
   for (const original of urlsFound) {
+    ensureNotAborted(options.signal);
     // Skip links that are already redirect URLs to avoid double-wrapping.
     if (/\/r\/[a-z0-9]{6,}/i.test(original)) continue;
 
     const finalDestination = applyUtmParams(original, ctx.utm);
-    const slug = await generateUniqueSlug();
+    const slug = await generateUniqueSlug(8, options);
 
     const insertRow: InsertMarketingLink = {
       tenantDomain: ctx.tenantDomain,
@@ -177,11 +195,15 @@ export async function wrapOutboundLinksInText(
     };
 
     try {
-      await db.insert(marketingLinks).values(insertRow);
+      ensureNotAborted(options.signal);
+      await database.insert(marketingLinks).values(insertRow);
+      ensureNotAborted(options.signal);
       const replacement = buildRedirectUrl(slug, ctx.redirectBase);
       replacements.push({ original, replacement });
       createdSlugs.push(slug);
     } catch (err: any) {
+      if (options.signal?.aborted) throw err;
+      if (options.failOnInsertError) throw err;
       console.warn(`[MarketingLinks] Failed to create wrap link for ${original}:`, err.message);
     }
   }
