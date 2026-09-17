@@ -353,17 +353,14 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       //   Content, Image URL, Scheduled Date, Account ID, First Comment,
       //   Tags (internal SP labels), Link URL
       //
-      // For Twitter: inline hashtags + URL in the content body (character-count aware).
-      // For all other platforms (LinkedIn, Facebook, Instagram, …): keep the post
-      // body clean and put the hashtag block in the "First Comment" field — this is
-      // how SocialPilot posts a first comment containing the hashtags, which is
-      // standard practice for LinkedIn/Instagram engagement.
+      // Keep First Comment blank. Hashtags belong only in SocialPilot's Tags field;
+      // duplicating them as a first comment creates an unwanted public comment.
+      // Twitter still needs hashtags + URL inline in the post body.
       lines = [];
       for (const post of sortedPosts) {
         let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
         if (sd && sd < now) sd = null;
         const baseContent = (post.editedContent ?? post.content);
-        const hashtagLine = buildHashtagLine(post.hashtags as string[]);
         const sourceUrl = post.sourceUrl || "";
 
         let fullContent: string;
@@ -373,11 +370,12 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
           fullContent = buildTwitterContent(baseContent, post.hashtags as string[], sourceUrl);
           firstComment = "";
         } else {
-          // LinkedIn / Facebook / Instagram etc.: clean body, hashtags in first comment.
+          // LinkedIn / Facebook / Instagram etc.: keep the body clean and do not
+          // generate a public first comment from SocialPilot tags.
           const contentParts = [baseContent];
           if (sourceUrl) contentParts.push(sourceUrl);
           fullContent = contentParts.join("\n");
-          firstComment = hashtagLine; // e.g. "#Cascadia.Oceanic #Photography"
+          firstComment = "";
         }
 
         const imageUrl = getPostImageUrl(post);

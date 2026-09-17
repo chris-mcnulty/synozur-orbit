@@ -158,7 +158,7 @@ describe("SocialPilot account ID resolution", () => {
     expect(csv).not.toContain('"urn:li:organization:provider-page"');
   });
 
-  it("puts hashtags, not the Orbit account name, in SocialPilot's first-comment column", async () => {
+  it("keeps SocialPilot first comments blank instead of repeating account names or tags", async () => {
     selectRows.push([{
       id: "account-1",
       platform: "linkedin",
@@ -182,8 +182,9 @@ describe("SocialPilot account ID resolution", () => {
     });
 
     expect(csv).toBe(
-      '"A post for SocialPilot","","Jan 10, 2030 3:00 PM","socialpilot-profile-42","#CascadiaOceanic #Alaska","CascadiaOceanic;Alaska",""',
+      '"A post for SocialPilot","","Jan 10, 2030 3:00 PM","socialpilot-profile-42","","CascadiaOceanic;Alaska",""',
     );
     expect(csv).not.toContain("Chris McNulty");
+    expect(csv).not.toContain("#CascadiaOceanic");
   });
 });
