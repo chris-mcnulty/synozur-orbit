@@ -274,14 +274,6 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     return platformSocialPilotFallback.get(post.platform) || "";
   };
 
-  const getAccountName = (post: any): string => {
-    if (post.socialAccountId) {
-      const acct = accountMap.get(post.socialAccountId);
-      if (acct?.accountName) return acct.accountName;
-    }
-    return "";
-  };
-
   const isTwitterPost = (post: any) => (post.platform || "").toLowerCase() === "twitter";
   const TWITTER_CHAR_LIMIT = 280;
 
@@ -358,8 +350,8 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     }
     default: {
       // SocialPilot bulk CSV columns:
-      //   Content, Image URL, Scheduled Date, Account ID, Account Name,
-      //   First Comment, Tags (internal SP labels), Link URL
+      //   Content, Image URL, Scheduled Date, Account ID, First Comment,
+      //   Tags (internal SP labels), Link URL
       //
       // For Twitter: inline hashtags + URL in the content body (character-count aware).
       // For all other platforms (LinkedIn, Facebook, Instagram, …): keep the post
@@ -391,7 +383,6 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const imageUrl = getPostImageUrl(post);
         const dateStr = fmtSocialPilotDate(sd);
         const platformAccountId = getSocialPilotAccountId(post);
-        const accountName = getAccountName(post);
         // Tags column = SocialPilot's internal label field (semicolon-separated,
         // no # prefix). Keep populated so SP's library filtering still works.
         const tags = buildTagsSemicolon(post.hashtags as string[]);
@@ -401,7 +392,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
           ? (post.linkLabel ? `${post.linkLabel} | ${linkUrlValue}` : linkUrlValue)
           : "";
 
-        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},${escCsv(accountName)},${escCsv(firstComment)},${escCsv(tags)},${escCsv(linkCsvValue)}`);
+        lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(platformAccountId)},${escCsv(firstComment)},${escCsv(tags)},${escCsv(linkCsvValue)}`);
       }
       break;
     }

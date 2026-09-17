@@ -157,4 +157,33 @@ describe("SocialPilot account ID resolution", () => {
     expect(csv).toContain('"socialpilot-profile-42"');
     expect(csv).not.toContain('"urn:li:organization:provider-page"');
   });
+
+  it("puts hashtags, not the Orbit account name, in SocialPilot's first-comment column", async () => {
+    selectRows.push([{
+      id: "account-1",
+      platform: "linkedin",
+      accountName: "Chris McNulty",
+      accountId: "urn:li:person:provider-profile",
+      socialPilotAccountId: "socialpilot-profile-42",
+    }]);
+
+    const csv = await buildPostsCsv({
+      posts: [{
+        id: "post-1",
+        platform: "linkedin",
+        socialAccountId: "account-1",
+        content: "A post for SocialPilot",
+        hashtags: ["CascadiaOceanic", "Alaska"],
+        scheduledDate: new Date("2030-01-10T15:00:00Z"),
+      }],
+      tenantDomain: "tenant.example.com",
+      format: "socialpilot",
+      tzOffset: 0,
+    });
+
+    expect(csv).toBe(
+      '"A post for SocialPilot","","Jan 10, 2030 3:00 PM","socialpilot-profile-42","#CascadiaOceanic #Alaska","CascadiaOceanic;Alaska",""',
+    );
+    expect(csv).not.toContain("Chris McNulty");
+  });
 });

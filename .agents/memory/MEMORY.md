@@ -79,3 +79,4 @@
 - [HubSpot full-refresh job recovery](hubspot-full-refresh-jobs.md) — full CRM imports need tenant claim locks, page heartbeats, and atomic stale recovery to prevent duplicate scans.
 - [Social publish claim recovery](social-publish-claim-recovery.md) — expired claims become outcome-unknown failures; never steal and auto-repost while an old provider call may still finish.
 - [Campaign generation cancellation](campaign-generation-cancellation.md) — long campaign generation gets its own deadline; timeout must atomically prevent or exactly compensate all posts and tracked links.
+- [SocialPilot CSV column order](socialpilot-csv-columns.md) — SocialPilot bulk rows have no Account Name field; adding one shifts the name into First Comment.
