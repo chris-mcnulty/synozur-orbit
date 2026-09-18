@@ -771,14 +771,45 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (websiteCategoryIds !== undefined) updates.websiteCategoryIds = Array.isArray(websiteCategoryIds) && websiteCategoryIds.length ? websiteCategoryIds : null;
     if (websiteTagIds !== undefined) updates.websiteTagIds = Array.isArray(websiteTagIds) && websiteTagIds.length ? websiteTagIds : null;
 
-    const [row] = await db.update(contentAssets)
-      .set(updates)
-      .where(and(
-        eq(contentAssets.id, req.params.id),
-        eq(contentAssets.tenantDomain, ctx.tenantDomain),
-        eq(contentAssets.marketId, ctx.marketId),
-      ))
-      .returning();
+    const row = await db.transaction(async (tx) => {
+      const [existingAsset] = await tx.select({ leadImageUrl: contentAssets.leadImageUrl })
+        .from(contentAssets)
+        .where(and(
+          eq(contentAssets.id, req.params.id),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+        ))
+        .for("update");
+      if (!existingAsset) return null;
+
+      const [updatedAsset] = await tx.update(contentAssets)
+        .set(updates)
+        .where(and(
+          eq(contentAssets.id, req.params.id),
+          eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          eq(contentAssets.marketId, ctx.marketId),
+        ))
+        .returning();
+
+      if (leadImageUrl !== undefined && leadImageUrl !== existingAsset.leadImageUrl) {
+        const previousImageUrl = existingAsset.leadImageUrl ?? null;
+        await tx.update(generatedPosts)
+          .set({ overrideImageUrl: leadImageUrl || null })
+          .where(and(
+            eq(generatedPosts.tenantDomain, ctx.tenantDomain),
+            eq(generatedPosts.sourceAssetId, updatedAsset.id),
+            inArray(generatedPosts.status, ["draft", "approved", "missed", "publish_failed"]),
+            isNull(generatedPosts.overrideBrandAssetId),
+            previousImageUrl
+              ? or(
+                  eq(generatedPosts.overrideImageUrl, previousImageUrl),
+                  isNull(generatedPosts.overrideImageUrl),
+                )
+              : isNull(generatedPosts.overrideImageUrl),
+          ));
+      }
+      return updatedAsset;
+    });
     if (!row) return res.status(404).json({ error: "Not found" });
     if (productTagIds !== undefined) {
       await db.delete(contentAssetProductTags).where(eq(contentAssetProductTags.assetId, row.id));

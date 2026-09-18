@@ -80,3 +80,4 @@
 - [Social publish claim recovery](social-publish-claim-recovery.md) — expired claims become outcome-unknown failures; never steal and auto-repost while an old provider call may still finish.
 - [Campaign generation cancellation](campaign-generation-cancellation.md) — long campaign generation gets its own deadline; timeout must atomically prevent or exactly compensate all posts and tracked links.
 - [SocialPilot CSV column order](socialpilot-csv-columns.md) — SocialPilot bulk rows have no Account Name field; adding one shifts the name into First Comment.
+- [Asset image replacement propagation](asset-image-replacement.md) — lead-image changes update inherited images on unpublished posts; claimed sends restore the exact attempted override on success.

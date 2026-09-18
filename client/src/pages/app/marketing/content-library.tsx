@@ -146,7 +146,10 @@ export default function ContentLibraryPage() {
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkQueuedCount, setBulkQueuedCount] = useState(0);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const leadImageUploadRef = useRef<HTMLInputElement>(null);
+  const activeEditAssetIdRef = useRef<string | null>(null);
   const [showBrandImagePicker, setShowBrandImagePicker] = useState(false);
+  const [uploadingLeadImage, setUploadingLeadImage] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(true);
   const [pendingScrollToPosts, setPendingScrollToPosts] = useState(false);
@@ -603,6 +606,7 @@ export default function ContentLibraryPage() {
   };
 
   const openEditDialog = (asset: ContentAsset, opts?: { scrollToPosts?: boolean }) => {
+    activeEditAssetIdRef.current = asset.id;
     setEditForm({
       title: asset.title,
       description: asset.description || "",
@@ -624,6 +628,56 @@ export default function ContentLibraryPage() {
     setDetailAsset(asset);
     setPendingScrollToPosts(!!opts?.scrollToPosts);
     setEditOpen(true);
+  };
+
+  const uploadLeadImageOverride = async (file: File) => {
+    if (!detailAsset) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Choose an image file", variant: "destructive" });
+      return;
+    }
+    setUploadingLeadImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/integrations/website/upload-media", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!uploadRes.ok) {
+        throw new Error((await uploadRes.json().catch(() => ({}))).error || "Image upload failed");
+      }
+      const uploaded = await uploadRes.json() as { url: string };
+      const saveRes = await fetch(`/api/content-assets/${detailAsset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ leadImageUrl: uploaded.url }),
+      });
+      if (!saveRes.ok) {
+        throw new Error((await saveRes.json().catch(() => ({}))).error || "Could not save replacement image");
+      }
+      const updated = await saveRes.json() as ContentAsset;
+      if (activeEditAssetIdRef.current === detailAsset.id) {
+        setEditForm(f => ({ ...f, leadImageUrl: uploaded.url }));
+        setDetailAsset(updated);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content-assets", detailAsset.id, "posts"] });
+      toast({
+        title: "Replacement image saved",
+        description: "Unpublished social posts using the old asset image were updated too.",
+      });
+    } catch (err) {
+      toast({
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Could not upload the replacement image.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingLeadImage(false);
+    }
   };
 
   useEffect(() => {
@@ -2041,7 +2095,16 @@ export default function ContentLibraryPage() {
         />
 
         {/* Edit Asset Dialog */}
-        <Dialog open={editOpen} onOpenChange={v => { setEditOpen(v); if (!v) { setDetailAsset(null); setShowBrandImagePicker(false); setBrandPickerCategory("all"); } }}>
+        <Dialog open={editOpen} onOpenChange={v => {
+          if (!v && uploadingLeadImage) return;
+          setEditOpen(v);
+          if (!v) {
+            activeEditAssetIdRef.current = null;
+            setDetailAsset(null);
+            setShowBrandImagePicker(false);
+            setBrandPickerCategory("all");
+          }
+        }}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             {detailAsset && (
               <>
@@ -2093,6 +2156,32 @@ export default function ContentLibraryPage() {
                         variant="outline"
                         size="sm"
                         className="shrink-0 gap-1"
+                        onClick={() => leadImageUploadRef.current?.click()}
+                        disabled={uploadingLeadImage}
+                        data-testid="button-upload-lead-image"
+                      >
+                        {uploadingLeadImage
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Upload className="w-3.5 h-3.5" />}
+                        {uploadingLeadImage ? "Uploading..." : "Upload"}
+                      </Button>
+                      <input
+                        ref={leadImageUploadRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) void uploadLeadImageOverride(file);
+                          e.currentTarget.value = "";
+                        }}
+                        data-testid="input-upload-lead-image"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1"
                         onClick={() => setShowBrandImagePicker(!showBrandImagePicker)}
                         data-testid="button-pick-brand-image"
                       >
@@ -2100,6 +2189,9 @@ export default function ContentLibraryPage() {
                         {showBrandImagePicker ? "Hide" : "Visual/Brand Assets"}
                       </Button>
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Upload a clean replacement for social delivery, paste a URL, or choose from Visual/Brand Assets.
+                    </p>
                     {showBrandImagePicker && (
                       <div className="border rounded-lg p-3 mt-2 bg-muted/30 space-y-2">
                         <div className="flex items-center justify-between">
@@ -2514,11 +2606,11 @@ export default function ContentLibraryPage() {
                     )}
                     <Button
                       className="flex-1"
-                      disabled={!editForm.title.trim() || editMutation.isPending}
+                      disabled={!editForm.title.trim() || editMutation.isPending || uploadingLeadImage}
                       onClick={() => editMutation.mutate({ id: detailAsset.id, data: editForm })}
                       data-testid="button-save-edit-content"
                     >
-                      {editMutation.isPending ? "Saving..." : "Save Changes"}
+                      {uploadingLeadImage ? "Uploading image..." : editMutation.isPending ? "Saving..." : "Save Changes"}
                     </Button>
                   </div>
                 </div>

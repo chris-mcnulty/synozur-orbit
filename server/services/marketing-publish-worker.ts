@@ -287,6 +287,10 @@ async function markPublished(
       publishError: null,
       publishNextAttemptAt: null,
       imageIssue: null,
+      // Asset-level image replacement can occur while this provider call is
+      // in flight. Preserve the exact override that this successful attempt
+      // actually used; a failed attempt leaves the replacement ready for retry.
+      overrideImageUrl: post.overrideImageUrl ?? null,
       publishAttemptCount: (post.publishAttemptCount ?? 0) + 1,
       publishClaimToken: null,
       publishClaimOwner: null,
