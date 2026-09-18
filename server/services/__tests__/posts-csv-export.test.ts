@@ -10,6 +10,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { selectRows } = vi.hoisted(() => ({ selectRows: [] as any[][] }));
+const storageMocks = vi.hoisted(() => ({
+  sourceGetMetadata: vi.fn(),
+  sourceDownload: vi.fn(),
+  destinationSave: vi.fn(),
+  searchPublicObject: vi.fn(),
+}));
 
 vi.mock("../../db", () => ({
   db: {
@@ -17,6 +23,22 @@ vi.mock("../../db", () => ({
       from: () => ({
         where: () => Promise.resolve(selectRows.shift() ?? []),
       }),
+    }),
+  },
+}));
+
+vi.mock("../../replit_integrations/object_storage/objectStorage", () => ({
+  ObjectStorageService: class {
+    getObjectEntityFile = vi.fn(async () => ({
+      getMetadata: storageMocks.sourceGetMetadata,
+      download: storageMocks.sourceDownload,
+    }));
+    searchPublicObject = storageMocks.searchPublicObject;
+    getPublicObjectSearchPaths = () => ["/public-bucket/public"];
+  },
+  objectStorageClient: {
+    bucket: () => ({
+      file: () => ({ save: storageMocks.destinationSave }),
     }),
   },
 }));
@@ -29,6 +51,11 @@ import {
 
 beforeEach(() => {
   selectRows.length = 0;
+  vi.clearAllMocks();
+  storageMocks.sourceGetMetadata.mockResolvedValue([{ contentType: "image/jpeg" }]);
+  storageMocks.sourceDownload.mockResolvedValue([Buffer.from("image")]);
+  storageMocks.searchPublicObject.mockResolvedValue(null);
+  storageMocks.destinationSave.mockResolvedValue(undefined);
 });
 
 function makeMap(entries: [string, boolean][]): Map<string, boolean> {
@@ -186,5 +213,31 @@ describe("SocialPilot account ID resolution", () => {
     );
     expect(csv).not.toContain("Chris McNulty");
     expect(csv).not.toContain("#CascadiaOceanic");
+  });
+
+  it("publishes private Orbit images and exports an absolute anonymous URL", async () => {
+    const csv = await buildPostsCsv({
+      posts: [{
+        id: "post-1",
+        platform: "linkedin",
+        content: "A post with an uploaded image",
+        hashtags: [],
+        overrideImageUrl: "/objects/uploads/image-123",
+        scheduledDate: new Date("2030-01-10T15:00:00Z"),
+      }],
+      tenantDomain: "tenant.example.com",
+      format: "socialpilot",
+      tzOffset: 0,
+      imageBaseUrl: "https://orbit.example.com",
+    });
+
+    expect(storageMocks.destinationSave).toHaveBeenCalledWith(
+      Buffer.from("image"),
+      { contentType: "image/jpeg", resumable: false },
+    );
+    expect(csv).toContain(
+      '"https://orbit.example.com/public-objects/social-exports/uploads/image-123"',
+    );
+    expect(csv).not.toContain('"/objects/uploads/image-123"');
   });
 });

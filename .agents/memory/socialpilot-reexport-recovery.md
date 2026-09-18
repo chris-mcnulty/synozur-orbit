@@ -7,4 +7,6 @@ Bulk re-export recovery must preserve post copy, force recovered rows to CSV-onl
 
 **Why:** Resetting delivered posts to approved without CSV ownership can make Orbit publish them directly. Browser fan-out scheduling can partially update a 100+ post batch, and an unscoped scheduler can alter unrelated campaign drafts.
 
-**How to apply:** Prepare and schedule on tenant-owned campaign endpoints. Clear stale dates, preserve future dates, generate only future slots, apply the recovered schedule transactionally, and return directly to Export Review.
+CSV media URLs must also be anonymous absolute production URLs. Private `/objects/...` paths must be copied to public object storage during export and emitted through `/public-objects/...`; merely adding a hostname still leaves them authentication-gated.
+
+**How to apply:** Prepare and schedule on tenant-owned campaign endpoints. Clear stale dates, preserve future dates, generate only future slots, apply the recovered schedule transactionally, return directly to Export Review, and validate exported media URLs as an unauthenticated client.

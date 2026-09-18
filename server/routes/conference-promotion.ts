@@ -826,12 +826,13 @@ export function registerConferencePromotionRoutes(app: Express) {
 
       const proto = req.headers["x-forwarded-proto"] || req.protocol;
       const host = req.headers["x-forwarded-host"] || req.headers.host;
+      const publicAppUrl = process.env.PUBLIC_APP_URL?.replace(/\/+$/, "");
       const csv = await buildPostsCsv({
         posts,
         tenantDomain: ctx.tenantDomain,
         format: csvFormat,
         tzOffset: clientTzOffset,
-        imageBaseUrl: host ? `${proto}://${host}` : undefined,
+        imageBaseUrl: publicAppUrl || (host ? `${proto}://${host}` : undefined),
       });
 
       // WS6: retain the event export in SharePoint (silent fallback to object storage).

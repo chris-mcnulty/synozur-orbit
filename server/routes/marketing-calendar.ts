@@ -943,13 +943,14 @@ export function registerMarketingCalendarRoutes(app: Express) {
       const clientTzOffset = parseInt((req.query.tzOffset as string) || "0", 10);
       const proto = req.headers["x-forwarded-proto"] || req.protocol;
       const host = req.headers["x-forwarded-host"] || req.headers.host;
+      const publicAppUrl = process.env.PUBLIC_APP_URL?.replace(/\/+$/, "");
       const csv = await buildPostsCsv({
         posts,
         tenantDomain: ctx.tenantDomain,
         format: csvFormat,
         tzOffset: clientTzOffset,
         fallbackAccountIds,
-        imageBaseUrl: host ? `${proto}://${host}` : undefined,
+        imageBaseUrl: publicAppUrl || (host ? `${proto}://${host}` : undefined),
       });
 
       // NOTE: downloading no longer marks posts as delivered. Scheduling tools

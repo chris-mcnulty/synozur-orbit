@@ -1,6 +1,10 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { socialAccounts, brandAssets, contentAssets } from "@shared/schema";
+import {
+  ObjectStorageService,
+  objectStorageClient,
+} from "../replit_integrations/object_storage/objectStorage";
 
 /**
  * Shared CSV renderer for generated social posts. Used by both the campaign
@@ -224,30 +228,66 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
   };
 
-  // Turn a relative public Orbit path (`/public-objects/...`) into an absolute
-  // URL so external schedulers can fetch it. Only `/public-objects/...` is
-  // anonymously fetchable — auth-gated `/objects/...` paths are left untouched
-  // (absolutizing them would just produce an absolute URL that still 401s), and
-  // already-absolute URLs pass through unchanged.
+  // External schedulers cannot use Orbit's authenticated `/objects/...` URLs.
+  // Publish those images into the public object area during export, then emit
+  // an absolute `/public-objects/...` URL. Already-public and external URLs are
+  // left intact apart from absolutizing a relative public path.
   const imageBaseUrl = (opts.imageBaseUrl || "").replace(/\/$/, "");
-  const absolutize = (url: string): string =>
-    url.startsWith("/public-objects/") && imageBaseUrl ? `${imageBaseUrl}${url}` : url;
+  const storage = new ObjectStorageService();
+  const publicizedImages = new Map<string, Promise<string>>();
+  const absolutize = async (url: string): Promise<string> => {
+    if (url.startsWith("/public-objects/")) {
+      return imageBaseUrl ? `${imageBaseUrl}${url}` : url;
+    }
+    if (!url.startsWith("/objects/")) return url;
+    if (!imageBaseUrl) {
+      throw new Error("Cannot export a private image without an absolute application URL");
+    }
 
-  const getPostImageUrl = (post: any): string => {
-    if (post.overrideImageUrl) return absolutize(post.overrideImageUrl);
+    let pending = publicizedImages.get(url);
+    if (!pending) {
+      pending = (async () => {
+        const source = await storage.getObjectEntityFile(url);
+        const entityPath = url.slice("/objects/".length).replace(/^\/+/, "");
+        const publicPath = `social-exports/${entityPath}`;
+        const existing = await storage.searchPublicObject(publicPath);
+        if (!existing) {
+          const publicRoot = storage.getPublicObjectSearchPaths()[0];
+          const parts = publicRoot.replace(/^\/+/, "").split("/");
+          const bucketName = parts.shift();
+          if (!bucketName) throw new Error("Public object storage is not configured");
+          const prefix = parts.join("/").replace(/\/+$/, "");
+          const destinationName = [prefix, publicPath].filter(Boolean).join("/");
+          const [metadata] = await source.getMetadata();
+          const [buffer] = await source.download();
+          await objectStorageClient.bucket(bucketName).file(destinationName).save(buffer, {
+            contentType: metadata.contentType || "application/octet-stream",
+            resumable: false,
+          });
+        }
+        const relative = `/public-objects/${publicPath}`;
+        return `${imageBaseUrl}${relative}`;
+      })();
+      publicizedImages.set(url, pending);
+    }
+    return pending;
+  };
+
+  const getPostImageUrl = async (post: any): Promise<string> => {
+    if (post.overrideImageUrl) return await absolutize(post.overrideImageUrl);
     if (post.overrideBrandAssetId) {
       const ba = brandMap.get(post.overrideBrandAssetId);
-      if (ba?.fileUrl) return absolutize(ba.fileUrl);
-      if (ba?.url) return absolutize(ba.url);
+      if (ba?.fileUrl) return await absolutize(ba.fileUrl);
+      if (ba?.url) return await absolutize(ba.url);
     }
     if (post.sourceAssetId) {
       const ca = contentAssetById.get(post.sourceAssetId);
-      if (ca?.leadImageUrl) return absolutize(ca.leadImageUrl);
-      if (ca?.fileUrl && typeof ca.fileType === "string" && ca.fileType.startsWith("image/")) return absolutize(ca.fileUrl);
+      if (ca?.leadImageUrl) return await absolutize(ca.leadImageUrl);
+      if (ca?.fileUrl && typeof ca.fileType === "string" && ca.fileType.startsWith("image/")) return await absolutize(ca.fileUrl);
     }
     if (post.sourceUrl) {
       const ca = contentAssetByUrl.get(post.sourceUrl);
-      if (ca?.leadImageUrl) return absolutize(ca.leadImageUrl);
+      if (ca?.leadImageUrl) return await absolutize(ca.leadImageUrl);
     }
     return "";
   };
@@ -307,7 +347,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const fullContent = isTwitterPost(post)
           ? buildTwitterContent(baseContent, post.hashtags as string[], post.sourceUrl || "")
           : baseContent;
-        const imageUrl = getPostImageUrl(post);
+        const imageUrl = await getPostImageUrl(post);
         const acct = post.socialAccountId ? accountMap.get(post.socialAccountId) : null;
         const accountName = acct?.accountName || "";
         const dateStr = sd ? fmtSproutDate(sd) : "";
@@ -325,7 +365,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const fullContent = isTwitterPost(post)
           ? buildTwitterContent(baseContent, post.hashtags as string[])
           : (hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent);
-        const imageUrl = getPostImageUrl(post);
+        const imageUrl = await getPostImageUrl(post);
         const { date, time } = fmtHootsuiteDate(sd);
         const profile = getAccountId(post) || post.platform;
         lines.push(`${escCsv(date)},${escCsv(time)},${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(profile)}`);
@@ -342,7 +382,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         const fullContent = isTwitterPost(post)
           ? buildTwitterContent(baseContent, post.hashtags as string[])
           : (hashtagLine ? `${baseContent}\n${hashtagLine}` : baseContent);
-        const imageUrl = getPostImageUrl(post);
+        const imageUrl = await getPostImageUrl(post);
         const dateStr = fmtSproutDate(sd);
         lines.push(`${escCsv(fullContent)},${escCsv(imageUrl)},${escCsv(dateStr)},${escCsv(post.platform)},${escCsv(getAccountId(post))}`);
       }
@@ -378,7 +418,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
           firstComment = "";
         }
 
-        const imageUrl = getPostImageUrl(post);
+        const imageUrl = await getPostImageUrl(post);
         const dateStr = fmtSocialPilotDate(sd);
         const platformAccountId = getSocialPilotAccountId(post);
         // Tags column = SocialPilot's internal label field (semicolon-separated,
