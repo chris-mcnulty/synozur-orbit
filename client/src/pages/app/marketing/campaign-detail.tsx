@@ -1536,6 +1536,7 @@ export default function CampaignDetailPage() {
   const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>([]);
   const [scheduleArchiveLeftover, setScheduleArchiveLeftover] = useState(false);
   const [scheduleSkipScheduled, setScheduleSkipScheduled] = useState(true);
+  const [reexportPreparedIds, setReexportPreparedIds] = useState<string[]>([]);
 
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [createPostContent, setCreatePostContent] = useState("");
@@ -1574,6 +1575,7 @@ export default function CampaignDetailPage() {
       const effectiveDays = campaign.numberOfDays ?? (campaign.endDate ? Math.max(1, Math.round((new Date(campaign.endDate).getTime() - new Date(campaign.startDate).getTime()) / 86400000) + 1) : null);
       if (!effectiveDays) throw new Error("Campaign has no duration configured — set an end date or number of days");
       const platformSet = new Set(platforms);
+      const reexportIdSet = new Set(reexportPreparedIds);
       // Only the chosen platforms get distributed; everything else is left as-is
       // (and optionally archived afterward as "leftovers").
       // When scheduleSkipScheduled is true, skip posts that already have a date
@@ -1582,6 +1584,7 @@ export default function CampaignDetailPage() {
         p.status !== "deleted" &&
         p.status !== "rejected" &&
         platformSet.has(p.platform) &&
+        (reexportIdSet.size === 0 || reexportIdSet.has(p.id)) &&
         (!scheduleSkipScheduled || !p.scheduledDate)
       );
       if (activePosts.length === 0) throw new Error("No active posts to schedule for the selected platforms");
@@ -1622,15 +1625,19 @@ export default function CampaignDetailPage() {
       campaignStart.setHours(0, 0, 0, 0);
       const start = campaignStart < localToday ? localToday : campaignStart;
       const origEnd = addDays(campaignStart, effectiveDays - 1);
-      const effectiveEnd = origEnd < localToday ? addDays(localToday, effectiveDays - 1) : origEnd;
 
       const eligibleSlots: string[] = [];
       let current = pushToNextWeekday(new Date(start));
+      const firstCandidate = new Date(`${toLocalDateStr(current)}T${timeStr}${tzSuffix}`);
+      if (firstCandidate.getTime() <= Date.now()) {
+        current = pushToNextWeekday(addDays(current, 1));
+      }
+      const effectiveEnd = origEnd < localToday ? addDays(current, effectiveDays - 1) : origEnd;
 
       while (current <= effectiveEnd) {
         const dateStr = toLocalDateStr(current);
         const isoStr = `${dateStr}T${timeStr}${tzSuffix}`;
-        eligibleSlots.push(isoStr);
+        if (new Date(isoStr).getTime() > Date.now()) eligibleSlots.push(isoStr);
         current = addDays(current, daysBetween);
         current = pushToNextWeekday(current);
       }
@@ -1718,16 +1725,28 @@ export default function CampaignDetailPage() {
         }
       }
 
-      await Promise.all(assignments.map(async ({ postId, slot }) => {
-        const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
-          method: "PUT",
+      if (reexportIdSet.size > 0) {
+        const r = await fetch(`/api/campaigns/${id}/generated-posts/schedule-reexport`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ scheduledDate: slot }),
+          body: JSON.stringify({ assignments }),
         });
-        if (!r.ok) throw new Error(`Failed to schedule post ${postId}`);
-        return r.json();
-      }));
+        if (!r.ok) {
+          throw new Error((await r.json().catch(() => ({}))).error || "Failed to schedule recovered posts");
+        }
+      } else {
+        await Promise.all(assignments.map(async ({ postId, slot }) => {
+          const r = await fetch(`/api/campaigns/${id}/generated-posts/${postId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ scheduledDate: slot }),
+          });
+          if (!r.ok) throw new Error(`Failed to schedule post ${postId}`);
+          return r.json();
+        }));
+      }
 
       // Optionally sweep up everything still without a date (overflow + posts on
       // platforms we didn't schedule) in the same flow.
@@ -1745,6 +1764,11 @@ export default function CampaignDetailPage() {
     onSuccess: (result) => {
       setShowScheduleDialog(false);
       queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      const completedReexportSchedule = reexportPreparedIds.length > 0;
+      if (completedReexportSchedule) {
+        setReexportPreparedIds([]);
+        void handleExportClick();
+      }
       if (result?.overflowCount && result.overflowCount > 0) {
         toast({
           title: "Not enough timeslots",
@@ -2029,6 +2053,55 @@ export default function CampaignDetailPage() {
       toast({ title: `Marked ${d.updated} post${d.updated === 1 ? "" : "s"} as delivered`, description: "They won't appear in future exports unless you choose to include delivered posts." });
     },
     onError: (err: Error) => toast({ title: "Couldn't mark delivered", description: err.message, variant: "destructive" }),
+  });
+
+  const prepareReexportMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/campaigns/${id}/generated-posts/prepare-reexport`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!r.ok) {
+        throw new Error((await r.json().catch(() => ({}))).error || "Failed to prepare posts");
+      }
+      return r.json() as Promise<{
+        prepared: number;
+        refreshedImages: number;
+        needsScheduling: number;
+        preservedBrandImages: number;
+        postIds: string[];
+      }>;
+    },
+    onSuccess: async (data) => {
+      setShowExportWarning(false);
+      setIncludeExported(false);
+      await queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${id}/generated-posts`] });
+      if (data.prepared === 0) {
+        toast({ title: "No delivered posts found", description: "There are no SocialPilot posts to prepare in this campaign." });
+        return;
+      }
+      toast({
+        title: `${data.prepared} posts prepared for re-export`,
+        description: `${data.refreshedImages} inherited images refreshed. Post copy was preserved.`,
+      });
+      if (data.needsScheduling > 0) {
+        setReexportPreparedIds(data.postIds);
+        setSchedulePlatforms(schedulablePlatforms);
+        setScheduleSkipScheduled(true);
+        setScheduleArchiveLeftover(false);
+        setShowScheduleDialog(true);
+      } else {
+        setReexportPreparedIds([]);
+        void handleExportClick();
+      }
+    },
+    onError: (err: Error) => toast({
+      title: "Couldn't prepare posts",
+      description: err.message,
+      variant: "destructive",
+    }),
   });
 
 
@@ -6409,7 +6482,10 @@ export default function CampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+      <Dialog open={showScheduleDialog} onOpenChange={(open) => {
+        setShowScheduleDialog(open);
+        if (!open && !schedulePostsMutation.isPending) setReexportPreparedIds([]);
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Schedule Posts</DialogTitle>
@@ -6578,7 +6654,16 @@ export default function CampaignDetailPage() {
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowScheduleDialog(false)} data-testid="button-cancel-schedule">Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReexportPreparedIds([]);
+                setShowScheduleDialog(false);
+              }}
+              data-testid="button-cancel-schedule"
+            >
+              Cancel
+            </Button>
             <Button
               onClick={() => schedulePostsMutation.mutate({ time: scheduleTime, perDay: parseInt(postsPerDay), daysBetween: parseInt(daysBetweenPosts), spacingMinutes: parseInt(minutesBetweenPosts) || 180, platforms: schedulePlatforms, archiveLeftover: scheduleArchiveLeftover })}
               disabled={schedulePostsMutation.isPending || schedulePlatforms.length === 0}
@@ -7495,6 +7580,26 @@ export default function CampaignDetailPage() {
                     No posts with valid dates to export. Use the Schedule Posts button first, or check the box above to include undated posts.
                   </p>
                 )}
+                <div className="rounded-md border border-amber-300 dark:border-amber-800 p-3 bg-amber-50 dark:bg-amber-950/30">
+                  <p className="text-sm font-medium">Correct a previous SocialPilot export</p>
+                  <p className="text-xs text-muted-foreground mt-1 mb-2">
+                    Re-open all delivered posts in this campaign, refresh inherited images from their source assets, and preserve the post copy. Stale dates will be cleared and sent to the bulk scheduler.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => prepareReexportMutation.mutate()}
+                    disabled={prepareReexportMutation.isPending}
+                    data-testid="button-prepare-reexport"
+                  >
+                    {prepareReexportMutation.isPending
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <RefreshCw className="w-3.5 h-3.5" />}
+                    {prepareReexportMutation.isPending ? "Preparing..." : "Prepare delivered posts for re-export"}
+                  </Button>
+                </div>
                 <div className="rounded-md border p-3 bg-muted/50">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input

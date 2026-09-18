@@ -3698,6 +3698,140 @@ export function registerSaturnMarketingRoutes(app: Express) {
     }
   });
 
+  // Re-open delivered CSV posts for a corrected export without regenerating
+  // their copy. Source-linked posts pick up the source asset's current lead
+  // image; explicit Visual/Brand Asset overrides remain untouched. Future
+  // dates are preserved and stale dates are cleared for the bulk scheduler.
+  app.post("/api/campaigns/:campaignId/generated-posts/prepare-reexport", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(
+          eq(campaigns.id, req.params.campaignId),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const requestedIds = Array.isArray(req.body?.postIds)
+        ? req.body.postIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+        : [];
+      const now = new Date();
+      const result = await db.transaction(async (tx) => {
+        const rows = await tx.select({
+          post: generatedPosts,
+          sourceLeadImageUrl: contentAssets.leadImageUrl,
+        })
+          .from(generatedPosts)
+          .leftJoin(contentAssets, and(
+            eq(contentAssets.id, generatedPosts.sourceAssetId),
+            eq(contentAssets.tenantDomain, ctx.tenantDomain),
+          ))
+          .where(and(
+            eq(generatedPosts.campaignId, campaign.id),
+            inArray(generatedPosts.status, ["exported", "scheduled_external"]),
+            requestedIds.length ? inArray(generatedPosts.id, requestedIds) : undefined,
+          ));
+
+        let refreshedImages = 0;
+        let needsScheduling = 0;
+        let preservedBrandImages = 0;
+        for (const { post, sourceLeadImageUrl } of rows) {
+          const hasFutureDate = !!post.scheduledDate && post.scheduledDate >= now;
+          if (!hasFutureDate) needsScheduling++;
+          if (post.overrideBrandAssetId) preservedBrandImages++;
+
+          const imagePatch = !post.overrideBrandAssetId && post.sourceAssetId
+            ? { overrideImageUrl: sourceLeadImageUrl ?? null }
+            : {};
+          if ("overrideImageUrl" in imagePatch && imagePatch.overrideImageUrl !== post.overrideImageUrl) {
+            refreshedImages++;
+          }
+          await tx.update(generatedPosts)
+            .set({
+              status: "approved",
+              deliveryMode: "csv",
+              scheduledDate: hasFutureDate ? post.scheduledDate : null,
+              ...imagePatch,
+              updatedAt: new Date(),
+            })
+            .where(eq(generatedPosts.id, post.id));
+        }
+        return {
+          prepared: rows.length,
+          refreshedImages,
+          needsScheduling,
+          preservedBrandImages,
+          postIds: rows.map(({ post }) => post.id),
+        };
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error("[Prepare Re-export Error]", err.message);
+      res.status(500).json({ error: "Failed to prepare posts for re-export" });
+    }
+  });
+
+  // Atomically schedule only posts prepared by the re-export recovery flow.
+  // This prevents a 100+ post browser fan-out from leaving a partial schedule.
+  app.post("/api/campaigns/:campaignId/generated-posts/schedule-reexport", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const [campaign] = await db.select({ id: campaigns.id }).from(campaigns)
+        .where(and(
+          eq(campaigns.id, req.params.campaignId),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+        ));
+      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+
+      const assignments = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
+      if (assignments.length === 0 || assignments.length > 1000) {
+        return res.status(400).json({ error: "assignments must contain between 1 and 1000 posts" });
+      }
+      const normalized = assignments.map((item: any) => ({
+        postId: typeof item?.postId === "string" ? item.postId : "",
+        scheduledDate: item?.slot ? new Date(item.slot) : null,
+      }));
+      if (normalized.some((item: any) =>
+        !item.postId || (item.scheduledDate && Number.isNaN(item.scheduledDate.getTime()))
+      )) {
+        return res.status(400).json({ error: "Every assignment needs a valid postId and date" });
+      }
+      const scheduleNow = new Date();
+      if (normalized.some((item: any) => item.scheduledDate && item.scheduledDate <= scheduleNow)) {
+        return res.status(400).json({ error: "Re-export schedule dates must be in the future" });
+      }
+      if (new Set(normalized.map((item: any) => item.postId)).size !== normalized.length) {
+        return res.status(400).json({ error: "Duplicate post assignments are not allowed" });
+      }
+
+      await db.transaction(async (tx) => {
+        for (const item of normalized) {
+          const updated = await tx.update(generatedPosts)
+            .set({ scheduledDate: item.scheduledDate, updatedAt: new Date() })
+            .where(and(
+              eq(generatedPosts.id, item.postId),
+              eq(generatedPosts.campaignId, campaign.id),
+              eq(generatedPosts.status, "approved"),
+              eq(generatedPosts.deliveryMode, "csv"),
+            ))
+            .returning({ id: generatedPosts.id });
+          if (updated.length !== 1) {
+            throw new Error("REEXPORT_SCOPE_MISMATCH");
+          }
+        }
+      });
+      res.json({ updated: normalized.length });
+    } catch (err: any) {
+      if (err?.message === "REEXPORT_SCOPE_MISMATCH") {
+        return res.status(409).json({ error: "Some posts changed before scheduling. Prepare them for re-export again." });
+      }
+      console.error("[Schedule Re-export Error]", err.message);
+      res.status(500).json({ error: "Failed to schedule posts for re-export" });
+    }
+  });
+
   app.patch("/api/campaigns/:campaignId/generated-posts/bulk-link", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {
