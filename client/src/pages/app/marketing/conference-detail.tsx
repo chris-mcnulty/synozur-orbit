@@ -1358,7 +1358,10 @@ function ImageSlot({
   onChange: () => void;
 }) {
   const { toast } = useToast();
-  const [source, setSource] = useState<string>(image?.source || "ai_generated");
+  const initialSource = image?.source === "ai_generated"
+    ? (isAnchor ? "logo_composite" : "template_composite")
+    : (image?.source || (isAnchor ? "logo_composite" : "template_composite"));
+  const [source, setSource] = useState<string>(initialSource);
   const [prompt, setPrompt] = useState(image?.imagePrompt || "");
   const [templateId, setTemplateId] = useState(image?.templateAssetId || "");
   const [backgroundId, setBackgroundId] = useState(image?.backgroundId || "");
@@ -1448,21 +1451,11 @@ function ImageSlot({
               {isAnchor && (
                 <SelectItem value="logo_composite">Hero composite (brand + event logo)</SelectItem>
               )}
-              <SelectItem value="ai_generated">AI-generated</SelectItem>
               <SelectItem value="template_composite">Brand image + text overlay</SelectItem>
               <SelectItem value="uploaded">Upload my own</SelectItem>
             </SelectContent>
           </Select>
         </div>
-
-        {source === "ai_generated" && (
-          <Textarea
-            rows={2}
-            placeholder="Optional image prompt (we generate a sensible default from the session if blank)"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-        )}
 
         {source === "template_composite" && (
           <div className="grid gap-1">

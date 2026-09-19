@@ -18,6 +18,7 @@ import {
   conferenceSessions,
   conferenceImages,
   conferenceBackgrounds,
+  brandAssets,
   generatedPosts,
   campaigns,
   scheduledJobRuns,
@@ -35,6 +36,7 @@ import {
   generateConferencePostsAsync,
   renderConferenceImage,
   ensureConferenceCampaign,
+  normalizeConferenceGraphicSource,
 } from "../services/conference-promotion-service";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
@@ -475,9 +477,21 @@ export function registerConferencePromotionRoutes(app: Express) {
     const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
     const b = req.body ?? {};
-    const source: ConferenceImageSource = CONFERENCE_IMAGE_SOURCES.includes(b.source) ? b.source : "ai_generated";
     const role: ConferenceImageRole = CONFERENCE_IMAGE_ROLES.includes(b.role) ? b.role : (b.sessionId ? "session" : "anchor");
+    const requestedSource: ConferenceImageSource = CONFERENCE_IMAGE_SOURCES.includes(b.source)
+      ? b.source
+      : (role === "session" ? "template_composite" : "logo_composite");
+    const source = normalizeConferenceGraphicSource(requestedSource, role);
     const sessionId = typeof b.sessionId === "string" && b.sessionId ? b.sessionId : null;
+    const templateAssetId = typeof b.templateAssetId === "string" && b.templateAssetId ? b.templateAssetId : null;
+    const backgroundId = typeof b.backgroundId === "string" && b.backgroundId ? b.backgroundId : null;
+    if ((role === "session") !== Boolean(sessionId)) {
+      return res.status(400).json({
+        error: role === "session"
+          ? "Session graphics require a sessionId"
+          : "Anchor graphics cannot reference a session",
+      });
+    }
 
     // Validate session belongs to this conference and enforce 1:1.
     if (sessionId) {
@@ -492,6 +506,26 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (source === "uploaded" && (!b.fileUrl || typeof b.fileUrl !== "string")) {
       return res.status(400).json({ error: "uploaded images require a fileUrl" });
     }
+    if (templateAssetId) {
+      const [template] = await db.select().from(brandAssets).where(and(
+        eq(brandAssets.id, templateAssetId),
+        eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.status, "active"),
+      ));
+      if (!template || (template.marketId && template.marketId !== ctx.marketId)) {
+        return res.status(400).json({ error: "Brand template is not available for the active market" });
+      }
+    }
+    if (backgroundId) {
+      const [background] = await db.select().from(conferenceBackgrounds).where(and(
+        eq(conferenceBackgrounds.id, backgroundId),
+        eq(conferenceBackgrounds.conferenceId, conf.id),
+        eq(conferenceBackgrounds.tenantDomain, ctx.tenantDomain),
+      ));
+      if (!background) {
+        return res.status(400).json({ error: "Background does not belong to this conference" });
+      }
+    }
 
     const [row] = await db
       .insert(conferenceImages)
@@ -504,8 +538,8 @@ export function registerConferencePromotionRoutes(app: Express) {
         source,
         name: typeof b.name === "string" ? b.name : null,
         imagePrompt: typeof b.imagePrompt === "string" ? b.imagePrompt : null,
-        templateAssetId: typeof b.templateAssetId === "string" && b.templateAssetId ? b.templateAssetId : null,
-        backgroundId: typeof b.backgroundId === "string" && b.backgroundId ? b.backgroundId : null,
+        templateAssetId: source === "template_composite" ? templateAssetId : null,
+        backgroundId: source === "logo_composite" ? backgroundId : null,
         fileUrl: source === "uploaded" ? b.fileUrl : null,
         fileType: source === "uploaded" && typeof b.fileType === "string" ? b.fileType : null,
         createdBy: ctx.userId,
@@ -547,13 +581,53 @@ export function registerConferencePromotionRoutes(app: Express) {
       .from(conferenceImages)
       .where(and(eq(conferenceImages.id, req.params.id), eq(conferenceImages.tenantDomain, ctx.tenantDomain)));
     if (!img) return res.status(404).json({ error: "Image not found" });
+    const conf = await loadConference(img.conferenceId, ctx.tenantDomain, ctx.marketId);
+    if (!conf) return res.status(404).json({ error: "Conference not found" });
     const b = req.body ?? {};
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if ("name" in b) patch.name = b.name ?? null;
     if ("imagePrompt" in b) patch.imagePrompt = b.imagePrompt ?? null;
-    if ("templateAssetId" in b) patch.templateAssetId = b.templateAssetId ?? null;
-    if ("backgroundId" in b) patch.backgroundId = b.backgroundId ?? null;
-    if (typeof b.source === "string" && CONFERENCE_IMAGE_SOURCES.includes(b.source)) patch.source = b.source;
+    if ("templateAssetId" in b) {
+      const templateId = typeof b.templateAssetId === "string" && b.templateAssetId ? b.templateAssetId : null;
+      if (templateId) {
+        const [template] = await db.select().from(brandAssets).where(and(
+          eq(brandAssets.id, templateId),
+          eq(brandAssets.tenantDomain, ctx.tenantDomain),
+          eq(brandAssets.status, "active"),
+        ));
+        if (!template || (template.marketId && template.marketId !== ctx.marketId)) {
+          return res.status(400).json({ error: "Brand template is not available for the active market" });
+        }
+      }
+      patch.templateAssetId = templateId;
+      patch.fileUrl = null;
+      patch.fileType = null;
+      patch.fileSize = null;
+    }
+    if ("backgroundId" in b) {
+      const backgroundId = typeof b.backgroundId === "string" && b.backgroundId ? b.backgroundId : null;
+      if (backgroundId) {
+        const [background] = await db.select().from(conferenceBackgrounds).where(and(
+          eq(conferenceBackgrounds.id, backgroundId),
+          eq(conferenceBackgrounds.conferenceId, conf.id),
+          eq(conferenceBackgrounds.tenantDomain, ctx.tenantDomain),
+        ));
+        if (!background) {
+          return res.status(400).json({ error: "Background does not belong to this conference" });
+        }
+      }
+      patch.backgroundId = backgroundId;
+      patch.fileUrl = null;
+      patch.fileType = null;
+      patch.fileSize = null;
+    }
+    if (typeof b.source === "string" && CONFERENCE_IMAGE_SOURCES.includes(b.source)) {
+      patch.source = normalizeConferenceGraphicSource(b.source, img.role);
+      patch.fileUrl = null;
+      patch.fileType = null;
+      patch.fileSize = null;
+      patch.imagePrompt = null;
+    }
     if (b.source === "uploaded" && typeof b.fileUrl === "string") patch.fileUrl = b.fileUrl;
     if (b.source === "uploaded" && typeof b.fileType === "string") patch.fileType = b.fileType;
     const [row] = await db.update(conferenceImages).set(patch).where(eq(conferenceImages.id, img.id)).returning();
@@ -612,6 +686,9 @@ export function registerConferencePromotionRoutes(app: Express) {
     const b = req.body ?? {};
     if (!b.fileUrl || typeof b.fileUrl !== "string") {
       return res.status(400).json({ error: "fileUrl is required" });
+    }
+    if (!b.fileUrl.startsWith("/objects/") && !b.fileUrl.startsWith("/public-objects/")) {
+      return res.status(400).json({ error: "Conference backgrounds must be uploaded through Orbit" });
     }
     const existing = await db
       .select()
