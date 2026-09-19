@@ -88,6 +88,7 @@ import { storage, type ContextFilter } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { extractContentFromUrl, generateContentSummary, loadGroundingContext } from "../services/content-extraction";
 import { loadStrategicContext, formatStrategicContextForPrompt, formatPersonaContextForPrompt, formatFoundingSignalsForPrompt } from "../services/strategic-context";
+import { loadCampaignGenerationSupplementalContext } from "../services/campaign-generation-context";
 import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
@@ -3215,7 +3216,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
       const [campaign] = await db.select().from(campaigns)
-        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+        ));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
       const { assetId, assetIds, overrideTitle, overrideContent, sortOrder } = req.body;
 
@@ -3301,7 +3306,11 @@ export function registerSaturnMarketingRoutes(app: Express) {
     try {
       const ctx = await getRequestContext(req);
       const [campaign] = await db.select().from(campaigns)
-        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+        ));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
       const { brandAssetId } = req.body;
       if (!brandAssetId) return res.status(400).json({ error: "brandAssetId is required" });
@@ -4286,7 +4295,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
       const ctx = await getRequestContext(req);
 
       const [campaign] = await db.select().from(campaigns)
-        .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
+        .where(and(
+          eq(campaigns.id, req.params.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+        ));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
       const brandImageIds: string[] = Array.isArray(req.body?.brandImageIds) ? req.body.brandImageIds : [];
@@ -4310,6 +4323,8 @@ Return ONLY a valid JSON object (no markdown fences) with:
           .where(and(
             eq(contentBriefs.id, sourceBriefId),
             eq(contentBriefs.campaignId, campaign.id),
+            eq(contentBriefs.tenantDomain, ctx.tenantDomain),
+            eq(contentBriefs.marketId, ctx.marketId),
           ));
         if (sourceBrief) {
           const briefParts: string[] = [`FOCUS BRIEF — generate posts specifically for this brief, not general campaign posts:`];
@@ -4330,7 +4345,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
           // can attach sourceAssetId and serve as a richer context anchor.
           if (sourceBrief.contentAssetId) {
             const [asset] = await db.select().from(contentAssets)
-              .where(eq(contentAssets.id, sourceBrief.contentAssetId));
+              .where(and(
+                eq(contentAssets.id, sourceBrief.contentAssetId),
+                eq(contentAssets.tenantDomain, ctx.tenantDomain),
+                eq(contentAssets.marketId, ctx.marketId),
+              ));
             if (asset) sourceBriefContentAsset = asset;
           }
         }
@@ -4341,10 +4360,24 @@ Return ONLY a valid JSON object (no markdown fences) with:
       // distinct promotional angle) and auto-links every post back to the asset URL.
       const rawBlogAssetId: string = typeof req.body?.blogAssetId === "string" ? req.body.blogAssetId.trim() : "";
       if (rawBlogAssetId) {
+        if (campaign.briefOnlyMode) {
+          const [membership] = await db.select({ assetId: campaignAssets.assetId })
+            .from(campaignAssets)
+            .where(and(
+              eq(campaignAssets.campaignId, campaign.id),
+              eq(campaignAssets.assetId, rawBlogAssetId),
+            ));
+          if (!membership) {
+            return res.status(400).json({
+              error: "Campaign-only generation can use only content attached to this campaign",
+            });
+          }
+        }
         const [blogAsset] = await db.select().from(contentAssets)
           .where(and(
             eq(contentAssets.id, rawBlogAssetId),
             eq(contentAssets.tenantDomain, ctx.tenantDomain),
+            eq(contentAssets.marketId, ctx.marketId),
           ));
         if (blogAsset) {
           const articleContent = (blogAsset.content || blogAsset.aiSummary || "").slice(0, 4000);
@@ -4396,7 +4429,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
       // Link job to campaign
       await db.update(campaigns)
         .set({ postGenerationJobId: job.id, updatedAt: new Date() })
-        .where(eq(campaigns.id, campaign.id));
+        .where(and(
+          eq(campaigns.id, campaign.id),
+          eq(campaigns.tenantDomain, ctx.tenantDomain),
+          eq(campaigns.marketId, ctx.marketId),
+        ));
 
       const wrapLinks: boolean = !!req.body?.wrapLinks;
       const onePostPerAsset: boolean = !!req.body?.onePostPerAsset;
@@ -6212,7 +6249,14 @@ async function generatePostsAsync(
     ensureNotAborted();
     reportProgress?.({ phase: "Loading context", percent: 5 });
     const [campaignRow] = await db.select().from(campaigns)
-      .where(eq(campaigns.id, campaignId));
+      .where(and(
+        eq(campaigns.id, campaignId),
+        eq(campaigns.tenantDomain, tenantDomain),
+        eq(campaigns.marketId, marketId),
+      ));
+    if (!campaignRow) {
+      throw new Error("Campaign not found in the active tenant and market");
+    }
 
     // Load campaign assets
     const camAssets = await db.select().from(campaignAssets)
@@ -6252,21 +6296,22 @@ async function generatePostsAsync(
     // In brief-only mode, skip market positioning + intelligence so posts draw
     // exclusively from the campaign content (briefs, thematic brief, pool assets).
     const briefOnlyMode = !!campaignRow.briefOnlyMode;
-    const [groundingContext, strategicCtx] = await Promise.all([
-      loadGroundingContext(tenantDomain, marketId),
-      briefOnlyMode ? Promise.resolve(null) : loadStrategicContext(tenantDomain, marketId),
-    ]);
-    // strategicCtx is only null in briefOnlyMode; non-null in the else branch.
-    const strategicContext = briefOnlyMode ? "" : formatStrategicContextForPrompt(strategicCtx!);
+    const { groundingContext, strategicContext } =
+      await loadCampaignGenerationSupplementalContext(
+        tenantDomain,
+        marketId,
+        briefOnlyMode,
+      );
 
     let personaContext = "";
-    if (personaIds.length > 0) {
-      const selectedPersonas = await Promise.all(
-        personaIds.map((pid: string) => storage.getPersona(pid))
-      );
-      const validPersonas = selectedPersonas.filter(Boolean);
+    if (!briefOnlyMode && personaIds.length > 0) {
+      const validPersonas = await db.select().from(personas).where(and(
+        inArray(personas.id, personaIds),
+        eq(personas.tenantDomain, tenantDomain),
+        eq(personas.marketId, marketId),
+      ));
       if (validPersonas.length) {
-        personaContext = formatPersonaContextForPrompt(validPersonas as any);
+        personaContext = formatPersonaContextForPrompt(validPersonas);
       }
     }
 
@@ -6282,6 +6327,8 @@ async function generatePostsAsync(
     }).from(contentBriefs)
       .where(and(
         eq(contentBriefs.campaignId, campaignId),
+        eq(contentBriefs.tenantDomain, tenantDomain),
+        eq(contentBriefs.marketId, marketId),
         inArray(contentBriefs.status, ["suggested", "approved"]),
       ))
       .limit(15);
@@ -6347,6 +6394,7 @@ async function generatePostsAsync(
       }).from(brandAssets).where(
         and(
           eq(brandAssets.tenantDomain, tenantDomain),
+          eq(brandAssets.marketId, marketId),
           inArray(brandAssets.id, brandImageIds),
         ),
       );
@@ -6424,13 +6472,27 @@ async function generatePostsAsync(
             leadImageUrl: assetBaseVisual(a),
           }))
         : [{
-            context: "(no specific assets provided — draw from your knowledge of best practices)",
+            context: briefOnlyMode
+              ? "## Campaign-only source boundary\nNo content asset is attached. Use only the Campaign mission and Campaign content briefs supplied above."
+              : "(no specific assets provided — draw from your knowledge of best practices)",
             sourceUrl: null,
             thematic: false,
             label: "general",
             assetId: null,
             leadImageUrl: null,
           }];
+
+    if (
+      briefOnlyMode &&
+      !isThematic &&
+      selectedAssets.length === 0 &&
+      campaignBriefs.length === 0 &&
+      !campaignMissionContext
+    ) {
+      throw new Error(
+        "Campaign-only generation needs a campaign brief, campaign objective, or attached content asset",
+      );
+    }
 
     const { target: targetVariantsPerPlatform, eligibleDays, capped } = calculateTargetVariantsPerPlatform(campaignRow, wrapOpts.variantsPerPlatform);
     const VARIANTS_PER_BATCH = 4; // angles per AI call — keeps prompts focused and JSON parseable
@@ -6503,8 +6565,11 @@ GENERAL RULES:
 2. ${pool.sourceUrl ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${pool.sourceUrl}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below."}
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
-5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. The TOTAL character count of the post content PLUS the hashtag line (e.g. '#Tag1 #Tag2') MUST NOT exceed 280. Since hashtags typically add 30-60 characters, keep the post content body to 200 characters MAX. Count EVERY character including spaces, punctuation, and URLs. One concise sentence + URL is ideal. NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
+5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. Write ONE complete, concise sentence. The content field, including its source URL, must be 190 characters MAX. Return only 2-3 short hashtags so content + hashtags stays within 280. Never end on a partial clause and NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
+7. ${briefOnlyMode
+  ? "CAMPAIGN-ONLY FACT CONTRACT: The Campaign mission, Campaign content briefs, and campaign theme/content asset below are the ONLY factual sources. Do not introduce outside facts, statistics, examples, products, industries, research, or claims from prior knowledge. Persona and platform guidance may shape audience and style only; they are not factual sources."
+  : "Use supplied context carefully and never invent unsupported facts or statistics."}
 
 ${campaignMissionContext ? `${campaignMissionContext}\n\n` : ""}${briefsContext ? `${briefsContext}\n\n` : ""}${foundingSignalsContext ? `${foundingSignalsContext}\n\n` : ""}${groundingContext ? `## Brand & Marketing Guidelines\n${groundingContext}\n\n` : ""}${strategicContext ? `${strategicContext}\n\n` : ""}${personaContext ? `${personaContext}\n\n` : ""}${pool.context}
 
@@ -6513,7 +6578,7 @@ ${getPlatformGuide(account.platform)}
 
 Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSize} object${batchSize > 1 ? "s" : ""}, each with:
 - "content": string (the post body — include the source URL naturally if one was provided, no inline hashtags)
-- "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)
+- "hashtags": string[] (${account.platform === "twitter" ? "2-3 short, relevant hashtags" : "3-5 relevant hashtags"}, each a single camelCase word, no # prefix)
 - "imagePrompt": string (a suggested image description for this post)`;
     };
 

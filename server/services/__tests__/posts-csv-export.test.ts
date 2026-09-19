@@ -240,4 +240,32 @@ describe("SocialPilot account ID resolution", () => {
     );
     expect(csv).not.toContain('"/objects/uploads/image-123"');
   });
+
+  it("keeps Twitter exports within 280 characters without a dangling partial sentence", async () => {
+    const sourceUrl = "https://example.com/product/helicopter-2026";
+    const csv = await buildPostsCsv({
+      posts: [{
+        id: "post-1",
+        platform: "twitter",
+        content: `A tiny helicopter over Mendenhall Glacier reveals the immense scale of the ice. One small detail can transform how a viewer understands an entire landscape, creating a stronger and more memorable photograph. ${sourceUrl}`,
+        sourceUrl,
+        hashtags: ["AlaskaPhotography", "MendenhallGlacier", "CascadiaOceanic", "FineArtPrint"],
+        scheduledDate: new Date("2030-01-10T15:00:00Z"),
+      }],
+      tenantDomain: "tenant.example.com",
+      format: "socialpilot",
+      tzOffset: 0,
+    });
+
+    const content = csv.match(/^"((?:[^"]|"")*)"/)?.[1]?.replace(/""/g, '"') ?? "";
+    expect(content.length).toBeLessThanOrEqual(280);
+    expect(content).toContain(
+      "A tiny helicopter over Mendenhall Glacier reveals the immense scale of the ice.",
+    );
+    expect(content).not.toContain("One small detail can transform");
+    expect(content).not.toContain("…");
+    expect(content.match(new RegExp(sourceUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(1);
+    expect(content).toContain("#AlaskaPhotography #MendenhallGlacier #CascadiaOceanic");
+    expect(content).not.toContain("#FineArtPrint");
+  });
 });

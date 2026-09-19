@@ -20,6 +20,12 @@ Normalizing shape is not validation. Server-generated artifacts the client sends
 **Rule 3 — tests must prove exclusion, not inclusion.**
 Reviewers reject tests that only assert prompt content is present. Use sentinel strings in mocked context/profile sources and assert they do NOT appear in captured prompts; test that forged/tampered client artifacts are rejected.
 
+**Rule 4 — campaign-only means campaign-owned factual sources only.**
+- Campaign mission, campaign briefs/thematic brief, and attached campaign assets are allowed.
+- Skip tenant grounding, global grounding, GTM/strategic context, founding signals, personas, and model-knowledge fallbacks.
+- Scope the campaign, briefs, drafted assets, personas, and media by tenant + active market before any read or mutation.
+- Global grounding documents have no tenant owner and must never be loaded automatically into tenant generation. Resolve them only through an explicit, permission-checked selection path.
+
 **Why:** Task-completion review rejected the work twice for exactly these gaps even though all tests and typecheck passed.
 
 **How to apply:** Any future "use only what the user said" generation path (or extension of Quick Generate) — start from these three rules; grep quick-generate-service/quick-generate-core for the reference implementation.

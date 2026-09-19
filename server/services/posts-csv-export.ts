@@ -318,9 +318,15 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
   const TWITTER_CHAR_LIMIT = 280;
 
   const buildTwitterContent = (baseContent: string, hashtags: string[], sourceUrl?: string): string => {
-    const hashtagLine = buildHashtagLine(hashtags);
+    // Three concise tags leave enough room for an actual complete thought.
+    const hashtagLine = buildHashtagLine((hashtags || []).slice(0, 3));
     const urlPart = sourceUrl || "";
-    const parts = [baseContent];
+    // Generation may already have placed the source URL in the content. Remove
+    // it before sizing, then append it exactly once in the stable suffix.
+    const cleanBase = urlPart
+      ? baseContent.split(urlPart).join("").replace(/\n{3,}/g, "\n\n").trim()
+      : baseContent.trim();
+    const parts = [cleanBase];
     if (hashtagLine) parts.push(hashtagLine);
     if (urlPart) parts.push(urlPart);
     let full = parts.join("\n");
@@ -330,7 +336,20 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
     const suffixLen = suffix ? suffix.length + 1 : 0;
     const maxText = TWITTER_CHAR_LIMIT - suffixLen;
     if (maxText > 20) {
-      const truncated = baseContent.substring(0, maxText - 1).replace(/\s+\S*$/, "") + "…";
+      // Prefer one or more complete sentences. This avoids exports ending in a
+      // disconnected clause such as "one small detail…" merely to hit 280.
+      const sentences = cleanBase.match(/[^.!?]+[.!?]+(?:["'”’)]*)/g) ?? [];
+      let complete = "";
+      for (const sentence of sentences) {
+        const candidate = `${complete}${sentence}`.trim();
+        if (candidate.length > maxText) break;
+        complete = candidate;
+      }
+      if (complete) {
+        return [complete, ...(suffix ? [suffix] : [])].join("\n");
+      }
+
+      const truncated = cleanBase.substring(0, maxText - 1).replace(/\s+\S*$/, "") + "…";
       return [truncated, ...(suffix ? [suffix] : [])].join("\n");
     }
     return full.substring(0, TWITTER_CHAR_LIMIT - 1) + "…";

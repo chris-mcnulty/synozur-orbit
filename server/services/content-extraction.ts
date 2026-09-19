@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { completeForFeature } from "./ai-provider";
 import { validateUrlWithDnsCheck } from "../utils/url-validator";
 import { db } from "../db";
-import { groundingDocuments, globalGroundingDocuments } from "@shared/schema";
+import { groundingDocuments } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { fetchPageHeadless, isHeadlessAvailable } from "./headless-crawler";
 
@@ -183,18 +183,10 @@ function extractLeadImage($: cheerio.CheerioAPI, baseUrl: string): string | null
 async function loadGroundingContext(tenantDomain: string, marketId?: string): Promise<string> {
   const tiers: string[] = [];
 
-  const globalDocs = await db.select().from(globalGroundingDocuments)
-    .where(and(
-      eq(globalGroundingDocuments.isActive, true),
-      sql`${globalGroundingDocuments.extractedText} IS NOT NULL AND ${globalGroundingDocuments.extractedText} != ''`,
-    ));
-  if (globalDocs.length > 0) {
-    const systemContext = globalDocs
-      .map(d => `[${d.name}]\n${d.extractedText}`)
-      .join("\n\n");
-    tiers.push(`## System Guidelines\n${systemContext}`);
-  }
-
+  // Never automatically mix application-wide global documents into tenant
+  // generation. That table has no tenant owner, so its contents cannot be
+  // proven safe for a tenant prompt. Explicit account voice/framework selection
+  // resolves allowed global references separately.
   const tenantDocs = await db.select().from(groundingDocuments)
     .where(and(
       eq(groundingDocuments.tenantDomain, tenantDomain),
