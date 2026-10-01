@@ -14,3 +14,9 @@ Recovery validation must copy real supporting-table schemas rather than invent s
 **Why:** A dry run using an invented market schema passed a tenant-ownership check that then failed in production. A passing fixture test cannot establish production schema compatibility.
 
 **How to apply:** Inspect production column metadata, use real-schema TEMP table copies for supporting joins, and verify ownership through the actual tenant relationship. When the SQL console requires automatic batch transactions, omit only top-level transaction delimiters and execute the entire recovery as one batch.
+
+Treat a SQL console crash as an unknown transaction outcome, not proof of rollback.
+
+**Why:** The console reported a generic failure and crashed even though the recovery committed successfully.
+
+**How to apply:** Before retrying any recovery after a console failure, read production counts, linkage, and send-hold invariants independently. Do not infer database failure from the browser result.
