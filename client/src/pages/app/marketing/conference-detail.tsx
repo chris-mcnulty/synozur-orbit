@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTabMarketId } from "@/lib/tabContext";
+import { rejectedBatchAccountIds } from "@/lib/conference-regeneration";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X, ExternalLink } from "lucide-react";
 
@@ -200,6 +201,7 @@ interface Conference {
 }
 interface Post {
   id: string;
+  socialAccountId?: string | null;
   platform: string;
   content: string;
   hashtags?: string[];
@@ -1605,18 +1607,28 @@ function GenerateTab({
   }, [polling, status?.status]);
 
   const generate = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (options?: { accountIds: string[]; preservePublished: boolean }) => {
       const r = await fetch(`/api/conferences/${conferenceId}/generate-posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ socialAccountIds: selected, generateImages, includePublished, tzOffset: new Date().getTimezoneOffset() }),
+        body: JSON.stringify({
+          socialAccountIds: options?.accountIds ?? selected,
+          generateImages,
+          includePublished: options?.preservePublished ? false : includePublished,
+          tzOffset: new Date().getTimezoneOffset(),
+        }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to start");
       return r.json();
     },
     onSuccess: () => {
+      queryClient.setQueryData(
+        ["/api/conferences", getTabMarketId(), conferenceId, "gen-status"],
+        { status: "pending" },
+      );
       setPolling(true);
+      setSelectedKeys(new Set());
       toast({ title: "Generating posts…", description: "This runs in the background." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1704,6 +1716,7 @@ function GenerateTab({
   }, [groups, showRejected, filterPlatform, filterSessionId]);
 
   const rejectedCount = useMemo(() => groups.filter((g) => g.approvalState === "rejected").length, [groups]);
+  const recoveryAccountIds = rejectedBatchAccountIds(posts, accounts);
 
   // Per-group selection helpers
   const toggleKey = (key: string) => setSelectedKeys((prev) => {
@@ -1716,6 +1729,44 @@ function GenerateTab({
 
   return (
     <div className="space-y-4">
+      {rejectedCount > 0 && (
+        <Card className="border-destructive/40" data-testid="rejected-batch-recovery">
+          <CardHeader>
+            <CardTitle className="text-base">Regenerate rejected batch</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {rejectedCount} posts were rejected. Generate fresh copy using the event's current details.
+              This replaces all unpublished posts for the rejected batch's accounts, including rejected,
+              draft, and approved posts. Published posts and other accounts are kept.
+              Leave Booth details blank if you do not have a booth.
+            </p>
+            {recoveryAccountIds.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                The original accounts are no longer available. Select accounts below to generate a new batch.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Accounts: {accounts.filter((a) => recoveryAccountIds.includes(a.id)).map((a) => `${a.accountName} · ${a.platform}`).join(", ")}
+                </p>
+                <Button
+                  data-testid="button-regenerate-rejected-batch"
+                  disabled={generate.isPending || polling || approveGroup.isPending}
+                  onClick={() => {
+                    if (!window.confirm("Replace all unpublished posts for the listed accounts with a fresh batch? This includes rejected, draft, and approved posts. Published posts will be kept.")) return;
+                    setSelected(recoveryAccountIds);
+                    generate.mutate({ accountIds: recoveryAccountIds, preservePublished: true });
+                  }}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1 ${polling ? "animate-spin" : ""}`} />
+                  {polling ? "Regenerating…" : "Regenerate batch"}
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Generate posts</CardTitle>
@@ -1782,12 +1833,12 @@ function GenerateTab({
               ) {
                 return;
               }
-              generate.mutate();
+              generate.mutate(undefined);
             }}
             disabled={selected.length === 0 || generate.isPending || polling}
           >
             <RefreshCw className={`w-4 h-4 mr-1 ${polling ? "animate-spin" : ""}`} />
-            {polling ? "Generating…" : "Generate posts"}
+            {polling ? "Generating…" : posts.length > 0 ? "Regenerate posts" : "Generate posts"}
           </Button>
         </CardContent>
       </Card>

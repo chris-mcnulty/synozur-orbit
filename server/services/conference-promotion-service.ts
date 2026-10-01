@@ -1933,7 +1933,12 @@ async function runGeneration(
         eq(generatedPosts.conferenceId, conferenceId),
         eq(generatedPosts.tenantDomain, tenantDomain),
         inArray(generatedPosts.socialAccountId, accountIds),
-        ...(options.includePublished ? [] : [ne(generatedPosts.status, "published")]),
+        isNull(generatedPosts.publishClaimToken),
+        ...(options.includePublished ? [] : [
+          ne(generatedPosts.status, "published"),
+          ne(generatedPosts.status, "posted"),
+          isNull(generatedPosts.publishedAt),
+        ]),
       ),
     );
 
