@@ -138,7 +138,7 @@ describe("conference brand rendering regressions", () => {
     expect(io.update).toHaveBeenCalledTimes(1);
   });
 
-  it("renders a session with the same brand kit and actual structured session details", async () => {
+  it("renders a session with the intended brand gradient when no template is selected", async () => {
     rows([tenant], [], [fontAsset]);
     await renderConferenceImage(image("session"), conference, session);
     const at = await pixels(savedPng());
@@ -209,5 +209,14 @@ describe("conference brand rendering regressions", () => {
       .rejects.toThrow("Selected brand template is not available for this market");
     expect(io.save).not.toHaveBeenCalled();
     expect(io.update).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "", "   "])("rejects a selected template with incomplete file metadata (%j)", async (fileUrl) => {
+    rows([tenant], [], [{ fileUrl, marketId: null }]);
+    await expect(renderConferenceImage(image("session", { templateAssetId: "incomplete-template" }), conference, session))
+      .rejects.toThrow("Selected brand template is missing its image file. Upload a template image or clear the template selection");
+    expect(io.save).not.toHaveBeenCalled();
+    expect(io.update).not.toHaveBeenCalled();
+    expect(compositeSpy).not.toHaveBeenCalled();
   });
 });

@@ -1209,9 +1209,10 @@ export async function renderConferenceImage(
       if (!tpl || (tpl.marketId && tpl.marketId !== conf.marketId)) {
         throw new Error("Selected brand template is not available for this market");
       }
-      if (tpl?.fileUrl) {
-        templateBytes = await loadImageBytes(tpl.fileUrl);
+      if (!tpl.fileUrl?.trim()) {
+        throw new Error("Selected brand template is missing its image file. Upload a template image or clear the template selection");
       }
+      templateBytes = await loadImageBytes(tpl.fileUrl);
     }
     const detail = [session?.room, formatUtcDateTime(session?.sessionStart)]
       .filter(Boolean)
