@@ -21,3 +21,17 @@ mtime_ms = 1790891953521
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/f1830cd7-1e1b-4cb0-991e-b81dc94b3814/7b5138f7-c234-47b7-a684-966e1e84927f"
 storage_version_token = "1790891964338221"
 content_type = "text/html"
+
+[[outputs]]
+id = "ijIFOOFHwfDLCxnqIJoIq"
+uri = "file://recovery-private/synozur-outreach-recovery.txt"
+type = "text"
+title = "Download Sales Outreach recovery SQL"
+description = "Direct plain-text download of the validated recovery SQL. Open the file and copy all contents into Database → Production → SQL runner. Contains private contact data. Not applied to production."
+logical_id = "75ea7e03-dfff-4ce3-ac5c-8a91c2537f53"
+content_hash = "sha256:2c47d2f852f94d431fa0c363d6b8151362b76fb4f95dfcaa74341292c55e715e"
+size = 561337
+mtime_ms = 1790893775727
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/75ea7e03-dfff-4ce3-ac5c-8a91c2537f53/d63d7b4f-014c-43d1-9f97-17851204c1f0"
+storage_version_token = "1790893781695352"
+content_type = "text/plain"
