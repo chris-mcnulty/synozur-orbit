@@ -35,3 +35,17 @@ mtime_ms = 1790893775727
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/75ea7e03-dfff-4ce3-ac5c-8a91c2537f53/d63d7b4f-014c-43d1-9f97-17851204c1f0"
 storage_version_token = "1790893781695352"
 content_type = "text/plain"
+
+[[outputs]]
+id = "MdFaFAHGoxQG0Wjoh9RRw"
+uri = "file://recovery-private/outreach-recovery-complete.zip"
+type = "unspecified"
+title = "Complete outreach recovery — ZIP download"
+description = "Verified archive containing the complete 561,337-byte recovery SQL and instructions. Extract the ZIP and open the SQL locally; do not copy the truncated text preview. Production has not been changed."
+logical_id = "e92ec8dc-017e-4e59-8b17-55e8b39d2ebc"
+content_hash = "sha256:ce1183771ecc54040ba90b5b2d2f31c9b5569f91cd318377f9f5e2882b122bda"
+size = 109105
+mtime_ms = 1790893954826
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/e92ec8dc-017e-4e59-8b17-55e8b39d2ebc/f9ba7909-0dd4-43b2-8b7f-9f1ef66f1e34"
+storage_version_token = "1790893959975800"
+content_type = "application/octet-stream"
