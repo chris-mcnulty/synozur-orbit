@@ -42,6 +42,8 @@ const companyLogo = fixture("conference-company-logo.svg");
 // Use a checked-in, real TTF rather than a fake @font-face or a host system font.
 const fontPath = fileURLToPath(new URL("../../../client/public/fonts/MetroNovaBold.ttf", import.meta.url));
 const fontBytes = readFileSync(fontPath);
+
+const fixtureMPath = fixture("metro-nova-bold-M.svg").toString().match(/<path d="([^"]+)"/)![1];
 const fontAsset = {
   fontUsage: "heading", fontFamily: "Metro Nova", fontWeight: "700",
   fileType: "font/ttf", fileUrl: "/public-objects/fixture-font.ttf",
@@ -112,12 +114,42 @@ describe("conference brand rendering regressions", () => {
   }
   function expectBrandFont(svg: string) {
     expect(svg).toContain(`font-family: 'Metro Nova'; font-weight: 700; src: url('data:font/ttf;base64,${fontBytes.toString("base64")}')`);
-    const textTags = svg.match(/<text\b[^>]*>/g) ?? [];
-    expect(textTags.length).toBeGreaterThan(0);
-    for (const tag of textTags) {
-      expect(tag).toContain('font-family="\'Metro Nova\', \'Avenir Next LT Pro\'');
-    }
+    expect(svg).not.toMatch(/<text\b/); // No host font lookup can silently replace these glyphs.
+    expect(svg).toContain("<path transform=");
+    expect(svg).toContain("aria-label=");
   }
+
+  it.each(["anchor", "session"] as const)("rasterizes the fixture's M glyph, not fallback typography (%s)", async (role) => {
+    const size = role === "anchor" ? 72 : 56;
+    const x = role === "anchor" ? 600 - 1070 * size / 1000 / 2 : 64;
+    const y = role === "anchor" ? 380 : 300;
+    const crop = { left: Math.floor(x), top: y - size, width: Math.ceil(1070 * size / 1000) + 1, height: size + 1 };
+    async function mask(png: Buffer) {
+      const { data, info } = await sharp(png).extract(crop).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      return Array.from({ length: info.width * info.height }, (_, i) =>
+        data[i * info.channels] > 245 && data[i * info.channels + 1] > 245 && data[i * info.channels + 2] > 245);
+    }
+    // Independent checked-in outlines, not system fonts or production-converter output.
+    const oracle = await sharp(Buffer.from(`<svg width="1200" height="675" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1200" height="675" fill="black"/>
+      <path fill="white" transform="translate(${x} ${y}) scale(${size / 1000} ${-size / 1000})" d="${fixtureMPath}"/>
+    </svg>`)).png().toBuffer();
+    const expected = await mask(oracle);
+    expect(expected.filter(Boolean).length).toBeGreaterThan(500);
+    const similarity = (actual: boolean[]) => {
+      const intersection = actual.filter((v, i) => v && expected[i]).length;
+      const union = actual.filter((v, i) => v || expected[i]).length;
+      return intersection / union;
+    };
+    // Unknown alias ensures host family matching cannot accidentally pass.
+    rows([tenant], [], [{ ...fontAsset, fontFamily: "Fixture Brand Alias" }]);
+    await renderConferenceImage(image(role), { ...conference, name: "M" }, { ...session, title: "M" });
+    expect(similarity(await mask(savedPng()))).toBeGreaterThan(0.98);
+    io.save.mockClear();
+    rows([tenant], [], []);
+    await renderConferenceImage(image(role), { ...conference, name: "M" }, { ...session, title: "M" });
+    expect(similarity(await mask(savedPng()))).toBeLessThan(0.8);
+  });
 
   it("renders an anchor with both logos, tenant color, configured font and event information", async () => {
     rows([tenant], [], [fontAsset]);
@@ -177,6 +209,7 @@ describe("conference brand rendering regressions", () => {
       expect(io.update).not.toHaveBeenCalled();
       expect(compositeSpy).not.toHaveBeenCalled();
     }
+
     it("rejects a missing company logo", async () => {
       rows([{ ...tenant, logoUrl: null }], []);
       await expectFailure(conference, image(role), "Configure a company logo");
@@ -192,6 +225,28 @@ describe("conference brand rendering regressions", () => {
     it("rejects incomplete configured font metadata", async () => {
       rows([tenant], [], [{ ...fontAsset, fontFamily: null }]);
       await expectFailure(conference, image(role), "Configured tenant font is missing");
+    });
+    it.each([
+      ["empty", Buffer.alloc(0)],
+      ["arbitrary readable bytes", Buffer.from("not a font file")],
+      ["truncated TTF header", fontBytes.subarray(0, 12)],
+      ["truncated TTF tables", fontBytes.subarray(0, fontBytes.length / 2)],
+    ])("rejects %s configured font bytes without saving fallback typography", async (_name, invalidBytes) => {
+      const originalDownload = io.download.getMockImplementation()!;
+      io.download.mockImplementation((url: string) => url === "fixture-font.ttf" ? [invalidBytes] : originalDownload(url));
+      rows([tenant], [], [fontAsset]);
+      await expectFailure(conference, image(role), 'Configured brand font "Metro Nova" is invalid or unsupported');
+    });
+    it("does not fall back to a valid tenant font when a market font is invalid", async () => {
+      const originalDownload = io.download.getMockImplementation()!;
+      io.download.mockImplementation((url: string) => url === "market-font.ttf" ? [Buffer.alloc(0)] : originalDownload(url));
+      // market settings, company-logo brand assets, event-logo brand assets, then market font
+      rows([tenant], [{ primaryColor: "#2468AC" }], [], [], [{ ...fontAsset, fileUrl: "/public-objects/market-font.ttf" }], [fontAsset]);
+      await expectFailure({ ...conference, marketId: "fixture-market" }, image(role), 'Configured brand font "Metro Nova" is invalid or unsupported');
+    });
+    it("rejects text with unsupported glyphs rather than drawing fallback glyphs", async () => {
+      rows([tenant], [], [fontAsset]);
+      await expectFailure({ ...conference, name: "\u{10FFFF}", website: "https://example.com/\u{10FFFF}" }, image(role), "missing glyph for U+10FFFF");
     });
   });
 

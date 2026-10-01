@@ -21,6 +21,7 @@
  */
 
 import sharp from "sharp";
+import { outlineCompositorText, parseCompositorFont, type CompositorFont } from "./compositor-font";
 import * as path from "path";
 import { randomUUID } from "crypto";
 import { eq, and, inArray, ne, isNull } from "drizzle-orm";
@@ -305,7 +306,7 @@ export async function compositeSessionGraphic(opts: {
   title: string;
   speaker?: string | null;
   detail?: string | null;
-  customFont?: { fontFaces: string; fontFamily: string } | null;
+  customFont?: CompositorFont | null;
   companyLogoBytes?: Buffer | null;
   eventLogoBytes?: Buffer | null;
   primaryColor?: string | null;
@@ -346,7 +347,7 @@ export async function compositeSessionGraphic(opts: {
     : "";
 
   const overlay = Buffer.from(
-    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    outlineCompositorText(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <style>${fallbackFontCss}${customFontCss}</style>
         <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
@@ -361,7 +362,7 @@ export async function compositeSessionGraphic(opts: {
       ${detailSvg}
       ${datesSvg}
       ${urlSvg}
-    </svg>`,
+    </svg>`, opts.customFont),
   );
 
   let base: sharp.Sharp;
@@ -441,10 +442,8 @@ function formatUtcDate(value: Date | string | null | undefined): string | null {
   return d.toLocaleDateString("en-US", { timeZone: "UTC", dateStyle: "medium" });
 }
 
-// Absolute path to the Avenir Next LT Pro font files (served from the client
-// public/fonts directory, co-located with the app). Sharp's SVG renderer uses
-// these to embed the font at compositing time so the final PNG carries the brand
-// typeface rather than a generic system fallback.
+// Legacy default-font declarations for graphics with no configured brand font.
+// Configured fonts are outlined instead: librsvg may ignore @font-face entirely.
 const FONTS_DIR = path.resolve(process.cwd(), "client/public/fonts");
 
 function avenirFontFaces(): string {
@@ -465,20 +464,21 @@ function avenirFontFaces(): string {
 /**
  * Resolve the custom brand font for image compositing.
  * Priority: market-scoped font brand asset (heading) → tenant font (heading) → null (use Avenir).
- * On success returns a ready-to-embed @font-face CSS block plus the font-family name.
+ * On success returns a validated font for deterministic glyph outlining.
  */
 async function resolveCompositorFont(
   tenantDomain: string,
   marketId?: string | null,
-): Promise<{ fontFaces: string; fontFamily: string } | null> {
+): Promise<CompositorFont | null> {
   async function buildFromAsset(
     fileUrl: string | null | undefined,
     fontFamily: string | null | undefined,
     fontWeight: string | null | undefined,
     fileType: string | null | undefined,
-  ): Promise<{ fontFaces: string; fontFamily: string } | null> {
+  ): Promise<CompositorFont | null> {
     if (!fileUrl || !fontFamily) return null;
     const bytes = await loadImageBytes(fileUrl);
+    const font = parseCompositorFont(bytes, fontFamily);
     const b64 = bytes.toString("base64");
     const mime = fileType?.startsWith("font/") ? fileType : "font/ttf";
     const fmt = mime.includes("woff2") ? "woff2" : mime.includes("woff") ? "woff" : mime.includes("otf") ? "opentype" : "truetype";
@@ -486,6 +486,7 @@ async function resolveCompositorFont(
     return {
       fontFaces: `@font-face { font-family: '${fontFamily}'; font-weight: ${w}; src: url('data:${mime};base64,${b64}') format('${fmt}'); }`,
       fontFamily,
+      font,
     };
   }
 
@@ -536,7 +537,7 @@ export async function compositeHeroImage(opts: {
   conferenceName: string;
   location?: string | null;
   primaryColor?: string | null;
-  customFont?: { fontFaces: string; fontFamily: string } | null;
+  customFont?: CompositorFont | null;
   websiteUrl?: string | null;
   eventDates?: string | null;
 }): Promise<Buffer> {
@@ -605,7 +606,7 @@ export async function compositeHeroImage(opts: {
   const b = parseInt(hex.slice(4, 6), 16) || 251;
 
   const scrimSvg = Buffer.from(
-    `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    outlineCompositorText(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <style>${allFontFaces}</style>
         <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
@@ -619,7 +620,7 @@ export async function compositeHeroImage(opts: {
       ${locationSvg}
       ${datesSvg}
       ${urlSvg}
-    </svg>`,
+    </svg>`, opts.customFont),
   );
 
   let base: sharp.Sharp;
@@ -705,7 +706,7 @@ export async function resolveBrandKit(
 ): Promise<{
   companyLogoBytes: Buffer | null;
   primaryColor: string | null;
-  customFont: { fontFaces: string; fontFamily: string } | null;
+  customFont: CompositorFont | null;
 }> {
   const [tenantRow] = await db.select().from(tenants).where(eq(tenants.domain, tenantDomain));
 
@@ -832,7 +833,7 @@ export async function compositeCarouselSlide(opts: {
   slide: CarouselSlideInput;
   companyLogoBytes?: Buffer | null;
   primaryColor?: string | null;
-  customFont?: { fontFaces: string; fontFamily: string } | null;
+  customFont?: CompositorFont | null;
 }): Promise<Buffer> {
   const S = 1080;
   const PAD = 96;
@@ -886,7 +887,7 @@ export async function compositeCarouselSlide(opts: {
   const indexSvg = `<text x="${S - PAD}" y="${S - 70}" text-anchor="end" font-family="${headingFamily}" font-size="34" font-weight="500" fill="rgba(255,255,255,0.70)">${slide.index}/${slide.total}</text>`;
 
   const svg = Buffer.from(
-    `<svg width="${S}" height="${S}" xmlns="http://www.w3.org/2000/svg">
+    outlineCompositorText(`<svg width="${S}" height="${S}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <style>${allFontFaces}</style>
         <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -906,7 +907,7 @@ export async function compositeCarouselSlide(opts: {
       ${headlineSvg}
       ${supportingSvg}
       ${indexSvg}
-    </svg>`,
+    </svg>`, opts.customFont),
   );
 
   const layers: sharp.OverlayOptions[] = [];

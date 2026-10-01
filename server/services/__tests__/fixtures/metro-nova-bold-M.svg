@@ -1,0 +1,5 @@
+<!-- MetroNovaBold.ttf's M outline, in its native 1000-unit em.
+     Independent raster oracle: do not generate this via the compositor helper. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1070 1000">
+  <path d="M91 772L244 772L533 202L824 772L979 772L979 0L839 0L839 518L574 0L494 0L231 519L231 0L91 0Z"/>
+</svg>
