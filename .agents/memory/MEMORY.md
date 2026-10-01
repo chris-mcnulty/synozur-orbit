@@ -84,3 +84,4 @@
 - [Asset image replacement propagation](asset-image-replacement.md) — lead-image changes update inherited images on unpublished posts; claimed sends restore the exact attempted override on success.
 - [SocialPilot bulk re-export recovery](socialpilot-reexport-recovery.md) — reopen delivered posts as CSV-only, refresh source images, transactionally reschedule exact recovered IDs, then export.
 - [Explicit booth confirmation](event-booth-confirmation.md) — event attendance or speaking never implies a booth; event-specific confirmation overrides generic marketing context.
+- [Outreach recovery safety](outreach-recovery-safety.md) — historical restores must hold unsent messages, cadence, and consent; restoring records never authorizes old sends.

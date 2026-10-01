@@ -6,3 +6,18 @@ id = "5DuV1ktemkOaLoNhZFRG0"
 uri = "file://public/orbit-product-overview-creative-brief.md"
 type = "text"
 title = "Orbit Product Overview — Creative Brief"
+logical_id = "5ec3948f-9fb3-40b9-9177-6c78dfa5d576"
+
+[[outputs]]
+id = "INWhDZGKEVXVPsKXxDzWf"
+uri = "file://recovery-private/synozur-outreach-recovery.html"
+type = "html"
+title = "Validated Sales Outreach recovery package"
+description = "Private recovery package with instructions and downloadable SQL for 266 prospects and 40 outreach entries. Not applied to production; sending remains held for review."
+logical_id = "f1830cd7-1e1b-4cb0-991e-b81dc94b3814"
+content_hash = "sha256:164de61ecacd8a692685b12e885592a98c89b088df165c997f05c0fdcc9a1108"
+size = 752190
+mtime_ms = 1790891953521
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/f1830cd7-1e1b-4cb0-991e-b81dc94b3814/7b5138f7-c234-47b7-a684-966e1e84927f"
+storage_version_token = "1790891964338221"
+content_type = "text/html"

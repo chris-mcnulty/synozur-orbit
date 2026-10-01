@@ -8,3 +8,4 @@ test-results/
 playwright-report/
 .cache/ms-playwright/
 backups/
+recovery-private/
