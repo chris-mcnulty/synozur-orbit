@@ -155,11 +155,11 @@ describe("conference brand rendering regressions", () => {
     rows([tenant], [], [fontAsset]);
     expect(await renderConferenceImage(image("anchor"), conference)).toMatch(/^\/public-objects\/conference-images\/.*\.png$/);
     const at = await pixels(savedPng());
-    expectColor(at(475, 225), [255, 204, 0]);
-    expectColor(at(600, 260), [255, 255, 255]);
-    expectColor(at(965, 590), [0, 221, 136]);
-    expectColor(at(1060, 615), [255, 255, 255]);
-    expectColor(at(0, 0), [36, 104, 172], 1);
+    expectColor(at(69, 49), [255, 204, 0]);
+    expectColor(at(194, 94), [255, 255, 255]);
+    expectColor(at(965, 595), [0, 221, 136]);
+    expectColor(at(1060, 619), [255, 255, 255]);
+    expectColor(at(0, 0), [31, 84, 140], 1);
     const svg = overlaySvg();
     expectBrandFont(svg);
     expect(svg).toContain("Collaboration Summit");
@@ -248,6 +248,25 @@ describe("conference brand rendering regressions", () => {
       rows([tenant], [], [fontAsset]);
       await expectFailure({ ...conference, name: "\u{10FFFF}", website: "https://example.com/\u{10FFFF}" }, image(role), "missing glyph for U+10FFFF");
     });
+  });
+
+  it.each([null, undefined, "", "   "])("rejects a selected background with incomplete file metadata (%j)", async (fileUrl) => {
+    rows([tenant], [], [{ fileUrl }]);
+    await expect(renderConferenceImage(image("anchor", { backgroundId: "incomplete-background" }), conference))
+      .rejects.toThrow("Selected conference background is missing its image file. Upload a background image or clear the background selection");
+    expect(io.save).not.toHaveBeenCalled();
+    expect(io.update).not.toHaveBeenCalled();
+    expect(compositeSpy).not.toHaveBeenCalled();
+    expect(io.download).toHaveBeenCalledTimes(2); // Only the company and event logos.
+  });
+
+  it("rejects a selected background that is no longer available", async () => {
+    rows([tenant], [], []);
+    await expect(renderConferenceImage(image("anchor", { backgroundId: "deleted-background" }), conference))
+      .rejects.toThrow("Selected conference background is not available for this conference");
+    expect(io.save).not.toHaveBeenCalled();
+    expect(io.update).not.toHaveBeenCalled();
+    expect(compositeSpy).not.toHaveBeenCalled();
   });
 
   it("rejects an inaccessible selected template without saving a gradient fallback", async () => {

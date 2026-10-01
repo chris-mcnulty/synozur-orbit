@@ -1178,9 +1178,10 @@ export async function renderConferenceImage(
         eq(conferenceBackgrounds.tenantDomain, conf.tenantDomain),
       ));
       if (!bg) throw new Error("Selected conference background is not available for this conference");
-      if (bg?.fileUrl) {
-        backgroundBytes = await loadImageBytes(bg.fileUrl);
+      if (!bg.fileUrl?.trim()) {
+        throw new Error("Selected conference background is missing its image file. Upload a background image or clear the background selection");
       }
+      backgroundBytes = await loadImageBytes(bg.fileUrl);
     }
 
     const customFont = await resolveCompositorFont(conf.tenantDomain, conf.marketId);
