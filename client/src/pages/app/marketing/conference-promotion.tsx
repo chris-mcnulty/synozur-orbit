@@ -50,6 +50,7 @@ const EMPTY_FORM = {
   website: "",
   eventHashtag: "",
   discountStatement: "",
+  boothDetails: "",
   startDate: "",
   endDate: "",
   promoStartDate: "",
@@ -186,6 +187,17 @@ export default function ConferencePromotionPage() {
                     placeholder="e.g. Save $200 with registration code SYNOZUR200"
                     data-testid="input-discount-statement"
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="new-event-booth">Booth details (only if we have a booth)</Label>
+                  <Input
+                    id="new-event-booth"
+                    value={form.boothDetails}
+                    onChange={(e) => setForm((f) => ({ ...f, boothDetails: e.target.value }))}
+                    placeholder="e.g. Booth 42 in the expo hall"
+                    data-testid="input-booth-details"
+                  />
+                  <p className="text-xs text-muted-foreground">Leave blank if there is no booth. Generated posts will not invite attendees to a booth.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">

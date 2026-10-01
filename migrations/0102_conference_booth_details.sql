@@ -1,0 +1,1 @@
+ALTER TABLE conferences ADD COLUMN IF NOT EXISTS booth_details text;

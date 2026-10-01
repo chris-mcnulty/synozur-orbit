@@ -161,6 +161,7 @@ export function registerConferencePromotionRoutes(app: Express) {
         website: conferences.website,
         eventHashtag: conferences.eventHashtag,
         discountStatement: conferences.discountStatement,
+        boothDetails: conferences.boothDetails,
         startDate: conferences.startDate,
         endDate: conferences.endDate,
         promoStartDate: conferences.promoStartDate,
@@ -230,6 +231,7 @@ export function registerConferencePromotionRoutes(app: Express) {
         variantsPerPost: Number.isFinite(b.variantsPerPost) ? Math.min(3, Math.max(2, Math.trunc(b.variantsPerPost))) : 3,
         thematicBrief: typeof b.thematicBrief === "string" ? b.thematicBrief : null,
         discountStatement: typeof b.discountStatement === "string" ? b.discountStatement : null,
+        boothDetails: typeof b.boothDetails === "string" ? b.boothDetails.trim() || null : null,
         alwaysHashtags: cleanStringArray(b.alwaysHashtags),
         productIds: cleanStringArray(b.productIds),
         createdBy: ctx.userId,
@@ -274,6 +276,9 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (Number.isFinite(b.variantsPerPost)) patch.variantsPerPost = Math.min(3, Math.max(2, Math.trunc(b.variantsPerPost)));
     if ("thematicBrief" in b) patch.thematicBrief = b.thematicBrief ?? null;
     if ("discountStatement" in b) patch.discountStatement = b.discountStatement ?? null;
+    if ("boothDetails" in b) {
+      patch.boothDetails = typeof b.boothDetails === "string" ? b.boothDetails.trim() || null : null;
+    }
     if ("alwaysHashtags" in b) patch.alwaysHashtags = cleanStringArray(b.alwaysHashtags);
     if ("productIds" in b) patch.productIds = cleanStringArray(b.productIds);
     if ("eventLogoFileUrl" in b) patch.eventLogoFileUrl = b.eventLogoFileUrl ?? null;

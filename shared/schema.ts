@@ -3588,6 +3588,8 @@ export const conferences = pgTable("conferences", {
   thematicBrief: text("thematic_brief"),
   // Optional registration offer woven into copy, e.g. "Save $200 with registration code SYNOZUR200".
   discountStatement: text("discount_statement"),
+  // Explicit confirmation of a booth; blank means copy must not claim one.
+  boothDetails: text("booth_details"),
   alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
   productIds: text("product_ids").array(),
   // Event media for hero image composition (logo_composite source)

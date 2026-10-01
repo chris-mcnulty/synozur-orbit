@@ -1399,7 +1399,7 @@ function resolveHashtags(conf: Conference): string[] {
   return Array.from(tags);
 }
 
-async function generateCopyVariants(opts: {
+export async function generateCopyVariants(opts: {
   platform: string;
   socialAccountId: string | null;
   tenantDomain: string;
@@ -1432,6 +1432,9 @@ async function generateCopyVariants(opts: {
     conf.website ? `Link: ${conf.website}` : "",
     conf.thematicBrief ? `Theme/brief: ${conf.thematicBrief}` : "",
     conf.discountStatement ? `Registration offer (mention verbatim in at least one variation if it fits naturally): ${conf.discountStatement}` : "",
+    conf.boothDetails?.trim()
+      ? `Confirmed booth details: ${conf.boothDetails.trim()}`
+      : "Booth status: No booth is confirmed. We are not confirmed exhibitors.",
   ].filter(Boolean);
 
   if (session) {
@@ -1451,7 +1454,7 @@ async function generateCopyVariants(opts: {
       session.url ? `  Session link: ${session.url}` : "",
     );
   } else {
-    contextLines.push(`This is an ANCHOR post about our overall presence at the conference (booth, where to find us, why attendees should connect).`);
+    contextLines.push(`This is an ANCHOR post about our participation at the event, why attendees should connect, and the supplied event details. Do not invent a physical meeting location.`);
   }
 
   const prompt = `You are an expert B2B social media copywriter. Write ${variantCount} DISTINCT variations of a single ${platform} post.
@@ -1467,18 +1470,32 @@ RULES:
 - Do NOT include hashtags inline — they are added separately.
 - Do not number the variations inside the text.
 - Keep it authentic and specific to the context above; never invent facts.
+- ${conf.boothDetails?.trim()
+    ? "You may mention the confirmed booth using only the supplied details. Never invent a booth number, sponsorship, demo, or giveaway."
+    : 'There is NO confirmed booth. NEVER mention a booth, exhibition stand, exhibitor presence, expo-hall visit, or "stop by our booth". This overrides any booth language in the theme, description, or voice profile. Invite attendees to the supplied sessions or to connect with our team instead; do not invent a meeting room, time, or location.'}
 
 Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post text", "second post text"]. No markdown, no commentary.`;
 
-  const result = await completeForFeature(AI_FEATURES.MARKETING_TASKS, prompt, {
-    systemPrompt,
-    temperature: 0.8,
-    maxTokens: 1600,
-    tenantDomain: opts.tenantDomain,
-  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await completeForFeature(AI_FEATURES.MARKETING_TASKS,
+      attempt === 0 ? prompt : `${prompt}\n\nCORRECTION: The previous response claimed unconfirmed booth/exhibitor activity. Rewrite all variations without any such claims.`,
+      {
+        systemPrompt,
+        temperature: 0.8,
+        maxTokens: 1600,
+        tenantDomain: opts.tenantDomain,
+      });
+    const variants = parseCopyVariants(result.text, variantCount);
+    const candidates = variants.length > 0 ? variants.slice(0, variantCount) : [result.text.trim()];
+    if (conf.boothDetails?.trim() || candidates.every((text) => !hasUnconfirmedBoothClaim(text))) {
+      return candidates;
+    }
+  }
+  throw new Error("Event copy repeatedly claimed an unconfirmed booth. No new posts were saved; retry generation or configure confirmed booth details.");
+}
 
-  const variants = parseCopyVariants(result.text, variantCount);
-  return variants.length > 0 ? variants.slice(0, variantCount) : [result.text.trim()];
+export function hasUnconfirmedBoothClaim(text: string): boolean {
+  return /\bbooths?\b|\bexhibit(?:ion|or|ing|ors)?\b|\bexpo[\s-]+hall\b|\b(?:our|the|exhibition|exhibit)\s+stands?\b/i.test(text);
 }
 
 /**
@@ -1736,20 +1753,6 @@ async function runGeneration(
     throw new Error("Legacy AI conference graphics must be replaced with branded composites before generating posts");
   }
 
-  // Only replace existing posts after every required graphic has rendered
-  // successfully. A brand-asset or storage failure must leave the prior batch
-  // intact instead of deleting it before the replacement is ready.
-  await db
-    .delete(generatedPosts)
-    .where(
-      and(
-        eq(generatedPosts.conferenceId, conferenceId),
-        eq(generatedPosts.tenantDomain, tenantDomain),
-        inArray(generatedPosts.socialAccountId, accountIds),
-        ...(options.includePublished ? [] : [ne(generatedPosts.status, "published")]),
-      ),
-    );
-
   // ── Schedule slot assignment ────────────────────────────────────────────────
   //
   // When anchor images are configured, they are scheduled at a ratio equal to
@@ -1894,6 +1897,7 @@ async function runGeneration(
       });
     } catch (err: any) {
       console.error("[Conference] Copy generation failed for moment", momentIdx, err?.message);
+      throw err;
     }
     variantPool.set(key, vs);
     return vs;
@@ -1916,6 +1920,19 @@ async function runGeneration(
         : "Anchor post",
     });
   }
+
+  // Preserve the prior batch until both graphics and validated copy are ready.
+  // A rejected booth claim must fail the job without deleting existing posts.
+  await db
+    .delete(generatedPosts)
+    .where(
+      and(
+        eq(generatedPosts.conferenceId, conferenceId),
+        eq(generatedPosts.tenantDomain, tenantDomain),
+        inArray(generatedPosts.socialAccountId, accountIds),
+        ...(options.includePublished ? [] : [ne(generatedPosts.status, "published")]),
+      ),
+    );
 
   // ── Round-robin: each slot → moment[slotIdx % numMoments] ────────────────────
   // Variants cycle: appearance k of moment m uses variants[k % variants.length].

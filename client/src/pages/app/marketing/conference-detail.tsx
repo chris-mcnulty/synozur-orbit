@@ -179,6 +179,7 @@ interface Conference {
   website?: string | null;
   eventHashtag?: string | null;
   discountStatement?: string | null;
+  boothDetails?: string | null;
   thematicBrief?: string | null;
   alwaysHashtags?: string[] | null;
   startDate?: string | null;
@@ -426,6 +427,7 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
         website: form.website || null,
         eventHashtag: form.eventHashtag || null,
         discountStatement: form.discountStatement || null,
+        boothDetails: form.boothDetails.trim() || null,
         thematicBrief: form.thematicBrief || null,
         alwaysHashtags: form.alwaysHashtags.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean),
         startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
@@ -495,6 +497,17 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
               placeholder="e.g. Save $200 with registration code SYNOZUR200"
               data-testid="input-edit-discount-statement"
             />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="edit-event-booth">Booth details (only if we have a booth)</Label>
+            <Input
+              id="edit-event-booth"
+              value={form.boothDetails}
+              onChange={(e) => setForm((f) => ({ ...f, boothDetails: e.target.value }))}
+              placeholder="e.g. Booth 42 in the expo hall"
+              data-testid="input-edit-booth-details"
+            />
+            <p className="text-xs text-muted-foreground">Leave blank if there is no booth. Generated posts will not invite attendees to a booth.</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
@@ -621,6 +634,7 @@ function buildEventForm(conf: Conference) {
     website: conf.website ?? "",
     eventHashtag: conf.eventHashtag ?? "",
     discountStatement: conf.discountStatement ?? "",
+    boothDetails: conf.boothDetails ?? "",
     thematicBrief: conf.thematicBrief ?? "",
     alwaysHashtags: (conf.alwaysHashtags ?? []).join(" "),
     startDate: toDateInput(conf.startDate),
@@ -654,6 +668,7 @@ function SessionsTab({
   const [sessionType, setSessionType] = useState("");
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [sessionStart, setSessionStart] = useState("");
+  const [room, setRoom] = useState("");
   const [bulkText, setBulkText] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
 
@@ -668,6 +683,7 @@ function SessionsTab({
           sessionType: sessionType || undefined,
           speakers: speakers.filter((s) => s.name.trim()),
           sessionStart: sessionStart || undefined,
+          room: room.trim() || undefined,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed");
@@ -678,6 +694,7 @@ function SessionsTab({
       setSessionType("");
       setSpeakers([]);
       setSessionStart("");
+      setRoom("");
       onChange();
       toast({ title: "Session added" });
     },
@@ -797,6 +814,17 @@ function SessionsTab({
                   <Input type="datetime-local" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} />
                   <p className="text-xs text-muted-foreground">Enter the time as it appears in the event's local schedule. It displays exactly as typed.</p>
                 </div>
+              </div>
+
+              <div className="grid gap-1">
+                <Label htmlFor="new-session-room">Meeting room</Label>
+                <Input
+                  id="new-session-room"
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value)}
+                  placeholder="e.g. Room 101"
+                  data-testid="input-session-room"
+                />
               </div>
 
               <div className="grid gap-1">
