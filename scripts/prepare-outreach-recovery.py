@@ -124,7 +124,8 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM orbit_recovery_payload, jsonb_array_elements(data->'prospects') p
     LEFT JOIN outreach_campaigns c ON c.id = p->>'campaign_id' AND c.tenant_domain = '{tenant}'
-    LEFT JOIN markets m ON m.id = p->>'market_id' AND m.tenant_domain = '{tenant}'
+    LEFT JOIN markets m ON m.id = p->>'market_id'
+      AND m.tenant_id IN (SELECT id FROM tenants WHERE domain = '{tenant}')
     WHERE c.id IS NULL OR m.id IS NULL OR c.status NOT IN ('draft', 'paused', 'archived')
   ) THEN
     RAISE EXCEPTION 'Recovery stopped: campaign/market missing, wrong tenant, or campaign is active.';

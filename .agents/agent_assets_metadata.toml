@@ -49,3 +49,17 @@ mtime_ms = 1790893954826
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/e92ec8dc-017e-4e59-8b17-55e8b39d2ebc/f9ba7909-0dd4-43b2-8b7f-9f1ef66f1e34"
 storage_version_token = "1790893959975800"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "_xBVnPhKoz-f0xFjL2Fj-"
+uri = "file://recovery-private/outreach-recovery-console.zip"
+type = "unspecified"
+title = "Corrected outreach recovery — SQL console batch"
+description = "Corrected market ownership check, with top-level BEGIN/COMMIT removed for automatic console transactions. Includes complete SQL and instructions. Contains private contact data."
+logical_id = "6dbace00-9d18-4733-810e-0da73827b4c3"
+content_hash = "sha256:74fa3ce7b3e9e0ff36b90166d01c1cb0f1929d95ebc6fca0d25890cbac3b0672"
+size = 108961
+mtime_ms = 1790895576358
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/6dbace00-9d18-4733-810e-0da73827b4c3/c3ede1ee-1782-4e86-a94c-b8bf91dd3945"
+storage_version_token = "1790895594392573"
+content_type = "application/octet-stream"

@@ -19,12 +19,14 @@ try {
     await client.query(`CREATE TEMP TABLE ${table} (LIKE public.${table} INCLUDING ALL) ON COMMIT DROP`);
   }
   await client.query("CREATE TEMP TABLE outreach_campaigns (id varchar PRIMARY KEY, tenant_domain text, status text) ON COMMIT DROP");
-  await client.query("CREATE TEMP TABLE markets (id varchar PRIMARY KEY, tenant_domain text) ON COMMIT DROP");
+  await client.query("CREATE TEMP TABLE markets (LIKE public.markets INCLUDING ALL) ON COMMIT DROP");
+  await client.query("CREATE TEMP TABLE tenants (LIKE public.tenants INCLUDING ALL) ON COMMIT DROP");
+  await client.query("INSERT INTO tenants (id, domain, name) VALUES ('recovery-test-tenant', $1, 'Recovery validation')", [tenant]);
   for (const id of new Set(data.prospects.map((p: { campaign_id: string }) => p.campaign_id))) {
     await client.query("INSERT INTO outreach_campaigns VALUES ($1, $2, 'draft')", [id, tenant]);
   }
   for (const id of new Set(data.prospects.map((p: { market_id: string }) => p.market_id))) {
-    await client.query("INSERT INTO markets VALUES ($1, $2)", [id, tenant]);
+    await client.query("INSERT INTO markets (id, tenant_id, name, created_by) VALUES ($1, 'recovery-test-tenant', 'Recovery validation', 'recovery-test-user')", [id]);
   }
   await client.query("ALTER TABLE prospects ADD FOREIGN KEY (contact_id) REFERENCES marketing_contacts(id)");
   await client.query("ALTER TABLE prospects ADD FOREIGN KEY (campaign_id) REFERENCES outreach_campaigns(id)");
