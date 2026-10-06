@@ -1,7 +1,7 @@
 /**
  * Unified Executive Summary ("Briefing Room") routes.
  *
- *   GET  /api/executive-summary/latest     latest run (any status) for the tenant
+ *   GET  /api/executive-summary/latest     latest run (any status) for the selected market
  *   GET  /api/executive-summary            recent runs (history, limit 12)
  *   GET  /api/executive-summary/settings   auto-run preference
  *   PUT  /api/executive-summary/settings   toggle auto-run (executiveSummaryAuto gate)
@@ -17,6 +17,7 @@ import { unifiedExecSummaries, unifiedExecSummarySettings } from "@shared/schema
 import { getRequestContext, ContextError } from "../context";
 import { guardFeature, denyReadOnly } from "./helpers";
 import { startExecutiveSummary } from "../services/unified-exec-summary-service";
+import { summaryScope } from "../services/executive-summary-scope";
 
 function sendContextError(res: Response, err: unknown): void {
   if (err instanceof ContextError) {
@@ -35,7 +36,7 @@ export function registerExecutiveSummaryRoutes(app: Express): void {
       const [latest] = await db
         .select()
         .from(unifiedExecSummaries)
-        .where(eq(unifiedExecSummaries.tenantDomain, ctx.tenantDomain))
+        .where(summaryScope(ctx.tenantDomain, ctx.marketId))
         .orderBy(desc(unifiedExecSummaries.createdAt))
         .limit(1);
       res.json(latest ?? null);
@@ -57,7 +58,7 @@ export function registerExecutiveSummaryRoutes(app: Express): void {
           completedAt: unifiedExecSummaries.completedAt,
         })
         .from(unifiedExecSummaries)
-        .where(eq(unifiedExecSummaries.tenantDomain, ctx.tenantDomain))
+        .where(summaryScope(ctx.tenantDomain, ctx.marketId))
         .orderBy(desc(unifiedExecSummaries.createdAt))
         .limit(12);
       res.json(runs);
@@ -109,7 +110,7 @@ export function registerExecutiveSummaryRoutes(app: Express): void {
       const [run] = await db
         .select()
         .from(unifiedExecSummaries)
-        .where(and(eq(unifiedExecSummaries.id, req.params.id), eq(unifiedExecSummaries.tenantDomain, ctx.tenantDomain)));
+        .where(and(eq(unifiedExecSummaries.id, req.params.id), summaryScope(ctx.tenantDomain, ctx.marketId)));
       if (!run) return res.status(404).json({ error: "Summary not found" });
       res.json(run);
     } catch (err) {
@@ -123,10 +124,10 @@ export function registerExecutiveSummaryRoutes(app: Express): void {
       const ctx = await getRequestContext(req);
       if (denyReadOnly(ctx, res)) return;
 
-      // Atomically claim the tenant's single in-flight slot (advisory lock +
+      // Atomically claim the market's single in-flight slot (advisory lock +
       // in-transaction check inside the service); null claim = 409. The run
       // continues in the background; the client polls /latest.
-      const claimed = await startExecutiveSummary({ tenantDomain: ctx.tenantDomain, userId: ctx.userId, trigger: "manual" });
+      const claimed = await startExecutiveSummary({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId, trigger: "manual" });
       if (!claimed) {
         return res.status(409).json({ error: "A summary is already being generated. It will appear here when ready." });
       }

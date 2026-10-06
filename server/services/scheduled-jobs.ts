@@ -1678,9 +1678,15 @@ async function runScheduledExecSummaryJob(): Promise<void> {
       if (!baseGate.allowed || !autoGate.allowed) continue;
       // Stamp BEFORE generating so a failing tenant retries next week, not hourly.
       await stampAutoRun(tenantDomain);
-      const runId = await generateExecutiveSummary({ tenantDomain, trigger: "scheduled" });
-      if (runId) console.log(`[Exec Summary] scheduled summary generated for ${tenantDomain}`);
-      else console.log(`[Exec Summary] skipped ${tenantDomain} — a run is already in flight`);
+      const summaryMarkets = await storage.getMarketsByTenant(tenant.id);
+      for (const market of summaryMarkets.filter(m => m.status === "active")) {
+        try {
+          const runId = await generateExecutiveSummary({ tenantDomain, marketId: market.id, trigger: "scheduled" });
+          console.log(`[Exec Summary] ${runId ? "generated" : "already in flight"} for ${tenantDomain}/${market.id}`);
+        } catch (err: any) {
+          console.error(`[Exec Summary] market ${market.id} failed:`, err?.message || err);
+        }
+      }
     } catch (err: any) {
       console.error(`[Exec Summary] scheduled run failed for ${tenantDomain}:`, err?.message || err);
     }

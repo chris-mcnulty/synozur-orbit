@@ -1,5 +1,5 @@
 /**
- * Unified Executive Summary ("Briefing Room") — one cross-area, tenant-level
+ * Unified Executive Summary ("Briefing Room") — one cross-area, market-scoped
  * AI-synthesized report spanning Research, Strategy, Marketing, and Sales.
  * On-demand generation; optional weekly auto-runs (plan-gated).
  */
@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { getTabMarketId, getTabTenantId } from "@/lib/tabContext";
 import {
   Sparkles, Loader2, RefreshCw, Globe, Crosshair, Megaphone, Handshake, ListChecks, CalendarClock,
 } from "lucide-react";
@@ -32,7 +33,7 @@ interface SummaryRun {
   error?: string | null;
   createdAt: string;
   completedAt?: string | null;
-  summaryData?: { headline: string; sections: SummarySection[] } | null;
+  summaryData?: { scope?: { marketId: string; companyName: string; marketName: string }; headline: string; sections: SummarySection[] } | null;
 }
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
@@ -47,12 +48,20 @@ export default function CompanyBriefingPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const canAutoRun = useFeatureFlag("executiveSummaryAuto");
+  const marketId = getTabMarketId();
+  const tenantId = getTabTenantId();
+  const latestKey = ["/api/executive-summary/latest", tenantId, marketId];
+  const settingsKey = ["/api/executive-summary/settings", tenantId];
+  const scopeHeaders: Record<string, string> = {
+    ...(tenantId ? { "X-Active-Tenant-Id": tenantId } : {}),
+    ...(marketId ? { "X-Active-Market-Id": marketId } : {}),
+  };
 
-  const { data: latest, isLoading } = useQuery<SummaryRun | null>({
-    queryKey: ["/api/executive-summary/latest"],
-    queryFn: async () => {
-      const res = await fetch("/api/executive-summary/latest", { credentials: "include" });
-      if (!res.ok) return null;
+  const { data: latest, isLoading, error: loadError } = useQuery<SummaryRun | null>({
+    queryKey: latestKey,
+    queryFn: async ({ signal }) => {
+      const res = await fetch("/api/executive-summary/latest", { credentials: "include", headers: scopeHeaders, signal });
+      if (!res.ok) throw new Error("Unable to load this market's briefing");
       return res.json();
     },
     // Poll while a run is in flight so the report appears without a refresh.
@@ -60,7 +69,7 @@ export default function CompanyBriefingPage() {
   });
 
   const { data: settings } = useQuery<{ autoEnabled: boolean }>({
-    queryKey: ["/api/executive-summary/settings"],
+    queryKey: settingsKey,
     queryFn: async () => {
       const res = await fetch("/api/executive-summary/settings", { credentials: "include" });
       if (!res.ok) return { autoEnabled: false };
@@ -71,7 +80,7 @@ export default function CompanyBriefingPage() {
 
   const generate = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/executive-summary/generate", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/executive-summary/generate", { method: "POST", credentials: "include", headers: scopeHeaders });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "Failed to start generation");
@@ -100,17 +109,18 @@ export default function CompanyBriefingPage() {
       return res.json();
     },
     onSuccess: (row: { autoEnabled: boolean }) => {
-      queryClient.setQueryData(["/api/executive-summary/settings"], row);
+      queryClient.setQueryData(settingsKey, row);
       toast({
         title: row.autoEnabled ? "Weekly auto-run enabled" : "Weekly auto-run disabled",
-        description: row.autoEnabled ? "A fresh summary will be generated every week." : undefined,
+        description: row.autoEnabled ? "A separate summary will be generated weekly for each active market in this account." : undefined,
       });
     },
     onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
   const isGenerating = latest?.status === "generating" || generate.isPending;
-  const report = latest?.status === "completed" ? latest.summaryData : null;
+  const report = latest?.status === "completed" && latest.summaryData?.scope
+    && (!marketId || latest.summaryData.scope.marketId === marketId) ? latest.summaryData : null;
 
   return (
     <AppLayout>
@@ -121,14 +131,15 @@ export default function CompanyBriefingPage() {
               <Sparkles className="h-6 w-6 text-primary" /> Executive Briefing
             </h1>
             <p className="text-muted-foreground mt-1">
-              One unified summary across your market position, strategy, marketing, and sales.
+              Market-specific intelligence, strategy, marketing, and sales.
+              {report?.scope && <> — {report.scope.companyName} ({report.scope.marketName})</>}
             </p>
           </div>
           <div className="flex items-center gap-3">
             {canAutoRun && (
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <CalendarClock className="h-4 w-4" />
-                Weekly auto-run
+                Weekly auto-run (all active markets)
                 <Switch
                   checked={settings?.autoEnabled ?? false}
                   disabled={toggleAuto.isPending}
@@ -149,6 +160,8 @@ export default function CompanyBriefingPage() {
 
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : loadError ? (
+          <Card><CardContent className="py-6 text-destructive">{loadError.message}</CardContent></Card>
         ) : latest?.status === "failed" ? (
           <Card className="border-destructive/50">
             <CardHeader>
@@ -196,13 +209,13 @@ export default function CompanyBriefingPage() {
               );
             })}
           </>
-        ) : !isLoading && latest?.status !== "generating" ? (
+        ) : !isLoading && !loadError && !latest ? (
           <Card>
             <CardContent className="py-12 text-center space-y-3">
               <Sparkles className="h-8 w-8 mx-auto text-muted-foreground" />
-              <p className="font-medium">No briefing yet</p>
+              <p className="font-medium">No summary generated for this market</p>
               <p className="text-sm text-muted-foreground">
-                Generate your first unified executive summary. It pulls together competitive intelligence,
+                Generate this market's first executive summary. It pulls together competitive intelligence,
                 market segments and opportunities, marketing activity, and sales development into one report.
               </p>
             </CardContent>

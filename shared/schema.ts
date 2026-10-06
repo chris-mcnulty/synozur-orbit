@@ -6076,6 +6076,8 @@ export interface UnifiedExecSummarySection {
 }
 
 export interface UnifiedExecSummaryData {
+  /** Missing on legacy account-wide reports, which must not be shown in a market. */
+  scope?: { marketId: string; marketName: string; companyName: string; websiteUrl: string };
   headline: string;
   sections: UnifiedExecSummarySection[];
   /** Raw collector facts the synthesis saw — kept for transparency/debugging. */
