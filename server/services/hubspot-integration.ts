@@ -17,7 +17,6 @@
  *   - exchangeCode(code, redirectUri)
  *   - getTenantClient(tenantDomain)            ← auto-refreshes tokens
  *   - syncTenant(tenantDomain)                 ← inbound enrichment + deal rollup
- *   - listSuggestedCompetitors(tenantDomain)   ← top CRM companies not yet tracked
  *   - pushBattlecardNote(tenantDomain, competitorId, html, sourceUrl)
  *   - pushBriefingNote(tenantDomain, competitorId, html, sourceUrl)
  *   - pushActionItemTask(tenantDomain, opts)
@@ -51,7 +50,6 @@ const HUBSPOT_API_HOST = "https://api.hubapi.com";
 // "the inbound sync only touches companies that match an existing
 // competitor by domain plus a small suggested-competitors preview list
 // capped at 50".
-const SUGGESTED_LIMIT = 50;
 const COMPANY_PAGE_LIMIT = 100;
 const DEAL_PAGE_LIMIT = 100;
 
@@ -647,58 +645,6 @@ export async function syncTenant(tenantDomain: string): Promise<SyncStats> {
 // Suggested competitors — top HubSpot Companies the tenant deals with
 // that are NOT in Orbit's competitor list.
 // ─────────────────────────────────────────────────────────────────────────
-
-export interface SuggestedCompetitor {
-  hubspotCompanyId: string;
-  name: string;
-  domain: string | null;
-  industry: string | null;
-  numberOfDeals: number;
-  totalDealValue: number;
-}
-
-export async function listSuggestedCompetitors(tenantDomain: string): Promise<SuggestedCompetitor[]> {
-  const { client } = await getTenantClient(tenantDomain);
-  const competitors = await storage.getCompetitorsByTenantDomain(tenantDomain);
-  const trackedDomains = new Set<string>();
-  const trackedHubspotIds = new Set<string>();
-  for (const c of competitors) {
-    const candidates = [c.url, (c as any).domain, (c as any).website].filter(Boolean) as string[];
-    for (const raw of candidates) {
-      const d = rootDomain(raw);
-      if (d) trackedDomains.add(d);
-    }
-    if (c.hubspotCompanyId) trackedHubspotIds.add(c.hubspotCompanyId);
-  }
-
-  // Fetch top companies by num_associated_deals desc.
-  const result = await client.crm.companies.searchApi.doSearch({
-    filterGroups: [
-      { filters: [{ propertyName: "num_associated_deals", operator: FilterOperatorEnum.Gt, value: "0" }] },
-    ],
-    properties: ["domain", "name", "industry", "num_associated_deals", "total_revenue"],
-    sorts: ["num_associated_deals"],
-    limit: SUGGESTED_LIMIT,
-    after: "0",
-  });
-
-  const out: SuggestedCompetitor[] = [];
-  for (const co of result.results) {
-    const props = (co.properties as Record<string, string>) || {};
-    const dom = rootDomain(props.domain);
-    if (dom && trackedDomains.has(dom)) continue;
-    if (trackedHubspotIds.has(co.id)) continue;
-    out.push({
-      hubspotCompanyId: co.id,
-      name: props.name || dom || `HubSpot Company ${co.id}`,
-      domain: dom,
-      industry: props.industry || null,
-      numberOfDeals: parseInt(props.num_associated_deals || "0", 10) || 0,
-      totalDealValue: Math.round(parseFloat(props.total_revenue || "0") || 0),
-    });
-  }
-  return out;
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Sales outreach: two-way contact sync (pull existing contacts, push prospects)

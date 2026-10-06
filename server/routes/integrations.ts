@@ -583,8 +583,9 @@ export function registerIntegrationRoutes(app: Express) {
     try {
       const ctx = await loadHubspotContext(req, res);
       if (!ctx) return;
-      const items = await hubspot.listSuggestedCompetitors(ctx.tenantDomain);
-      res.json({ items });
+      // Compatibility for older open tabs. Deal activity is not evidence of
+      // competition or relevance to the active market; never return CRM leads here.
+      res.json({ items: [] });
     } catch (err) {
       res.status(500).json({ error: errorMessage(err) });
     }
