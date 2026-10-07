@@ -12,3 +12,9 @@ description: Product invariants for AI-suggested marketing tasks vs Planner sync
 **Why:** Pre-gate and misclassified report tasks auto-synced to users' personal Outlook/Planner feeds without approval; externally orphaned tasks can remain after their Orbit source is gone.
 
 **How to apply:** Any task insert, sync path, delete route, or bulk status endpoint must respect generated provenance, `isPlannerSyncEligible`, and the review policy; alter-only migrations need the always-apply marker.
+
+The approval requirement applies to every external task destination, including HubSpot. Permission to automatically sync briefing notes is not permission to create action-item tasks or assign them to the connection's default owner.
+
+**Why:** A completed market onboarding exported all five briefing recommendations directly as HubSpot tasks, bypassing the Marketing Planner acceptance gate. Their titles matched the user's reported unwanted tasks exactly.
+
+**How to apply:** Audit briefing auto-push separately from Planner sync. Keep informational note sync distinct from task creation; require explicit task approval and assignee selection rather than inheriting account-wide connection defaults.
