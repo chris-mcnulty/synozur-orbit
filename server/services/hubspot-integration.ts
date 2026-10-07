@@ -1126,7 +1126,7 @@ export async function autoPushBattlecard(opts: {
  * Best-effort outbound push of a published intelligence briefing. Iterates
  * the briefing's related competitors and creates a Note on each matched
  * HubSpot Company. No-ops when integration isn't connected, plan ineligible,
- * or auto-push disabled.
+ * or auto-push disabled. Never creates tasks: report sync is not task approval.
  */
 export interface BriefingActionItemPush {
   title: string;
@@ -1142,6 +1142,7 @@ export async function autoPushBriefing(opts: {
   title: string;
   executiveSummary: string;
   competitorIds: string[];
+  /** Legacy input accepted but ignored. Tasks require the separate explicit push-task action. */
   actionItems?: BriefingActionItemPush[];
   planName: string;
   /** When true (manual user action), bypass the autoPushEnabled toggle. */
@@ -1175,34 +1176,9 @@ export async function autoPushBriefing(opts: {
       }
     }
 
-    // Push each action item as a HubSpot Task. If the action item has a
-    // related competitor with a matched HubSpot Company, the Task is
-    // associated with that company; otherwise it's a standalone Task.
-    let tasksPushed = 0;
-    const items = opts.actionItems || [];
-    for (const item of items) {
-      try {
-        let companyId: string | null = null;
-        if (item.competitorId) {
-          const c = await storage.getCompetitor(item.competitorId);
-          if (c?.tenantDomain === opts.tenantDomain) companyId = c.hubspotCompanyId ?? null;
-        }
-        const body = [
-          item.rationale || "",
-          item.priority ? `\nPriority: ${item.priority}` : "",
-          `\n\nFrom Orbit briefing: ${appBaseUrl()}/app/intelligence?id=${encodeURIComponent(opts.briefingId)}`,
-        ].join("");
-        await pushTask(opts.tenantDomain, {
-          hubspotCompanyId: companyId,
-          subject: item.title.slice(0, 500),
-          body,
-          dueAt: item.dueAt ?? null,
-        });
-        tasksPushed += 1;
-      } catch (err: any) {
-        console.warn(`[HubSpot] action-item task push failed:`, err?.message || err);
-      }
-    }
+    // Keep the response field for existing clients and historical push metadata.
+    // Neither automatic generation nor force/manual summary sync approves tasks.
+    const tasksPushed = 0;
 
     console.log(`[HubSpot] Auto-pushed briefing tenant=${opts.tenantDomain} briefing=${opts.briefingId} notes=${pushed} skipped=${skipped} tasks=${tasksPushed}`);
 

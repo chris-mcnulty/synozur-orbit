@@ -575,46 +575,13 @@ export async function autoPushBriefingToHubspot(opts: {
     if (!tenant?.plan) return;
     const { autoPushBriefing } = await import("./hubspot-integration");
 
-    // Map AI action-item `relatedCompetitors` (names) to the closest
-    // competitor ID so the helper can attach Tasks to the matched HubSpot
-    // Company. The Notes side uses the canonical `competitorIds` list and
-    // does not depend on this mapping.
-    const competitors = await storage.getCompetitorsByTenantDomain(opts.tenantDomain);
-    const nameToId = new Map<string, string>();
-    for (const c of competitors) {
-      if (c.name) nameToId.set(c.name.toLowerCase(), c.id);
-    }
-
-    const actionItemsForPush = (opts.briefingData.actionItems || []).slice(0, 25).map((ai) => {
-      // ActionItem is a strict shape; the push pipeline historically reads loose
-      // optional fields (`relatedCompetitors`, etc.) that aren't in the canonical
-      // type. Cast via unknown to acknowledge the structural mismatch.
-      const aiAny = ai as unknown as Record<string, unknown>;
-      const related = Array.isArray(aiAny.relatedCompetitors)
-        ? (aiAny.relatedCompetitors as unknown[]).filter((x): x is string => typeof x === "string")
-        : [];
-      const firstName = related[0];
-      const competitorId = firstName ? nameToId.get(firstName.toLowerCase()) ?? null : null;
-      return {
-        title: String(aiAny.title || aiAny.summary || "Action item"),
-        rationale: typeof aiAny.rationale === "string"
-          ? aiAny.rationale
-          : (typeof aiAny.description === "string" ? aiAny.description : ""),
-        priority: typeof aiAny.priority === "string"
-          ? aiAny.priority
-          : (typeof aiAny.urgency === "string" ? (aiAny.urgency as string) : undefined),
-        dueAt: aiAny.dueAt ? new Date(String(aiAny.dueAt)) : null,
-        competitorId,
-      };
-    });
-
+    // Sync informational notes only; generated actions stay recommendations.
     await autoPushBriefing({
       tenantDomain: opts.tenantDomain,
       briefingId: opts.briefingId,
       title: opts.briefingData.periodLabel || "Intelligence briefing",
       executiveSummary: opts.briefingData.executiveSummary || "",
       competitorIds: opts.competitorIds,
-      actionItems: actionItemsForPush,
       planName: tenant.plan,
     });
   } catch (pushErr) {

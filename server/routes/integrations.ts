@@ -693,8 +693,8 @@ export function registerIntegrationRoutes(app: Express) {
   });
 
   // Manual push of an existing intelligence briefing to HubSpot.
-  // Fans out to every related competitor's matched company, plus pushes
-  // each action item as a Task (mirrors the auto-push pipeline).
+  // Fans out Notes to related competitors' matched companies. Syncing a
+  // briefing is not approval to create or assign its recommended tasks.
   app.post("/api/integrations/hubspot/push-briefing", async (req: Request, res: Response) => {
     try {
       const ctx = await loadHubspotContext(req, res, { requireOutbound: true });
@@ -708,15 +708,12 @@ export function registerIntegrationRoutes(app: Express) {
       const tenant = await storage.getTenantByDomain(ctx.tenantDomain);
       const data: any = (briefing as any).briefingData || {};
       const competitorIds: string[] = Array.isArray(data?.competitorIds) ? data.competitorIds : [];
-      const actionItems: Array<{ title: string; description?: string; competitorId?: string }> =
-        Array.isArray(data?.actionItems) ? data.actionItems : [];
       const result = await hubspot.autoPushBriefing({
         tenantDomain: ctx.tenantDomain,
         briefingId: briefing.id,
         title: (briefing as { periodLabel?: string }).periodLabel || "Intelligence briefing",
         executiveSummary: data?.executiveSummary || "",
         competitorIds,
-        actionItems,
         planName: tenant?.plan || "",
         force: true,
       });
@@ -789,16 +786,12 @@ export function registerIntegrationRoutes(app: Express) {
       const competitorIds = Array.isArray(data.competitorIds)
         ? (data.competitorIds as unknown[]).filter((x): x is string => typeof x === "string")
         : [];
-      const actionItems = Array.isArray(data.actionItems)
-        ? (data.actionItems as Array<{ title: string; description?: string; competitorId?: string }>)
-        : [];
       const result = await hubspot.autoPushBriefing({
         tenantDomain: ctx.tenantDomain,
         briefingId: briefing.id,
         title: (briefing as { periodLabel?: string }).periodLabel || "Intelligence briefing",
         executiveSummary: typeof data.executiveSummary === "string" ? data.executiveSummary : "",
         competitorIds,
-        actionItems,
         planName: tenant?.plan || "",
         force: true,
       });

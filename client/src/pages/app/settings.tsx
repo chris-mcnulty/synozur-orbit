@@ -2421,7 +2421,7 @@ function HubspotIntegrationSection({ tenantPlan }: { tenantPlan?: string }) {
             <div className="flex items-center justify-between pt-2">
               <div>
                 <Label htmlFor="hubspot-auto-push" className="text-sm">Auto-push briefings as Notes</Label>
-                <p className="text-xs text-muted-foreground">When new intelligence briefings are generated, automatically attach them to the matched HubSpot Company.</p>
+                <p className="text-xs text-muted-foreground">Automatically attach new intelligence briefings as Notes to matched HubSpot Companies. This does not create or assign tasks.</p>
               </div>
               <Switch
                 id="hubspot-auto-push"

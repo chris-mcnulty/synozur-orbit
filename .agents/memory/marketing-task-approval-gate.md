@@ -13,7 +13,7 @@ description: Product invariants for AI-suggested marketing tasks vs Planner sync
 
 **How to apply:** Any task insert, sync path, delete route, or bulk status endpoint must respect generated provenance, `isPlannerSyncEligible`, and the review policy; alter-only migrations need the always-apply marker.
 
-The approval requirement applies to every external task destination, including HubSpot. Permission to automatically sync briefing notes is not permission to create action-item tasks or assign them to the connection's default owner.
+The approval requirement applies to every external task destination, including HubSpot. Permission to sync briefing notes, even a manual "push summary" click, is not permission to create action-item tasks or assign them to the connection's default owner. The user approved keeping briefing-note sync enabled while blocking automatic task creation; individual explicit task pushes are separate.
 
 **Why:** A completed market onboarding exported all five briefing recommendations directly as HubSpot tasks, bypassing the Marketing Planner acceptance gate. Their titles matched the user's reported unwanted tasks exactly.
 
