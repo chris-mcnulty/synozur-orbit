@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { resolveLinkedInAuthor } from "./linkedin-author-identity";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   campaignSocialAccounts,
@@ -101,13 +102,16 @@ export function socialIdentityMatches(
 }
 
 export function alignOAuthResultToExistingIdentity(
-  account: Pick<
+  savedAccount: Pick<
     SocialAccount,
     "platform" | "accountId" | "accountName" | "authorUrn" | "authorMode" | "availableAuthors" | "connectedAt"
   >,
   result: OAuthCallbackResult,
   options: { verifiedSameLinkedInPrincipal?: boolean } = {},
 ): OAuthCallbackResult {
+  const account = savedAccount.platform === "linkedin"
+    ? { ...savedAccount, authorUrn: resolveLinkedInAuthor(savedAccount) }
+    : savedAccount;
   let aligned = result;
 
   if (account.platform === "linkedin" && account.authorUrn) {

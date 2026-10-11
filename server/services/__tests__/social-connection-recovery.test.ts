@@ -12,6 +12,24 @@ import {
 } from "../social-connection-recovery";
 
 describe("social connection recovery guards", () => {
+  it("preserves a legacy personal destination on reconnect even when pages are returned", () => {
+    const aligned = alignOAuthResultToExistingIdentity({
+      platform: "linkedin", accountId: "urn:li:person:member",
+      accountName: "Personal profile", authorMode: "person", authorUrn: null,
+      connectedAt: new Date(), availableAuthors: [],
+    } as any, {
+      accountId: "urn:li:person:member", authorMode: "organization",
+      authorUrn: "urn:li:organization:page", accountName: "Page",
+      accessToken: "fresh", refreshToken: null, expiresAt: null, scope: "w_member_social",
+      availableAuthors: [
+        { mode: "person", urn: "urn:li:person:member", name: "Personal profile" },
+        { mode: "organization", urn: "urn:li:organization:page", name: "Page" },
+      ],
+    });
+    expect(aligned.authorMode).toBe("person");
+    expect(aligned.authorUrn).toBe("urn:li:person:member");
+  });
+
   it("recognizes the same LinkedIn account by its stable provider identity", () => {
     expect(linkedinIdentityMatches(
       { accountId: "urn:li:organization:123", authorUrn: "urn:li:organization:123" } as any,

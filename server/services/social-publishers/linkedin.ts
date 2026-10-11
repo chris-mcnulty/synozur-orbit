@@ -31,6 +31,7 @@ import { GraphClient } from "../sharepoint-graph-client.js";
 import { isLinkedInMcpConfigured } from "../linkedin-provider";
 import { callLinkedInTool, extractText } from "../linkedin-mcp-client";
 import { fetchImageBytes, ImageRetrievalError } from "./image-retrieval";
+import { resolveLinkedInAuthor } from "../linkedin-author-identity";
 
 const NOT_APPROVED_MESSAGE =
   "LinkedIn direct posting isn't available yet — it's pending LinkedIn's app review. " +
@@ -232,10 +233,16 @@ export class LinkedInPublisher implements SocialPublisher {
       vanityName?: string | null;
     }> = [...orgs];
 
-    // Primary author: first org page, or a placeholder if none found.
+    // Include the verified member as a selectable personal destination.
+    const personalUrn = resolveLinkedInAuthor({ authorMode: "person", accountId: memberUrn });
+    if (personalUrn) {
+      availableAuthors.push({ mode: "person", urn: personalUrn, name: "LinkedIn personal profile" });
+    }
+    // Prefer the first org page for new connections; personal-only grants use
+    // their verified member identity instead of leaving the author empty.
     const primaryOrg = orgs[0] ?? null;
     const authorMode = primaryOrg ? "organization" : "person";
-    const authorUrn = primaryOrg?.urn ?? null;
+    const authorUrn = primaryOrg?.urn ?? personalUrn;
     const accountName = primaryOrg?.name ?? "LinkedIn account";
 
     return {
@@ -491,7 +498,8 @@ export class LinkedInPublisher implements SocialPublisher {
   }
 
   async publish(ctx: PublishContext): Promise<PublishResult> {
-    const { account, post } = ctx;
+    const { post } = ctx;
+    const account = { ...ctx.account, authorUrn: resolveLinkedInAuthor(ctx.account) };
 
     const text = post.editedContent || post.content;
     const hashtags = (post.hashtags as string[] | null) ?? [];
