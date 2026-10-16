@@ -9,3 +9,4 @@ playwright-report/
 .cache/ms-playwright/
 backups/
 recovery-private/
+/generated-artifacts/
