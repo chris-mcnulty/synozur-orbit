@@ -11,7 +11,8 @@
 
 import type { Express } from "express";
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, isNull, ne, notInArray, count } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notInArray, count, sql } from "drizzle-orm";
+import { MAX_EVENT_ANCHOR_IMAGES, MAX_ANCHOR_HEADLINE, MAX_ANCHOR_SUPPORTING_TEXT, overlayText } from "@shared/conference-image-pool";
 import { db } from "../db";
 import {
   conferences,
@@ -37,6 +38,9 @@ import {
   renderConferenceImage,
   ensureConferenceCampaign,
   normalizeConferenceGraphicSource,
+  conferenceGraphicFailure,
+  ConferenceGraphicError,
+  publishConferenceSource,
 } from "../services/conference-promotion-service";
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
@@ -108,6 +112,75 @@ function cleanSessionType(v: unknown): string | null {
 }
 
 export function registerConferencePromotionRoutes(app: Express) {
+  // Raw internal paths must be an editor's recent upload or an in-scope
+  // registered asset. Absolute URLs to our storage routes cannot bypass this.
+  async function validateInputUrl(req: any, ctx: any, conf: any, raw: unknown): Promise<string> {
+    if (typeof raw !== "string" || raw.length > 2048 || !raw.trim()) {
+      throw new ConferenceGraphicError("source_missing", "Choose an image upload or public HTTPS image link.");
+    }
+    const url = raw.trim();
+    const internal = url.startsWith("/") || /\/(?:objects|public-objects)\//i.test(url) ||
+      /^https:\/\/storage\.googleapis\.com\//i.test(url);
+    if (!internal) {
+      if (!/^https:\/\//i.test(url)) throw new ConferenceGraphicError("source_invalid", "Image links must use HTTPS.");
+      return url;
+    }
+    // Reject host aliases, encoded paths and traversal; registered assets should
+    // be selected by ID instead of submitted as an arbitrary bucket reference.
+    if (!/^\/(?:objects|public-objects)\/[A-Za-z0-9_./-]+$/.test(url) || url.includes("..")) {
+      throw new ConferenceGraphicError("source_invalid", "Select internal images from this event or Brand Library, or upload a new image.");
+    }
+    const granted = (req.session?.imageUploadGrants || []).some((g: any) =>
+      g.path === url && g.tenantDomain === ctx.tenantDomain && g.marketId === ctx.marketId &&
+      Date.now() - g.issuedAt < 24 * 60 * 60 * 1000);
+    if (granted) return url;
+    const assets = await db.select().from(brandAssets).where(and(
+      eq(brandAssets.fileUrl, url), eq(brandAssets.tenantDomain, ctx.tenantDomain), eq(brandAssets.status, "active"),
+    ));
+    if (assets.some(a => !a.marketId || a.marketId === ctx.marketId)) return url;
+    const images = await db.select().from(conferenceImages).where(and(
+      eq(conferenceImages.conferenceId, conf.id), eq(conferenceImages.tenantDomain, ctx.tenantDomain),
+      eq(conferenceImages.fileUrl, url), eq(conferenceImages.status, "active"),
+    ));
+    if (images.length) return url;
+    throw new ConferenceGraphicError("source_forbidden", "This image does not belong to the active event or market. Select an image from Brand Library or upload it again.");
+  }
+
+  async function validateImageSelection(conf: any, b: any) {
+    if ([b.templateAssetId, b.backgroundId, b.sourceImageId].filter(Boolean).length > 1) {
+      throw new ConferenceGraphicError("source_invalid", "Choose only one image source, or clear all sources to use the brand background.");
+    }
+    if (b.templateAssetId) {
+      const [asset] = await db.select().from(brandAssets).where(and(
+        eq(brandAssets.id, b.templateAssetId), eq(brandAssets.tenantDomain, conf.tenantDomain), eq(brandAssets.status, "active"),
+      ));
+      if (!asset?.fileUrl?.trim() || !asset.fileType?.startsWith("image/") || (asset.marketId && asset.marketId !== conf.marketId)) {
+        throw new ConferenceGraphicError("source_unavailable", "Choose an active Brand Library image with an image file in this event's market.");
+      }
+    }
+    if (b.backgroundId) {
+      const [bg] = await db.select().from(conferenceBackgrounds).where(and(
+        eq(conferenceBackgrounds.id, b.backgroundId), eq(conferenceBackgrounds.conferenceId, conf.id),
+        eq(conferenceBackgrounds.tenantDomain, conf.tenantDomain),
+      ));
+      if (!bg?.fileUrl?.trim()) throw new ConferenceGraphicError("source_unavailable", "Choose an available background belonging to this event.");
+    }
+    if (b.sourceImageId) {
+      const [original] = await db.select().from(conferenceImages).where(and(
+        eq(conferenceImages.id, b.sourceImageId), eq(conferenceImages.conferenceId, conf.id),
+        eq(conferenceImages.tenantDomain, conf.tenantDomain), eq(conferenceImages.status, "active"),
+      ));
+      if (!original?.fileUrl || original.renderDirty || original.renderError) {
+        throw new ConferenceGraphicError("source_unavailable", "The original pool image must be active and successfully rendered before creating a variant.");
+      }
+    }
+  }
+
+  const imageError = (res: any, error: unknown) => {
+    console.error("[Conference] Image request failed:", error);
+    const failure = conferenceGraphicFailure(error);
+    return res.status(failure.code === "render_failed" ? 500 : 400).json(failure);
+  };
   // ── Conferences ────────────────────────────────────────────────────────────
 
   // Events (conferences) linked to a campaign, with a post count — powers the
@@ -281,7 +354,12 @@ export function registerConferencePromotionRoutes(app: Express) {
     }
     if ("alwaysHashtags" in b) patch.alwaysHashtags = cleanStringArray(b.alwaysHashtags);
     if ("productIds" in b) patch.productIds = cleanStringArray(b.productIds);
-    if ("eventLogoFileUrl" in b) patch.eventLogoFileUrl = b.eventLogoFileUrl ?? null;
+    if ("eventLogoFileUrl" in b) {
+      try {
+        patch.eventLogoFileUrl = b.eventLogoFileUrl
+          ? (await publishConferenceSource(await validateInputUrl(req, ctx, existing, b.eventLogoFileUrl))).fileUrl : null;
+      } catch (error) { return imageError(res, error); }
+    }
     if ("eventLogoFileType" in b) patch.eventLogoFileType = b.eventLogoFileType ?? null;
     if ("campaignId" in b) patch.campaignId = await resolveParentCampaignId(ctx, b.campaignId);
 
@@ -310,12 +388,13 @@ export function registerConferencePromotionRoutes(app: Express) {
       .from(conferences)
       .where(and(eq(conferences.id, req.params.id), eq(conferences.tenantDomain, ctx.tenantDomain), eq(conferences.marketId, ctx.marketId)));
     if (!existing) return res.status(404).json({ error: "Conference not found" });
+    if (existing.status === "archived") return res.json({ ok: true, archivedAt: existing.archivedAt });
     const now = new Date();
     await db.update(conferences).set({ status: "archived", archivedAt: now, updatedAt: now }).where(eq(conferences.id, existing.id));
     await db
       .update(conferenceImages)
       .set({ status: "archived", archivedAt: now, updatedAt: now })
-      .where(eq(conferenceImages.conferenceId, existing.id));
+      .where(and(eq(conferenceImages.conferenceId, existing.id), eq(conferenceImages.status, "active")));
     res.json({ ok: true, archivedAt: now });
   });
 
@@ -332,7 +411,8 @@ export function registerConferencePromotionRoutes(app: Express) {
     await db
       .update(conferenceImages)
       .set({ status: "active", archivedAt: null, updatedAt: now })
-      .where(eq(conferenceImages.conferenceId, existing.id));
+      .where(and(eq(conferenceImages.conferenceId, existing.id), eq(conferenceImages.status, "archived"),
+        existing.archivedAt ? eq(conferenceImages.archivedAt, existing.archivedAt) : sql`false`));
     res.json({ ok: true });
   });
 
@@ -481,6 +561,8 @@ export function registerConferencePromotionRoutes(app: Express) {
     const ctx = await getRequestContext(req);
     const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
+    if (conf.status !== "active") return res.status(400).json({ error: "Restore this event before adding images." });
+    try {
     const b = req.body ?? {};
     const role: ConferenceImageRole = CONFERENCE_IMAGE_ROLES.includes(b.role) ? b.role : (b.sessionId ? "session" : "anchor");
     const requestedSource: ConferenceImageSource = CONFERENCE_IMAGE_SOURCES.includes(b.source)
@@ -490,6 +572,10 @@ export function registerConferencePromotionRoutes(app: Express) {
     const sessionId = typeof b.sessionId === "string" && b.sessionId ? b.sessionId : null;
     const templateAssetId = typeof b.templateAssetId === "string" && b.templateAssetId ? b.templateAssetId : null;
     const backgroundId = typeof b.backgroundId === "string" && b.backgroundId ? b.backgroundId : null;
+    const sourceImageId = typeof b.sourceImageId === "string" && b.sourceImageId ? b.sourceImageId : null;
+    const overlayHeadline = overlayText(b.overlayHeadline, MAX_ANCHOR_HEADLINE);
+    const overlaySupportingText = overlayText(b.overlaySupportingText, MAX_ANCHOR_SUPPORTING_TEXT);
+    await validateImageSelection(conf, { templateAssetId, backgroundId, sourceImageId });
     if ((role === "session") !== Boolean(sessionId)) {
       return res.status(400).json({
         error: role === "session"
@@ -532,7 +618,18 @@ export function registerConferencePromotionRoutes(app: Express) {
       }
     }
 
-    const [row] = await db
+    const published = source === "uploaded"
+      ? await publishConferenceSource(await validateInputUrl(req, ctx, conf, b.fileUrl)) : null;
+    const row = await db.transaction(async tx => {
+      // Serialize concurrent creates/restores against the same event.
+      await tx.execute(sql`SELECT id FROM conferences WHERE id = ${conf.id} FOR UPDATE`);
+      if (role === "anchor") {
+        const [{ n }] = await tx.select({ n: count() }).from(conferenceImages).where(and(
+          eq(conferenceImages.conferenceId, conf.id), eq(conferenceImages.role, "anchor"), eq(conferenceImages.status, "active"),
+        ));
+        if (Number(n) >= MAX_EVENT_ANCHOR_IMAGES) throw new ConferenceGraphicError("pool_limit", `This event supports up to ${MAX_EVENT_ANCHOR_IMAGES} active anchor images. Archive one before adding another.`);
+      }
+      const [created] = await tx
       .insert(conferenceImages)
       .values({
         id: randomUUID(),
@@ -543,14 +640,23 @@ export function registerConferencePromotionRoutes(app: Express) {
         source,
         name: typeof b.name === "string" ? b.name : null,
         imagePrompt: typeof b.imagePrompt === "string" ? b.imagePrompt : null,
-        templateAssetId: source === "template_composite" ? templateAssetId : null,
+        templateAssetId: source !== "uploaded" ? templateAssetId : null,
         backgroundId: source === "logo_composite" ? backgroundId : null,
-        fileUrl: source === "uploaded" ? b.fileUrl : null,
-        fileType: source === "uploaded" && typeof b.fileType === "string" ? b.fileType : null,
+        sourceImageId: source === "logo_composite" ? sourceImageId : null,
+        sourceRequired: !!(templateAssetId || backgroundId || sourceImageId),
+        overlayHeadline,
+        overlaySupportingText,
+        renderDirty: !published,
+        fileUrl: published?.fileUrl ?? null,
+        fileType: published ? "image/png" : null,
+        fileSize: published?.fileSize ?? null,
         createdBy: ctx.userId,
       })
       .returning();
+      return created;
+    });
     res.status(201).json(row);
+    } catch (error) { return imageError(res, error); }
   });
 
   // Render bytes for an ai_generated / template_composite image on demand.
@@ -563,8 +669,9 @@ export function registerConferencePromotionRoutes(app: Express) {
       .from(conferenceImages)
       .where(and(eq(conferenceImages.id, req.params.id), eq(conferenceImages.tenantDomain, ctx.tenantDomain)));
     if (!img) return res.status(404).json({ error: "Image not found" });
-    const [conf] = await db.select().from(conferences).where(eq(conferences.id, img.conferenceId));
+    const conf = await loadConference(img.conferenceId, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
+    if (img.status !== "active") return res.status(400).json({ error: "Restore this image before rendering." });
     let session = null;
     if (img.sessionId) {
       [session] = await db.select().from(conferenceSessions).where(eq(conferenceSessions.id, img.sessionId));
@@ -573,8 +680,11 @@ export function registerConferencePromotionRoutes(app: Express) {
       const fileUrl = await renderConferenceImage(img, conf, session ?? null);
       res.json({ ok: true, fileUrl });
     } catch (err: any) {
-      console.error("[Conference] render error:", err?.message);
-      res.status(500).json({ error: "Failed to render image" });
+      console.error("[Conference] render error:", { imageId: img.id, conferenceId: conf.id, source: img.source, error: err });
+      const failure = conferenceGraphicFailure(err);
+      await db.update(conferenceImages).set({ renderError: failure.error, renderDirty: true })
+        .where(and(eq(conferenceImages.id, img.id), eq(conferenceImages.renderRevision, img.renderRevision)));
+      res.status(422).json(failure);
     }
   });
 
@@ -588,8 +698,18 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (!img) return res.status(404).json({ error: "Image not found" });
     const conf = await loadConference(img.conferenceId, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
+    try {
     const b = req.body ?? {};
-    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (img.role === "anchor" && img.source === "uploaded" && b.source && b.source !== "uploaded") {
+      throw new ConferenceGraphicError("original_retained", "Create a separate branded variant to add text. Original uploaded or linked images are retained unchanged.");
+    }
+    const patch: Record<string, unknown> = { updatedAt: new Date(), renderRevision: img.renderRevision + 1 };
+    if ("overlayHeadline" in b) patch.overlayHeadline = overlayText(b.overlayHeadline, MAX_ANCHOR_HEADLINE);
+    if ("overlaySupportingText" in b) patch.overlaySupportingText = overlayText(b.overlaySupportingText, MAX_ANCHOR_SUPPORTING_TEXT);
+    if ("sourceImageId" in b) {
+      if (b.sourceImageId === img.id) throw new ConferenceGraphicError("source_invalid", "An image cannot use itself as its source. Add a separate variant.");
+      patch.sourceImageId = typeof b.sourceImageId === "string" && b.sourceImageId ? b.sourceImageId : null;
+    }
     if ("name" in b) patch.name = b.name ?? null;
     if ("imagePrompt" in b) patch.imagePrompt = b.imagePrompt ?? null;
     if ("templateAssetId" in b) {
@@ -605,9 +725,6 @@ export function registerConferencePromotionRoutes(app: Express) {
         }
       }
       patch.templateAssetId = templateId;
-      patch.fileUrl = null;
-      patch.fileType = null;
-      patch.fileSize = null;
     }
     if ("backgroundId" in b) {
       const backgroundId = typeof b.backgroundId === "string" && b.backgroundId ? b.backgroundId : null;
@@ -622,21 +739,35 @@ export function registerConferencePromotionRoutes(app: Express) {
         }
       }
       patch.backgroundId = backgroundId;
-      patch.fileUrl = null;
-      patch.fileType = null;
-      patch.fileSize = null;
     }
     if (typeof b.source === "string" && CONFERENCE_IMAGE_SOURCES.includes(b.source)) {
       patch.source = normalizeConferenceGraphicSource(b.source, img.role);
-      patch.fileUrl = null;
-      patch.fileType = null;
-      patch.fileSize = null;
       patch.imagePrompt = null;
     }
-    if (b.source === "uploaded" && typeof b.fileUrl === "string") patch.fileUrl = b.fileUrl;
-    if (b.source === "uploaded" && typeof b.fileType === "string") patch.fileType = b.fileType;
+    const effective = { ...img, ...patch };
+    if (effective.source !== "uploaded" || typeof b.fileUrl !== "string") await validateImageSelection(conf, effective);
+    if (["templateAssetId", "backgroundId", "sourceImageId"].some(key => key in b)) {
+      patch.sourceRequired = !!(effective.templateAssetId || effective.backgroundId || effective.sourceImageId) ||
+        (img.sourceRequired && b.useBrandBackground !== true);
+    }
+    const changed = ["source", "templateAssetId", "backgroundId", "sourceImageId", "overlayHeadline", "overlaySupportingText", "sourceRequired"]
+      .some(key => key in patch && patch[key] !== (img as any)[key]);
+    if (changed) { patch.renderDirty = true; patch.renderError = null; }
+    if (effective.source === "uploaded" && typeof b.fileUrl === "string") {
+      const published = await publishConferenceSource(await validateInputUrl(req, ctx, conf, b.fileUrl));
+      patch.fileUrl = published.fileUrl;
+      patch.fileType = "image/png";
+      patch.fileSize = published.fileSize;
+      patch.renderDirty = false;
+      patch.renderError = null;
+      patch.templateAssetId = null;
+      patch.backgroundId = null;
+      patch.sourceImageId = null;
+      patch.sourceRequired = false;
+    }
     const [row] = await db.update(conferenceImages).set(patch).where(eq(conferenceImages.id, img.id)).returning();
     res.json(row);
+    } catch (error) { return imageError(res, error); }
   });
 
   app.post("/api/conference-images/:id/archive", async (req, res) => {
@@ -647,13 +778,27 @@ export function registerConferencePromotionRoutes(app: Express) {
       .from(conferenceImages)
       .where(and(eq(conferenceImages.id, req.params.id), eq(conferenceImages.tenantDomain, ctx.tenantDomain)));
     if (!img) return res.status(404).json({ error: "Image not found" });
+    const conf = await loadConference(img.conferenceId, ctx.tenantDomain, ctx.marketId);
+    if (!conf) return res.status(404).json({ error: "Conference not found" });
     const now = new Date();
     const archive = req.body?.archived !== false;
-    await db
+    if (!archive && conf.status !== "active") return res.status(400).json({ error: "Restore the event before restoring individual images." });
+    try {
+    await db.transaction(async tx => {
+      await tx.execute(sql`SELECT id FROM conferences WHERE id = ${conf.id} FOR UPDATE`);
+      if (!archive && img.status !== "active" && img.role === "anchor") {
+        const [{ n }] = await tx.select({ n: count() }).from(conferenceImages).where(and(
+          eq(conferenceImages.conferenceId, conf.id), eq(conferenceImages.role, "anchor"), eq(conferenceImages.status, "active"),
+        ));
+        if (Number(n) >= MAX_EVENT_ANCHOR_IMAGES) throw new ConferenceGraphicError("pool_limit", `Archive an image first. The limit is ${MAX_EVENT_ANCHOR_IMAGES} active anchor images.`);
+      }
+    await tx
       .update(conferenceImages)
       .set({ status: archive ? "archived" : "active", archivedAt: archive ? now : null, updatedAt: now })
       .where(eq(conferenceImages.id, img.id));
+    });
     res.json({ ok: true });
+    } catch (error) { return imageError(res, error); }
   });
 
   app.delete("/api/conference-images/:id", async (req, res) => {
@@ -664,6 +809,8 @@ export function registerConferencePromotionRoutes(app: Express) {
       .from(conferenceImages)
       .where(and(eq(conferenceImages.id, req.params.id), eq(conferenceImages.tenantDomain, ctx.tenantDomain)));
     if (!img) return res.status(404).json({ error: "Image not found" });
+    const conf = await loadConference(img.conferenceId, ctx.tenantDomain, ctx.marketId);
+    if (!conf) return res.status(404).json({ error: "Conference not found" });
     await db.delete(conferenceImages).where(eq(conferenceImages.id, img.id));
     res.json({ ok: true });
   });
@@ -688,6 +835,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     const ctx = await getRequestContext(req);
     const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
     if (!conf) return res.status(404).json({ error: "Conference not found" });
+    try {
     const b = req.body ?? {};
     if (!b.fileUrl || typeof b.fileUrl !== "string") {
       return res.status(400).json({ error: "fileUrl is required" });
@@ -695,6 +843,7 @@ export function registerConferencePromotionRoutes(app: Express) {
     if (!b.fileUrl.startsWith("/objects/") && !b.fileUrl.startsWith("/public-objects/")) {
       return res.status(400).json({ error: "Conference backgrounds must be uploaded through Orbit" });
     }
+    const published = await publishConferenceSource(await validateInputUrl(req, ctx, conf, b.fileUrl));
     const existing = await db
       .select()
       .from(conferenceBackgrounds)
@@ -706,13 +855,14 @@ export function registerConferencePromotionRoutes(app: Express) {
         conferenceId: conf.id,
         tenantDomain: ctx.tenantDomain,
         name: typeof b.name === "string" && b.name.trim() ? b.name.trim() : null,
-        fileUrl: b.fileUrl,
-        fileType: typeof b.fileType === "string" ? b.fileType : null,
-        fileSize: Number.isFinite(b.fileSize) ? b.fileSize : null,
+        fileUrl: published.fileUrl,
+        fileType: "image/png",
+        fileSize: published.fileSize,
         sortOrder: existing.length,
       })
       .returning();
     res.status(201).json(row);
+    } catch (error) { return imageError(res, error); }
   });
 
   app.patch("/api/conference-backgrounds/:id", async (req, res) => {

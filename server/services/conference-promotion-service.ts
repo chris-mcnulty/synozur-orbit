@@ -56,7 +56,7 @@ import {
   ObjectStorageService,
 } from "../replit_integrations/object_storage/objectStorage";
 import { archiveArtifactToSpe } from "./artifact-storage-helper";
-import { validateUrlWithDnsCheck } from "../utils/url-validator";
+import { fetchImageBytes, MAX_IMAGE_BYTES } from "./social-publishers/image-retrieval";
 
 const objectStorageService = new ObjectStorageService();
 
@@ -142,10 +142,16 @@ export async function saveConferenceImageBuffer(
 
 /** Read the bytes of a brand template, whether stored in object storage or at an external URL. */
 export async function loadImageBytes(fileUrl: string): Promise<Buffer> {
+  const download = async (file: any): Promise<Buffer> => {
+    const [metadata] = file.getMetadata ? await file.getMetadata() : [{}];
+    if (Number(metadata.size) > MAX_IMAGE_BYTES) throw new Error("Image exceeds the 20 MB limit");
+    const [bytes] = await file.download();
+    if (bytes.length > MAX_IMAGE_BYTES) throw new Error("Image exceeds the 20 MB limit");
+    return bytes;
+  };
   if (fileUrl.startsWith("/objects/")) {
     const file = await objectStorageService.getObjectEntityFile(fileUrl);
-    const [buf] = await file.download();
-    return buf;
+    return download(file);
   }
   // An Orbit `/public-objects/...` path (relative, or absolute with any host)
   // maps to a file in the public search path; read it straight from storage so
@@ -155,33 +161,57 @@ export async function loadImageBytes(fileUrl: string): Promise<Buffer> {
     const objectPath = fileUrl.slice(publicIdx + PUBLIC_SERVE_PREFIX.length);
     const file = await objectStorageService.searchPublicObject(objectPath);
     if (!file) throw new Error(`Public object not found: ${objectPath}`);
-    const [buf] = await file.download();
-    return buf;
+    return download(file);
   }
   // A raw GCS URL into our own bucket is not anonymously fetchable (HTTP 403);
   // read it straight from object storage instead. Used to heal legacy URLs.
   const gcs = parseGcsUrl(fileUrl);
   if (gcs && gcs.bucketName === publicBucketName()) {
-    const [buf] = await objectStorageClient.bucket(gcs.bucketName).file(gcs.objectName).download();
-    return buf;
+    return download(objectStorageClient.bucket(gcs.bucketName).file(gcs.objectName));
   }
-  let currentUrl = fileUrl;
-  for (let hop = 0; hop < 6; hop++) {
-    const validation = await validateUrlWithDnsCheck(currentUrl);
-    if (!validation.isValid) {
-      throw new Error(validation.error || "Unsafe external image URL");
-    }
-    const res = await fetch(validation.normalizedUrl || currentUrl, { redirect: "manual" });
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location) throw new Error("Image redirect did not include a destination");
-      currentUrl = new URL(location, currentUrl).toString();
-      continue;
-    }
-    if (!res.ok) throw new Error(`Failed to fetch template image (${res.status})`);
-    return Buffer.from(await res.arrayBuffer());
+  // Shared social loader pins DNS, validates every redirect, caps streamed bytes
+  // and times out requests. Never fetch editor-supplied URLs without it.
+  return (await fetchImageBytes(fileUrl, { retryDelaysMs: [] })).buffer;
+}
+
+export class ConferenceGraphicError extends Error {
+  constructor(public code: string, message: string) { super(message); }
+}
+
+/** Safe client diagnostics never include storage paths, signed URLs or parser details. */
+export function conferenceGraphicFailure(error: unknown): { code: string; error: string } {
+  if (error instanceof ConferenceGraphicError) return { code: error.code, error: error.message };
+  const message = error instanceof Error ? error.message : "";
+  if (/Overlay text must/.test(message)) return { code: "overlay_invalid", error: message };
+  if (/font|glyph/i.test(message)) return {
+    code: "brand_font_invalid",
+    error: "The configured brand heading font cannot render this text. Replace the font in Brand Library or remove unsupported characters.",
+  };
+  if (/Configure a company logo/.test(message)) return {
+    code: "company_logo_missing", error: "Configure a company logo in Brand Library or tenant settings before rendering.",
+  };
+  if (/Selected (conference background|brand template)/.test(message)) return {
+    code: "source_unavailable", error: "The selected source is missing or unavailable in this event's market. Choose another image or explicitly select the brand background.",
+  };
+  return { code: "render_failed", error: "The graphic could not be rendered. Check the selected source and company branding, then retry. The previous preview has been retained." };
+}
+
+export async function validatedConferenceImage(url: string, label = "Selected image"): Promise<Buffer> {
+  try {
+    const bytes = await loadImageBytes(url);
+    // Decode actual pixels, not upload MIME/extension. Limit decompression too.
+    return await sharp(bytes, { limitInputPixels: 40_000_000 })
+      .rotate().resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+      .png().toBuffer();
+  } catch (error) {
+    console.error(`[Conference] ${label} load/decode failed:`, error);
+    throw new ConferenceGraphicError("source_invalid",
+      `${label} could not be read as an image (maximum 20 MB and 40 megapixels). Upload a valid image or use an accessible public image link.`);
   }
-  throw new Error("Image URL exceeded the redirect limit");
+}
+
+export async function publishConferenceSource(url: string): Promise<{ fileUrl: string; fileSize: number }> {
+  return saveConferenceImageBuffer(await validatedConferenceImage(url), "image/png", "png");
 }
 
 /** Map an image content type to a safe file extension (defaults to png). */
@@ -233,7 +263,8 @@ function wrapText(text: string, maxChars: number, maxLines: number): string[] {
 
 /** Wrap to a character width with no line cap (used by the responsive fitter). */
 function wrapWords(text: string, maxChars: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
+  const words = text.split(/\s+/).filter(Boolean).flatMap(word =>
+    word.length <= maxChars ? [word] : (word.match(new RegExp(`.{1,${maxChars}}`, "gu")) || []));
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
@@ -556,38 +587,63 @@ export async function compositeHeroImage(opts: {
   // awkward mid-thought "…". ~80px margins each side keep centered text clear
   // of the canvas edges.
   const hasEventLogo = !!opts.eventLogoBytes;
-  const subtitleRows = (opts.location ? 1 : 0) + (opts.eventDates ? 1 : 0);
+  // Supporting event copy may be longer than a location. Reserve its actual
+  // fitted rows before choosing the headline size, including company-logo space.
+  const supportSize = opts.location && opts.location.length > 110 ? 20 : 28;
+  const supportLines = opts.location ? wrapWords(opts.location, Math.floor((W - 180) / (supportSize * 0.62))) : [];
+  const supportHeight = supportLines.length * (supportSize + 8) + (opts.eventDates ? 36 : 0);
   const CONFERENCE_TITLE_TOP = 380;
   // In conference mode the title starts at a fixed Y beneath the event logo, so
   // reject any font tier whose title + subtitle stack would run off the canvas.
   const fitsVertically = hasEventLogo
     ? (lineCount: number, lh: number) =>
-        CONFERENCE_TITLE_TOP + lineCount * lh + 16 + subtitleRows * 40 <= H - 16
-    : undefined;
-  const { lines: titleLines, fontSize: titleSize, lineHeight } = layoutTitle(
+        CONFERENCE_TITLE_TOP + (lineCount - 1) * lh + 32 + supportHeight <= H - 85
+    : (lineCount: number, lh: number) => lineCount * lh + supportHeight + 32 < H - 160;
+  let { lines: titleLines, fontSize: titleSize, lineHeight } = layoutTitle(
     opts.conferenceName,
     W - 160,
     fitsVertically,
   );
-  const subtitleText = opts.location ? escapeXml(opts.location) : "";
+  // Saved overlay text is bounded but can still exceed the richer conference
+  // layout. Fit the entire text at smaller readable sizes rather than clipping.
+  if (titleLines.join(" ").includes("…")) {
+    for (const size of [40, 36, 32, 28, 24]) {
+      const lines = wrapWords(opts.conferenceName, Math.floor((W - 160) / (size * 0.62)));
+      const lh = Math.round(size * 1.16);
+      if (fitsVertically(lines.length, lh)) {
+        titleLines = lines;
+        titleSize = size;
+        lineHeight = lh;
+        break;
+      }
+    }
+  }
 
   // Conferences anchor the title beneath the event logo; standalone post
   // graphics centre the (variable-height) title block vertically for balance.
   const blockH = (titleLines.length - 1) * lineHeight;
   const titleStartY = hasEventLogo
     ? CONFERENCE_TITLE_TOP
-    : Math.round((H - blockH) / 2);
+    : Math.round((H - blockH - supportHeight) / 2);
+  const fittedSize = (text: string, size: number) => {
+    const font = opts.customFont?.font;
+    const width = font
+      ? font.layout(text).positions.reduce((sum, p) => sum + p.xAdvance, 0) * size / font.unitsPerEm
+      : text.length * size * 0.62;
+    return Math.min(size, Math.floor(size * (W - 160) / Math.max(1, width)));
+  };
   const titleSvgParts = titleLines.map(
     (l, i) =>
-      `<text x="${W / 2}" y="${titleStartY + i * lineHeight}" text-anchor="middle" font-family="${headingFamily}" font-size="${titleSize}" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
+      `<text x="${W / 2}" y="${titleStartY + i * lineHeight}" text-anchor="middle" font-family="${headingFamily}" font-size="${fittedSize(l, titleSize)}" font-weight="700" fill="#ffffff" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5))">${escapeXml(l)}</text>`,
   );
 
   // Subtitle rows: location then dates, stacked below title
-  let subtitleY = titleStartY + blockH + lineHeight + 16;
-  const locationSvg = subtitleText
-    ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-family="${headingFamily}" font-size="32" font-weight="400" fill="rgba(255,255,255,0.85)">${subtitleText}</text>`
-    : "";
-  if (subtitleText) subtitleY += 40;
+  let subtitleY = titleStartY + blockH + 44;
+  const locationSvg = supportLines.map(line => {
+    const row = `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-family="${headingFamily}" font-size="${fittedSize(line, supportSize)}" font-weight="400" fill="rgba(255,255,255,0.85)">${escapeXml(line)}</text>`;
+    subtitleY += supportSize + 8;
+    return row;
+  }).join("");
   const datesSvg = opts.eventDates
     ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-family="${headingFamily}" font-size="28" font-weight="400" fill="rgba(255,255,255,0.70)">${escapeXml(opts.eventDates)}</text>`
     : "";
@@ -1028,25 +1084,14 @@ export function normalizeConferenceGraphicSource(
  * and legacy raw-GCS URLs without regenerating the graphic.
  */
 async function republishViaOrbit(image: ConferenceImage, current: string): Promise<string> {
-  let bytes: Buffer;
-  let contentType: string;
-  if (current.startsWith("/objects/")) {
-    // Private object path has no extension — derive the type from its metadata
-    // (falling back to the recorded fileType).
-    const file = await objectStorageService.getObjectEntityFile(current);
-    const [metadata] = await file.getMetadata();
-    [bytes] = await file.download();
-    contentType = (metadata?.contentType as string | undefined) || image.fileType || "image/png";
-  } else {
-    bytes = await loadImageBytes(current);
-    contentType = image.fileType || "image/png";
-  }
-  const ext = extFromContentType(contentType);
-  const saved = await saveConferenceImageBuffer(bytes, contentType, ext);
-  await db
+  const saved = await publishConferenceSource(current);
+  const result = await db
     .update(conferenceImages)
-    .set({ fileUrl: saved.fileUrl, fileSize: saved.fileSize, updatedAt: new Date() })
-    .where(eq(conferenceImages.id, image.id));
+    .set({ fileUrl: saved.fileUrl, fileType: "image/png", fileSize: saved.fileSize,
+      renderError: null, renderDirty: false, updatedAt: new Date() })
+    .where(and(eq(conferenceImages.id, image.id), eq(conferenceImages.renderRevision, image.renderRevision ?? 0),
+      eq(conferenceImages.status, "active")));
+  if ((result as any)?.rowCount === 0) throw new ConferenceGraphicError("settings_changed", "Image settings changed. Retry with the current settings.");
   return saved.fileUrl;
 }
 
@@ -1071,25 +1116,29 @@ export async function renderConferenceImage(
   // to the deterministic brand compositor before rendering.
   const source = normalizeConferenceGraphicSource(image.source, image.role);
   const current = image.fileUrl ?? null;
+  if (image.sourceRequired && !image.backgroundId && !image.templateAssetId && !image.sourceImageId) {
+    throw new ConferenceGraphicError("source_unavailable", "The selected source was removed. Choose another image or explicitly select the brand background.");
+  }
 
   // Self-heal: any image that already has bytes but lives at a URL external
   // schedulers can't fetch — a private `/objects/...` upload OR a legacy raw
   // `storage.googleapis.com` URL (which 403s anonymously) — is re-published
   // through Orbit's public route. This applies to ALL sources so previously
   // generated/composited graphics are preserved rather than regenerated.
-  if (source === image.source && current && !isServedPublicImage(current)) {
+  if (!image.renderDirty && source === image.source && current && !isServedPublicImage(current)) {
     try {
       return await republishViaOrbit(image, current);
     } catch (err: any) {
       console.error("[Conference] Failed to re-publish image:", err?.message);
       // Uploaded images have no other way to be produced — keep the current URL.
       // Generated/composite images fall through and are regenerated below.
-       if (source === "uploaded") return current;
+       if (source === "uploaded") throw err;
     }
   }
 
   if (source === "uploaded") {
-    // Uploaded image with no bytes (or already served) — nothing to render.
+    if (!current || image.renderDirty) throw new ConferenceGraphicError("source_missing", "Upload or link an accessible image before using this pool choice.");
+    await validatedConferenceImage(current);
     return current;
   }
 
@@ -1152,21 +1201,20 @@ export async function renderConferenceImage(
       whLogoAsset = pickLogo(tenantLogoAssets);
     }
     if (whLogoAsset?.fileUrl) {
-      companyLogoBytes = await loadImageBytes(whLogoAsset.fileUrl);
+      companyLogoBytes = await validatedConferenceImage(whLogoAsset.fileUrl, "Company logo");
     }
     // Last resort: use the tenant's own logoUrl (set in Tenant Settings)
     if (!companyLogoBytes && tenantRow?.logoUrl) {
-      companyLogoBytes = await loadImageBytes(tenantRow.logoUrl);
+      companyLogoBytes = await validatedConferenceImage(tenantRow.logoUrl, "Company logo");
     }
   }
   if (!companyLogoBytes) {
     throw new Error("Configure a company logo before rendering conference graphics");
   }
 
-  if (!conf.eventLogoFileUrl) {
-    throw new Error("Upload the conference event logo before rendering conference graphics");
-  }
-  const eventLogoBytes = await loadImageBytes(conf.eventLogoFileUrl);
+  // Webinars commonly have company branding but no separate event mark.
+  const eventLogoBytes = conf.eventLogoFileUrl
+    ? await validatedConferenceImage(conf.eventLogoFileUrl, "Event logo") : null;
 
   if (source === "logo_composite") {
     // Hero anchor image: background photo + brand scrim + event logo + company logo + conf name
@@ -1181,7 +1229,28 @@ export async function renderConferenceImage(
       if (!bg.fileUrl?.trim()) {
         throw new Error("Selected conference background is missing its image file. Upload a background image or clear the background selection");
       }
-      backgroundBytes = await loadImageBytes(bg.fileUrl);
+      backgroundBytes = await validatedConferenceImage(bg.fileUrl, "Selected event background");
+    } else if (image.templateAssetId) {
+      const [tpl] = await db.select().from(brandAssets).where(and(
+        eq(brandAssets.id, image.templateAssetId),
+        eq(brandAssets.tenantDomain, conf.tenantDomain),
+        eq(brandAssets.status, "active"),
+      ));
+      if (!tpl || (tpl.marketId && tpl.marketId !== conf.marketId) || !tpl.fileUrl?.trim()) {
+        throw new ConferenceGraphicError("source_unavailable", "Selected Brand Library image is not available in this event's market. Choose another image.");
+      }
+      backgroundBytes = await validatedConferenceImage(tpl.fileUrl, "Selected Brand Library image");
+    } else if (image.sourceImageId) {
+      const [original] = await db.select().from(conferenceImages).where(and(
+        eq(conferenceImages.id, image.sourceImageId),
+        eq(conferenceImages.conferenceId, conf.id),
+        eq(conferenceImages.tenantDomain, conf.tenantDomain),
+        eq(conferenceImages.status, "active"),
+      ));
+      if (!original?.fileUrl || original.renderDirty || original.renderError || original.id === image.id) {
+        throw new ConferenceGraphicError("source_unavailable", "The original pool image is unavailable or needs regeneration. Restore it or select another source.");
+      }
+      backgroundBytes = await validatedConferenceImage(original.fileUrl, "Original pool image");
     }
 
     const customFont = await resolveCompositorFont(conf.tenantDomain, conf.marketId);
@@ -1189,8 +1258,8 @@ export async function renderConferenceImage(
       backgroundBytes,
       eventLogoBytes,
       companyLogoBytes,
-      conferenceName: conf.name,
-      location: conf.location,
+      conferenceName: image.overlayHeadline || conf.name,
+      location: image.overlaySupportingText || conf.location,
       primaryColor,
       customFont,
       websiteUrl: conf.website ?? null,
@@ -1214,7 +1283,7 @@ export async function renderConferenceImage(
       if (!tpl.fileUrl?.trim()) {
         throw new Error("Selected brand template is missing its image file. Upload a template image or clear the template selection");
       }
-      templateBytes = await loadImageBytes(tpl.fileUrl);
+      templateBytes = await validatedConferenceImage(tpl.fileUrl, "Selected Brand Library image");
     }
     const detail = [session?.room, formatUtcDateTime(session?.sessionStart)]
       .filter(Boolean)
@@ -1237,7 +1306,7 @@ export async function renderConferenceImage(
     void archiveArtifactToSpe({ tenantDomain: conf.tenantDomain, buffer, filename: `event-${image.role}-${image.id}.png`, mimeType: "image/png", kind: "image", marketId: conf.marketId ?? undefined, createdByUserId: conf.createdBy ?? "system" });
   }
 
-  await db
+  const result = await db
     .update(conferenceImages)
       .set({
         source,
@@ -1245,9 +1314,16 @@ export async function renderConferenceImage(
         fileUrl: saved.fileUrl,
         fileType: "image/png",
         fileSize: saved.fileSize,
+        renderDirty: false,
+        renderError: null,
         updatedAt: new Date(),
       })
-    .where(eq(conferenceImages.id, image.id));
+    .where(and(eq(conferenceImages.id, image.id),
+      eq(conferenceImages.renderRevision, image.renderRevision ?? 0),
+      eq(conferenceImages.status, "active")));
+  if ((result as any)?.rowCount === 0) {
+    throw new ConferenceGraphicError("settings_changed", "Image settings changed during rendering. Regenerate using the current settings.");
+  }
 
   return saved.fileUrl;
 }
@@ -1409,6 +1485,7 @@ export async function generateCopyVariants(opts: {
   variantCount: number;
   conf: Conference;
   session?: ConferenceSession | null;
+  mainEventOnly?: boolean;
 }): Promise<string[]> {
   const { platform, conf, session, variantCount } = opts;
 
@@ -1433,6 +1510,7 @@ export async function generateCopyVariants(opts: {
     conf.location ? `Location: ${conf.location}` : "",
     conf.startDate ? `Dates: ${formatUtcDate(conf.startDate)}${conf.endDate ? ` – ${formatUtcDate(conf.endDate)}` : ""}` : "",
     conf.website ? `Link: ${conf.website}` : "",
+    conf.description ? `Event description: ${conf.description}` : "",
     conf.thematicBrief ? `Theme/brief: ${conf.thematicBrief}` : "",
     conf.discountStatement ? `Registration offer (mention verbatim in at least one variation if it fits naturally): ${conf.discountStatement}` : "",
     conf.boothDetails?.trim()
@@ -1457,7 +1535,7 @@ export async function generateCopyVariants(opts: {
       session.url ? `  Session link: ${session.url}` : "",
     );
   } else {
-    contextLines.push(`This is an ANCHOR post about our participation at the event, why attendees should connect, and the supplied event details. Do not invent a physical meeting location.`);
+    contextLines.push(`This is a MAIN EVENT registration promotion. Promote only the saved event and registration link. Do not invent sessions, speakers, attendance, sponsorship, exhibiting, or physical meeting locations. A voice profile supplies tone, not event facts.`);
   }
 
   const prompt = `You are an expert B2B social media copywriter. Write ${variantCount} DISTINCT variations of a single ${platform} post.
@@ -1481,7 +1559,7 @@ Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post tex
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await completeForFeature(AI_FEATURES.MARKETING_TASKS,
-      attempt === 0 ? prompt : `${prompt}\n\nCORRECTION: The previous response claimed unconfirmed booth/exhibitor activity. Rewrite all variations without any such claims.`,
+      attempt === 0 ? prompt : `${prompt}\n\nCORRECTION: The previous response claimed unconfirmed booth/exhibitor activity or invented sessions, speakers, or attendance. Rewrite all variations using only the main event facts.`,
       {
         systemPrompt,
         temperature: 0.8,
@@ -1490,11 +1568,18 @@ Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post tex
       });
     const variants = parseCopyVariants(result.text, variantCount);
     const candidates = variants.length > 0 ? variants.slice(0, variantCount) : [result.text.trim()];
-    if (conf.boothDetails?.trim() || candidates.every((text) => !hasUnconfirmedBoothClaim(text))) {
-      return candidates;
+    const safeBooth = conf.boothDetails?.trim() || candidates.every((text) => !hasUnconfirmedBoothClaim(text));
+    const safeMainEvent = !opts.mainEventOnly || candidates.every(text => !hasInventedMainEventClaim(text));
+    if (safeBooth && safeMainEvent) {
+      return opts.mainEventOnly && conf.website
+        ? candidates.map(text => text.includes(conf.website!) ? text : `${text}\n\n${conf.website}`) : candidates;
     }
   }
-  throw new Error("Event copy repeatedly claimed an unconfirmed booth. No new posts were saved; retry generation or configure confirmed booth details.");
+  throw new Error("Event copy repeatedly claimed an unconfirmed booth, session, speaker, or attendance. No new posts were saved; retry generation with the saved event details.");
+}
+
+export function hasInventedMainEventClaim(text: string): boolean {
+  return /\b(?:our|the|this|a)\s+(?:breakout\s+|keynote\s+)?session\b|\b(?:speakers?|panelists?)\b|\bwe(?:'re| are| will be|’re)\s+(?:attending|speaking|exhibiting|sponsoring)\b|\b(?:find|meet|visit)\s+us\s+at\b/i.test(text);
 }
 
 export function hasUnconfirmedBoothClaim(text: string): boolean {
@@ -1671,9 +1756,11 @@ async function runGeneration(
     ? await db
         .select()
         .from(socialAccounts)
-        .where(and(inArray(socialAccounts.id, accountIds), eq(socialAccounts.tenantDomain, tenantDomain)))
+        .where(and(inArray(socialAccounts.id, accountIds), eq(socialAccounts.tenantDomain, tenantDomain),
+          conf.marketId ? eq(socialAccounts.marketId, conf.marketId) : isNull(socialAccounts.marketId)))
     : [];
   if (accounts.length === 0) throw new Error("No social accounts selected");
+  if (accounts.length !== new Set(accountIds).size) throw new Error("One or more selected accounts are unavailable in this event's market");
 
   const variantCount = Math.min(Math.max(conf.variantsPerPost ?? 3, 2), 3);
   const generateImages = options.generateImages !== false;
@@ -1693,7 +1780,7 @@ async function runGeneration(
     if (img.sessionId) sessionImageBySession.set(img.sessionId, img);
   }
   // Oldest-first so slot 0 = the anchor image the user created first
-  anchorImages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  anchorImages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.id.localeCompare(b.id));
 
   // Ensure a session image row exists for every session (default: composite).
   for (const session of sessions) {
@@ -1722,7 +1809,7 @@ async function runGeneration(
     // and legacy raw-GCS URLs that external schedulers can't fetch. Applies to
     // every source so old generated/composited graphics get healed too.
     const needsRender = (img: ConferenceImage): boolean =>
-      img.source === "ai_generated" || !img.fileUrl || !isServedPublicImage(img.fileUrl);
+      !img.renderError && (img.renderDirty || img.source === "ai_generated" || !img.fileUrl || !isServedPublicImage(img.fileUrl));
     const toRender: Array<{ img: ConferenceImage; session?: ConferenceSession | null }> = [];
     for (const img of anchorImages) {
       if (needsRender(img)) toRender.push({ img });
@@ -1739,10 +1826,17 @@ async function runGeneration(
           img.fileUrl = url;
           img.source = normalizeConferenceGraphicSource(img.source, img.role);
           img.imagePrompt = null;
+          img.renderDirty = false;
+          img.renderError = null;
         }
       } catch (err: any) {
         console.error("[Conference] Image render failed:", err?.message);
-        throw err;
+        const failure = conferenceGraphicFailure(err);
+        await db.update(conferenceImages).set({ renderDirty: true, renderError: failure.error })
+          .where(and(eq(conferenceImages.id, img.id), eq(conferenceImages.renderRevision, img.renderRevision ?? 0)));
+        img.renderDirty = true;
+        img.renderError = failure.error;
+        if (img.role !== "anchor") throw new Error(failure.error);
       }
       rendered++;
       reportProgress?.({
@@ -1754,6 +1848,23 @@ async function runGeneration(
     }
   } else if (existingImages.some((img) => img.source === "ai_generated")) {
     throw new Error("Legacy AI conference graphics must be replaced with branded composites before generating posts");
+  }
+
+  // Never use a stale last-success preview as if it represented new settings.
+  for (let i = anchorImages.length - 1; i >= 0; i--) {
+    const img = anchorImages[i];
+    if (!img.fileUrl || img.renderDirty || img.renderError || !isServedPublicImage(img.fileUrl)) {
+      anchorImages.splice(i, 1);
+    }
+  }
+  if (!sessions.length && !anchorImages.length) {
+    throw new Error("Add at least one ready event image. Regenerate stale or failed choices in Graphics before generating main-event posts.");
+  }
+  for (const img of [...anchorImages, ...sessionImageBySession.values()]) {
+    if (!img.fileUrl || img.renderDirty || img.renderError || !isServedPublicImage(img.fileUrl)) {
+      throw new Error("An event graphic is not social-ready. Upload or regenerate it in Graphics before generating posts.");
+    }
+    await validatedConferenceImage(img.fileUrl, "Event pool image");
   }
 
   // ── Schedule slot assignment ────────────────────────────────────────────────
@@ -1815,7 +1926,7 @@ async function runGeneration(
       ...sessionSlots.map(s => ({ kind: 'session' as const, session: s.session })),
     ];
     // Fisher-Yates shuffle
-    for (let i = items.length - 1; i > 0; i--) {
+    for (let i = sessions.length ? items.length - 1 : 0; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [items[i], items[j]] = [items[j], items[i]];
     }
@@ -1851,7 +1962,8 @@ async function runGeneration(
   const perDayCap  = Math.min(Math.max(1, conf.postsPerDay ?? 2), 8);
 
   const targetSlotCount = (() => {
-    if (!promoEnd) return numMoments; // no window configured → one slot per moment
+    // Sessionless series volume is cadence-based, never image-count based.
+    if (!promoEnd) return sessions.length ? numMoments : perDayCap;
     const isEl = (d: Date) => {
       const dow = d.getUTCDay();
       return (dow !== 0 || conf.includeSunday) && (dow !== 6 || conf.includeSaturday);
@@ -1863,7 +1975,8 @@ async function runGeneration(
       if (isEl(cur)) days++;
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
-    return Math.max(numMoments, days * perDayCap);
+    if (!days) throw new Error("The promotion window has no eligible posting days. Update the dates or weekend settings.");
+    return sessions.length ? Math.max(numMoments, days * perDayCap) : days * perDayCap;
   })();
 
   const slots = buildScheduleSlots({
@@ -1897,6 +2010,7 @@ async function runGeneration(
         variantCount,
         conf,
         session: m.kind === "session" ? m.session : null,
+        mainEventOnly: sessions.length === 0,
       });
     } catch (err: any) {
       console.error("[Conference] Copy generation failed for moment", momentIdx, err?.message);
@@ -1908,7 +2022,7 @@ async function runGeneration(
 
   // Pre-warm variant cache in order so progress feedback is sensible
   reportProgress?.({ phase: "Generating copy", percent: 42 });
-  for (let mi = 0; mi < numMoments; mi++) {
+  for (let mi = 0; mi < Math.min(numMoments, slots.length); mi++) {
     for (const account of accounts) {
       await getVariants(mi, account);
     }

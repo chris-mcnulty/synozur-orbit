@@ -81,4 +81,14 @@ describe("event booth claims", () => {
     }
     expect(hasUnconfirmedBoothClaim("Join our session in Room 101 and connect with our team.")).toBe(false);
   });
+
+  it("retries invented sessionless claims and includes the registration link", async () => {
+    complete.mockResolvedValueOnce({ text: '["Join our keynote session.", "We are attending the webinar."]' })
+      .mockResolvedValueOnce({ text: '["Register for the webinar.", "Explore collaboration online."]' });
+    const copies = await generateCopyVariants({
+      ...options, mainEventOnly: true, conf: { ...conf, website: "https://example.com/register" },
+    });
+    expect(copies.every(copy => copy.includes("https://example.com/register"))).toBe(true);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
 });

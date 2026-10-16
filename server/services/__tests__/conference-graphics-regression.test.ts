@@ -155,11 +155,13 @@ describe("conference brand rendering regressions", () => {
     rows([tenant], [], [fontAsset]);
     expect(await renderConferenceImage(image("anchor"), conference)).toMatch(/^\/public-objects\/conference-images\/.*\.png$/);
     const at = await pixels(savedPng());
-    expectColor(at(69, 49), [255, 204, 0]);
-    expectColor(at(194, 94), [255, 255, 255]);
+    // Hero layout centers the event mark above the headline (session art uses
+    // the small top-left mark). These coordinates assert the actual layout.
+    expectColor(at(475, 225), [255, 204, 0]);
+    expectColor(at(600, 270), [255, 255, 255]);
     expectColor(at(965, 595), [0, 221, 136]);
     expectColor(at(1060, 619), [255, 255, 255]);
-    expectColor(at(0, 0), [31, 84, 140], 1);
+    expectColor(at(0, 0), [36, 104, 172], 1);
     const svg = overlaySvg();
     expectBrandFont(svg);
     expect(svg).toContain("Collaboration Summit");
@@ -214,9 +216,13 @@ describe("conference brand rendering regressions", () => {
       rows([{ ...tenant, logoUrl: null }], []);
       await expectFailure(conference, image(role), "Configure a company logo");
     });
-    it("rejects a missing event logo", async () => {
-      rows([tenant], []);
-      await expectFailure({ ...conference, eventLogoFileUrl: null }, image(role), "Upload the conference event logo");
+    it("supports company-branded webinars without an event logo", async () => {
+      rows([tenant], [], [fontAsset]);
+      await expect(renderConferenceImage(image(role), { ...conference, eventLogoFileUrl: null },
+        role === "session" ? session : undefined)).resolves.toMatch(/^\/public-objects\/conference-images\/.*\.png$/);
+      expect(await sharp(savedPng()).metadata()).toMatchObject({ width: 1200, height: 675 });
+      const layers = compositeSpy.mock.calls[0][0] as sharp.OverlayOptions[];
+      expect(layers).toHaveLength(2); // text and company logo, no invented event mark
     });
     it("rejects an inaccessible configured font without saving a fallback graphic", async () => {
       rows([tenant], [], [{ ...fontAsset, fileUrl: "/public-objects/missing-font.ttf" }]);
@@ -272,7 +278,7 @@ describe("conference brand rendering regressions", () => {
   it("rejects an inaccessible selected template without saving a gradient fallback", async () => {
     rows([tenant], [], [{ fileUrl: "/public-objects/missing-template.png", marketId: null }]);
     await expect(renderConferenceImage(image("session", { templateAssetId: "missing-template" }), conference, session))
-      .rejects.toThrow("Fixture asset is inaccessible: missing-template.png");
+      .rejects.toThrow("Selected Brand Library image could not be read as an image");
     expect(io.save).not.toHaveBeenCalled();
     expect(io.update).not.toHaveBeenCalled();
   });
@@ -292,5 +298,45 @@ describe("conference brand rendering regressions", () => {
     expect(io.save).not.toHaveBeenCalled();
     expect(io.update).not.toHaveBeenCalled();
     expect(compositeSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(["template", "background"] as const)("renders a preloaded %s for a sessionless webinar, preserving its original", async (kind) => {
+    const photo = await sharp({ create: { width: 1200, height: 675, channels: 3, background: "#cc4488" } }).png().toBuffer();
+    const previous = io.download.getMockImplementation()!;
+    io.download.mockImplementation((url: string) => url === "photo.png" ? [photo] : previous(url));
+    rows([tenant], [], [{ fileUrl: "/public-objects/photo.png", marketId: null }], [fontAsset]);
+    const record = image("anchor", {
+      ...(kind === "template" ? { templateAssetId: "preloaded" } : { backgroundId: "preloaded" }),
+      overlayHeadline: "Register for the webinar", overlaySupportingText: "Online · Practical collaboration",
+    });
+    await renderConferenceImage(record, { ...conference, eventLogoFileUrl: null });
+    const output = savedPng();
+    expect(output.equals(photo)).toBe(false);
+    const at = await pixels(output);
+    expectColor(at(0, 0), [174, 75, 142], 2); // selected photo with tenant scrim, not brand gradient
+    const svg = (compositeSpy.mock.calls[0][0][0].input as Buffer).toString();
+    expect(svg).toContain("Register for the webinar");
+    expect(svg).toContain("Practical collaboration");
+    expect(record.fileUrl).toBeNull(); // caller/original data is not overwritten
+    expect(io.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not erase a successful output when the new selected source is invalid", async () => {
+    const previous = "/public-objects/conference-images/last-success.png";
+    rows([tenant], [], [{ fileUrl: "/public-objects/invalid.png", marketId: null }]);
+    io.download.mockImplementationOnce(async () => [companyLogo])
+      .mockImplementationOnce(async () => [eventLogo])
+      .mockImplementationOnce(async () => [Buffer.from("not an image")]);
+    const record = image("anchor", { fileUrl: previous, renderDirty: true, templateAssetId: "invalid" });
+    await expect(renderConferenceImage(record, conference)).rejects.toThrow("Selected Brand Library image");
+    expect(record.fileUrl).toBe(previous);
+    expect(io.update).not.toHaveBeenCalled();
+    expect(io.save).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a deleted selection has lost its foreign-key reference", async () => {
+    await expect(renderConferenceImage(image("anchor", { sourceRequired: true }), conference))
+      .rejects.toThrow("selected source was removed");
+    expect(io.save).not.toHaveBeenCalled();
   });
 });

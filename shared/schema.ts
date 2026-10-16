@@ -3678,6 +3678,13 @@ export const conferenceImages = pgTable("conference_images", {
   source: text("source").notNull().default("ai_generated"), // ai_generated | template_composite | uploaded | logo_composite
   name: text("name"),
   imagePrompt: text("image_prompt"), // used for ai_generated and as overlay seed
+  overlayHeadline: text("overlay_headline"),
+  overlaySupportingText: text("overlay_supporting_text"),
+  sourceImageId: varchar("source_image_id"),
+  renderDirty: boolean("render_dirty").notNull().default(false),
+  renderError: text("render_error"),
+  renderRevision: integer("render_revision").notNull().default(0),
+  sourceRequired: boolean("source_required").notNull().default(false),
   templateAssetId: varchar("template_asset_id").references(() => brandAssets.id, { onDelete: "set null" }), // background for template_composite
   // For logo_composite: which background photo to use (null = brand-colour gradient)
   backgroundId: varchar("background_id").references(() => conferenceBackgrounds.id, { onDelete: "set null" }),

@@ -4,6 +4,7 @@ import { generateThumbnail, snapWidth, isResizableContentType } from "../../serv
 import { Readable } from "stream";
 import dns from "dns";
 import { createHash } from "crypto";
+import { getRequestContext } from "../../context";
 import {
   MAX_IMAGE_FILE_SIZE,
   MAX_DOCUMENT_FILE_SIZE,
@@ -196,6 +197,14 @@ export function registerObjectStorageRoutes(app: Express): void {
 
       // Extract object path from the presigned URL for later reference
       const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      // Bind newly issued paths to this signed-in editor and market. Conference
+      // image ingestion must not accept arbitrary private object IDs.
+      const ctx = await getRequestContext(req);
+      const session = req.session as any;
+      session.imageUploadGrants = [
+        ...(session.imageUploadGrants || []).slice(-49),
+        { path: objectPath, tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, issuedAt: Date.now() },
+      ];
 
       res.json({
         uploadURL,

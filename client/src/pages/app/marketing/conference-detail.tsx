@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTabMarketId } from "@/lib/tabContext";
 import { rejectedBatchAccountIds } from "@/lib/conference-regeneration";
+import { archiveEventPoolImage } from "@/lib/conference-image-pool";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X, ExternalLink } from "lucide-react";
 
@@ -162,7 +163,13 @@ interface ConfImage {
   imagePrompt?: string | null;
   templateAssetId?: string | null;
   backgroundId?: string | null;
+  sourceImageId?: string | null;
   fileUrl?: string | null;
+  overlayHeadline?: string | null;
+  overlaySupportingText?: string | null;
+  renderDirty?: boolean;
+  renderError?: string | null;
+  sourceRequired?: boolean;
   status: string;
   createdAt: string;
 }
@@ -305,7 +312,7 @@ export default function ConferenceDetailPage() {
     queryClient.invalidateQueries({ queryKey: confKey });
     refetchBackgrounds();
   };
-  const imageTemplates = brandAssets.filter((a) => (a.fileType || "").startsWith("image/"));
+  const imageTemplates = brandAssets.filter((a) => !!a.fileUrl?.trim() && (a.fileType || "").startsWith("image/"));
 
   if (isLoading) {
     return (
@@ -608,7 +615,7 @@ function EditEventDialog({ conf, onSaved }: { conf: Conference; onSaved: () => v
                 that banner on the old campaign. */}
             {conf.campaignId && form.campaignId !== conf.campaignId && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5" data-testid="warning-campaign-change">
-                ⚠ This event will no longer appear as an origin on the{" "}
+                This event will no longer appear as an origin on the{" "}
                 {form.campaignId
                   ? "previous campaign's"
                   : "current campaign's"}{" "}
@@ -900,7 +907,10 @@ function SessionsTab({
         </CardHeader>
         <CardContent>
           {sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sessions yet.</p>
+            <div className="rounded-md border border-dashed p-4 space-y-1">
+              <p className="text-sm font-medium">No sessions added</p>
+              <p className="text-sm text-muted-foreground">This event can still be promoted as a main-event campaign. Add sessions only if you want session-specific posts and graphics.</p>
+            </div>
           ) : (
             <ul className="divide-y">
               {sessions.map((s) => {
@@ -1114,29 +1124,57 @@ function GraphicsTab({
   onChange: () => void;
 }) {
   const { toast } = useToast();
-
-  const addAnchorImage = async () => {
+  const [imageLink, setImageLink] = useState("");
+  const activeAnchors = anchorImages.filter((img) => img.status !== "archived");
+  const activeImages = conf.images.filter((img) => img.status !== "archived");
+  const addAnchor = async (body: Record<string, unknown>, success: string) => {
     try {
       const r = await fetch(`/api/conferences/${conf.id}/images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ role: "anchor", source: "logo_composite" }),
+        body: JSON.stringify({ role: "anchor", ...body }),
       });
-      if (!r.ok) throw new Error("Failed to create anchor image slot");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to add image");
       onChange();
-      toast({ title: "Anchor image slot added" });
+      toast({ title: success });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
   };
 
-  const deleteAnchorImage = async (imgId: string) => {
+  const uploadAnchor = async (file: File) => {
     try {
-      const r = await fetch(`/api/conference-images/${imgId}`, { method: "DELETE", credentials: "include" });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to delete image");
+      const objectPath = await uploadFile(file);
+      await addAnchor({ source: "uploaded", fileUrl: objectPath, fileType: file.type, name: file.name }, "Image added to event pool");
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const addLinkedAnchor = async () => {
+    const url = imageLink.trim();
+    if (!url) return;
+    await addAnchor({ source: "uploaded", fileUrl: url }, "Image link added to event pool");
+    setImageLink("");
+  };
+
+  const addBlankAnchor = () => addAnchor({ source: "logo_composite" }, "Composite anchor added");
+
+  const addVariant = async (original: ConfImage) => {
+    await addAnchor({
+      source: "logo_composite",
+      sourceImageId: original.id,
+      overlayHeadline: original.overlayHeadline ?? "",
+      overlaySupportingText: original.overlaySupportingText ?? "",
+    }, "Separate composite variant added");
+  };
+
+  const archiveAnchor = async (imgId: string) => {
+    try {
+      await archiveEventPoolImage(imgId);
       onChange();
-      toast({ title: "Anchor image removed" });
+      toast({ title: "Image archived" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     }
@@ -1150,7 +1188,7 @@ function GraphicsTab({
         credentials: "include",
         body: JSON.stringify({ eventLogoFileUrl: null, eventLogoFileType: null }),
       });
-      if (!r.ok) throw new Error("Failed to remove event logo");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to remove event logo");
       onChange();
       toast({ title: "Event logo removed" });
     } catch (e: any) {
@@ -1167,7 +1205,7 @@ function GraphicsTab({
         credentials: "include",
         body: JSON.stringify({ eventLogoFileUrl: objectPath, eventLogoFileType: file.type }),
       });
-      if (!r.ok) throw new Error("Failed to save event logo");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to save event logo");
       onChange();
       toast({ title: "Event logo uploaded" });
     } catch (e: any) {
@@ -1184,7 +1222,7 @@ function GraphicsTab({
         credentials: "include",
         body: JSON.stringify({ fileUrl: objectPath, fileType: file.type, name: file.name, fileSize: file.size }),
       });
-      if (!r.ok) throw new Error("Failed to save background");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to save background");
       onChange();
       toast({ title: "Location photo added" });
     } catch (e: any) {
@@ -1194,9 +1232,10 @@ function GraphicsTab({
 
   const deleteBackground = async (bgId: string) => {
     try {
-      await fetch(`/api/conference-backgrounds/${bgId}`, { method: "DELETE", credentials: "include" });
+      const r = await fetch(`/api/conference-backgrounds/${bgId}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to remove photo");
       onChange();
-    } catch { /* ignore */ }
+    } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
 
   return (
@@ -1281,59 +1320,77 @@ function GraphicsTab({
         </CardContent>
       </Card>
 
-      {/* ── Anchor graphics (up to 3) ────────────────────────────────────── */}
+      {/* ── Event image pool ─────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center justify-between gap-2">
-            Anchor graphics
+            Event image pool
             <span className="text-xs text-muted-foreground font-normal">
-              {anchorImages.length > 0
-                ? `Scheduled ${anchorImages.length}× more often than session posts`
-                : "Add up to 3 — scheduled more frequently than session posts"}
+              {activeAnchors.length} of 20 active images
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {anchorImages.length === 0 && (
-            <p className="text-sm text-muted-foreground">No anchor images yet. Add one below.</p>
-          )}
-          {anchorImages.map((img, idx) => (
+          <p className="text-xs text-muted-foreground">
+            Add up to 20 active event images. Images rotate per account; volume is set by the promotion window and cadence.
+            Archive images you no longer want in rotation. A composite variant is a separate image and never edits its source.
+          </p>
+          <div className="flex flex-wrap items-end gap-3 rounded-md border p-3">
+            <label className="inline-flex">
+              <input type="file" accept="image/*" className="hidden" disabled={activeAnchors.length >= 20}
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadAnchor(file); e.currentTarget.value = ""; }}
+                data-testid="input-upload-anchor" />
+              <Button asChild variant="outline" size="sm" disabled={activeAnchors.length >= 20}>
+                <span><Upload className="w-4 h-4 mr-1" /> Upload image</span>
+              </Button>
+            </label>
+            <div className="flex min-w-[240px] flex-1 gap-2">
+              <Input value={imageLink} onChange={(e) => setImageLink(e.target.value)} placeholder="https://… image URL"
+                aria-label="Image URL" disabled={activeAnchors.length >= 20} />
+              <Button variant="outline" size="sm" onClick={addLinkedAnchor} disabled={!imageLink.trim() || activeAnchors.length >= 20}>
+                Add link
+              </Button>
+            </div>
+            <Button variant="outline" size="sm" onClick={addBlankAnchor} disabled={activeAnchors.length >= 20}>
+              <Plus className="w-4 h-4 mr-1" /> New composite
+            </Button>
+          </div>
+          {activeAnchors.length >= 20 && <p className="text-xs text-amber-700">The 20-image active pool limit is reached. Archive an image before adding another.</p>}
+          {activeAnchors.length === 0 ? (
+            <p className="text-sm text-muted-foreground rounded-md border border-dashed p-5 text-center">No active images yet. Upload, link, or create a composite above.</p>
+          ) : activeAnchors.map((img, idx) => (
             <div key={img.id} className="rounded-md border p-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium">Anchor {idx + 1}</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => deleteAnchorImage(img.id)}
-                  data-testid={`button-delete-anchor-${img.id}`}
-                  title="Remove anchor image"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <p className="text-sm font-medium">Event image {idx + 1}</p>
+                <div className="flex gap-1">
+                  {img.fileUrl && (
+                    <Button variant="outline" size="sm" onClick={() => addVariant(img)} disabled={activeAnchors.length >= 20}
+                      title={activeAnchors.length >= 20 ? "Archive an image to make room" : "Create a separate editable composite from this image"}>
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Add variant
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => archiveAnchor(img.id)} data-testid={`button-archive-anchor-${img.id}`}
+                    title="Archive from active pool">
+                    <Trash2 className="w-3.5 h-3.5 text-destructive mr-1" /> Archive
+                  </Button>
+                </div>
               </div>
-              <ImageSlot
-                conferenceId={conf.id}
-                role="anchor"
-                sessionId={null}
-                image={img}
-                templates={templates}
-                backgrounds={backgrounds}
-                isAnchor={true}
-                onChange={onChange}
-              />
+              {img.source === "uploaded" ? (
+                <div className="flex items-start gap-4">
+                  {img.fileUrl && <a href={img.fileUrl} target="_blank" rel="noreferrer" className="block w-48 shrink-0">
+                    <img src={thumbnailUrl(img.fileUrl, 480)} alt={img.name || "Original event image"} className="aspect-video w-full rounded border object-cover" />
+                    <span className="text-xs text-primary underline">Open full-size original</span>
+                  </a>}
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>Original uploaded or linked image. Use “Add branded variant” to add text without replacing this original.</p>
+                    {img.renderDirty && <p className="text-amber-700">Not ready for generation. Upload this image again as a new pool choice.</p>}
+                    {img.renderError && <p className="text-destructive" role="alert">{img.renderError}</p>}
+                  </div>
+                </div>
+              ) : <ImageSlot conferenceId={conf.id} role="anchor" sessionId={null} image={img} templates={templates}
+                backgrounds={backgrounds} sourceImages={activeImages} isAnchor onChange={onChange} />}
             </div>
           ))}
-          {anchorImages.length < 3 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={addAnchorImage}
-              data-testid="button-add-anchor-image"
-            >
-              <Plus className="w-4 h-4 mr-1.5" /> Add anchor image
-            </Button>
-          )}
         </CardContent>
       </Card>
 
@@ -1344,7 +1401,7 @@ function GraphicsTab({
         </CardHeader>
         <CardContent className="space-y-4">
           {conf.sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Add sessions first.</p>
+            <p className="text-sm text-muted-foreground">No sessions needed for a webinar or main-event promotion. Use the event image pool above.</p>
           ) : (
             conf.sessions.map((s) => (
               <div key={s.id} className="rounded-md border p-3">
@@ -1356,6 +1413,7 @@ function GraphicsTab({
                   image={imageBySession.get(s.id)}
                   templates={templates}
                   backgrounds={backgrounds}
+                  sourceImages={activeImages}
                   isAnchor={false}
                   onChange={onChange}
                 />
@@ -1375,6 +1433,7 @@ function ImageSlot({
   image,
   templates,
   backgrounds,
+  sourceImages,
   isAnchor,
   onChange,
 }: {
@@ -1384,18 +1443,43 @@ function ImageSlot({
   image?: ConfImage;
   templates: BrandAsset[];
   backgrounds: ConferenceBackground[];
+  sourceImages: ConfImage[];
   isAnchor: boolean;
   onChange: () => void;
 }) {
   const { toast } = useToast();
-  const initialSource = image?.source === "ai_generated"
-    ? (isAnchor ? "logo_composite" : "template_composite")
-    : (image?.source || (isAnchor ? "logo_composite" : "template_composite"));
-  const [source, setSource] = useState<string>(initialSource);
+  const [source, setSource] = useState<string>(image?.source === "ai_generated" ? (isAnchor ? "logo_composite" : "template_composite") : (image?.source || (isAnchor ? "logo_composite" : "template_composite")));
   const [prompt, setPrompt] = useState(image?.imagePrompt || "");
   const [templateId, setTemplateId] = useState(image?.templateAssetId || "");
   const [backgroundId, setBackgroundId] = useState(image?.backgroundId || "");
+  const [sourceImageId, setSourceImageId] = useState(image?.sourceImageId || "");
+  const [useBrandBackground, setUseBrandBackground] = useState(false);
+  const [overlayHeadline, setOverlayHeadline] = useState(image?.overlayHeadline || "");
+  const [overlaySupportingText, setOverlaySupportingText] = useState(image?.overlaySupportingText || "");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setSource(image?.source === "ai_generated" ? (isAnchor ? "logo_composite" : "template_composite") : (image?.source || (isAnchor ? "logo_composite" : "template_composite")));
+    setPrompt(image?.imagePrompt || "");
+    setTemplateId(image?.templateAssetId || "");
+    setBackgroundId(image?.backgroundId || "");
+    setSourceImageId(image?.sourceImageId || "");
+    setUseBrandBackground(false);
+    setOverlayHeadline(image?.overlayHeadline || "");
+    setOverlaySupportingText(image?.overlaySupportingText || "");
+  }, [image?.id, image?.source, image?.imagePrompt, image?.templateAssetId, image?.backgroundId, image?.sourceImageId, image?.overlayHeadline, image?.overlaySupportingText, image?.sourceRequired, isAnchor]);
+
+  const payload = (overrides: Partial<ConfImage> & { fileUrl?: string } = {}) => ({
+    source: isAnchor ? "logo_composite" : source,
+    imagePrompt: prompt,
+    templateAssetId: templateId || null,
+    backgroundId: backgroundId || null,
+    sourceImageId: sourceImageId || null,
+    overlayHeadline: overlayHeadline || null,
+    overlaySupportingText: overlaySupportingText || null,
+    useBrandBackground,
+    ...overrides,
+  });
 
   const ensureImage = async (overrides: Partial<ConfImage> & { fileUrl?: string }) => {
     if (!image) {
@@ -1406,10 +1490,7 @@ function ImageSlot({
         body: JSON.stringify({
           role,
           sessionId,
-          source,
-          imagePrompt: prompt,
-          templateAssetId: templateId || undefined,
-          backgroundId: backgroundId || undefined,
+          ...payload(),
           ...overrides,
         }),
       });
@@ -1421,14 +1502,11 @@ function ImageSlot({
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
-        source,
-        imagePrompt: prompt,
-        templateAssetId: templateId || null,
-        backgroundId: backgroundId || null,
+        ...payload(),
         ...overrides,
       }),
     });
-    if (!r.ok) throw new Error("Failed to update image");
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to update image");
     return (await r.json()) as ConfImage;
   };
 
@@ -1441,6 +1519,7 @@ function ImageSlot({
       onChange();
       toast({ title: "Graphic generated" });
     } catch (e: any) {
+      onChange();
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setBusy(false);
@@ -1451,7 +1530,7 @@ function ImageSlot({
     setBusy(true);
     try {
       const objectPath = await uploadFile(file);
-      await ensureImage({ source: "uploaded", fileUrl: objectPath, fileType: file.type } as any);
+      await ensureImage({ source: "uploaded", fileUrl: objectPath } as any);
       onChange();
       toast({ title: "Image uploaded" });
     } catch (e: any) {
@@ -1463,31 +1542,33 @@ function ImageSlot({
 
   return (
     <div className="grid gap-3 md:grid-cols-[160px,1fr] items-start">
-      <div className="aspect-video rounded-md border bg-muted/40 flex items-center justify-center overflow-hidden">
-        {image?.fileUrl ? (
-          <img src={thumbnailUrl(image.fileUrl, 320)} alt={image.name || "graphic"} className="w-full h-full object-cover" loading="lazy" />
-        ) : (
-          <ImageIcon className="w-6 h-6 text-muted-foreground" />
-        )}
+      <div>
+        <div className="aspect-video rounded-md border bg-muted/40 flex items-center justify-center overflow-hidden">
+          {image?.fileUrl ? (
+            <a href={image.fileUrl} target="_blank" rel="noreferrer" title="Open original image at full size" className="block h-full w-full">
+              <img src={thumbnailUrl(image.fileUrl, 480)} alt={image.name || "Original event graphic"} className="w-full h-full object-cover" loading="lazy" />
+            </a>
+          ) : <ImageIcon className="w-6 h-6 text-muted-foreground" />}
+        </div>
+        {image?.fileUrl && <a href={image.fileUrl} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-primary underline">Open full-size original</a>}
+        {image?.renderDirty && <p className="mt-1 text-xs text-amber-700">Stale preview — excluded from generation until a successful render.</p>}
+        {image?.renderError && <p className="mt-1 text-xs text-destructive" role="alert">Last render failed: {image.renderError} The previous preview is retained, but excluded until a successful render.</p>}
       </div>
       <div className="space-y-3">
-        <div className="grid gap-1">
+        {!isAnchor && <div className="grid gap-1">
           <Label className="text-xs">Source</Label>
           <Select value={source} onValueChange={setSource}>
             <SelectTrigger className="h-8">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {isAnchor && (
-                <SelectItem value="logo_composite">Hero composite (brand + event logo)</SelectItem>
-              )}
               <SelectItem value="template_composite">Brand image + text overlay</SelectItem>
               <SelectItem value="uploaded">Upload my own</SelectItem>
             </SelectContent>
           </Select>
-        </div>
+        </div>}
 
-        {source === "template_composite" && (
+        {!isAnchor && source === "template_composite" && (
           <div className="grid gap-1">
             <Label className="text-xs">Background template (from Brand Library)</Label>
             <Select value={templateId} onValueChange={setTemplateId}>
@@ -1506,22 +1587,51 @@ function ImageSlot({
           </div>
         )}
 
-        {source === "logo_composite" && (
-          <div className="grid gap-1">
-            <Label className="text-xs">Background photo (from Conference Media)</Label>
-            <Select value={backgroundId || "__none"} onValueChange={v => setBackgroundId(v === "__none" ? "" : v)}>
-              <SelectTrigger className="h-8">
-                <SelectValue placeholder="None (branded gradient)" />
-              </SelectTrigger>
+        {isAnchor && (
+          <div className="grid gap-2">
+            <Label className="text-xs">Composite background (optional)</Label>
+            <Button type="button" variant="outline" size="sm" onClick={() => {
+              setTemplateId(""); setBackgroundId(""); setSourceImageId(""); setUseBrandBackground(true);
+            }}>Use branded gradient</Button>
+            {image?.sourceRequired && !templateId && !backgroundId && !sourceImageId && !useBrandBackground &&
+              <p className="text-xs text-destructive">The selected source was removed. Choose another source or explicitly use the branded gradient.</p>}
+            <Select value={templateId || "__none"} onValueChange={(v) => { setTemplateId(v === "__none" ? "" : v); setBackgroundId(""); setSourceImageId(""); }}>
+              <SelectTrigger className="h-8"><SelectValue placeholder="Branded gradient" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none">None (branded gradient)</SelectItem>
-                {backgrounds.map((bg) => (
-                  <SelectItem key={bg.id} value={bg.id}>
-                    {bg.name || bg.fileUrl.split("/").pop() || bg.id}
-                  </SelectItem>
+                <SelectItem value="__none">Branded gradient</SelectItem>
+                {templates.map((t) => <SelectItem key={t.id} value={t.id}>Brand Library · {t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={backgroundId || "__none"} onValueChange={(v) => { setBackgroundId(v === "__none" ? "" : v); setTemplateId(""); setSourceImageId(""); }}>
+              <SelectTrigger className="h-8"><SelectValue placeholder="Or choose event background" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">No event background</SelectItem>
+                {backgrounds.map((bg) => <SelectItem key={bg.id} value={bg.id}>Event background · {bg.name || bg.fileUrl.split("/").pop() || bg.id}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={sourceImageId || "__none"} onValueChange={(v) => { setSourceImageId(v === "__none" ? "" : v); setTemplateId(""); setBackgroundId(""); }}>
+              <SelectTrigger className="h-8"><SelectValue placeholder="Or use another event image" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">No source image</SelectItem>
+                {sourceImages.filter((candidate) => candidate.id !== image?.id && !!candidate.fileUrl && !candidate.renderDirty && !candidate.renderError).map((candidate) => (
+                  <SelectItem key={candidate.id} value={candidate.id}>{candidate.name || `Event image ${candidate.id.slice(0, 6)}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">Choose a Brand Library asset, event background, another successfully rendered event image, or leave all three clear for the intentional branded gradient. Event logo is optional.</p>
+          </div>
+        )}
+
+        {isAnchor && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-1">
+              <Label className="text-xs">Overlay headline <span className="font-normal text-muted-foreground">{overlayHeadline.length}/180</span></Label>
+              <Input maxLength={180} value={overlayHeadline} onChange={(e) => setOverlayHeadline(e.target.value)} placeholder="Optional headline" />
+            </div>
+            <div className="grid gap-1">
+              <Label className="text-xs">Supporting text <span className="font-normal text-muted-foreground">{overlaySupportingText.length}/240</span></Label>
+              <Input maxLength={240} value={overlaySupportingText} onChange={(e) => setOverlaySupportingText(e.target.value)} placeholder="Optional supporting text" />
+            </div>
           </div>
         )}
 
@@ -1543,6 +1653,20 @@ function ImageSlot({
           ) : (
             <Button size="sm" onClick={render} disabled={busy}>
               <Sparkles className="w-4 h-4 mr-1" /> {busy ? "Working…" : image?.fileUrl ? "Regenerate" : "Generate"}
+            </Button>
+          )}
+          {isAnchor && (
+            <Button variant="outline" size="sm" onClick={async () => {
+              setBusy(true);
+              try {
+                await ensureImage({});
+                onChange();
+                toast({ title: "Overlay controls saved", description: "The current preview is marked stale until regenerated." });
+              } catch (e: any) {
+                toast({ title: "Error", description: e.message, variant: "destructive" });
+              } finally { setBusy(false); }
+            }} disabled={busy || !image}>
+              Save overlay
             </Button>
           )}
         </div>
@@ -1819,9 +1943,10 @@ function GenerateTab({
           </label>
 
           <p className="text-xs text-muted-foreground">
-            Generates {sessions.length} session posts + anchor posts, each with multiple copy variations, scheduled across
-            your promotion window. Only the accounts you select above are affected — unselected platforms keep their
-            existing posts untouched. Re-running replaces unpublished drafts for the selected accounts
+            {sessions.length === 0
+              ? "No sessions are listed, so generation will create main-event anchor posts only. Post volume is determined by the promotion window and cadence above; event images rotate per account."
+              : `Generates ${sessions.length} session posts plus anchor posts, each with multiple copy variations, scheduled across your promotion window. Event images rotate per account.`}{" "}
+            Only the accounts you select above are affected — unselected platforms keep their existing posts untouched. Re-running replaces unpublished drafts for the selected accounts
             {includePublished ? " and their already-published posts" : " (published posts are kept)"}.
           </p>
 
