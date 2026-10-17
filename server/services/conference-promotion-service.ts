@@ -15,15 +15,15 @@
  *  - template_composite → session text over an uploaded template or brand gradient
  *  - uploaded           → caller supplies the bytes; we only persist the reference
  *
- * Conference images live in their own object-storage prefix (conference-images/)
- * and their own DB table, never the brand library, so they don't clutter it and
- * can be archived in one click after the event.
+ * Files are registered in the shared Visual Assets library. Event rows retain
+ * render recipes and selections so existing post identities remain stable.
  */
 
 import sharp from "sharp";
 import { outlineCompositorText, parseCompositorFont, type CompositorFont } from "./compositor-font";
 import * as path from "path";
 import { randomUUID } from "crypto";
+import { registerEventVisualAsset } from "./event-visual-assets";
 import { eq, and, inArray, ne, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -1083,15 +1083,31 @@ export function normalizeConferenceGraphicSource(
  * through Orbit's public route, updating the row. Used to heal private uploads
  * and legacy raw-GCS URLs without regenerating the graphic.
  */
-async function republishViaOrbit(image: ConferenceImage, current: string): Promise<string> {
+async function persistConferenceImageFile(
+  image: ConferenceImage,
+  conf: Conference,
+  saved: { fileUrl: string; fileSize: number },
+  extra: Partial<ConferenceImage> = {},
+): Promise<void> {
+  await db.transaction(async tx => {
+    const [claimed] = await tx.update(conferenceImages).set({
+      ...extra, fileUrl: saved.fileUrl, fileType: "image/png", fileSize: saved.fileSize,
+      renderError: null, renderDirty: false, updatedAt: new Date(),
+    }).where(and(eq(conferenceImages.id, image.id),
+      eq(conferenceImages.renderRevision, image.renderRevision ?? 0),
+      eq(conferenceImages.status, "active"))).returning({ id: conferenceImages.id });
+    if (!claimed) throw new ConferenceGraphicError("settings_changed", "Image settings changed. Retry with the current settings.");
+    const brandAssetId = await registerEventVisualAsset(tx, conf, {
+      ...saved, fileType: "image/png", name: image.name || `${conf.name} — ${image.role} image`,
+      createdBy: image.createdBy,
+    });
+    await tx.update(conferenceImages).set({ brandAssetId }).where(eq(conferenceImages.id, image.id));
+  });
+}
+
+async function republishViaOrbit(image: ConferenceImage, conf: Conference, current: string): Promise<string> {
   const saved = await publishConferenceSource(current);
-  const result = await db
-    .update(conferenceImages)
-    .set({ fileUrl: saved.fileUrl, fileType: "image/png", fileSize: saved.fileSize,
-      renderError: null, renderDirty: false, updatedAt: new Date() })
-    .where(and(eq(conferenceImages.id, image.id), eq(conferenceImages.renderRevision, image.renderRevision ?? 0),
-      eq(conferenceImages.status, "active")));
-  if ((result as any)?.rowCount === 0) throw new ConferenceGraphicError("settings_changed", "Image settings changed. Retry with the current settings.");
+  await persistConferenceImageFile(image, conf, saved);
   return saved.fileUrl;
 }
 
@@ -1127,7 +1143,7 @@ export async function renderConferenceImage(
   // generated/composited graphics are preserved rather than regenerated.
   if (!image.renderDirty && source === image.source && current && !isServedPublicImage(current)) {
     try {
-      return await republishViaOrbit(image, current);
+      return await republishViaOrbit(image, conf, current);
     } catch (err: any) {
       console.error("[Conference] Failed to re-publish image:", err?.message);
       // Uploaded images have no other way to be produced — keep the current URL.
@@ -1226,6 +1242,13 @@ export async function renderConferenceImage(
         eq(conferenceBackgrounds.tenantDomain, conf.tenantDomain),
       ));
       if (!bg) throw new Error("Selected conference background is not available for this conference");
+      if (bg.brandAssetId) {
+        const [asset] = await db.select({ id: brandAssets.id }).from(brandAssets).where(and(
+          eq(brandAssets.id, bg.brandAssetId), eq(brandAssets.tenantDomain, conf.tenantDomain),
+          eq(brandAssets.status, "active"),
+        ));
+        if (!asset) throw new ConferenceGraphicError("source_unavailable", "The selected background is archived in Visual Assets. Choose another image.");
+      }
       if (!bg.fileUrl?.trim()) {
         throw new Error("Selected conference background is missing its image file. Upload a background image or clear the background selection");
       }
@@ -1306,24 +1329,10 @@ export async function renderConferenceImage(
     void archiveArtifactToSpe({ tenantDomain: conf.tenantDomain, buffer, filename: `event-${image.role}-${image.id}.png`, mimeType: "image/png", kind: "image", marketId: conf.marketId ?? undefined, createdByUserId: conf.createdBy ?? "system" });
   }
 
-  const result = await db
-    .update(conferenceImages)
-      .set({
+  await persistConferenceImageFile(image, conf, saved, {
         source,
         imagePrompt: source === image.source ? image.imagePrompt : null,
-        fileUrl: saved.fileUrl,
-        fileType: "image/png",
-        fileSize: saved.fileSize,
-        renderDirty: false,
-        renderError: null,
-        updatedAt: new Date(),
-      })
-    .where(and(eq(conferenceImages.id, image.id),
-      eq(conferenceImages.renderRevision, image.renderRevision ?? 0),
-      eq(conferenceImages.status, "active")));
-  if ((result as any)?.rowCount === 0) {
-    throw new ConferenceGraphicError("settings_changed", "Image settings changed during rendering. Regenerate using the current settings.");
-  }
+      });
 
   return saved.fileUrl;
 }

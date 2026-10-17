@@ -11,12 +11,18 @@ const io = vi.hoisted(() => ({
   save: vi.fn(),
   download: vi.fn(),
 }));
-vi.mock("../../db", () => ({
-  db: {
-    select: () => ({ from: () => ({ where: io.where }) }),
+vi.mock("../../db", () => {
+  const db: any = {
+    select: () => ({ from: () => ({ where: (...args: any[]) => {
+      const rows = Promise.resolve(io.where(...args) ?? []);
+      return Object.assign(rows, { limit: () => rows });
+    } }) }),
     update: io.update,
-  },
-}));
+    insert: () => ({ values: async () => undefined }),
+    transaction: async (fn: any) => fn(db),
+  };
+  return { db };
+});
 vi.mock("../../replit_integrations/object_storage/objectStorage", () => ({
   ObjectStorageService: class {
     getPublicObjectSearchPaths() { return ["/fixture-bucket/public"]; }
@@ -95,7 +101,9 @@ describe("conference brand rendering regressions", () => {
   let compositeSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     vi.resetAllMocks();
-    io.update.mockReturnValue({ set: () => ({ where: vi.fn().mockResolvedValue(undefined) }) });
+    io.update.mockReturnValue({ set: () => ({ where: () =>
+      Object.assign(Promise.resolve({ rowCount: 1 }), { returning: async () => [{ id: "image" }] }),
+    }) });
     io.download.mockImplementation(async (url: string) => {
       const bytes = {
         "company.svg": companyLogo, "event.svg": eventLogo, "fixture-font.ttf": fontBytes,
@@ -169,7 +177,7 @@ describe("conference brand rendering regressions", () => {
     expect(svg).toContain("October 1–3");
     expect(svg).toContain("example.com/summit");
     expect(svg).toContain('stop-color="rgba(36,104,172,0.18)"');
-    expect(io.update).toHaveBeenCalledTimes(1);
+    expect(io.update).toHaveBeenCalledTimes(2);
   });
 
   it("renders a session with the intended brand gradient when no template is selected", async () => {
@@ -318,7 +326,7 @@ describe("conference brand rendering regressions", () => {
     expect(svg).toContain("Register for the webinar");
     expect(svg).toContain("Practical collaboration");
     expect(record.fileUrl).toBeNull(); // caller/original data is not overwritten
-    expect(io.update).toHaveBeenCalledTimes(1);
+    expect(io.update).toHaveBeenCalledTimes(2);
   });
 
   it("does not erase a successful output when the new selected source is invalid", async () => {

@@ -41,6 +41,7 @@ interface BrandAsset {
   url?: string;
   fileUrl?: string;
   fileType?: string;
+  eventNames?: string[];
   categoryId?: string;
   productIds?: string[];
   assetType?: string;
@@ -74,6 +75,7 @@ interface Product {
 }
 
 const TOPIC_OPTIONS = [
+  "Event",
   "Modern Workplace", "Digital Transformation", "Cloud", "Security",
   "AI & Machine Learning", "Collaboration", "Productivity", "Remote Work",
   "Sustainability", "Innovation", "Leadership", "Customer Success",
@@ -138,6 +140,7 @@ export default function BrandLibraryPage() {
   const [fileTypeFilter, setFileTypeFilter] = useState<string>("all");
   const [assetTypeFilter, setAssetTypeFilter] = useState<string>("all");
   const [solutionAreaFilter, setSolutionAreaFilter] = useState<string>("all");
+  const [eventImagesOnly, setEventImagesOnly] = useState(false);
   const [statusTab, setStatusTab] = useState<string>("active");
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false);
@@ -176,7 +179,7 @@ export default function BrandLibraryPage() {
 
   useEffect(() => {
     setAssetPage(1);
-  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, fileTypeFilter, assetTypeFilter, solutionAreaFilter]);
+  }, [debouncedAssetSearch, statusTab, ASSETS_PAGE_SIZE, categoryFilter, fileTypeFilter, assetTypeFilter, solutionAreaFilter, eventImagesOnly]);
 
   const serverStatusParam = statusTab === "archived" ? "archived" : undefined;
   const serverCategoryParam = categoryFilter === "all" ? undefined : categoryFilter;
@@ -188,7 +191,7 @@ export default function BrandLibraryPage() {
     queryKey: [
       "/api/brand-assets",
       "paginated",
-      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, fileType: serverFileTypeParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam },
+      { page: assetPage, pageSize: ASSETS_PAGE_SIZE, q: debouncedAssetSearch, status: serverStatusParam, categoryId: serverCategoryParam, fileType: serverFileTypeParam, assetType: serverAssetTypeParam, solutionAreaId: serverSolutionAreaParam, eventImages: eventImagesOnly },
     ],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(assetPage), pageSize: String(ASSETS_PAGE_SIZE) });
@@ -198,6 +201,7 @@ export default function BrandLibraryPage() {
       if (serverFileTypeParam) params.set("fileType", serverFileTypeParam);
       if (serverAssetTypeParam) params.set("assetType", serverAssetTypeParam);
       if (serverSolutionAreaParam) params.set("solutionAreaId", serverSolutionAreaParam);
+      if (eventImagesOnly) params.set("eventImages", "true");
       const r = await fetch(`/api/brand-assets?${params.toString()}`, { credentials: "include" });
       if (!r.ok) return { items: [], total: 0, hasMore: false, page: assetPage, pageSize: ASSETS_PAGE_SIZE };
       return r.json();
@@ -297,6 +301,9 @@ export default function BrandLibraryPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      // Event graphics are embedded in the conference-detail query, while
+      // venue backgrounds have their own key beneath the same prefix.
+      queryClient.invalidateQueries({ queryKey: ["/api/conferences"] });
       toast({ title: "Brand asset archived" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -391,6 +398,8 @@ export default function BrandLibraryPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      // Keep mounted event pages in sync with canonical file replacements.
+      queryClient.invalidateQueries({ queryKey: ["/api/conferences"] });
       setEditOpen(false);
       setEditAsset(null);
       toast({ title: "Brand asset updated" });
@@ -750,7 +759,18 @@ export default function BrandLibraryPage() {
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              onClick={e => { e.stopPropagation(); deleteMutation.mutate(asset.id); }}
+              onClick={e => {
+                e.stopPropagation();
+                const linkedEvents = asset.eventNames ?? [];
+                if (linkedEvents.length > 0) {
+                  const events = linkedEvents.join(", ");
+                  const confirmed = window.confirm(
+                    `This Visual Asset is selected for ${events}. Archiving it will remove it from active event selections, but the file and existing post links will be kept. Archiving an image only from an event pool does not archive the shared Visual Asset. Continue?`,
+                  );
+                  if (!confirmed) return;
+                }
+                deleteMutation.mutate(asset.id);
+              }}
               title="Archive"
               data-testid={`button-archive-brand-${asset.id}`}
             >
@@ -768,6 +788,14 @@ export default function BrandLibraryPage() {
         )}
         {asset.tags?.topics?.map(t => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
         {asset.tags?.seasons?.map(s => <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>)}
+        {asset.eventNames?.slice(0, 2).map((eventName) => (
+          <Badge key={eventName} variant="outline" className="text-[10px] border-amber-500/40 text-amber-700">
+            Linked · {eventName}
+          </Badge>
+        ))}
+        {(asset.eventNames?.length ?? 0) > 2 && (
+          <Badge variant="outline" className="text-[10px]">+{asset.eventNames!.length - 2} events</Badge>
+        )}
       </div>
     </div>
   );
@@ -1187,6 +1215,20 @@ export default function BrandLibraryPage() {
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={eventImagesOnly}
+            onClick={() => setEventImagesOnly((value) => !value)}
+            className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${eventImagesOnly ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`}
+            data-testid="toggle-event-images-brand"
+          >
+            <Filter className="h-3.5 w-3.5" />
+            {eventImagesOnly ? "Showing event images" : "Event images only"}
+          </button>
+          <span className="text-xs text-muted-foreground">Event images are reusable Visual Assets.</span>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap" data-testid="category-pills-brand">

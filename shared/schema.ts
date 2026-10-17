@@ -3650,6 +3650,7 @@ export const conferenceBackgrounds = pgTable("conference_backgrounds", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  brandAssetId: varchar("brand_asset_id").references(() => brandAssets.id, { onDelete: "restrict" }),
   name: text("name"),
   fileUrl: text("file_url").notNull(),
   fileType: text("file_type"),
@@ -3658,6 +3659,7 @@ export const conferenceBackgrounds = pgTable("conference_backgrounds", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   tenantConferenceIdx: index("conference_backgrounds_tenant_conference_idx").on(table.tenantDomain, table.conferenceId),
+  brandAssetIdx: index("conference_backgrounds_brand_asset_idx").on(table.brandAssetId),
 }));
 
 export const insertConferenceBackgroundSchema = createInsertSchema(conferenceBackgrounds).omit({
@@ -3666,14 +3668,14 @@ export const insertConferenceBackgroundSchema = createInsertSchema(conferenceBac
 export type ConferenceBackground = typeof conferenceBackgrounds.$inferSelect;
 export type InsertConferenceBackground = z.infer<typeof insertConferenceBackgroundSchema>;
 
-// Dedicated image space for conference graphics. Kept separate from brandAssets
-// so the main brand library stays uncluttered. sessionId is set for the 1:1
-// session graphic; null for anchor images.
+// Event-specific selections and render recipes. Completed files are canonical
+// Visual Assets; these rows retain event/session roles and existing post links.
 export const conferenceImages = pgTable("conference_images", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
   sessionId: varchar("session_id").references(() => conferenceSessions.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  brandAssetId: varchar("brand_asset_id").references(() => brandAssets.id, { onDelete: "restrict" }),
   role: text("role").notNull().default("session"), // anchor | session
   source: text("source").notNull().default("ai_generated"), // ai_generated | template_composite | uploaded | logo_composite
   name: text("name"),
@@ -3700,6 +3702,7 @@ export const conferenceImages = pgTable("conference_images", {
   // Enforce 1:1 — at most one image per session.
   sessionUnique: uniqueIndex("conference_images_session_unique").on(t.sessionId),
   tenantConferenceRoleIdx: index("conference_images_tenant_conference_role_idx").on(t.tenantDomain, t.conferenceId, t.role),
+  brandAssetIdx: index("conference_images_brand_asset_idx").on(t.brandAssetId),
 }));
 
 export const insertConferenceImageSchema = createInsertSchema(conferenceImages).omit({

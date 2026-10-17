@@ -156,6 +156,7 @@ function exportSessionsCsv(eventName: string, sessions: Session[]): void {
 }
 interface ConfImage {
   id: string;
+  brandAssetId?: string | null;
   sessionId?: string | null;
   role: string;
   source: string;
@@ -230,6 +231,7 @@ interface BrandAsset {
   name: string;
   fileUrl?: string | null;
   fileType?: string | null;
+  status?: string;
 }
 
 async function uploadFile(file: File): Promise<string> {
@@ -312,7 +314,14 @@ export default function ConferenceDetailPage() {
     queryClient.invalidateQueries({ queryKey: confKey });
     refetchBackgrounds();
   };
-  const imageTemplates = brandAssets.filter((a) => !!a.fileUrl?.trim() && (a.fileType || "").startsWith("image/"));
+  const imageTemplates = brandAssets.filter((a) => {
+    const type = (a.fileType || "").toLowerCase();
+    return !!a.fileUrl?.trim() && (
+      type.startsWith("image/") ||
+      ["image", "png", "jpg", "jpeg", "svg", "webp", "gif", "bmp"].includes(type) ||
+      /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|$)/i.test(a.fileUrl)
+    );
+  });
 
   if (isLoading) {
     return (
@@ -1125,6 +1134,9 @@ function GraphicsTab({
 }) {
   const { toast } = useToast();
   const [imageLink, setImageLink] = useState("");
+  const [libraryAssetId, setLibraryAssetId] = useState("");
+  const queryClient = useQueryClient();
+  const invalidateBrandAssets = () => queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
   const activeAnchors = anchorImages.filter((img) => img.status !== "archived");
   const activeImages = conf.images.filter((img) => img.status !== "archived");
   const addAnchor = async (body: Record<string, unknown>, success: string) => {
@@ -1137,6 +1149,7 @@ function GraphicsTab({
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to add image");
       onChange();
+      invalidateBrandAssets();
       toast({ title: success });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -1157,6 +1170,30 @@ function GraphicsTab({
     if (!url) return;
     await addAnchor({ source: "uploaded", fileUrl: url }, "Image link added to event pool");
     setImageLink("");
+  };
+
+  const addLibraryAnchor = async () => {
+    const asset = templates.find((item) => item.id === libraryAssetId);
+    if (!asset) return;
+    await addAnchor({ source: "uploaded", brandAssetId: asset.id, fileUrl: null, name: asset.name }, "Library image added to event pool");
+    setLibraryAssetId("");
+  };
+
+  const replaceAnchorFromLibrary = async (imageId: string, brandAssetId: string) => {
+    try {
+      const r = await fetch(`/api/conference-images/${imageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ source: "uploaded", brandAssetId, fileUrl: null }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to select Visual Asset");
+      onChange();
+      invalidateBrandAssets();
+      toast({ title: "Event image updated", description: "The event now links to the selected Visual Asset." });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
   };
 
   const addBlankAnchor = () => addAnchor({ source: "logo_composite" }, "Composite anchor added");
@@ -1224,6 +1261,7 @@ function GraphicsTab({
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to save background");
       onChange();
+      invalidateBrandAssets();
       toast({ title: "Location photo added" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -1235,6 +1273,7 @@ function GraphicsTab({
       const r = await fetch(`/api/conference-backgrounds/${bgId}`, { method: "DELETE", credentials: "include" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to remove photo");
       onChange();
+      invalidateBrandAssets();
     } catch (e: any) { toast({ title: "Error", description: e.message, variant: "destructive" }); }
   };
 
@@ -1354,7 +1393,22 @@ function GraphicsTab({
             <Button variant="outline" size="sm" onClick={addBlankAnchor} disabled={activeAnchors.length >= 20}>
               <Plus className="w-4 h-4 mr-1" /> New composite
             </Button>
+              <div className="flex min-w-[250px] flex-1 gap-2">
+                <Select value={libraryAssetId} onValueChange={setLibraryAssetId}>
+                  <SelectTrigger className="h-9" aria-label="Choose image from Visual Assets">
+                    <SelectValue placeholder="Choose from Visual Assets…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>)}
+                    {templates.length === 0 && <SelectItem value="__empty" disabled>No image assets available</SelectItem>}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={addLibraryAnchor} disabled={!libraryAssetId || activeAnchors.length >= 20}>
+                  Add library image
+                </Button>
+              </div>
           </div>
+            <p className="text-xs text-muted-foreground">Selecting a library image links the original asset; it is not uploaded or copied.</p>
           {activeAnchors.length >= 20 && <p className="text-xs text-amber-700">The 20-image active pool limit is reached. Archive an image before adding another.</p>}
           {activeAnchors.length === 0 ? (
             <p className="text-sm text-muted-foreground rounded-md border border-dashed p-5 text-center">No active images yet. Upload, link, or create a composite above.</p>
@@ -1377,12 +1431,24 @@ function GraphicsTab({
               </div>
               {img.source === "uploaded" ? (
                 <div className="flex items-start gap-4">
-                  {img.fileUrl && <a href={img.fileUrl} target="_blank" rel="noreferrer" className="block w-48 shrink-0">
-                    <img src={thumbnailUrl(img.fileUrl, 480)} alt={img.name || "Original event image"} className="aspect-video w-full rounded border object-cover" />
-                    <span className="text-xs text-primary underline">Open full-size original</span>
+                  {(img.fileUrl || templates.find((asset) => asset.id === img.brandAssetId)?.fileUrl) && <a href={img.fileUrl || templates.find((asset) => asset.id === img.brandAssetId)?.fileUrl || undefined} target="_blank" rel="noreferrer" className="block w-48 shrink-0">
+                    <img src={thumbnailUrl(img.fileUrl || templates.find((asset) => asset.id === img.brandAssetId)!.fileUrl!, 480)} alt={img.name || "Original event image"} className="aspect-video w-full rounded border object-cover" />
+                    <span className="text-xs text-primary underline">{img.brandAssetId ? "Open Visual Asset" : "Open full-size original"}</span>
                   </a>}
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p>Original uploaded or linked image. Use “Add branded variant” to add text without replacing this original.</p>
+                    <p>{img.brandAssetId ? "Original linked from Visual Assets. Updates to the library asset flow through to this selection." : "Original uploaded or linked image. Use “Add branded variant” to add text without replacing this original."}</p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Label className="text-xs">Replace from Visual Assets</Label>
+                      <Select value="" onValueChange={(assetId) => replaceAnchorFromLibrary(img.id, assetId)}>
+                        <SelectTrigger className="h-8 w-64 bg-background">
+                          <SelectValue placeholder="Choose an existing image…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>)}
+                          {templates.length === 0 && <SelectItem value="__empty" disabled>No image assets available</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {img.renderDirty && <p className="text-amber-700">Not ready for generation. Upload this image again as a new pool choice.</p>}
                     {img.renderError && <p className="text-destructive" role="alert">{img.renderError}</p>}
                   </div>
@@ -1448,6 +1514,7 @@ function ImageSlot({
   onChange: () => void;
 }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [source, setSource] = useState<string>(image?.source === "ai_generated" ? (isAnchor ? "logo_composite" : "template_composite") : (image?.source || (isAnchor ? "logo_composite" : "template_composite")));
   const [prompt, setPrompt] = useState(image?.imagePrompt || "");
   const [templateId, setTemplateId] = useState(image?.templateAssetId || "");
@@ -1517,6 +1584,7 @@ function ImageSlot({
       const r = await fetch(`/api/conference-images/${img.id}/render`, { method: "POST", credentials: "include" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Render failed");
       onChange();
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
       toast({ title: "Graphic generated" });
     } catch (e: any) {
       onChange();
@@ -1530,9 +1598,24 @@ function ImageSlot({
     setBusy(true);
     try {
       const objectPath = await uploadFile(file);
-      await ensureImage({ source: "uploaded", fileUrl: objectPath } as any);
+      await ensureImage({ source: "uploaded", fileUrl: objectPath, brandAssetId: null } as any);
       onChange();
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
       toast({ title: "Image uploaded" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onSelectLibraryImage = async (brandAssetId: string) => {
+    setBusy(true);
+    try {
+      await ensureImage({ source: "uploaded", brandAssetId, fileUrl: null } as any);
+      onChange();
+      queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
+      toast({ title: "Visual Asset linked", description: "The original library file is now selected for this event." });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
@@ -1548,6 +1631,8 @@ function ImageSlot({
             <a href={image.fileUrl} target="_blank" rel="noreferrer" title="Open original image at full size" className="block h-full w-full">
               <img src={thumbnailUrl(image.fileUrl, 480)} alt={image.name || "Original event graphic"} className="w-full h-full object-cover" loading="lazy" />
             </a>
+          ) : image?.brandAssetId && templates.find((asset) => asset.id === image.brandAssetId)?.fileUrl ? (
+            <img src={thumbnailUrl(templates.find((asset) => asset.id === image.brandAssetId)!.fileUrl!, 480)} alt={image.name || "Selected Visual Asset"} className="w-full h-full object-cover" loading="lazy" />
           ) : <ImageIcon className="w-6 h-6 text-muted-foreground" />}
         </div>
         {image?.fileUrl && <a href={image.fileUrl} target="_blank" rel="noreferrer" className="mt-1 block text-xs text-primary underline">Open full-size original</a>}
@@ -1635,6 +1720,24 @@ function ImageSlot({
           </div>
         )}
 
+        {!isAnchor && source === "uploaded" && (
+          <div className="grid gap-1">
+            <Label className="text-xs">Or select an original from Visual Assets</Label>
+            <div className="flex gap-2">
+              <Select value="" onValueChange={onSelectLibraryImage}>
+                <SelectTrigger className="h-8">
+                  <SelectValue placeholder="Choose an existing library image…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>)}
+                  {templates.length === 0 && <SelectItem value="__empty" disabled>No image assets available</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">This links the library file without uploading or copying it.</p>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           {source === "uploaded" ? (
             <label className="inline-flex">
@@ -1661,6 +1764,7 @@ function ImageSlot({
               try {
                 await ensureImage({});
                 onChange();
+                queryClient.invalidateQueries({ queryKey: ["/api/brand-assets"] });
                 toast({ title: "Overlay controls saved", description: "The current preview is marked stale until regenerated." });
               } catch (e: any) {
                 toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -1899,13 +2003,12 @@ function GenerateTab({
           <div>
             <Label className="text-xs">Publish to accounts</Label>
             {accounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground mt-1">
-                No social accounts yet.{" "}
-                <Link href="/app/marketing/social-accounts" className="underline">
-                  Connect one
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-sm text-muted-foreground">No social accounts are connected for this market.</p>
+                <Link href="/app/marketing/social-accounts" className="text-sm font-medium text-primary underline underline-offset-2" data-testid="link-event-social-accounts-empty">
+                  Connect Social Accounts
                 </Link>
-                .
-              </p>
+              </div>
             ) : (
               <div className="flex flex-wrap gap-2 mt-2">
                 {accounts.map((a) => (
@@ -1924,8 +2027,8 @@ function GenerateTab({
             {!connectedPlatforms.has("twitter") && !connectedPlatforms.has("x_post") && (
               <p className="text-xs text-muted-foreground mt-2">
                 Want to generate X/Twitter posts?{" "}
-                <Link href="/app/marketing/social-accounts" className="underline">
-                  Connect an X account
+                <Link href="/app/marketing/social-accounts" className="font-medium text-primary underline underline-offset-2" data-testid="link-event-social-accounts-x">
+                  Open Social Accounts
                 </Link>{" "}
                 and it will appear here.
               </p>
@@ -2040,8 +2143,11 @@ function GenerateTab({
                         )}
                       </div>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         {isLinkedIn ? "Connect a LinkedIn account to approve for auto-publish" : "No connected account — use CSV export"}
+                        <Link href="/app/marketing/social-accounts" className="font-medium text-primary underline underline-offset-2" data-testid={`link-event-social-accounts-${platform}`}>
+                          Social Accounts
+                        </Link>
                       </span>
                     )}
                   </div>

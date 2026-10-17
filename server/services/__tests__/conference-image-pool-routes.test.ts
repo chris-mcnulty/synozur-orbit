@@ -18,7 +18,7 @@ vi.mock("../../db", () => {
     select: () => ({ from: () => ({ where: (filter: any) => {
       io.filters.push(filter);
       const rows = io.rows.shift() ?? [];
-      return Object.assign(Promise.resolve(rows), { orderBy: () => Promise.resolve(rows) });
+      return Object.assign(Promise.resolve(rows), { orderBy: () => Promise.resolve(rows), limit: () => Promise.resolve(rows) });
     } }) }),
     update: () => ({ set: (patch: any) => {
       io.patches.push(patch);
@@ -90,6 +90,63 @@ describe("event image pool API", () => {
     expect(io.inserts).toHaveLength(0);
   });
 
+  it("selects an existing Visual Asset as an original without uploading or copying it", async () => {
+    const asset = { id: "library-image", fileUrl: "/public-objects/library.png", fileType: "image/png", fileSize: 15 };
+    io.rows.push([io.conf], [asset], [{ n: 0 }]);
+    const response = await request(app).post("/api/conferences/event/images").send({
+      role: "anchor", source: "uploaded", brandAssetId: asset.id,
+    });
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ brandAssetId: asset.id, fileUrl: asset.fileUrl, renderDirty: false });
+    expect(io.publish).not.toHaveBeenCalled();
+    expect(io.inserts).toHaveLength(1);
+    expect(io.patches.some(patch => patch.tags)).toBe(true);
+    expect(params()).toEqual(expect.arrayContaining(["tenant.example", "market", "active", asset.id]));
+  });
+
+  it("rejects a missing, archived, or foreign-market Visual Asset without falling back", async () => {
+    io.rows.push([io.conf], []);
+    const response = await request(app).post("/api/conferences/event/images").send({
+      role: "anchor", source: "uploaded", brandAssetId: "foreign",
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("source_invalid");
+    expect(io.inserts).toHaveLength(0);
+    expect(io.publish).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-image library files", async () => {
+    io.rows.push([io.conf], [{ id: "pdf", fileUrl: "/objects/report.pdf", fileType: "application/pdf" }]);
+    const response = await request(app).post("/api/conferences/event/images").send({
+      role: "anchor", source: "uploaded", brandAssetId: "pdf",
+    });
+    expect(response.status).toBe(400);
+    expect(io.inserts).toHaveLength(0);
+  });
+
+  it("rejects ambiguous library-plus-upload requests", async () => {
+    io.rows.push([io.conf]);
+    const response = await request(app).post("/api/conferences/event/images").send({
+      role: "anchor", source: "uploaded", brandAssetId: "library", fileUrl: "/objects/uploads/mine",
+    });
+    expect(response.status).toBe(400);
+    expect(io.publish).not.toHaveBeenCalled();
+    expect(io.inserts).toHaveLength(0);
+  });
+
+  it("replaces a pool original with a library image while retaining its event-image identity", async () => {
+    const original = { ...io.image, source: "uploaded" };
+    const asset = { id: "replacement", fileUrl: "/public-objects/replacement.png", fileType: "image/png", fileSize: 50 };
+    io.rows.push([original], [io.conf], [asset]);
+    const response = await request(app).patch("/api/conference-images/image").send({
+      source: "uploaded", brandAssetId: asset.id, fileUrl: null,
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ id: "image", brandAssetId: asset.id });
+    expect(io.patches).toContainEqual(expect.objectContaining({ fileUrl: asset.fileUrl, renderDirty: false }));
+    expect(io.publish).not.toHaveBeenCalled();
+  });
+
   it("creates a distinct variant without replacing its original", async () => {
     io.rows.push([io.conf], [io.image], [{ n: 1 }]);
     const response = await request(app).post("/api/conferences/event/images").send({
@@ -149,6 +206,10 @@ describe("event image pool API", () => {
     });
     expect(response.status).toBe(201);
     expect(io.publish).toHaveBeenCalledWith("/objects/uploads/mine");
+    expect(io.inserts).toContainEqual(expect.objectContaining({
+      assetType: "image", tenantDomain: "tenant.example", marketId: "market",
+      fileUrl: "/public-objects/copied.png",
+    }));
     expect(response.body).toMatchObject({ fileUrl: "/public-objects/copied.png", renderDirty: false, fileType: "image/png" });
   });
 

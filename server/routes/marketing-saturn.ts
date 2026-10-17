@@ -19,6 +19,8 @@ import { db } from "../db";
 import { eq, and, desc, inArray, notInArray, sql, ne, ilike, or, isNull, isNotNull, count, countDistinct } from "drizzle-orm";
 import { parsePaginationParams, buildPaginatedEnvelope, toContainsPattern } from "../utils/pagination";
 import { randomUUID } from "crypto";
+import { syncEventVisualAsset, archiveEventAssetSelections, eventAssetFilter, eventNamesForAssets } from "../services/event-visual-assets";
+import { withEventAssetTag } from "@shared/event-asset-tags";
 import {
   contentAssets,
   conferences,
@@ -1888,6 +1890,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
       eq(brandAssets.marketId, ctx.marketId),
     ];
     const status = req.query.status as string | undefined;
+    const conferenceId = typeof req.query.conferenceId === "string" ? req.query.conferenceId : undefined;
+    if (req.query.eventImages === "true" || conferenceId) {
+      conditions.push(eventAssetFilter(ctx.tenantDomain, ctx.marketId, conferenceId));
+    }
     if (status === "archived") {
       conditions.push(eq(brandAssets.status, "archived"));
     } else {
@@ -1944,12 +1950,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
 
     if (!pagination.isPaginated) {
       const rows = await baseQuery;
-      return res.json(rows.map(r => ({ ...r.asset, categoryName: r.categoryName })));
+      const eventNames = await eventNamesForAssets(rows.map(r => r.asset.id), ctx.tenantDomain);
+      return res.json(rows.map(r => ({ ...r.asset, categoryName: r.categoryName, eventNames: eventNames.get(r.asset.id) || [] })));
     }
 
     const [{ value: total }] = await db.select({ value: count() }).from(brandAssets).where(where);
     const rows = await baseQuery.limit(pagination.limit).offset(pagination.offset);
-    const items = rows.map(r => ({ ...r.asset, categoryName: r.categoryName }));
+    const eventNames = await eventNamesForAssets(rows.map(r => r.asset.id), ctx.tenantDomain);
+    const items = rows.map(r => ({ ...r.asset, categoryName: r.categoryName, eventNames: eventNames.get(r.asset.id) || [] }));
     res.json(buildPaginatedEnvelope(items, Number(total), pagination));
   });
 
@@ -2028,6 +2036,18 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (!await guardFeature(req, res, "brandLibrary")) return;
     const ctx = await getRequestContext(req);
     const { name, description, url, fileUrl, fileType, fileSize, categoryId, status, productTagIds, productIds, tags, assetType, solutionAreaIds, logoVariant, fontFamily, fontWeight, fontStyle, fontUsage } = req.body;
+    if (fileUrl !== undefined || fileType !== undefined) {
+      const [current] = await db.select().from(brandAssets).where(and(
+        eq(brandAssets.id, req.params.id), eq(brandAssets.tenantDomain, ctx.tenantDomain),
+        eq(brandAssets.marketId, ctx.marketId),
+      ));
+      if (!current) return res.status(404).json({ error: "Not found" });
+      if (!(fileUrl === undefined ? current.fileUrl : fileUrl) ||
+          !(fileType === undefined ? current.fileType : fileType)?.startsWith("image/")) {
+        const linked = await eventNamesForAssets([current.id], ctx.tenantDomain);
+        if (linked.has(current.id)) return res.status(400).json({ error: "An event image must retain an image file." });
+      }
+    }
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
@@ -2038,7 +2058,10 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (categoryId !== undefined) updates.categoryId = categoryId;
     if (status !== undefined) updates.status = status;
     if (productIds !== undefined) updates.productIds = productIds?.length ? productIds : null;
-    if (tags !== undefined) updates.tags = tags;
+    if (tags !== undefined) {
+      const events = await eventNamesForAssets([req.params.id], ctx.tenantDomain);
+      updates.tags = events.has(req.params.id) ? withEventAssetTag(tags) : tags;
+    }
     if (assetType !== undefined && (CONTENT_ASSET_TYPES as readonly string[]).includes(assetType)) {
       updates.assetType = assetType;
     }
@@ -2048,7 +2071,8 @@ export function registerSaturnMarketingRoutes(app: Express) {
     if (fontStyle !== undefined) updates.fontStyle = fontStyle || null;
     if (fontUsage !== undefined) updates.fontUsage = fontUsage || null;
 
-    const [row] = await db.update(brandAssets)
+    const row = await db.transaction(async tx => {
+    const [updated] = await tx.update(brandAssets)
       .set(updates)
       .where(and(
         eq(brandAssets.id, req.params.id),
@@ -2056,6 +2080,14 @@ export function registerSaturnMarketingRoutes(app: Express) {
         eq(brandAssets.marketId, ctx.marketId),
       ))
       .returning();
+    if (updated) {
+      if (fileUrl !== undefined || fileType !== undefined || fileSize !== undefined) {
+        await syncEventVisualAsset(tx, updated);
+      }
+      if (status === "archived") await archiveEventAssetSelections(tx, updated.id, ctx.tenantDomain);
+    }
+    return updated;
+    });
     if (!row) return res.status(404).json({ error: "Not found" });
     if (productTagIds !== undefined) {
       await db.delete(brandAssetProductTags).where(eq(brandAssetProductTags.assetId, row.id));
@@ -2089,11 +2121,21 @@ export function registerSaturnMarketingRoutes(app: Express) {
       const [existing] = await db.select({ status: brandAssets.status }).from(brandAssets).where(conditions);
       if (!existing) return res.status(404).json({ error: "Not found" });
       if (existing.status !== "archived") return res.status(400).json({ error: "Only archived assets can be permanently deleted" });
+      const eventNames = await eventNamesForAssets([req.params.id], ctx.tenantDomain);
+      if (eventNames.has(req.params.id)) return res.status(409).json({
+        error: "This image is linked to an event. Keep it archived to preserve event and post references.",
+      });
       await db.delete(brandAssets).where(conditions);
     } else {
-      await db.update(brandAssets)
+      await db.transaction(async tx => {
+      await tx.update(brandAssets)
         .set({ status: "archived", updatedAt: new Date() })
         .where(conditions);
+      // A library archive removes event selections, never deletes stored files
+      // or modifies already-generated/published post image URLs.
+      const [owned] = await tx.select({ id: brandAssets.id }).from(brandAssets).where(conditions);
+      if (owned) await archiveEventAssetSelections(tx, owned.id, ctx.tenantDomain);
+      });
     }
     res.status(204).send();
   });

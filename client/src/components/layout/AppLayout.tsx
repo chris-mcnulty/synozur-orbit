@@ -14,6 +14,7 @@ import {
   TicketIcon,
   Map,
   FileText as FileTextIcon,
+  AtSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -460,6 +461,10 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     { label: "Roadmap", icon: Map, href: "/app/roadmap" },
     { label: "About", icon: Info, href: "/app/about" },
   ];
+  const settingsItems: NavItem[] = [
+    { label: "Settings", icon: Settings, href: "/app/settings" },
+    { label: "Social Accounts", icon: AtSign, href: "/app/marketing/social-accounts" },
+  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground flex overflow-hidden font-sans">
@@ -709,14 +714,41 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Link
-              href="/app/settings"
-              className="inline-flex items-center justify-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-              data-testid="header-settings-mobile"
-              aria-label="Settings"
-            >
-              <Settings size={18} />
-            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-8 w-8",
+                    activeArea.id === "settings"
+                      ? "bg-sidebar-accent text-primary hover:bg-sidebar-accent hover:text-primary"
+                      : "text-sidebar-foreground/70 hover:text-sidebar-foreground",
+                  )}
+                  data-testid="header-settings-mobile"
+                  aria-label="Admin & Settings"
+                  title="Admin & Settings"
+                >
+                  <Settings size={18} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Admin & Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {settingsItems.map((item) => (
+                  <DropdownMenuItem key={item.href} asChild>
+                    <Link
+                      href={item.href}
+                      className="flex items-center gap-2 cursor-pointer"
+                      data-testid={`mobile-settings-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      <item.icon size={14} className="opacity-70" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
@@ -789,20 +821,41 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
               })}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Link
-            href="/app/settings"
-            className={cn(
-              "inline-flex items-center justify-center h-8 w-8 rounded-md transition-colors",
-              activeArea.id === "settings"
-                ? "bg-primary/15 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            )}
-            data-testid="header-settings"
-            aria-label="Admin & Settings"
-            title="Admin & Settings"
-          >
-            <Settings size={18} />
-          </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-8 w-8",
+                  activeArea.id === "settings"
+                    ? "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                data-testid="header-settings"
+                aria-label="Admin & Settings"
+                title="Admin & Settings"
+              >
+                <Settings size={18} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Admin & Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {settingsItems.map((item) => (
+                <DropdownMenuItem key={item.href} asChild>
+                  <Link
+                    href={item.href}
+                    className="flex items-center gap-2 cursor-pointer"
+                    data-testid={`desktop-settings-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    <item.icon size={14} className="opacity-70" />
+                    <span>{item.label}</span>
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           </div>
         </header>
 

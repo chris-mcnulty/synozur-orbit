@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAreas } from "./areaNavigation";
+import { buildAreas, getActiveAreaId } from "./areaNavigation";
 
 describe("buildAreas — top-nav inHeader flags", () => {
   const areas = buildAreas({ isEnterprise: true, isAdminUser: true, isGlobalAdmin: true });
@@ -20,5 +20,18 @@ describe("buildAreas — top-nav inHeader flags", () => {
 
   it("settings area has inHeader: false (sanity check)", () => {
     expect(byId["settings"].inHeader).toBe(false);
+  });
+
+  it("keeps both workspace settings and social accounts reachable from the settings area", () => {
+    expect(byId["settings"].items.map((item) => item.href)).toContain("/app/settings");
+    expect(byId["settings"].items.map((item) => item.href)).toContain("/app/marketing/social-accounts");
+  });
+
+  it.each([
+    ["/app/settings", "settings"],
+    ["/app/settings/integrations", "settings"],
+    ["/app/marketing/social-accounts", "settings"],
+  ] as const)("classifies %s under the settings area", (path, area) => {
+    expect(getActiveAreaId(path)).toBe(area);
   });
 });
