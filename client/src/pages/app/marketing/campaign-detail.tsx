@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTabMarketId } from "@/lib/tabContext";
-import { useParams, useLocation, useSearch } from "wouter";
+import { Link, useParams, useLocation, useSearch } from "wouter";
+import { itemDeepLinkHref } from "@/lib/marketing-deep-links";
 import {
   Share2,
   Sparkles,
@@ -3114,17 +3115,17 @@ export default function CampaignDetailPage() {
                               <><Share2 className="w-3 h-3" />Generate posts</>
                             )}
                           </Button>
-                          {contentPlan?.calendar && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5"
-                              onClick={() => navigate(`/app/marketing/editorial-calendar?campaignId=${id}`)}
-                              data-testid={`button-open-brief-${b.id}`}
-                            >
-                              Open in Content Calendar <ExternalLink className="w-3 h-3" />
-                            </Button>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            asChild
+                            data-testid={`button-open-brief-${b.id}`}
+                          >
+                            <Link href={itemDeepLinkHref({ itemType: "brief", itemId: b.id, campaignId: id })!}>
+                              {b.contentAssetId ? "View / edit draft" : "Open brief"} <ExternalLink className="w-3 h-3" />
+                            </Link>
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

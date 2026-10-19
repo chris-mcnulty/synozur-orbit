@@ -129,6 +129,13 @@ describe("target pages still read their deep-link params", () => {
   const read = (file: string) =>
     readFileSync(path.join(pagesDir, file), "utf8");
 
+  it("campaign draft actions link to the exact brief, not just the campaign list", () => {
+    const source = read("campaign-detail.tsx");
+    expect(source).toContain('itemDeepLinkHref({ itemType: "brief", itemId: b.id, campaignId: id })');
+    expect(source).toContain('b.contentAssetId ? "View / edit draft" : "Open brief"');
+    expect(source).not.toContain('navigate(`/app/marketing/editorial-calendar?campaignId=${id}`)');
+  });
+
   it("editorial-calendar passes paramName: \"brief\" to useDeepLinkFocus and reads ?campaignId=", () => {
     const src = read("editorial-calendar.tsx");
     // The ?brief= param is read inside useDeepLinkFocus via the paramName option.
