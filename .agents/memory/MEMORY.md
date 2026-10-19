@@ -87,3 +87,4 @@
 - [Explicit booth confirmation](event-booth-confirmation.md) — event attendance or speaking never implies a booth; event-specific confirmation overrides generic marketing context.
 - [Outreach recovery safety](outreach-recovery-safety.md) — historical restores must hold unsent messages, cadence, and consent; restoring records never authorizes old sends.
 - [Competitor suggestion relevance](competitor-suggestion-relevance.md) — CRM deals do not establish competition; recommendations need active-market relevance.
+- [Publishing Bundle diagnostics](publishing-bundle-diagnostics.md) — a Bundle-stage attempt may be absent from build history; ask for the UI stage before treating older successful builds as current.

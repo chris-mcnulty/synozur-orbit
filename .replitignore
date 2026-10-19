@@ -1,1 +1,13 @@
 /generated-artifacts/
+
+# Local backups and recovery data must not ship with the application.
+/backups/
+/recovery-private/
+/*_production_database_dump_*.sql
+/*_production_database_dump_*.dump
+
+# Regenerable development caches, workspace state, and test output.
+/.cache/
+/.local/state/
+/test-results/
+/playwright-report/
