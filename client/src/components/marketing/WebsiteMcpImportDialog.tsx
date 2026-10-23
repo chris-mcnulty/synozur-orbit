@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import EventWebsiteImportDialog from "@/components/marketing/EventWebsiteImportDialog";
+import { apiRequest } from "@/lib/queryClient";
+import { getTabMarketId } from "@/lib/tabContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -182,6 +185,7 @@ export default function WebsiteMcpImportDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<ContentKind | null>(null);
+  const [eventImportOpen, setEventImportOpen] = useState(false);
 
   const [selectedPostIds,    setSelectedPostIds]    = useState<Set<string>>(new Set());
   const [selectedEventIds,   setSelectedEventIds]   = useState<Set<string>>(new Set());
@@ -192,6 +196,7 @@ export default function WebsiteMcpImportDialog({
 
   useEffect(() => {
     if (open) {
+      setEventImportOpen(false);
       setKind(null);
       setSelectedPostIds(new Set());
       setSelectedEventIds(new Set());
@@ -202,21 +207,19 @@ export default function WebsiteMcpImportDialog({
     }
   }, [open]);
 
-  const { data: websiteStatus } = useQuery<{ connected: boolean; lastError?: string | null; lastUsedAt?: string | null }>({
-    queryKey: ["/api/integrations/website/status"],
+  const { data: websiteStatus, error: websiteStatusError } = useQuery<{ connected: boolean; lastError?: string | null; lastUsedAt?: string | null }>({
+    queryKey: ["/api/integrations/website/status", getTabMarketId()],
     queryFn: async () => {
-      const r = await fetch("/api/integrations/website/status", { credentials: "include" });
-      return r.ok ? r.json() : { connected: false };
+      return (await apiRequest("GET", "/api/integrations/website/status")).json();
     },
     enabled: open,
     staleTime: 30_000,
   });
 
   const { data: candidates, isLoading, error } = useQuery<Candidates>({
-    queryKey: ["/api/mcp-website/candidates", kind],
+    queryKey: ["/api/mcp-website/candidates", getTabMarketId(), kind],
     queryFn: async () => {
-      const r = await fetch(`/api/mcp-website/candidates?kind=${kind}`, { credentials: "include" });
-      if (!r.ok) throw new Error((await r.json()).error || "Failed to load website content");
+      const r = await apiRequest("GET", `/api/mcp-website/candidates?kind=${kind}`);
       return r.json();
     },
     enabled: open && kind !== null,
@@ -406,7 +409,8 @@ export default function WebsiteMcpImportDialog({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!importMutation.isPending) onOpenChange(v); }}>
+    <>
+    <Dialog open={open && !eventImportOpen} onOpenChange={v => { if (!importMutation.isPending) onOpenChange(v); }}>
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle>Import from website</DialogTitle>
@@ -416,6 +420,16 @@ export default function WebsiteMcpImportDialog({
               : "Select the items you want to bring into Orbit. Items already in the library are marked — selecting them will update the existing record."}
           </DialogDescription>
         </DialogHeader>
+        {websiteStatusError && <p role="alert" className="px-6 py-2 text-sm text-destructive">Website connection check failed: {websiteStatusError.message}</p>}
+        {kind === "events" && (
+          <div className="mx-6 my-3 rounded-md border bg-muted/30 p-3 space-y-2">
+            <p className="text-sm font-medium">List import: event details only</p>
+            <p className="text-xs text-muted-foreground">Selecting events below does not import their schedules. To import an event with its sessions, preview it by URL or slug instead.</p>
+            <Button variant="outline" size="sm" className="h-auto whitespace-normal text-left" disabled={importMutation.isPending} onClick={() => setEventImportOpen(true)}>
+              Import event & schedule by URL
+            </Button>
+          </div>
+        )}
 
         {/* ── Step 1: kind picker ─────────────────────────────────────────── */}
         {kind === null && (
@@ -691,7 +705,7 @@ export default function WebsiteMcpImportDialog({
                     ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Importing…</>
                     : confirmingUpdates && totalDuplicates > 0
                       ? "Confirm import"
-                      : `Import ${totalSelected > 0 ? totalSelected : ""} selected`}
+                      : kind === "events" ? `Import ${totalSelected || ""} selected (details only)` : `Import ${totalSelected > 0 ? totalSelected : ""} selected`}
                 </Button>
               </div>
             </div>
@@ -699,5 +713,7 @@ export default function WebsiteMcpImportDialog({
         )}
       </DialogContent>
     </Dialog>
+    <EventWebsiteImportDialog open={open && eventImportOpen} onOpenChange={setEventImportOpen} onImported={onImported} />
+    </>
   );
 }

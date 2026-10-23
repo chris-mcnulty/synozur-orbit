@@ -3567,6 +3567,8 @@ export const conferences = pgTable("conferences", {
   // because campaigns is declared later. NULL for standalone conferences.
   campaignId: varchar("campaign_id").references((): AnyPgColumn => campaigns.id, { onDelete: "set null" }),
   name: text("name").notNull(),
+  // Namespaced website origin + source ID; retained across title/URL changes.
+  websiteEventId: text("website_event_id"),
   description: text("description"),
   location: text("location"),
   website: text("website"),
@@ -3618,6 +3620,7 @@ export const conferenceSessions = pgTable("conference_sessions", {
   conferenceId: varchar("conference_id").notNull().references(() => conferences.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   title: text("title").notNull(),
+  websiteSessionId: text("website_session_id"),
   // Legacy single-speaker display string, kept in sync with `speakers` (joined names).
   speaker: text("speaker"),
   // Structured multi-speaker list; each may be flagged as our own staff.

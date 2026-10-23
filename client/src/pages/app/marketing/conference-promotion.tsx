@@ -1,4 +1,5 @@
 import { useState } from "react";
+import EventWebsiteImportDialog from "@/components/marketing/EventWebsiteImportDialog";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,7 @@ export default function ConferencePromotionPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [websiteImportOpen, setWebsiteImportOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [filterCampaignLinked, setFilterCampaignLinked] = useState(false);
 
@@ -134,7 +136,7 @@ export default function ConferencePromotionPage() {
   return (
     <AppLayout>
       <div className="p-6 max-w-6xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Ticket className="w-6 h-6" /> Event Promotion
@@ -144,6 +146,10 @@ export default function ConferencePromotionPage() {
               Generate 2-3 copy variations per post and schedule them across your promotion window.
             </p>
           </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+          <Button variant="outline" onClick={() => setWebsiteImportOpen(true)} data-testid="button-import-event-website">
+            Import from website
+          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button data-testid="button-new-conference">
@@ -295,7 +301,9 @@ export default function ConferencePromotionPage() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
+        <EventWebsiteImportDialog open={websiteImportOpen} onOpenChange={setWebsiteImportOpen} />
 
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>

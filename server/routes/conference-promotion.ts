@@ -45,6 +45,7 @@ import {
 import { buildPostsCsv } from "../services/posts-csv-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
 import { registerEventVisualAsset, tagEventVisualAsset } from "../services/event-visual-assets";
+import { fetchWebsiteEvent, importWebsiteEvent, WebsiteEventImportError } from "../services/website-event-import";
 
 const FEATURE = "conferencePromotion";
 
@@ -126,6 +127,32 @@ function cleanSessionType(v: unknown): string | null {
 }
 
 export function registerConferencePromotionRoutes(app: Express) {
+  // Register before /:id so "website-preview" is not treated as an event ID.
+  app.get("/api/conferences/website-preview", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const { event } = await fetchWebsiteEvent(ctx.tenantDomain, req.query.source);
+      res.json({ event });
+    } catch (error) {
+      res.status(error instanceof WebsiteEventImportError ? error.status : 502).json({
+        error: error instanceof WebsiteEventImportError ? error.message : "Could not fetch the website event. Check the website connection and event URL.",
+      });
+    }
+  });
+  app.post("/api/conferences/import-website", async (req, res) => {
+    if (!(await guardFeature(req, res, FEATURE))) return;
+    try {
+      const ctx = await getRequestContext(req);
+      // Fetch trusted content again; never import client-supplied session fields.
+      const { event, origin } = await fetchWebsiteEvent(ctx.tenantDomain, req.body?.source);
+      res.json(await importWebsiteEvent({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId }, event, origin));
+    } catch (error) {
+      res.status(error instanceof WebsiteEventImportError ? error.status : 502).json({
+        error: error instanceof WebsiteEventImportError ? error.message : "Could not import the website event. No event or session changes were saved.",
+      });
+    }
+  });
   // Raw internal paths must be an editor's recent upload or an in-scope
   // registered asset. Absolute URLs to our storage routes cannot bypass this.
   async function validateInputUrl(req: any, ctx: any, conf: any, raw: unknown): Promise<string> {
