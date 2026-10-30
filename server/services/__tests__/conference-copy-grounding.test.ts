@@ -4,7 +4,7 @@ import type { Conference, ConferenceSession } from "@shared/schema";
 const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
 vi.mock("../ai-provider", () => ({ completeForFeature: complete }));
 
-import { generateCopyVariants, hasUnconfirmedBoothClaim } from "../conference-promotion-service";
+import { generateCopyVariants, hasInventedMainEventClaim, hasUnconfirmedBoothClaim } from "../conference-promotion-service";
 
 const conf = {
   name: "North America Collaboration Summit",
@@ -90,5 +90,69 @@ describe("event booth claims", () => {
     });
     expect(copies.every(copy => copy.includes("https://example.com/register"))).toBe(true);
     expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows complete saved historical facts without treating them as a new schedule", async () => {
+    const history = 'At TribalNet, our breakout session covered AI purchasing. The speakers discussed contract terms.';
+    complete.mockResolvedValue({ text: JSON.stringify([
+      `${history}\nRegister for the follow-up roundtable.`,
+      "Explore AI governance at the roundtable.",
+    ]) });
+    const copies = await generateCopyVariants({
+      ...options, mainEventOnly: true, conf: { ...conf, thematicBrief: history },
+    });
+    expect(copies[0]).toContain(history);
+    expect(complete).toHaveBeenCalledTimes(1);
+    const prompt = complete.mock.calls[0][1];
+    expect(prompt).toContain("Historical sessions or presenters");
+    expect(prompt).not.toContain("Invite attendees to the supplied sessions or to connect");
+  });
+
+  it("does not authorize invented claims just because the brief mentions sessions", () => {
+    const history = "At TribalNet, our breakout session covered AI purchasing. The speakers discussed contract terms.";
+    for (const text of [
+      "Join our breakout session tomorrow.",
+      "The speakers include a new keynote presenter.",
+      "We are attending the roundtable.",
+      `${history} Meet us at the venue.`,
+    ]) {
+      expect(hasInventedMainEventClaim(text, history)).toBe(true);
+    }
+    expect(hasInventedMainEventClaim(history, history)).toBe(false);
+    expect(hasInventedMainEventClaim("The speakers discussed contract terms. Join our session.", history)).toBe(true);
+    expect(hasInventedMainEventClaim("We are attending.", "It is not true that we are attending.")).toBe(true);
+  });
+
+  it("uses a targeted main-event correction without offering a team meeting or session", async () => {
+    complete.mockResolvedValueOnce({ text: '["Join our session.", "Hear the speakers."]' })
+      .mockResolvedValueOnce({ text: '["Register for the roundtable.", "Discuss AI governance."]' });
+    await generateCopyVariants({ ...options, mainEventOnly: true });
+    expect(complete.mock.calls[1][1]).toContain("Omit historical sessions and presenters entirely");
+    expect(complete.mock.calls[1][1]).toContain("Invite readers to register");
+    expect(complete.mock.calls[1][1]).not.toContain("Invite attendees to the supplied session.");
+  });
+
+  it("still rejects invented main-event claims after correction", async () => {
+    complete.mockResolvedValue({ text: '["Join our session.", "Hear the speakers."]' });
+    await expect(generateCopyVariants({ ...options, mainEventOnly: true })).rejects.toThrow("No new posts were saved");
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let historical booth mentions override missing booth confirmation", async () => {
+    const history = "Visit our booth.";
+    complete.mockResolvedValue({ text: JSON.stringify([history]) });
+    await expect(generateCopyVariants({
+      ...options, mainEventOnly: true, conf: { ...conf, thematicBrief: history },
+    })).rejects.toThrow("unconfirmed booth");
+  });
+
+  it("keeps retry instructions grounded in the supplied session for session posts", async () => {
+    complete.mockResolvedValueOnce({ text: '["Visit our booth."]' })
+      .mockResolvedValueOnce({ text: JSON.stringify(good) });
+    await generateCopyVariants({
+      ...options, session: { title: "AI contracts" } as ConferenceSession,
+    });
+    expect(complete.mock.calls[1][1]).toContain("Use only the saved event and supplied session facts.");
+    expect(complete.mock.calls[1][1]).not.toContain("using only the main event facts");
   });
 });

@@ -1520,7 +1520,7 @@ export async function generateCopyVariants(opts: {
     conf.startDate ? `Dates: ${formatUtcDate(conf.startDate)}${conf.endDate ? ` – ${formatUtcDate(conf.endDate)}` : ""}` : "",
     conf.website ? `Link: ${conf.website}` : "",
     conf.description ? `Event description: ${conf.description}` : "",
-    conf.thematicBrief ? `Theme/brief: ${conf.thematicBrief}` : "",
+    conf.thematicBrief ? `Theme/brief (may include historical background, not a current event schedule): ${conf.thematicBrief}` : "",
     conf.discountStatement ? `Registration offer (mention verbatim in at least one variation if it fits naturally): ${conf.discountStatement}` : "",
     conf.boothDetails?.trim()
       ? `Confirmed booth details: ${conf.boothDetails.trim()}`
@@ -1544,7 +1544,7 @@ export async function generateCopyVariants(opts: {
       session.url ? `  Session link: ${session.url}` : "",
     );
   } else {
-    contextLines.push(`This is a MAIN EVENT registration promotion. Promote only the saved event and registration link. Do not invent sessions, speakers, attendance, sponsorship, exhibiting, or physical meeting locations. A voice profile supplies tone, not event facts.`);
+    contextLines.push(`This is a MAIN EVENT registration promotion, with no separately confirmed sessions. Promote the saved event and registration link. Historical sessions or presenters in the brief are background, NOT this event's schedule. Prefer the event benefits and topics over that history. If historical session/speaker facts are needed, quote the complete saved factual sentence exactly, preserving its historical framing. Do not invent sessions, speakers, attendance, sponsorship, exhibiting, or physical meeting locations. A voice profile supplies tone, not event facts.`);
   }
 
   const prompt = `You are an expert B2B social media copywriter. Write ${variantCount} DISTINCT variations of a single ${platform} post.
@@ -1562,13 +1562,15 @@ RULES:
 - Keep it authentic and specific to the context above; never invent facts.
 - ${conf.boothDetails?.trim()
     ? "You may mention the confirmed booth using only the supplied details. Never invent a booth number, sponsorship, demo, or giveaway."
-    : 'There is NO confirmed booth. NEVER mention a booth, exhibition stand, exhibitor presence, expo-hall visit, or "stop by our booth". This overrides any booth language in the theme, description, or voice profile. Invite attendees to the supplied sessions or to connect with our team instead; do not invent a meeting room, time, or location.'}
+    : `There is NO confirmed booth. NEVER mention a booth, exhibition stand, exhibitor presence, expo-hall visit, or "stop by our booth". This overrides any booth language in the theme, description, or voice profile. ${session ? "Invite attendees to the supplied session." : "Invite readers to register using the event link; do not invite them to a session or to meet our team."} Do not invent a meeting room, time, or location.`}
 
 Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post text", "second post text"]. No markdown, no commentary.`;
 
+  const groundedContext = [conf.description, conf.thematicBrief].filter(Boolean).join("\n");
+  let correction = "";
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await completeForFeature(AI_FEATURES.MARKETING_TASKS,
-      attempt === 0 ? prompt : `${prompt}\n\nCORRECTION: The previous response claimed unconfirmed booth/exhibitor activity or invented sessions, speakers, or attendance. Rewrite all variations using only the main event facts.`,
+      attempt === 0 ? prompt : `${prompt}\n\nCORRECTION: ${correction} Rewrite all variations. ${session ? "Use only the saved event and supplied session facts." : "Focus on registration, event topics and benefits. Omit historical sessions and presenters entirely on this retry; do not use the words session, speaker or panelist, or claim our team will attend."}`,
       {
         systemPrompt,
         temperature: 0.8,
@@ -1578,17 +1580,34 @@ Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post tex
     const variants = parseCopyVariants(result.text, variantCount);
     const candidates = variants.length > 0 ? variants.slice(0, variantCount) : [result.text.trim()];
     const safeBooth = conf.boothDetails?.trim() || candidates.every((text) => !hasUnconfirmedBoothClaim(text));
-    const safeMainEvent = !opts.mainEventOnly || candidates.every(text => !hasInventedMainEventClaim(text));
+    const safeMainEvent = !opts.mainEventOnly || candidates.every(text => !hasInventedMainEventClaim(text, groundedContext));
     if (safeBooth && safeMainEvent) {
       return opts.mainEventOnly && conf.website
         ? candidates.map(text => text.includes(conf.website!) ? text : `${text}\n\n${conf.website}`) : candidates;
     }
+    correction = [
+      !safeBooth ? "Remove unconfirmed booth/exhibitor claims." : "",
+      !safeMainEvent ? "Remove session, speaker, or attendance claims that are not complete factual sentences from the saved brief." : "",
+    ].filter(Boolean).join(" ");
+    // Log the failed rule, never the generated copy or potentially private brief.
+    console.warn("[Conference] Copy grounding rejected", {
+      conferenceId: conf.id, platform, attempt: attempt + 1,
+      boothClaim: !safeBooth, mainEventClaim: !safeMainEvent,
+    });
   }
   throw new Error("Event copy repeatedly claimed an unconfirmed booth, session, speaker, or attendance. No new posts were saved; retry generation with the saved event details.");
 }
 
-export function hasInventedMainEventClaim(text: string): boolean {
-  return /\b(?:our|the|this|a)\s+(?:breakout\s+|keynote\s+)?session\b|\b(?:speakers?|panelists?)\b|\bwe(?:'re| are| will be|’re)\s+(?:attending|speaking|exhibiting|sponsoring)\b|\b(?:find|meet|visit)\s+us\s+at\b/i.test(text);
+export function hasInventedMainEventClaim(text: string, groundedContext = ""): boolean {
+  // Saved briefs can contain historical sessions/presenters. Permit complete,
+  // verbatim source sentences, not isolated keywords or newly assembled claims.
+  // Sentence boundaries prevent "We are attending." from matching a negated
+  // source sentence such as "It is not true that we are attending."
+  const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim();
+  const sentences = (value: string) => value.match(/[^.!?\n]+(?:[.!?]+|$)/g) ?? [];
+  const saved = new Set(sentences(groundedContext).map(normalize));
+  const ungrounded = sentences(text).filter(sentence => !saved.has(normalize(sentence))).join("\n");
+  return /\b(?:our|the|this|a)\s+(?:breakout\s+|keynote\s+)?session\b|\b(?:speakers?|panelists?)\b|\bwe(?:'re| are| will be|’re)\s+(?:attending|speaking|exhibiting|sponsoring)\b|\b(?:find|meet|visit)\s+us\s+at\b/i.test(ungrounded);
 }
 
 export function hasUnconfirmedBoothClaim(text: string): boolean {
