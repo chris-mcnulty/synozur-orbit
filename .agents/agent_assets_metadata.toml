@@ -63,3 +63,31 @@ mtime_ms = 1790895576358
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/6dbace00-9d18-4733-810e-0da73827b4c3/c3ede1ee-1782-4e86-a94c-b8bf91dd3945"
 storage_version_token = "1790895594392573"
 content_type = "application/octet-stream"
+
+[[outputs]]
+id = "EX4R8Y5HDtHsNY_H3yit3"
+uri = "file://generated-artifacts/orbit-contact-import/orbit-contacts-ready.csv"
+type = "table"
+title = "Orbit-ready contacts — 222 contacts"
+description = "Import this CSV into Marketing → Contacts. Includes only contacts marked Subscribed and valid in the original file, with Orbit-compatible headers."
+logical_id = "a3981ab3-5fa2-4315-b304-0503f136dd18"
+content_hash = "sha256:24042d6206744bd7100009b9b31792bb92491aefc7112ad62ccf6a211b0c3273"
+size = 10837
+mtime_ms = 1793477854589
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/a3981ab3-5fa2-4315-b304-0503f136dd18/7bdef316-d792-4b10-bd89-af510aca636d"
+storage_version_token = "1793477859917084"
+content_type = "text/csv"
+
+[[outputs]]
+id = "uQka4cikdf-ueAbn3eA9H"
+uri = "file://generated-artifacts/orbit-contact-import/contacts-held-for-review-do-not-import.csv"
+type = "table"
+title = "Held for review — 124 contacts"
+description = "Do not import as an email audience. Preserves original fields and adds an exclusion reason for unsubscribed, never-subscribed, unsafe, catch-all, and unvalidated addresses."
+logical_id = "fda55796-7584-4af9-b9c1-91302c1378c1"
+content_hash = "sha256:8eeb6dbe9812b589e3c8233671d9a2a6a91b2e7c343585fbb788c58b1761fba4"
+size = 27923
+mtime_ms = 1793477854590
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/fda55796-7584-4af9-b9c1-91302c1378c1/a32c6fb1-4cef-4d38-963b-74b6ebadb1a0"
+storage_version_token = "1793477860456488"
+content_type = "text/csv"
