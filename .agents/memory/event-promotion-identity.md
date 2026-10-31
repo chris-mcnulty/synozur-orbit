@@ -16,3 +16,9 @@ Event assets must have a persisted `Event` topic tag, not only an association ba
 **Why:** The user explicitly rejected a separate event-image library and approved connecting existing images to Visual Assets while preserving files and post references.
 
 **How to apply:** Register uploads and render outputs as shared assets, retain event/post identities and historical URLs, and support selecting existing library originals. Removing an image from an event pool must not archive the reusable asset for unrelated uses.
+
+Anchor promotion must not silently degrade to text-only posts. Auto-render for an event with no anchor pool should provision branded composites; failed or missing anchor images must block replacement of the existing batch.
+
+**Why:** Events with session graphics but no manually configured anchor pool produced approved anchor posts without images. The user identified this as a broken batch requiring cancellation and regeneration, not an acceptable fallback.
+
+**How to apply:** Apply image readiness to anchors and sessions alike, reuse existing pool choices, and keep regenerated posts in draft until reviewed. A batch reset must preserve published history and avoid mutating sends already claimed by a worker.

@@ -1810,6 +1810,22 @@ async function runGeneration(
   // Oldest-first so slot 0 = the anchor image the user created first
   anchorImages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.id.localeCompare(b.id));
 
+  // New events have no anchor pool rows until a user visits Graphics. Auto-render
+  // must create those rows as well as session rows, not silently emit text-only
+  // anchors. Respect an existing pool (including failed choices) without adding
+  // duplicate defaults on retries.
+  if (generateImages && anchorImages.length === 0) {
+    const count = Math.min(Math.max(conf.anchorPostCount ?? 2, 1), 2);
+    for (let index = 0; index < count; index++) {
+      const [img] = await db.insert(conferenceImages).values({
+        id: randomUUID(), conferenceId, tenantDomain, role: "anchor",
+        source: "logo_composite", name: `Anchor ${index + 1}`,
+        createdBy: options.ownerUserId,
+      }).returning();
+      anchorImages.push(img);
+    }
+  }
+
   // Ensure a session image row exists for every session (default: composite).
   for (const session of sessions) {
     if (!sessionImageBySession.has(session.id)) {
@@ -1885,8 +1901,8 @@ async function runGeneration(
       anchorImages.splice(i, 1);
     }
   }
-  if (!sessions.length && !anchorImages.length) {
-    throw new Error("Add at least one ready event image. Regenerate stale or failed choices in Graphics before generating main-event posts.");
+  if (!anchorImages.length) {
+    throw new Error("Add at least one ready event image for anchor posts. Enable auto-render for a new event, or regenerate stale or failed choices in Graphics before generating posts.");
   }
   for (const img of [...anchorImages, ...sessionImageBySession.values()]) {
     if (!img.fileUrl || img.renderDirty || img.renderError || !isServedPublicImage(img.fileUrl)) {
@@ -1903,8 +1919,7 @@ async function runGeneration(
   // Each anchor slot generates fresh copy but reuses the same image URL so the
   // graphic is shown repeatedly with varied messaging.
   //
-  // When no anchor images exist fall back to the legacy fixed-count behaviour
-  // (conf.anchorPostCount slots, no image attached).
+  // Every anchor slot must have a ready image; there is no text-only fallback.
 
   type AnchorSlot = { img: ConferenceImage; slotIdx: number };
   type SessionSlot = { session: ConferenceSession; slotIdx: number };
@@ -1930,16 +1945,6 @@ async function runGeneration(
     totalSlots = nAnchors;
     for (let a = 0; a < nAnchors; a++) {
       anchorSlots.push({ img: anchorImages[a], slotIdx: a });
-    }
-  } else {
-    // Legacy: fixed anchor count from conf, then sessions
-    const legacyAnchorCount = Math.min(Math.max(conf.anchorPostCount ?? 2, 1), 3);
-    totalSlots = legacyAnchorCount + nSessions;
-    for (let a = 0; a < legacyAnchorCount; a++) {
-      anchorSlots.push({ img: undefined as unknown as ConferenceImage, slotIdx: a });
-    }
-    for (let s = 0; s < nSessions; s++) {
-      sessionSlots.push({ session: sessions[s], slotIdx: legacyAnchorCount + s });
     }
   }
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import EventWebsiteImportDialog from "@/components/marketing/EventWebsiteImportDialog";
+import EventBulkExportDialog from "@/components/marketing/EventBulkExportDialog";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { getTabMarketId } from "@/lib/tabContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange, Megaphone, Filter } from "lucide-react";
+import { Ticket, Plus, ArrowRight, Archive, RotateCcw, CalendarRange, Megaphone, Filter, Download } from "lucide-react";
 
 // Event dates are floating wall-clock dates stored at UTC midnight. Render in
 // UTC so they show exactly as entered, independent of the viewer's timezone.
@@ -70,6 +71,7 @@ export default function ConferencePromotionPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [websiteImportOpen, setWebsiteImportOpen] = useState(false);
+  const [bulkExportOpen, setBulkExportOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [filterCampaignLinked, setFilterCampaignLinked] = useState(false);
 
@@ -147,6 +149,9 @@ export default function ConferencePromotionPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
+          <Button variant="outline" onClick={() => setBulkExportOpen(true)} data-testid="button-export-events">
+            <Download className="w-4 h-4 mr-1" /> Export events
+          </Button>
           <Button variant="outline" onClick={() => setWebsiteImportOpen(true)} data-testid="button-import-event-website">
             Import from website
           </Button>
@@ -304,6 +309,7 @@ export default function ConferencePromotionPage() {
           </div>
         </div>
         <EventWebsiteImportDialog open={websiteImportOpen} onOpenChange={setWebsiteImportOpen} />
+        <EventBulkExportDialog open={bulkExportOpen} onOpenChange={setBulkExportOpen} events={conferences} />
 
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>

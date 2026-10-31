@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import SocialPostEditor from "@/components/marketing/SocialPostEditor";
 import { Badge } from "@/components/ui/badge";
+import { postingQueueStage as queueStage, type PostingQueueStage as Stage } from "@/lib/posting-queue-stage";
 
 // One row per Orbit-managed post, from /api/generated-posts/calendar.
 interface CalendarPost {
@@ -83,21 +84,9 @@ interface FullPost {
   publishNotBefore: string | null;
 }
 
-type Stage = "scheduled" | "failed" | "posted" | "exported" | "missed";
 type QueueFilter = "current" | "all" | Stage;
 
 const CURRENT_STAGES: Stage[] = ["failed", "missed", "scheduled"];
-
-function queueStage(p: CalendarPost): Stage | null {
-  if (p.status === "missed") return "missed";
-  if (p.status === "publish_failed" || p.publishError) return "failed";
-  if (p.publishedAt || p.status === "published") return "posted";
-  if (p.status === "exported" || p.status === "scheduled_external") return "exported";
-  if (p.status === "approved" && p.scheduledDate) {
-    return p.deliveryMode === "csv" ? "exported" : "scheduled";
-  }
-  return null;
-}
 
 const STAGE_META: Record<Stage, { label: string; cls: string; Icon: typeof Zap }> = {
   scheduled: { label: "Orbit-scheduled", cls: "text-emerald-600 dark:text-emerald-400", Icon: Zap },
@@ -105,6 +94,7 @@ const STAGE_META: Record<Stage, { label: string; cls: string; Icon: typeof Zap }
   missed: { label: "Missed — needs review", cls: "text-amber-600 dark:text-amber-400", Icon: Clock },
   posted: { label: "Posted via Orbit", cls: "text-green-600 dark:text-green-400", Icon: CheckCircle2 },
   exported: { label: "Exported to CSV", cls: "text-blue-600 dark:text-blue-400", Icon: FileDown },
+  awaiting_export: { label: "Export only — import not confirmed", cls: "text-blue-600 dark:text-blue-400", Icon: FileDown },
 };
 
 const PLATFORM_META: Record<string, { label: string; glyph: string; bg: string }> = {
@@ -139,6 +129,7 @@ const FILTERS: { key: QueueFilter; label: string }[] = [
   { key: "failed", label: "Failed" },
   { key: "posted", label: "Posted" },
   { key: "exported", label: "Exported" },
+  { key: "awaiting_export", label: "Export only" },
   { key: "all", label: "All in window" },
 ];
 
@@ -347,7 +338,7 @@ export default function QueuePage() {
   }, [filter, posts]);
 
   const counts = useMemo(() => {
-    const c = { current: 0, all: items.length, scheduled: 0, failed: 0, missed: 0, posted: 0, exported: 0 } as Record<string, number>;
+    const c = { current: 0, all: items.length, scheduled: 0, failed: 0, missed: 0, posted: 0, exported: 0, awaiting_export: 0 } as Record<string, number>;
     for (const it of items) c[it.stage]++;
     c.current = CURRENT_STAGES.reduce((total, stage) => total + c[stage], 0);
     return c;

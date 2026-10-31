@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { thumbnailUrl } from "@/components/ui/optimized-thumbnail";
 import { useParams, Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
+import EventBulkExportDialog from "@/components/marketing/EventBulkExportDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -402,7 +403,7 @@ export default function ConferenceDetailPage() {
           </TabsContent>
 
           <TabsContent value="generate" className="pt-4">
-            <GenerateTab conferenceId={conf.id} accounts={accounts} sessions={conf.sessions} />
+            <GenerateTab conferenceId={conf.id} eventName={conf.name} accounts={accounts} sessions={conf.sessions} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1783,10 +1784,12 @@ function ImageSlot({
 
 function GenerateTab({
   conferenceId,
+  eventName,
   accounts,
   sessions,
 }: {
   conferenceId: string;
+  eventName: string;
   accounts: SocialAccount[];
   sessions: Session[];
 }) {
@@ -1795,7 +1798,7 @@ function GenerateTab({
   const [selected, setSelected] = useState<string[]>([]);
   const [generateImages, setGenerateImages] = useState(true);
   const [includePublished, setIncludePublished] = useState(false);
-  const [csvFormat, setCsvFormat] = useState<string>("generic");
+  const [exportOpen, setExportOpen] = useState(false);
   const [polling, setPolling] = useState(false);
   const [filterPlatform, setFilterPlatform] = useState("all");
   const [filterSessionId, setFilterSessionId] = useState("all");
@@ -1862,25 +1865,6 @@ function GenerateTab({
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const exportCsv = useMutation({
-    mutationFn: async () => {
-      const tzOffset = new Date().getTimezoneOffset();
-      const r = await fetch(
-        `/api/conferences/${conferenceId}/export-csv?format=${csvFormat}&tzOffset=${tzOffset}&excludeUndated=false`,
-        { method: "POST", credentials: "include" },
-      );
-      if (!r.ok) throw new Error("Export failed");
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `event-posts-${csvFormat}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-    onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
-  });
-
   const approveGroup = useMutation({
     mutationFn: async ({ postIds, action }: { postIds: string[]; action: "approve" | "csv_only" | "unapprove" | "reject" | "unreject" }) => {
       const r = await fetch(`/api/conferences/${conferenceId}/posts/approve`, {
@@ -1907,7 +1891,7 @@ function GenerateTab({
     },
     onSuccess: (_, vars) => {
       refetchPosts();
-      const label = vars.action === "approve" ? "Approved for auto-publish" : vars.action === "csv_only" ? "Marked as CSV-only" : "Reset to draft";
+      const label = vars.action === "approve" ? "Approved — CSV-only delivery stays unchanged" : vars.action === "csv_only" ? "Approved for CSV-only delivery" : "Reset to draft";
       toast({ title: label });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1957,6 +1941,8 @@ function GenerateTab({
 
   return (
     <div className="space-y-4">
+      <EventBulkExportDialog open={exportOpen} onOpenChange={setExportOpen}
+        events={[{ id: conferenceId, name: eventName, status: "active" }]} />
       {rejectedCount > 0 && (
         <Card className="border-destructive/40" data-testid="rejected-batch-recovery">
           <CardHeader>
@@ -2167,18 +2153,7 @@ function GenerateTab({
             </CardTitle>
             {posts.length > 0 && (
               <div className="flex items-center gap-2">
-                <Select value={csvFormat} onValueChange={setCsvFormat}>
-                  <SelectTrigger className="w-40" data-testid="select-csv-format-event">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="generic">Generic (Copy/Paste)</SelectItem>
-                    <SelectItem value="socialpilot">SocialPilot</SelectItem>
-                    <SelectItem value="hootsuite">Hootsuite</SelectItem>
-                    <SelectItem value="sproutsocial">Sprout Social</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" className="gap-2" onClick={() => exportCsv.mutate()} disabled={exportCsv.isPending} data-testid="button-export-csv-event">
+                <Button variant="outline" className="gap-2" onClick={() => setExportOpen(true)} data-testid="button-export-csv-event">
                   <Download className="w-4 h-4" />Export CSV
                 </Button>
               </div>
@@ -2397,7 +2372,7 @@ function groupPosts(posts: Post[]): PostGroup[] {
     const rejected = g.variants.every((v) => v.status === "rejected");
     const approved = !rejected && g.variants.every((v) => v.status === "approved");
     const csvOnly = !rejected && g.variants.every((v) => v.deliveryMode === "csv");
-    g.approvalState = rejected ? "rejected" : approved ? "approved" : csvOnly ? "csv_only" : "draft";
+    g.approvalState = rejected ? "rejected" : csvOnly ? "csv_only" : approved ? "approved" : "draft";
   }
   return groups.sort((a, b) => {
     if (a.postRole === "anchor" && b.postRole !== "anchor") return -1;

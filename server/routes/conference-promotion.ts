@@ -42,7 +42,8 @@ import {
   ConferenceGraphicError,
   publishConferenceSource,
 } from "../services/conference-promotion-service";
-import { buildPostsCsv } from "../services/posts-csv-export";
+import { exportEventPosts, EventExportError } from "../services/event-post-export";
+import { eventExportBaseUrl, registerEventPostExportRoutes } from "./event-post-export";
 import { storeArtifact } from "../services/artifact-storage-helper";
 import { registerEventVisualAsset, tagEventVisualAsset } from "../services/event-visual-assets";
 import { fetchWebsiteEvent, importWebsiteEvent, WebsiteEventImportError } from "../services/website-event-import";
@@ -127,6 +128,7 @@ function cleanSessionType(v: unknown): string | null {
 }
 
 export function registerConferencePromotionRoutes(app: Express) {
+  registerEventPostExportRoutes(app);
   // Register before /:id so "website-preview" is not treated as an event ID.
   app.get("/api/conferences/website-preview", async (req, res) => {
     if (!(await guardFeature(req, res, FEATURE))) return;
@@ -1062,22 +1064,25 @@ export function registerConferencePromotionRoutes(app: Express) {
       const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!conf) return res.status(404).json({ error: "Conference not found" });
 
-      // action: "approve" → status=approved, deliveryMode=null (eligible for auto-publish)
-      //         "csv_only" → deliveryMode="csv" (excluded from worker)
-      //         "unapprove" → status=draft, deliveryMode=null
+      // Approval never silently changes CSV ownership back to automatic.
+      // action: "approve" → status=approved, deliveryMode unchanged
+      //         "csv_only" → approved + deliveryMode="csv" (excluded from worker)
+      //         "unapprove" → status=draft, deliveryMode unchanged
       const action: string = req.body?.action ?? "approve";
       const platform: string | undefined = req.body?.platform; // filter by platform when set
       const postIds: string[] | undefined = Array.isArray(req.body?.postIds) ? req.body.postIds : undefined;
 
       // "unreject" and "reject" need to touch rejected rows too; other actions skip them.
       const statusGuard = (action === "unreject" || action === "reject")
-        ? notInArray(generatedPosts.status, ["deleted", "posted"])
-        : notInArray(generatedPosts.status, ["deleted", "rejected", "posted"]);
+        ? notInArray(generatedPosts.status, ["deleted", "posted", "published"])
+        : notInArray(generatedPosts.status, ["deleted", "rejected", "posted", "published"]);
 
       const where: any[] = [
         eq(generatedPosts.conferenceId, conf.id),
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
         statusGuard,
+        isNull(generatedPosts.publishedAt),
+        isNull(generatedPosts.publishClaimToken),
       ];
       if (platform) where.push(eq(generatedPosts.platform, platform));
       if (postIds?.length) where.push(inArray(generatedPosts.id, postIds));
@@ -1085,16 +1090,14 @@ export function registerConferencePromotionRoutes(app: Express) {
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (action === "approve") {
         updates.status = "approved";
-        updates.deliveryMode = null;
       } else if (action === "csv_only") {
+        updates.status = "approved";
         updates.deliveryMode = "csv";
       } else if (action === "reject") {
         updates.status = "rejected";
-        updates.deliveryMode = null;
       } else {
         // unapprove / unreject → back to draft
         updates.status = "draft";
-        updates.deliveryMode = null;
       }
 
       await db.update(generatedPosts).set(updates).where(and(...where));
@@ -1114,34 +1117,17 @@ export function registerConferencePromotionRoutes(app: Express) {
       const conf = await loadConference(req.params.id, ctx.tenantDomain, ctx.marketId);
       if (!conf) return res.status(404).json({ error: "Conference not found" });
 
-      const excludeUndated = req.query.excludeUndated !== "false";
-
-      const allPosts = await db
-        .select()
-        .from(generatedPosts)
-        .where(and(
-          eq(generatedPosts.conferenceId, conf.id),
-          eq(generatedPosts.tenantDomain, ctx.tenantDomain),
-          notInArray(generatedPosts.status, ["deleted", "rejected"]),
-        ));
-
-      const nowFilter = new Date();
-      const posts = excludeUndated
-        ? allPosts.filter((p) => p.scheduledDate && new Date(p.scheduledDate) >= nowFilter)
-        : allPosts;
-
       const csvFormat = ((req.query.format as string) || "socialpilot").toLowerCase();
+      if (!["generic", "socialpilot", "hootsuite", "sproutsocial"].includes(csvFormat)) {
+        return res.status(400).json({ error: "Choose a supported CSV format." });
+      }
       const clientTzOffset = parseInt((req.query.tzOffset as string) || "0", 10);
-
-      const proto = req.headers["x-forwarded-proto"] || req.protocol;
-      const host = req.headers["x-forwarded-host"] || req.headers.host;
-      const publicAppUrl = process.env.PUBLIC_APP_URL?.replace(/\/+$/, "");
-      const csv = await buildPostsCsv({
-        posts,
-        tenantDomain: ctx.tenantDomain,
-        format: csvFormat,
-        tzOffset: clientTzOffset,
-        imageBaseUrl: publicAppUrl || (host ? `${proto}://${host}` : undefined),
+      if (!Number.isFinite(clientTzOffset) || Math.abs(clientTzOffset) > 840) {
+        return res.status(400).json({ error: "Invalid export timezone." });
+      }
+      const selection = { conferenceIds: [conf.id] };
+      const { csv, postIds } = await exportEventPosts(ctx, selection, {
+        format: csvFormat, tzOffset: clientTzOffset, imageBaseUrl: eventExportBaseUrl(req),
       });
 
       // WS6: retain the event export in SharePoint (silent fallback to object storage).
@@ -1160,11 +1146,13 @@ export function registerConferencePromotionRoutes(app: Express) {
       }
 
       res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Access-Control-Expose-Headers", "X-Exported-Post-Ids");
+      res.setHeader("X-Exported-Post-Ids", postIds.join(","));
       res.setHeader("Content-Disposition", `attachment; filename="event-${conf.id}-${csvFormat}.csv"`);
       res.send(csv);
     } catch (err: any) {
       console.error("[Conference Export CSV Error]", err?.message);
-      res.status(500).json({ error: "Failed to export event CSV" });
+      res.status(err instanceof EventExportError ? err.status : 500).json({ error: err?.message || "Failed to export event CSV" });
     }
   });
 }

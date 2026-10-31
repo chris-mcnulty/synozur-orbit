@@ -170,6 +170,7 @@ async function acquirePublishClaim(
   postId: string,
   owner: string,
   allowedStatuses: string[],
+  automatic = false,
 ): Promise<PublishClaimResult> {
   const now = new Date();
   const claim: PublishClaim = {
@@ -191,6 +192,9 @@ async function acquirePublishClaim(
         eq(generatedPosts.id, postId),
         inArray(generatedPosts.status, allowedStatuses),
         isNull(generatedPosts.publishClaimToken),
+        // Recheck at claim time: the export flow may have reserved CSV ownership
+        // after this worker loaded its candidate snapshot.
+        ...(automatic ? [or(isNull(generatedPosts.deliveryMode), ne(generatedPosts.deliveryMode, "csv"))] : []),
       ),
     )
     .returning({ id: generatedPosts.id });
@@ -561,6 +565,7 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
         post.id,
         `worker:${process.pid}:${randomUUID()}`,
         ["approved"],
+        true,
       );
       if (claimResult.status === "busy") {
         console.log(`[Marketing Publish Worker] Post ${post.id} is already claimed; skipping.`);

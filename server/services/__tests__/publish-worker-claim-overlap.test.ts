@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const state = vi.hoisted(() => ({
   post: {} as any,
@@ -9,6 +10,7 @@ const state = vi.hoisted(() => ({
   publishCalls: [] as any[],
   resolvePublish: null as null | ((result: any) => void),
   throwOnPublishedUpdate: false,
+  reserveBeforeClaim: false,
 }));
 
 vi.mock("../../db", () => ({
@@ -32,7 +34,7 @@ vi.mock("../../db", () => ({
     },
     update: () => ({
       set: (payload: any) => ({
-        where: () => {
+        where: (filter: any) => {
           state.updates.push(payload);
           if (payload.status === "published" && state.throwOnPublishedUpdate) {
             throw new Error("simulated completion write failure");
@@ -40,8 +42,10 @@ vi.mock("../../db", () => ({
           let result: Array<{ id: string }> = [{ id: state.post.id }];
 
           if (typeof payload.publishClaimToken === "string") {
+            if (state.reserveBeforeClaim) state.post.deliveryMode = "csv";
             // Atomic acquisition: only the first request can set a token.
-            if (state.post.publishClaimToken) {
+            const automaticCsvGuard = new PgDialect().sqlToQuery(filter).params.includes("csv");
+            if (state.post.publishClaimToken || (automaticCsvGuard && state.post.deliveryMode === "csv")) {
               result = [];
             } else {
               Object.assign(state.post, payload);
@@ -157,6 +161,15 @@ beforeEach(() => {
   state.publishCalls = [];
   state.resolvePublish = null;
   state.throwOnPublishedUpdate = false;
+  state.reserveBeforeClaim = false;
+});
+
+it("does not publish a stale candidate transferred to CSV before the worker claim", async () => {
+  state.reserveBeforeClaim = true;
+  await tickMarketingPublishWorker();
+  expect(state.post.deliveryMode).toBe("csv");
+  expect(state.post.publishClaimToken).toBeNull();
+  expect(state.publishCalls).toHaveLength(0);
 });
 
 async function startBlockedWorkerPublish() {

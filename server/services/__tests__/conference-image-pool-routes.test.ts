@@ -67,6 +67,37 @@ describe("event image pool API", () => {
     io.publish.mockResolvedValue({ fileUrl: "/public-objects/copied.png", fileSize: 123 });
   });
 
+  it.each(["reject", "unapprove", "approve", "csv_only"])(
+    "protects published history and in-flight sends during bulk %s",
+    async action => {
+      io.rows.push([io.conf]);
+      const response = await request(app).post("/api/conferences/event/posts/approve").send({
+        action, postIds: ["post"],
+      });
+      expect(response.status).toBe(200);
+      const query = new PgDialect().sqlToQuery(io.filters.at(-1));
+      expect(query.params).toEqual(expect.arrayContaining(["event", "tenant.example", "posted", "published", "post"]));
+      expect(query.sql).toContain('"published_at" is null');
+      expect(query.sql).toContain('"publish_claim_token" is null');
+    },
+  );
+
+  it("does not return CSV posts to automatic delivery when approving or resetting drafts", async () => {
+    for (const action of ["approve", "unapprove", "unreject"]) {
+      io.rows.push([io.conf]);
+      const response = await request(app).post("/api/conferences/event/posts/approve").send({ action, postIds: ["csv-post"] });
+      expect(response.status).toBe(200);
+      expect(io.patches.at(-1)).not.toHaveProperty("deliveryMode");
+    }
+  });
+
+  it("approves CSV-only posts for export without enabling automatic sending", async () => {
+    io.rows.push([io.conf]);
+    const response = await request(app).post("/api/conferences/event/posts/approve").send({ action: "csv_only", postIds: ["draft"] });
+    expect(response.status).toBe(200);
+    expect(io.patches.at(-1)).toMatchObject({ status: "approved", deliveryMode: "csv" });
+  });
+
   it("retains a Brand Library selection through anchor normalization and reload", async () => {
     const asset = { id: "brand", fileUrl: "/public-objects/brand.png", fileType: "image/png", marketId: "market" };
     io.rows.push([io.conf], [asset], [asset], [{ n: 4 }]);
