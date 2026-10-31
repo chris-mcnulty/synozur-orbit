@@ -11,3 +11,11 @@ description: Hard-won rules for SendGrid/HubSpot email HTML — images, tracking
 - **AI email prompt must not generate About/sign-off/footer** — the platform appends the General Information section + compliance footer at send time; otherwise About appears twice.
 - **Header/logo selection:** logo = brand asset with "logo" in name or assetType logo (never "any image"); a brand asset named `*header*` becomes the full-width prebuilt header image via HEADER_RULE in marketing-saturn.ts.
 - **CAN-SPAM:** `tenants.mailing_address` (migration 0079) injected into HTML+text footers; editable in Settings → Branding. Sends are not yet blocked when empty (follow-up task exists).
+
+## HTML export portability
+
+Treat an HTML export as content that will leave Orbit, not as an authenticated in-app preview. Apply image sizing inline so stripping the document head does not restore native-size images. Keep smaller, explicitly sized logos small.
+
+**Why:** The user reported embedded images appearing much too large or missing in HTML exports. A valid-looking preview does not prove that a recipient can fetch its images, and silently returning private URLs makes a failed export look successful.
+
+**How to apply:** Both saved and unsaved exports must prepare images with tenant ownership checks intact. Refuse known-unusable private, temporary, or attachment-only sources rather than silently delivering broken export HTML; never weaken publication ownership checks to make an image appear.

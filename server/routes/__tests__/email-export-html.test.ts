@@ -13,6 +13,7 @@
 import { describe, it, beforeEach, vi, expect } from "vitest";
 import express from "express";
 import request from "supertest";
+import { prepareEmailImages } from "../../services/email-campaign-sender";
 
 // ── Hoisted mock state ────────────────────────────────────────────────────────
 
@@ -183,6 +184,26 @@ function buildApp() {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("GET /api/email/saved/:id/export-html — font injection", () => {
+  it("fails explicitly rather than exporting inaccessible image URLs", async () => {
+    dbQ.push([makeEmailRow("Arial", '<img src="/objects/missing.png">')]);
+    vi.mocked(prepareEmailImages).mockRejectedValueOnce(new Error("Image unavailable"));
+    const res = await request(app).get("/api/email/saved/email-uuid-1/export-html");
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain("embedded image");
+    expect(res.body.html).toBeUndefined();
+  });
+
+  it("prepares unsaved HTML exports with strict tenant-scoped image handling", async () => {
+    const res = await request(app).post("/api/email/prepare-html-images")
+      .send({ htmlBody: '<img src="/public-objects/hero.png">' });
+    expect(res.status).toBe(200);
+    expect(vi.mocked(prepareEmailImages).mock.calls.at(-1)?.[3]).toBe(true);
+  });
+
+  it("rejects invalid unsaved HTML export bodies", async () => {
+    const res = await request(app).post("/api/email/prepare-html-images").send({ htmlBody: null });
+    expect(res.status).toBe(400);
+  });
   let app: express.Express;
 
   beforeEach(() => {

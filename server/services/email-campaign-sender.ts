@@ -20,6 +20,7 @@
 
 import { createHmac, createVerify, randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
+import { constrainEmailImages } from "./email-image-layout";
 import { db } from "../db";
 import { and, eq, inArray, lte, isNotNull, notInArray, sql } from "drizzle-orm";
 import {
@@ -470,6 +471,7 @@ export function enforceMinimumFontSize(html: string, minPx = 16): string {
  * contain @font-face or @import rules for the chosen body font.
  */
 export function wrapResponsiveDocument(html: string, fontHeadCss = ""): string {
+  html = constrainEmailImages(html);
   // Already a full document — just ensure a viewport meta tag is present.
   if (/<!DOCTYPE/i.test(html)) {
     if (!/<meta[^>]*viewport/i.test(html)) {
@@ -518,7 +520,7 @@ export function wrapResponsiveDocument(html: string, fontHeadCss = ""): string {
         max-width:100% !important;
       }
       /* Images fill the column after it is stacked */
-      img { max-width:100% !important; height:auto !important; width:100% !important; }
+      img { max-width:100% !important; height:auto !important; }
       /* Reduce side padding so body text fills narrow screens */
       td[style*="padding:24px 32px"],
       td[style*="padding: 24px 32px"] { padding:16px !important; }
@@ -577,7 +579,8 @@ export function hardenCtaButtons(html: string): string {
  *    bucket under a deterministic `email-images/<original-id>` path (idempotent
  *    across resends) and rewrite to an absolute `/public-objects/...` URL.
  *  - `/public-objects/...` and other relative paths → prefix with baseUrl.
- * Failures are per-image and non-fatal (the src is left as-is, logged).
+ * Send-time failures are per-image and logged; strict exports reject instead
+ * of handing the user an HTML document with known inaccessible images.
  */
 const MAX_PUBLISHED_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -604,15 +607,33 @@ async function isTenantOwnedObjectPath(src: string, tenantDomain: string): Promi
   return !!ba;
 }
 
-export async function prepareEmailImages(html: string, baseUrl: string, tenantDomain?: string): Promise<string> {
+export async function prepareEmailImages(html: string, baseUrl: string, tenantDomain?: string, strict = false): Promise<string> {
   if (!html) return html;
+  html = constrainEmailImages(html);
   const base = baseUrl.replace(/\/$/, "");
-  const SRC_RE = /(<img\b[^>]*\bsrc\s*=\s*)("|')([^"']+)\2/gi;
-  const srcs = new Set<string>();
-  let m: RegExpExecArray | null;
-  while ((m = SRC_RE.exec(html)) !== null) {
-    const src = m[3];
-    if (src.startsWith("/")) srcs.add(src);
+  const IMG_RE = /<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
+  const SRC_RE = /(\ssrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+  const srcs = new Map<string, string>();
+  for (const tag of html.match(IMG_RE) || []) {
+    const match = tag.match(SRC_RE);
+    const src = match && (match[2] ?? match[3] ?? match[4]);
+    if (!src) continue;
+    const decoded = src.replace(/&amp;/gi, "&");
+    if (/^(?:cid:|blob:)/i.test(decoded)) {
+      if (strict) throw new Error("An image uses a temporary or attachment-only URL. Upload it again before exporting.");
+      continue;
+    }
+    if (/^data:/i.test(decoded)) continue;
+    let url: URL;
+    try { url = new URL(decoded, `${base}/`); } catch {
+      if (strict) throw new Error("An email image has an invalid URL. Replace it before exporting.");
+      continue;
+    }
+    if (url.origin === new URL(base).origin) {
+      srcs.set(src, url.pathname.startsWith("/objects/") ? url.pathname : `${url.pathname}${url.search}`);
+    } else if (!/^[a-z][a-z\d+.-]*:/i.test(decoded)) {
+      srcs.set(src, url.href);
+    }
   }
   if (srcs.size === 0) return html;
 
@@ -621,7 +642,8 @@ export async function prepareEmailImages(html: string, baseUrl: string, tenantDo
   );
   const svc = new ObjectStorageService();
   let out = html;
-  for (const src of Array.from(srcs)) {
+  const replacements = new Map<string, string>();
+  for (const [original, src] of srcs) {
     try {
       let publicPath = src;
       if (src.startsWith("/objects/")) {
@@ -629,8 +651,7 @@ export async function prepareEmailImages(html: string, baseUrl: string, tenantDo
         // (referenced by one of its content/brand assets), and only images
         // under a sane size cap.
         if (!tenantDomain || !(await isTenantOwnedObjectPath(src, tenantDomain))) {
-          console.warn(`[Email Sender] Skipping private image not owned by tenant: ${src}`);
-          continue;
+          throw new Error("A private email image is not linked to this tenant's asset library. Add it to Visual Assets or upload it again.");
         }
         // Deterministic public name keyed on the private object id so repeat
         // sends reuse the same public copy.
@@ -643,12 +664,10 @@ export async function prepareEmailImages(html: string, baseUrl: string, tenantDo
           const contentType = String(meta.contentType || "");
           const size = Number(meta.size || 0);
           if (!contentType.startsWith("image/")) {
-            console.warn(`[Email Sender] Skipping non-image object ${src} (${contentType})`);
-            continue;
+            throw new Error("An embedded file is not an image. Replace it before exporting.");
           }
           if (size > MAX_PUBLISHED_IMAGE_BYTES) {
-            console.warn(`[Email Sender] Skipping oversized image ${src} (${size} bytes)`);
-            continue;
+            throw new Error("An embedded image exceeds 10 MB. Upload a smaller image.");
           }
           const [buf] = await file.download();
           const publicPaths = svc.getPublicObjectSearchPaths();
@@ -661,12 +680,17 @@ export async function prepareEmailImages(html: string, baseUrl: string, tenantDo
         }
         publicPath = `/public-objects/${publicName}`;
       }
-      const absolute = `${base}${publicPath}`;
-      out = out.split(`src="${src}"`).join(`src="${absolute}"`).split(`src='${src}'`).join(`src='${absolute}'`);
+      const absolute = /^https?:\/\//i.test(publicPath) ? publicPath : `${base}${publicPath}`;
+      replacements.set(original, absolute);
     } catch (err: any) {
       console.warn(`[Email Sender] Could not prepare image ${src}:`, err?.message || err);
+      if (strict) throw new Error("An embedded image could not be prepared for export. Check that it belongs to this tenant, is an image under 10 MB, and is still available.");
     }
   }
+  out = out.replace(IMG_RE, tag => tag.replace(SRC_RE, (match, prefix, double, single, bare) => {
+    const replacement = replacements.get(double ?? single ?? bare);
+    return replacement ? `${prefix}"${replacement.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"` : match;
+  }));
   return out;
 }
 

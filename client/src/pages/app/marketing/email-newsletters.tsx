@@ -208,6 +208,18 @@ async function fetchSavedEmailExport(id: string): Promise<{ html: string; fragme
   }
 }
 
+async function preparePreviewHtml(htmlBody: string): Promise<string> {
+  const response = await fetch("/api/email/prepare-html-images", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ htmlBody }),
+  });
+  const exported = await response.json();
+  if (!response.ok) throw new Error(exported.error || "Could not prepare images.");
+  return exported.fragment;
+}
+
 /**
  * Faithful email preview: renders the full responsive export (main body +
  * freshly re-rendered sections) in a sandboxed iframe, exactly as recipients
@@ -1528,17 +1540,21 @@ export default function EmailNewslettersPage() {
                     variant="secondary"
                     size="sm"
                     className="h-8 gap-1.5 text-xs shadow-sm"
-                    onClick={() => {
+                    onClick={async () => {
+                      try {
                       const content = previewEmail.platform === "hubspot-marketing"
-                        ? previewEmail.htmlBody
+                        ? await preparePreviewHtml(previewEmail.htmlBody)
                         : (previewEmail.textBody || previewEmail.htmlBody);
-                      navigator.clipboard.writeText(content);
+                      await navigator.clipboard.writeText(content);
                       toast({
                         title: "Copied",
                         description: previewEmail.platform === "hubspot-marketing"
                           ? "HTML copied to clipboard — paste into your email editor"
                           : "Email body copied to clipboard",
                       });
+                      } catch (error) {
+                        toast({ title: "Copy failed", description: error instanceof Error ? error.message : "Could not prepare images.", variant: "destructive" });
+                      }
                     }}
                     data-testid="button-copy-email-body"
                   >
@@ -1550,11 +1566,16 @@ export default function EmailNewslettersPage() {
                       variant="secondary"
                       size="sm"
                       className="h-8 gap-1.5 text-xs shadow-sm"
-                      onClick={() => {
-                        const wixHtml = buildWixHtml(previewEmail.htmlBody, previewEmail.subject);
+                      onClick={async () => {
+                        try {
+                        const body = await preparePreviewHtml(previewEmail.htmlBody);
+                        const wixHtml = buildWixHtml(body, previewEmail.subject);
                         const filename = `${previewEmail.subject.replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/, "").toLowerCase()}-wix.html`;
                         downloadHtmlFile(wixHtml, filename);
                         toast({ title: "Wix Export downloaded", description: "Paste the HTML into a Wix HTML embed widget" });
+                        } catch (error) {
+                          toast({ title: "Export failed", description: error instanceof Error ? error.message : "Could not prepare images.", variant: "destructive" });
+                        }
                       }}
                       data-testid="button-wix-export-preview"
                     >
@@ -2013,7 +2034,7 @@ export default function EmailNewslettersPage() {
                         a.leadImageUrl && (!srcIds?.length || srcIds.includes(a.id))
                       );
                       const insertImageTag = (url: string, alt: string) => {
-                        const tag = `<img src="${url}" alt="${alt.replace(/"/g, "&quot;")}" style="max-width:100%;display:block;margin:8px 0;" />`;
+                        const tag = `<img src="${url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" alt="${alt.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" width="560" style="width:560px;max-width:100%;height:auto;display:block;margin:8px 0;" />`;
                         if (editMode === "visual") {
                           if (editableRef.current) {
                             editableRef.current.focus();

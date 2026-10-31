@@ -5618,6 +5618,21 @@ Structure your response using these exact delimiters:
 
   // Full responsive export (for HubSpot paste): main body + sections wrapped
   // in the same responsive document Orbit uses for its own sends.
+  // Unsaved previews need the same image preparation as saved HTML exports.
+  app.post("/api/email/prepare-html-images", async (req, res) => {
+    if (!await guardFeature(req, res, "emailNewsletters")) return;
+    const ctx = await getRequestContext(req);
+    if (typeof req.body.htmlBody !== "string" || req.body.htmlBody.length > 2_000_000) {
+      return res.status(400).json({ error: "Provide an HTML body under 2 MB." });
+    }
+    try {
+      const fragment = await prepareEmailImages(req.body.htmlBody, `${req.protocol}://${req.get("host")}`, ctx.tenantDomain, true);
+      return res.json({ fragment });
+    } catch {
+      return res.status(422).json({ error: "An embedded image could not be prepared. Check that it belongs to this tenant, is an image under 10 MB, and is still available." });
+    }
+  });
+
   app.get("/api/email/saved/:id/export-html", async (req, res) => {
     if (!await guardFeature(req, res, "emailNewsletters")) return;
     const ctx = await getRequestContext(req);
@@ -5664,9 +5679,10 @@ Structure your response using these exact delimiters:
     // absolutize relative srcs, then harden CTA button backgrounds — same
     // treatment the SendGrid send path applies.
     try {
-      body = await prepareEmailImages(body, exportBaseUrl, ctx.tenantDomain);
+      body = await prepareEmailImages(body, exportBaseUrl, ctx.tenantDomain, true);
     } catch (err) {
-      console.warn("[export-html] image preparation failed; exporting original srcs:", err);
+      console.warn("[export-html] image preparation failed:", err);
+      return res.status(422).json({ error: "An embedded image could not be prepared. Check that it belongs to this tenant, is an image under 10 MB, and is still available." });
     }
     body = hardenCtaButtons(body);
     // Build @font-face / @import CSS for the chosen body font so the full

@@ -273,6 +273,56 @@ describe("prepareEmailImages", () => {
     assert.ok(out.includes(`src="/objects/secret/photo.png"`), `got: ${out}`);
   });
 
+  it("rejects an unowned private image in strict export mode without publishing it", async () => {
+    resetSelectChain([]);
+    await assert.rejects(
+      prepareEmailImages('<img src="/objects/secret/photo.png">', "https://app.example.com", "other-tenant.com", true),
+      /could not be prepared/,
+    );
+    assert.equal(mockFileSave.mock.calls.length, 0);
+  });
+
+  it("rewrites spaced, uppercase, single-quoted and unquoted src attributes", async () => {
+    const html = `<IMG SRC = '/public-objects/one.png'><img src=/public-objects/two.png>`;
+    const out = await prepareEmailImages(html, "https://app.example.com", "tenant.com", true);
+    assert.ok(out.includes('SRC = "https://app.example.com/public-objects/one.png"'));
+    assert.ok(out.includes('src="https://app.example.com/public-objects/two.png"'));
+  });
+
+  it("publishes owned absolute same-origin private URLs, including query strings", async () => {
+    resetSelectChain([{ id: "owned" }]);
+    mockSearchPublicObject.mockResolvedValue(null);
+    mockFileWith({ contentType: "image/png", size: 50_000 });
+    const out = await prepareEmailImages('<img src="https://app.example.com/objects/logo/brand.png?v=1">', "https://app.example.com", "tenant.com", true);
+    assert.ok(out.includes('src="https://app.example.com/public-objects/email-images/logo_brand.png"'));
+  });
+
+  it("does not rewrite third-party absolute images or data sources", async () => {
+    const out = await prepareEmailImages('<img src="https://cdn.example.com/hero.jpg"><img src="data:image/png;base64,abc">', "https://app.example.com", "tenant.com", true);
+    assert.ok(out.includes('src="https://cdn.example.com/hero.jpg"'));
+    assert.ok(out.includes('src="data:image/png;base64,abc"'));
+    assert.equal(mockGetObjectEntityFile.mock.calls.length, 0);
+  });
+
+  it("rejects temporary and attachment-only image URLs when exporting", async () => {
+    for (const src of ["blob:https://app.example.com/temp", "cid:attachment-1"]) {
+      await assert.rejects(prepareEmailImages(`<img src="${src}">`, "https://app.example.com", "tenant.com", true), /Upload it again/);
+    }
+  });
+
+  it("rejects oversized and non-image private files in strict export mode", async () => {
+    for (const metadata of [
+      { contentType: "image/jpeg", size: 11 * 1024 * 1024 },
+      { contentType: "application/pdf", size: 1000 },
+    ]) {
+      resetSelectChain([{ id: "owned" }]);
+      mockSearchPublicObject.mockResolvedValue(null);
+      mockFileWith(metadata);
+      await assert.rejects(prepareEmailImages('<img src="/objects/invalid">', "https://app.example.com", "tenant.com", true), /could not be prepared/);
+    }
+    assert.equal(mockFileSave.mock.calls.length, 0);
+  });
+
   it("leaves /objects/ path unchanged when tenantDomain is not provided", async () => {
     const html = `<img src="/objects/some/image.png">`;
     const out = await prepareEmailImages(html, "https://app.example.com");
