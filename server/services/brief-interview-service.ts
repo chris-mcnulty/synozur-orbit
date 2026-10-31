@@ -1,3 +1,4 @@
+import { INSTAGRAM_EDITORIAL_GUIDE, socialCaptionForDelivery } from "./social-editorial-policy";
 /**
  * Content Interview Service — turn interview answers into 5-10 format-agnostic
  * concept briefs, each with an honest voice/topic fit assessment so curation
@@ -154,7 +155,7 @@ const PLATFORM_GUIDANCE: Record<string, string> = {
   facebook:
     "Facebook: warm and conversational, 2-3 sentences, a relatable framing, a light CTA. No hashtags.",
   instagram:
-    "Instagram: a vivid, visual-first caption, 1-2 sentences plus a short follow-on line. Evocative but concrete. No hashtags.",
+    INSTAGRAM_EDITORIAL_GUIDE + " No hashtags.",
 };
 
 export interface InterviewSocialConcept {
@@ -234,7 +235,7 @@ export async function generateInterviewSocialPosts(params: {
     .map((item): GeneratedSocialPostCopy | null => {
       const platform = coercePlatform(item?.platform);
       if (!wanted.has(platform)) return null;
-      const content = clampForPlatform(applySynozurVoice(String(item?.content ?? "").trim()), platform);
+      const content = socialCaptionForDelivery(platform, clampForPlatform(applySynozurVoice(String(item?.content ?? "").trim()), platform));
       if (!content || findSocialPostSlopViolations(content).length > 0) return null;
       return { platform, content };
     })

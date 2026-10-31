@@ -1,3 +1,4 @@
+import { INSTAGRAM_EDITORIAL_GUIDE, socialCaptionForDelivery } from "./social-editorial-policy";
 /**
  * Conference Social Promotion service.
  *
@@ -1465,7 +1466,7 @@ export function buildScheduleSlots(opts: {
 const PLATFORM_GUIDE: Record<string, string> = {
   linkedin: "LinkedIn: professional, 120-220 words, a clear hook and a soft CTA. No inline hashtags.",
   twitter: "X/Twitter: under 240 characters so a link + hashtags still fit. Punchy and direct.",
-  instagram: "Instagram: warm and visual, 80-150 words, light emoji use, strong opening line.",
+  instagram: INSTAGRAM_EDITORIAL_GUIDE,
   facebook: "Facebook: friendly and conversational, 80-180 words, encouraging CTA.",
   bluesky: "Bluesky: concise and authentic, under 280 characters, conversational.",
 };
@@ -1582,8 +1583,9 @@ Return ONLY a valid JSON array of ${variantCount} strings, e.g. ["first post tex
     const safeBooth = conf.boothDetails?.trim() || candidates.every((text) => !hasUnconfirmedBoothClaim(text));
     const safeMainEvent = !opts.mainEventOnly || candidates.every(text => !hasInventedMainEventClaim(text, groundedContext));
     if (safeBooth && safeMainEvent) {
-      return opts.mainEventOnly && conf.website
+      const withLinks = opts.mainEventOnly && conf.website && platform !== "instagram"
         ? candidates.map(text => text.includes(conf.website!) ? text : `${text}\n\n${conf.website}`) : candidates;
+      return withLinks.map(text => socialCaptionForDelivery(platform, text));
     }
     correction = [
       !safeBooth ? "Remove unconfirmed booth/exhibitor claims." : "",

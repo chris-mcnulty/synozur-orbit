@@ -1,3 +1,4 @@
+import { instagramCaption } from "../social-editorial-policy";
 /**
  * InstagramPublisher — multi-tenant credentials refactor
  *
@@ -256,7 +257,10 @@ export class InstagramPublisher implements SocialPublisher {
       };
     }
 
-    const text = post.editedContent || post.content;
+    const text = instagramCaption(post.editedContent ?? post.content);
+    if (!text) {
+      return { success: false, errorCode: "empty_caption", errorMessage: "Instagram caption is empty after removing non-clickable links. Add a caption before publishing." };
+    }
     const hashtags = (post.hashtags as string[] | null) ?? [];
     const caption = hashtags.length > 0
       ? `${text}\n\n${hashtags.map(h => h.startsWith("#") ? h : `#${h}`).join(" ")}`

@@ -1,3 +1,4 @@
+import { socialCaptionForDelivery } from "./social-editorial-policy";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { socialAccounts, brandAssets, contentAssets } from "@shared/schema";
@@ -361,7 +362,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       for (const post of sortedPosts) {
         let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
         if (sd && sd < now) sd = null;
-        const baseContent = (post.editedContent ?? post.content);
+        const baseContent = socialCaptionForDelivery(post.platform, post.editedContent ?? post.content);
         const hashtagLine = buildHashtagLine(post.hashtags as string[]);
         const fullContent = isTwitterPost(post)
           ? buildTwitterContent(baseContent, post.hashtags as string[], post.sourceUrl || "")
@@ -379,7 +380,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       for (const post of sortedPosts) {
         let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
         if (sd && sd < now) sd = null;
-        const baseContent = (post.editedContent ?? post.content);
+        const baseContent = socialCaptionForDelivery(post.platform, post.editedContent ?? post.content);
         const hashtagLine = buildHashtagLine(post.hashtags as string[]);
         const fullContent = isTwitterPost(post)
           ? buildTwitterContent(baseContent, post.hashtags as string[])
@@ -396,7 +397,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       for (const post of sortedPosts) {
         let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
         if (sd && sd < now) sd = null;
-        const baseContent = (post.editedContent ?? post.content);
+        const baseContent = socialCaptionForDelivery(post.platform, post.editedContent ?? post.content);
         const hashtagLine = buildHashtagLine(post.hashtags as string[]);
         const fullContent = isTwitterPost(post)
           ? buildTwitterContent(baseContent, post.hashtags as string[])
@@ -419,8 +420,8 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
       for (const post of sortedPosts) {
         let sd = post.scheduledDate ? new Date(post.scheduledDate) : null;
         if (sd && sd < now) sd = null;
-        const baseContent = (post.editedContent ?? post.content);
-        const sourceUrl = post.sourceUrl || "";
+        const baseContent = socialCaptionForDelivery(post.platform, post.editedContent ?? post.content);
+        const sourceUrl = post.platform === "instagram" ? "" : post.sourceUrl || "";
 
         let fullContent: string;
         let firstComment: string;
@@ -444,7 +445,7 @@ export async function buildPostsCsv(opts: BuildPostsCsvOptions): Promise<string>
         // no # prefix). Keep populated so SP's library filtering still works.
         const tags = buildTagsSemicolon(post.hashtags as string[]);
 
-        const linkUrlValue = post.linkUrl || "";
+        const linkUrlValue = post.platform === "instagram" ? "" : post.linkUrl || "";
         const linkCsvValue = linkUrlValue
           ? (post.linkLabel ? `${post.linkLabel} | ${linkUrlValue}` : linkUrlValue)
           : "";

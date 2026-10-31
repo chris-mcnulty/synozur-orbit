@@ -1,3 +1,4 @@
+import { INSTAGRAM_EDITORIAL_GUIDE, accountEditorialGuide, isCascadiaAccount, CASCADIA_CONTENT_ANGLES, socialCaptionForDelivery } from "../services/social-editorial-policy";
 /**
  * Saturn Marketing Integration Routes
  *
@@ -4130,7 +4131,9 @@ RULES:
 3. Suggest relevant hashtags.
 4. ${account.platform === "twitter" ? "Twitter/X has a HARD 280 CHARACTER LIMIT for content + hashtags combined. Keep post body under 180 characters to leave room for hashtags and URL. One punchy sentence + URL is ideal." : "Follow platform guidelines."}
 5. Do NOT add placeholder text or instructions.
-6. Include any URL ONCE only — never duplicate it in the post.
+6. ${account.platform === "instagram" ? "No URLs in the caption; keep source links out of Instagram copy." : "Include any URL ONCE only — never duplicate it in the post."}
+
+${accountEditorialGuide(account.accountName)}
 
 ${groundingContext ? `## Brand Guidelines\n${groundingContext}\n\n` : ""}## Platform Guidelines
 ${platformGuide}
@@ -6604,7 +6607,7 @@ ${anglesBlock}${avoidBlock}
 
 GENERAL RULES:
 1. ${pool.thematic ? "The brief below is the creative starting point — rewrite and adapt it into compelling social copy. Do NOT copy it verbatim. Bring your own angle, voice, and structure." : "Strip and ignore all non-editorial material from the source content: copyright notices, cookie banners, navigation menus, headers/footers, newsletter signup forms, boilerplate \"About Us\", social sharing button text, comment sections. Only use the actual article substance and key messages."}
-2. ${pool.sourceUrl ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${pool.sourceUrl}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below."}
+2. ${account.platform === "instagram" ? "Do not include any URL or tracking redirect in the caption. Source URLs below are references only, not text to publish." : pool.sourceUrl ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${pool.sourceUrl}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below."}
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
 5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. Write ONE complete, concise sentence. The content field, including its source URL, must be 190 characters MAX. Return only 2-3 short hashtags so content + hashtags stays within 280. Never end on a partial clause and NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
@@ -6618,8 +6621,11 @@ ${campaignMissionContext ? `${campaignMissionContext}\n\n` : ""}${briefsContext 
 ## Platform Guidelines
 ${getPlatformGuide(account.platform)}
 
+${accountEditorialGuide(account.accountName)}
+Only use an assigned angle when supported by the source. If it requires missing statistics, stories, or facts, use a concrete source-supported observation instead.
+
 Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSize} object${batchSize > 1 ? "s" : ""}, each with:
-- "content": string (the post body — include the source URL naturally if one was provided, no inline hashtags)
+- "content": string (the post body — ${account.platform === "instagram" ? "no URLs or tracking links" : "include the source URL naturally if one was provided"}, no inline hashtags)
 - "hashtags": string[] (${account.platform === "twitter" ? "2-3 short, relevant hashtags" : "3-5 relevant hashtags"}, each a single camelCase word, no # prefix)
 - "imagePrompt": string (a suggested image description for this post)`;
     };
@@ -6686,6 +6692,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
     for (const acct of platformTargets) {
       ensureNotAborted();
       account = acct;
+      const contentAngles = isCascadiaAccount(account.accountName) ? CASCADIA_CONTENT_ANGLES : CONTENT_ANGLES;
       platformIdx++;
       const platformPct = 15 + Math.round((platformIdx - 1) / platformTargets.length * 75);
       reportProgress?.({
@@ -6717,7 +6724,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
       if (onePostPerAsset) {
         for (const pool of contextPools) {
           if (cleanedVariantsForAccount.length >= effectiveTargetVariantsPerPlatform) break;
-          const angle = CONTENT_ANGLES[angleIndex % CONTENT_ANGLES.length];
+          const angle = contentAngles[angleIndex % contentAngles.length];
           angleIndex++;
           const prompt = buildGenerationPrompt(pool, [angle], usedOpenings);
           let result;
@@ -6758,9 +6765,9 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
         // Pick the next N angles (with wrap-around) and the pool to ground this batch in
         const batchAngles: { name: string; directive: string }[] = [];
         for (let i = 0; i < batchSize; i++) {
-          batchAngles.push(CONTENT_ANGLES[(angleIndex + i) % CONTENT_ANGLES.length]);
+          batchAngles.push(contentAngles[(angleIndex + i) % contentAngles.length]);
         }
-        angleIndex = (angleIndex + batchSize) % CONTENT_ANGLES.length;
+        angleIndex = (angleIndex + batchSize) % contentAngles.length;
         const pool = contextPools[poolIndex % contextPools.length];
         poolIndex++;
 
@@ -7045,7 +7052,7 @@ function getPlatformGuide(platform: string): string {
   const guides: Record<string, string> = {
     linkedin: "Professional tone. 150-300 words. Include a clear value proposition and a call to action. Use line breaks for readability. Include the source URL once as a call-to-action link — never repeat it.",
     twitter: "HARD LIMIT: 280 characters TOTAL for content + hashtags combined. Keep post body under 180 characters to leave room for hashtags and a URL. One punchy sentence + URL. NEVER duplicate the URL. Do NOT write long-form content. Count characters carefully.",
-    instagram: "Engaging and visual. 150-200 words. Use emojis sparingly. Strong opening line. Include the source URL once — never repeat it.",
+    instagram: INSTAGRAM_EDITORIAL_GUIDE,
     facebook: "Friendly and informative. 100-250 words. End with a plain CTA, not a rhetorical question. Include the source URL once — never repeat it.",
   };
   return guides[platform] ?? "Professional and engaging. Clear call to action.";
@@ -7066,6 +7073,7 @@ function deduplicateUrls(text: string): string {
 
 function applyPlatformRules(text: string, platform: string, hashtags?: string[]): { content: string; hashtags: string[] } {
   let tags = hashtags ?? [];
+  text = socialCaptionForDelivery(platform, text);
   text = deduplicateUrls(text);
 
   if (platform === "twitter") {

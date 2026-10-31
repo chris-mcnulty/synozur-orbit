@@ -63,6 +63,19 @@ function makeMap(entries: [string, boolean][]): Map<string, boolean> {
 }
 
 describe("isOrbitDirectPost", () => {
+  it.each(["socialpilot", "generic", "hootsuite", "sproutsocial"])("keeps Instagram caption links out of %s exports without changing saved copy", async format => {
+    const post = {
+      id: "ig-post", platform: "instagram", content: "A quiet detail.\nLearn more: https://example.com/print\nhttps://orbit.example/r/abc",
+      sourceUrl: "https://example.com/print", linkUrl: "https://example.com/shop", hashtags: [],
+      scheduledDate: new Date("2030-01-10T15:00:00Z"),
+    };
+    const csv = await buildPostsCsv({ posts: [post], tenantDomain: "tenant.example", format, tzOffset: 0 });
+    expect(csv).toContain('"A quiet detail."');
+    expect(csv).not.toContain("https://orbit.example/r/abc");
+    expect(csv).not.toContain("https://example.com/shop");
+    if (format !== "generic") expect(csv).not.toContain("https://example.com/print");
+    expect(post.content).toContain("https://orbit.example/r/abc");
+  });
   // ── Explicit CSV override ────────────────────────────────────────────────
   describe("deliveryMode='csv' (explicit override)", () => {
     it("returns false (CSV-eligible) even when account has autoPublish=true", () => {

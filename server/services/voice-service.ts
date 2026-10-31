@@ -1,3 +1,4 @@
+import { INSTAGRAM_EDITORIAL_GUIDE, accountEditorialGuide } from "./social-editorial-policy";
 /**
  * Voice Service
  *
@@ -284,6 +285,9 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
     lines.push(`Additional instructions from the author: ${input.instructions.trim()}`);
   }
 
+  const editorialGuide = accountEditorialGuide(account.accountName);
+  if (editorialGuide) lines.push(editorialGuide);
+  if (platform === "instagram") lines.push(INSTAGRAM_EDITORIAL_GUIDE);
   return lines.join("\n");
 }
 

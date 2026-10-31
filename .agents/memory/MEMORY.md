@@ -1,3 +1,4 @@
+- [Cascadia social editorial direction](cascadia-social-editorial.md) — art-first storytelling, optional sales CTAs, and link-free Instagram captions; separate from Synozur B2B rules.
 - [Compositor font portability](compositor-font-portability.md) — SVG font declarations do not prove raster identity; use outlines, container checks, and independent glyph raster oracles.
 - [Event promotion identity](event-promotion-identity.md) — shared Visual Assets, not a separate event library; webinars need no sessions/logo; image variety must not control post volume.
 // hint: Logic changed on both sides. Requires understanding intent of each change.
