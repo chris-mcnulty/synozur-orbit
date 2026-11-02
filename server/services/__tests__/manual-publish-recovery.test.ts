@@ -65,6 +65,12 @@ import {
   publishPostNow,
 } from "../marketing-publish-worker";
 
+// This suite isolates campaign-account recovery; source resolution is covered
+// by social-post-images and publish-worker-image-errors.
+vi.mock("../social-post-images", () => ({
+  withPublishImage: async (post: any) => post,
+}));
+
 beforeEach(() => {
   const tenantDomain = "recovery.example.com";
   state.selectResults = [

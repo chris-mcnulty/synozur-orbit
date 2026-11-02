@@ -96,6 +96,7 @@ import { captureFoundingSignals } from "../services/founding-signals";
 import { wrapOutboundLinksInText, slugifyForUtm } from "../services/marketing-links-helpers";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { resolveBrandAssetUrl } from "../services/brand-asset-url";
+import { resolveSocialPostImages } from "../services/social-post-images";
 import { guardManualAction, denyReadOnly } from "./helpers";
 import { enqueue } from "../services/job-queue";
 import { buildPostsCsv, isOrbitDirectPost } from "../services/posts-csv-export";
@@ -3485,9 +3486,9 @@ export function registerSaturnMarketingRoutes(app: Express) {
         .where(and(eq(campaigns.id, req.params.id), eq(campaigns.tenantDomain, ctx.tenantDomain)));
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
       const posts = await db.select().from(generatedPosts)
-        .where(eq(generatedPosts.campaignId, campaign.id))
+        .where(and(eq(generatedPosts.campaignId, campaign.id), eq(generatedPosts.tenantDomain, ctx.tenantDomain)))
         .orderBy(generatedPosts.platform, desc(generatedPosts.createdAt));
-      res.json(posts);
+      res.json(await resolveSocialPostImages(posts));
     } catch (err: any) {
       console.error("[Generated Posts List Error]", err.message);
       res.status(500).json({ error: "Failed to load generated posts" });

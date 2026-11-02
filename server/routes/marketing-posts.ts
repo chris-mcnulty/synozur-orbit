@@ -39,6 +39,8 @@ import { generateBrandedPostGraphic } from "../services/conference-promotion-ser
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
 import { guardFeature } from "./helpers";
+import { resolveSocialPostImages } from "../services/social-post-images";
+import { cancelQueuedPosts } from "../services/social-queue-cancel";
 import {
   CampaignAccountLinkError,
   ensureCampaignSocialAccountLink,
@@ -692,6 +694,25 @@ export function registerMarketingPostsRoutes(app: Express) {
     }
   });
 
+  app.post("/api/generated-posts/bulk-cancel", async (req, res) => {
+    if (!await guardFeature(req, res, "socialPosts")) return;
+    try {
+      const ctx = await getRequestContext(req);
+      const ids = req.body?.postIds;
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > 500 ||
+        ids.some(id => typeof id !== "string" || !id.trim() || id.length > 100)) {
+        return res.status(400).json({ error: "Select between 1 and 500 post IDs." });
+      }
+      res.json(await cancelQueuedPosts({
+        postIds: ids, tenantDomain: ctx.tenantDomain,
+        marketId: ctx.marketId ?? null, userId: ctx.userId,
+      }));
+    } catch (err) {
+      console.error("[Queue Cancel Error]", err);
+      res.status(500).json({ error: "Could not cancel posts. No changes were committed." });
+    }
+  });
+
   app.get("/api/generated-posts/calendar", async (req, res) => {
     if (!await guardFeature(req, res, "socialPosts")) return;
     try {
@@ -739,6 +760,7 @@ export function registerMarketingPostsRoutes(app: Express) {
 
       const rows = await db.select({
         id: generatedPosts.id,
+        tenantDomain: generatedPosts.tenantDomain,
         platform: generatedPosts.platform,
         content: generatedPosts.content,
         editedContent: generatedPosts.editedContent,
@@ -748,6 +770,10 @@ export function registerMarketingPostsRoutes(app: Express) {
         socialAccountId: generatedPosts.socialAccountId,
         campaignId: generatedPosts.campaignId,
         overrideImageUrl: generatedPosts.overrideImageUrl,
+        overrideBrandAssetId: generatedPosts.overrideBrandAssetId,
+        sourceAssetId: generatedPosts.sourceAssetId,
+        sourceUrl: generatedPosts.sourceUrl,
+        publishClaimToken: generatedPosts.publishClaimToken,
         accountName: socialAccounts.accountName,
         accountStatus: socialAccounts.status,
         // deliveryMode/publishError power the Orbit posting queue (queue.tsx):
@@ -767,7 +793,8 @@ export function registerMarketingPostsRoutes(app: Express) {
         .where(and(...conds))
         .orderBy(generatedPosts.scheduledDate, desc(generatedPosts.createdAt));
 
-      res.json(rows.map(r => ({
+      const resolvedRows = await resolveSocialPostImages(rows);
+      res.json(resolvedRows.map(r => ({
         ...r,
         // Provide a short preview to avoid sending full bodies in the
         // calendar payload. Full content is fetched via the click-through.
@@ -793,7 +820,8 @@ export function registerMarketingPostsRoutes(app: Express) {
         eq(generatedPosts.tenantDomain, ctx.tenantDomain),
       ));
       if (!post) return res.status(404).json({ error: "Post not found" });
-      res.json(post);
+      const [resolved] = await resolveSocialPostImages([post]);
+      res.json(resolved);
     } catch (err: any) {
       console.error("[Post Detail Error]", err.message);
       res.status(500).json({ error: err.message || "Failed to load post" });

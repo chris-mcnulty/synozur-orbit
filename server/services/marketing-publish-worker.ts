@@ -21,6 +21,7 @@
  */
 
 import { db } from "../db";
+import { resolveSocialPostImages, withPublishImage } from "./social-post-images";
 import { eq, and, lte, gte, isNotNull, or, isNull, sql, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
@@ -650,6 +651,7 @@ export async function tickMarketingPublishWorker(): Promise<{ processed: number;
         const [freshAccount] = await db.select().from(socialAccounts)
           .where(eq(socialAccounts.id, account.id));
         liveAccount = freshAccount ?? account;
+        Object.assign(post, await withPublishImage(post));
         result = await publisher.publish({ account: liveAccount, post });
       } catch (err: any) {
         try {
@@ -964,6 +966,7 @@ export async function publishPostNow(
 
   let result: PublishResult;
   try {
+    Object.assign(post, await withPublishImage(post));
     result = await publisher.publish({ account, post, attemptedBy });
   } catch (err: any) {
     const errorMessage = err?.message || String(err);
@@ -1108,7 +1111,8 @@ export async function preflightImageCheck(): Promise<{ checked: number; flagged:
   let flagged = 0;
   let cleared = 0;
 
-  for (const { post } of rows) {
+  const resolvedPosts = await resolveSocialPostImages(rows.map(row => row.post));
+  for (const post of resolvedPosts) {
     // Collect every image the publish path will need — platform-aware, so
     // preflight validates exactly what the publisher will use.
     const urls: string[] = [];
@@ -1116,7 +1120,7 @@ export async function preflightImageCheck(): Promise<{ checked: number; flagged:
     if (post.platform === "instagram") {
       // Instagram's publisher uses ONLY overrideImageUrl (leadImageUrl is
       // never consulted) and requires one.
-      const u = (post as any).overrideImageUrl ?? null;
+      const u = post.leadImageUrl;
       if (u) urls.push(u);
     } else if (isCarousel && Array.isArray((post as any).carouselSlides)) {
       for (const s of (post as any).carouselSlides as Array<{ imageUrl?: string | null }>) {

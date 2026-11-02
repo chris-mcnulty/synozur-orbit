@@ -299,6 +299,7 @@ interface GeneratedPost {
   generationJobId?: string | null;
   conferenceId?: string | null;
   overrideImageUrl?: string;
+  leadImageUrl?: string | null;
   overrideBrandAssetId?: string;
   sourceUrl?: string;
   scheduledDate?: string;
@@ -2224,26 +2225,9 @@ export default function CampaignDetailPage() {
   };
 
   const getPostImage = (post: GeneratedPost): string | null => {
-    if (post.overrideImageUrl) return post.overrideImageUrl;
-    if (post.overrideBrandAssetId) {
-      const ba = brandAssets.find(b => b.id === post.overrideBrandAssetId);
-      if (ba) return ba.fileUrl || ba.url || null;
-    }
-    if (post.sourceUrl) {
-      const linkedAssetList = campaign?.assets || [];
-      for (const ca of linkedAssetList) {
-        const asset = allAssets.find(a => a.id === ca.assetId);
-        if (asset?.url && asset.url === post.sourceUrl && asset.leadImageUrl) {
-          return asset.leadImageUrl;
-        }
-      }
-    }
-    const firstAsset = campaign?.assets?.[0];
-    if (firstAsset) {
-      const asset = allAssets.find(a => a.id === firstAsset.assetId);
-      if (asset?.leadImageUrl) return asset.leadImageUrl;
-    }
-    return null;
+    // The server and publisher resolve the same tenant-scoped image. Do not
+    // invent a preview-only fallback that won't actually be sent.
+    return post.overrideImageUrl || post.leadImageUrl || null;
   };
 
   // Returns the featured/lead image URL for the article that sourced a post,

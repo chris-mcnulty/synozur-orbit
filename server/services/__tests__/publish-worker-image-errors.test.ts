@@ -18,6 +18,14 @@ const state = vi.hoisted(() => ({
   updates: [] as any[],
   inserts: [] as any[],
   publishResult: { success: true } as any,
+  publishedPosts: [] as any[],
+}));
+
+vi.mock("../social-post-images", () => ({
+  withPublishImage: async (post: any) => ({ ...post, overrideImageUrl: post.overrideImageUrl || post.testSourceImage || null }),
+  resolveSocialPostImages: async (posts: any[]) => posts.map(post => ({
+    ...post, leadImageUrl: post.overrideImageUrl || post.testSourceImage || null,
+  })),
 }));
 
 vi.mock("../../db", () => ({
@@ -86,7 +94,7 @@ vi.mock("../social-publishers", () => ({
   getPublisher: () => ({
     platform: "linkedin",
     supported: true,
-    publish: async () => state.publishResult,
+    publish: async ({ post }: any) => { state.publishedPosts.push({ ...post }); return state.publishResult; },
   }),
 }));
 
@@ -100,6 +108,7 @@ const postUpdate = () =>
   state.updates.find(u => "status" in u && ("publishError" in u || "publishedAt" in u));
 
 beforeEach(() => {
+  state.publishedPosts = [];
   state.updates.length = 0;
   state.inserts.length = 0;
   state.accountRow = {
@@ -144,6 +153,13 @@ const freshTenant = () => {
 };
 
 describe("image-error retry classification", () => {
+  it("passes and snapshots inherited images instead of sending text-only", async () => {
+    freshTenant();
+    state.candidates[0].post.testSourceImage = "/public-objects/source.png";
+    await tickMarketingPublishWorker();
+    expect(state.publishedPosts[0].overrideImageUrl).toBe("/public-objects/source.png");
+    expect(postUpdate().overrideImageUrl).toBe("/public-objects/source.png");
+  });
   it("marks image_not_found as publish_failed immediately (no retry) with imageIssue stamped", async () => {
     freshTenant();
     state.publishResult = {

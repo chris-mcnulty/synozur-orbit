@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getTabMarketId } from "@/lib/tabContext";
+import { getTabMarketId, getTabTenantId } from "@/lib/tabContext";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import {
   Zap,
@@ -31,6 +31,12 @@ import { useToast } from "@/hooks/use-toast";
 import SocialPostEditor from "@/components/marketing/SocialPostEditor";
 import { Badge } from "@/components/ui/badge";
 import { postingQueueStage as queueStage, type PostingQueueStage as Stage } from "@/lib/posting-queue-stage";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // One row per Orbit-managed post, from /api/generated-posts/calendar.
 interface CalendarPost {
@@ -46,6 +52,9 @@ interface CalendarPost {
   campaignName: string | null;
   deliveryMode: string | null;
   publishError: string | null;
+  leadImageUrl: string | null;
+  overrideImageUrl?: string | null;
+  publishClaimToken: string | null;
 }
 
 interface SocialAccount {
@@ -114,6 +123,11 @@ function postTime(p: CalendarPost): Date | null {
   // platform accepts it, publishedAt is the timestamp users need to see.
   const t = p.publishedAt ?? p.scheduledDate;
   return t ? new Date(t) : null;
+}
+
+function isCancellable(post: CalendarPost): boolean {
+  return ["approved", "draft", "missed", "publish_failed"].includes(post.status) &&
+    !post.publishedAt && !post.publishClaimToken;
 }
 
 function dayKey(d: Date) {
@@ -237,10 +251,20 @@ function AccountPausePanel() {
 
 export default function QueuePage() {
   const [filter, setFilter] = useState<QueueFilter>("current");
+  const [campaignFilter, setCampaignFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkCancelOpen, setBulkCancelOpen] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(() => new Set());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editPost, setEditPost] = useState<CalendarPost | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const marketId = getTabMarketId();
+  const tenantId = getTabTenantId();
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [campaignFilter, filter, marketId, tenantId]);
 
   // Deep-link: ?postId=<id> navigates here from the pipeline board and opens
   // that specific post's edit dialog directly — even if it's outside the
@@ -269,7 +293,7 @@ export default function QueuePage() {
   }, [deepLinkPost]);
 
   const { data: posts = [], isLoading } = useQuery<CalendarPost[]>({
-    queryKey: ["/api/generated-posts/calendar", getTabMarketId(), "orbit-queue"],
+    queryKey: ["/api/generated-posts/calendar", tenantId, marketId, "orbit-queue"],
     queryFn: async () => {
       const from = new Date();
       from.setDate(from.getDate() - 30);
@@ -288,21 +312,33 @@ export default function QueuePage() {
 
   const deletePostMutation = useMutation({
     mutationFn: async (post: CalendarPost) => {
-      const url = post.campaignId
-        ? `/api/campaigns/${post.campaignId}/generated-posts/${post.id}`
-        : `/api/generated-posts/${post.id}`;
-      const r = await fetch(url, {
-        method: "PUT",
+      if (!isCancellable(post)) throw new Error("This post can no longer be cancelled from the queue.");
+      const r = await fetch("/api/generated-posts/bulk-cancel", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ status: "deleted" }),
+        body: JSON.stringify({ postIds: [post.id] }),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Delete failed");
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Couldn't cancel post.");
+      return r.json() as Promise<{ cancelled: number; cancelledIds: string[]; skipped: number; skippedIds: string[] }>;
     },
-    onSuccess: () => {
+    onSuccess: (result, post) => {
       queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
       setConfirmDeleteId(null);
-      toast({ title: "Post deleted" });
+      if (post.campaignId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${post.campaignId}/generated-posts`] });
+      }
+      if (result.cancelled > 0) {
+        toast({ title: "Post cancelled" });
+      } else {
+        toast({
+          title: "Post wasn't cancelled",
+          description: result.skipped > 0
+            ? "It may already be sent or currently in flight. Its history is unchanged; refresh the queue to see its current status."
+            : "The server did not cancel this post. Refresh the queue to check its current status.",
+          variant: "destructive",
+        });
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Couldn't delete post", description: err.message, variant: "destructive" });
@@ -310,12 +346,74 @@ export default function QueuePage() {
     },
   });
 
+  const bulkCancelMutation = useMutation({
+    mutationFn: async (postIds: string[]) => {
+      const r = await fetch("/api/generated-posts/bulk-cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ postIds }),
+      });
+      if (!r.ok) {
+        const payload = await r.json().catch(() => ({}));
+        throw new Error(payload.error || "Couldn't cancel selected posts. Try again.");
+      }
+      return r.json() as Promise<{ cancelled: number; cancelledIds: string[]; skipped: number; skippedIds: string[] }>;
+    },
+    onSuccess: (result, postIds) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/generated-posts/calendar"] });
+      const affectedCampaignIds = new Set(posts
+        .filter((post) => postIds.includes(post.id) && post.campaignId)
+        .map((post) => post.campaignId as string));
+      for (const campaignId of affectedCampaignIds) {
+        queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${campaignId}/generated-posts`] });
+      }
+      setSelectedIds([]);
+      setBulkCancelOpen(false);
+      if (result.skipped > 0) {
+        toast({
+          title: `${result.cancelled} cancelled; ${result.skipped} skipped`,
+          description: "Some posts became in-flight or were delivered before cancellation. Review the queue for their current status.",
+          variant: result.cancelled === 0 ? "destructive" : "default",
+        });
+      } else if (result.cancelled === 0) {
+        toast({
+          title: "No posts cancelled",
+          description: "The server did not cancel any selected posts. Refresh the queue to check their current status.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `${result.cancelled} ${result.cancelled === 1 ? "post" : "posts"} cancelled` });
+      }
+    },
+    onError: (err: Error) => toast({
+      title: "Couldn't cancel posts",
+      description: err.message,
+      variant: "destructive",
+    }),
+  });
+
+  const campaigns = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const post of posts) {
+      if (post.campaignId) byId.set(post.campaignId, post.campaignName?.trim() || "View campaign");
+    }
+    return Array.from(byId.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [posts]);
+
+  const campaignPosts = useMemo(
+    () => campaignFilter === "all"
+      ? posts
+      : posts.filter((post) => campaignFilter === "standalone" ? !post.campaignId : post.campaignId === campaignFilter),
+    [campaignFilter, posts],
+  );
+
   const items = useMemo(() => {
     const isCurrent = (stage: Stage) => CURRENT_STAGES.includes(stage);
     // Current work is ordered by urgency. Historical views are newest-first so
     // the latest published/exported activity is immediately visible.
     const currentPriority = (s: Stage) => (s === "failed" ? 0 : s === "missed" ? 1 : 2);
-    return posts
+    return campaignPosts
       .map((p) => ({ post: p, stage: queueStage(p), when: postTime(p) }))
       .filter((x): x is { post: CalendarPost; stage: Stage; when: Date | null } => x.stage !== null)
       .sort((a, b) => {
@@ -335,7 +433,7 @@ export default function QueuePage() {
         if (filter === "posted" || filter === "exported" || filter === "all") return bt - at;
         return at - bt;
       });
-  }, [filter, posts]);
+  }, [filter, campaignPosts]);
 
   const counts = useMemo(() => {
     const c = { current: 0, all: items.length, scheduled: 0, failed: 0, missed: 0, posted: 0, exported: 0, awaiting_export: 0 } as Record<string, number>;
@@ -356,6 +454,15 @@ export default function QueuePage() {
     : filter === "all"
       ? items
       : items.filter((it) => it.stage === filter);
+  const visibleCancellableIds = visible.filter(({ post }) => isCancellable(post)).map(({ post }) => post.id);
+  const selectedVisibleIds = selectedIds.filter((id) => visibleCancellableIds.includes(id));
+  const allVisibleSelected = visibleCancellableIds.length > 0 &&
+    visibleCancellableIds.every((id) => selectedIds.includes(id));
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((current) => checked
+      ? current.includes(id) || current.length >= 500 ? current : [...current, id]
+      : current.filter((selectedId) => selectedId !== id));
+  };
 
   const groups = useMemo(() => {
     const map = new Map<string, typeof visible>();
@@ -400,6 +507,7 @@ export default function QueuePage() {
         </div>
 
         {/* Filters */}
+        <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           {FILTERS.map((f) => {
             const n = counts[f.key] ?? 0;
@@ -425,6 +533,48 @@ export default function QueuePage() {
               </button>
             );
           })}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+              <SelectTrigger className="w-full min-w-[190px] sm:w-[250px]" aria-label="Filter by campaign" data-testid="queue-campaign-filter">
+                <SelectValue placeholder="All campaigns" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All campaigns</SelectItem>
+                <SelectItem value="standalone">Standalone</SelectItem>
+                {campaigns.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {visibleCancellableIds.length > 0 && (
+              <label className="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                <Checkbox
+                  checked={allVisibleSelected ? true : selectedVisibleIds.length > 0 ? "indeterminate" : false}
+                  onCheckedChange={(checked) => setSelectedIds(checked === true ? visibleCancellableIds.slice(0, 500) : [])}
+                  aria-label="Select all visible cancellable posts"
+                  data-testid="queue-select-all"
+                />
+                Select all cancellable
+              </label>
+            )}
+          </div>
+          {selectedVisibleIds.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkCancelOpen(true)}
+              disabled={bulkCancelMutation.isPending}
+              data-testid="queue-bulk-cancel"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Cancel {selectedVisibleIds.length} selected
+            </Button>
+          )}
+        </div>
+        {visibleCancellableIds.length > 500 && (
+          <p className="text-xs text-muted-foreground">Bulk cancellation is limited to 500 posts per request. Select the first 500 or narrow the queue filters.</p>
+        )}
+        <p className="text-xs text-muted-foreground">Up to 500 posts can be cancelled per request.</p>
         </div>
 
         {/* Rows */}
@@ -467,16 +617,27 @@ export default function QueuePage() {
                       <div
                         key={post.id}
                         className={cn(
-                          "relative grid grid-cols-[88px_1fr_auto] items-center gap-3 px-4 py-3 cursor-pointer group hover:bg-muted/40 transition-colors",
+                          "relative grid grid-cols-[28px_56px_minmax(0,1fr)_auto] sm:grid-cols-[28px_88px_minmax(0,1fr)_auto] items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 cursor-pointer group hover:bg-muted/40 transition-colors",
                           stage === "failed" && "bg-destructive/5 hover:bg-destructive/10",
                         )}
                         data-testid={`queue-row-${post.id}`}
                         onClick={(e) => {
-                          if ((e.target as HTMLElement).closest("button")) return;
+                          if ((e.target as HTMLElement).closest("button, a, [role='checkbox']")) return;
                           setEditPost(post);
                         }}
                       >
                         {stage === "failed" && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-destructive" />}
+
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.includes(post.id)}
+                            disabled={!isCancellable(post) || (selectedIds.length >= 500 && !selectedIds.includes(post.id))}
+                            onCheckedChange={(checked) => toggleSelected(post.id, checked === true)}
+                            aria-label={`Select post${post.campaignName ? ` from ${post.campaignName}` : ""} for cancellation`}
+                            title={isCancellable(post) ? "Select for cancellation" : "This post is published, exported, or currently being processed"}
+                            data-testid={`queue-select-${post.id}`}
+                          />
+                        </div>
 
                         <div className="text-sm font-medium tabular-nums">
                           {when ? (
@@ -489,7 +650,31 @@ export default function QueuePage() {
                           )}
                         </div>
 
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex items-center gap-3">
+                          {(() => {
+                            const thumbnailUrl = post.leadImageUrl || post.overrideImageUrl || null;
+                            return thumbnailUrl ? (
+                              imageErrors.has(post.id) ? (
+                                <div className="w-11 h-11 shrink-0 rounded-md border bg-muted flex flex-col items-center justify-center text-[8px] leading-tight text-muted-foreground" aria-label="Image unavailable">
+                                  <ImageOff className="w-3.5 h-3.5 mb-0.5" />
+                                  <span>Unavailable</span>
+                                </div>
+                              ) : (
+                                <img
+                                  src={thumbnailUrl}
+                                  alt=""
+                                  className="w-11 h-11 shrink-0 rounded-md border object-cover bg-muted"
+                                  onError={() => setImageErrors((current) => new Set(current).add(post.id))}
+                                />
+                              )
+                            ) : (
+                              <div className="w-11 h-11 shrink-0 rounded-md border border-dashed bg-muted/50 flex flex-col items-center justify-center text-[8px] leading-tight text-muted-foreground" aria-label="Text-only post">
+                                <ImageOff className="w-3.5 h-3.5 mb-0.5" />
+                                <span>Text only</span>
+                              </div>
+                            );
+                          })()}
+                          <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
                             <span
                               className="inline-grid place-items-center w-4 h-4 rounded text-[9px] font-bold text-white shrink-0"
@@ -502,13 +687,27 @@ export default function QueuePage() {
                               {pm.label}
                               {post.accountName ? ` · ${post.accountName}` : ""}
                               {" · "}
-                              {post.campaignName ?? "Standalone post"}
+                              {post.campaignId ? (
+                                <Link
+                                  href={`/app/marketing/campaigns/${post.campaignId}`}
+                                  className="inline-flex max-w-[180px] items-center gap-1 rounded bg-primary/10 px-1 font-semibold text-primary"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title={post.campaignName || "View campaign"}
+                                  data-testid={`queue-campaign-link-${post.id}`}
+                                >
+                                  <span className="truncate">{post.campaignName?.trim() || "View campaign"}</span>
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                </Link>
+                              ) : (
+                                <span className="font-medium text-foreground">Standalone post</span>
+                              )}
                             </span>
                           </div>
                           <p className="text-sm truncate">{post.preview || "(no content)"}</p>
                           {stage === "failed" && post.publishError && (
                             <p className="text-xs text-destructive mt-0.5 truncate">{post.publishError}</p>
                           )}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -519,10 +718,10 @@ export default function QueuePage() {
                                 variant="destructive"
                                 className="h-7 px-2 text-xs"
                                 onClick={() => deletePostMutation.mutate(post)}
-                                disabled={deletePostMutation.isPending}
+                                disabled={deletePostMutation.isPending || !isCancellable(post)}
                                 data-testid={`queue-delete-confirm-${post.id}`}
                               >
-                                Delete
+                                Cancel
                               </Button>
                               <Button
                                 size="icon"
@@ -540,7 +739,8 @@ export default function QueuePage() {
                               variant="ghost"
                               className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => setConfirmDeleteId(post.id)}
-                              title="Delete this post"
+                              disabled={!isCancellable(post)}
+                              title={isCancellable(post) ? "Cancel this post" : "This post cannot be cancelled"}
                               data-testid={`queue-delete-${post.id}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -560,6 +760,35 @@ export default function QueuePage() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={bulkCancelOpen} onOpenChange={setBulkCancelOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Cancel {selectedVisibleIds.length} selected {selectedVisibleIds.length === 1 ? "post" : "posts"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes unsent posts from the queue. It preserves post history and cannot recall CSV exports or posts that have already been sent. Posts currently in flight or delivered may be skipped.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkCancelMutation.isPending}>Keep posts</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (selectedVisibleIds.length > 0 && selectedVisibleIds.length <= 500) {
+                  bulkCancelMutation.mutate(selectedVisibleIds);
+                }
+              }}
+              disabled={bulkCancelMutation.isPending || selectedVisibleIds.length === 0 || selectedVisibleIds.length > 500}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="queue-bulk-cancel-confirm"
+            >
+              {bulkCancelMutation.isPending ? "Cancelling…" : `Cancel ${selectedVisibleIds.length} posts`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Shared post editor (same component as calendar/campaign/pipeline) */}
       {editPost && (
