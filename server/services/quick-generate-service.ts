@@ -13,6 +13,8 @@
 
 import type { ContentBrief } from "@shared/schema";
 import { completeForFeature } from "./ai-provider";
+import { ensureSocialCopyQuality } from "./social-copy-quality";
+import { SOCIAL_POST_NO_SLOP_RULES } from "./social-post-writing-quality";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import { draftFromBrief, type DraftFromBriefResult } from "./copywriter-service";
 import { SYNOZUR_VOICE_RULES, type RepurposePlatform } from "./repurpose-core";
@@ -140,12 +142,17 @@ export async function quickDraftSocialPosts(
   });
   const result = await completeForFeature("marketing_tasks", prompt, {
     tenantDomain: ctx.tenantDomain,
-    systemPrompt: SOCIAL_SYSTEM_PROMPT,
+    systemPrompt: `${SOCIAL_SYSTEM_PROMPT}\n\nEditorial rules (style only):\n- ${SOCIAL_POST_NO_SLOP_RULES}`,
     maxTokens: 4096,
   });
   const posts = parseQuickSocialPosts(result.text, ctx.platforms);
   if (posts.length === 0) {
     throw new Error("The AI did not return any usable social posts.");
+  }
+  for (const post of posts) {
+    post.content = await ensureSocialCopyQuality({
+      content: post.content, platform: post.platform, tenantDomain: ctx.tenantDomain,
+    });
   }
   return {
     posts,

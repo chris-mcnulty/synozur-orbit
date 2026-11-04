@@ -25,6 +25,8 @@ import {
   type ParsedDraft,
 } from "./editorial-calendar-core";
 import { polarisGuestBlock } from "./polaris-outline";
+import { SOCIAL_POST_NO_SLOP_RULES } from "./social-post-writing-quality";
+import { ensureSocialCopyQuality } from "./social-copy-quality";
 
 export const BANNED_WORDS =
   "delve, foster, utilize, facilitate, streamline, robust, cutting-edge, paradigm shift, tapestry, beacon, " +
@@ -246,11 +248,19 @@ Respond with exactly these three sections and nothing else:
 
   const result = await completeForFeature("marketing_tasks", prompt, {
     tenantDomain: brief.tenantDomain,
-    systemPrompt,
+    systemPrompt: format === "linkedin_post" || format === "x_post"
+      ? `${systemPrompt}\n\nSocial editorial rules:\n- ${SOCIAL_POST_NO_SLOP_RULES}`
+      : systemPrompt,
     maxTokens: 8192,
   });
 
   const parsed = parseDraftResponse(result.text);
+  if (format === "linkedin_post" || format === "x_post") {
+    parsed.body = await ensureSocialCopyQuality({
+      content: parsed.body, platform: format === "x_post" ? "twitter" : "linkedin",
+      tenantDomain: brief.tenantDomain,
+    });
+  }
   return {
     ...parsed,
     title: parsed.title || brief.title,
@@ -295,12 +305,21 @@ export async function rewriteLongFormContent(p: RewriteParams): Promise<RewriteR
 
   const result = await completeForFeature("marketing_tasks", prompt, {
     tenantDomain: p.tenantDomain,
-    systemPrompt: REWRITE_SYSTEM_PROMPT,
+    systemPrompt: format === "linkedin_post" || format === "x_post"
+      ? `${REWRITE_SYSTEM_PROMPT}\n\nSocial editorial rules:\n- ${SOCIAL_POST_NO_SLOP_RULES}`
+      : REWRITE_SYSTEM_PROMPT,
     maxTokens: 8192,
   });
 
+  let body = parseDraftResponse(result.text).body;
+  if (format === "linkedin_post" || format === "x_post") {
+    body = await ensureSocialCopyQuality({
+      content: body, platform: format === "x_post" ? "twitter" : "linkedin",
+      tenantDomain: p.tenantDomain,
+    });
+  }
   return {
-    body: parseDraftResponse(result.text).body,
+    body,
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
     model: result.model,
   };

@@ -1175,13 +1175,12 @@ export function registerMarketingCalendarRoutes(app: Express) {
           });
           for (const p of extras) {
             const match = variants.find((v) => v.platform === p && v.content?.trim());
-            // If the model didn't return copy for a channel, fall back to the
-            // native draft so the post is still created (user can edit later).
-            contentByPlatform.set(p, match?.content?.trim() || draftContent);
+            if (!match) throw new Error(`No usable ${p} copy was generated. No posts were created; try tailoring again.`);
+            contentByPlatform.set(p, match.content.trim());
           }
         } catch (e: any) {
           console.error("[content-to-post tailoring]", e?.message);
-          for (const p of extras) contentByPlatform.set(p, draftContent);
+          return res.status(422).json({ error: e?.message || "Channel tailoring failed. No posts were created." });
         }
       }
 

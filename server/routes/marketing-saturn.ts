@@ -106,9 +106,9 @@ import { enforceMinimumFontSize, normalizeFontFamily, wrapResponsiveDocument, pr
 import { renderEmailSections, appendSectionsToBody, reRenderSectionsHtml, stripDuplicateAboutSection, type SectionEvent, type SectionPost } from "../services/email-sections-renderer";
 import * as websiteMcp from "../services/website-mcp-client";
 import {
-  findSocialPostSlopViolations,
   SOCIAL_POST_NO_SLOP_RULES,
 } from "../services/social-post-writing-quality";
+import { ensureSocialCopyQuality, SocialCopyQualityError } from "../services/social-copy-quality";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -4146,7 +4146,10 @@ Return ONLY a valid JSON object (no markdown fences) with:
 - "content": string (the adapted post body, no inline hashtags)
 - "hashtags": string[] (3-5 relevant hashtags, each a single camelCase word, no # prefix)`;
 
-            const result = await completeForFeature("marketing_tasks", polishPrompt);
+            const result = await completeForFeature("marketing_tasks", polishPrompt, {
+              tenantDomain: ctx.tenantDomain,
+              systemPrompt: `Social editorial rules:\n- ${SOCIAL_POST_NO_SLOP_RULES}`,
+            });
             try {
               const parsed = JSON.parse(result.text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim());
               if (parsed.content) postContent = parsed.content;
@@ -4160,6 +4163,10 @@ Return ONLY a valid JSON object (no markdown fences) with:
                 }
               }
               const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+              adapted.content = await ensureSocialCopyQuality({
+                content: adapted.content, platform: account.platform, tenantDomain: ctx.tenantDomain,
+                maxChars: account.platform === "twitter" || account.platform === "x" ? 180 : undefined,
+              });
 
               rows.push({
                 id: randomUUID(),
@@ -4176,9 +4183,11 @@ Return ONLY a valid JSON object (no markdown fences) with:
               } as InsertGeneratedPost);
               continue;
             } catch (parseErr: any) {
+              if (parseErr instanceof SocialCopyQualityError) throw parseErr;
               console.warn(`[Manual Post] AI polish JSON parse failed for ${account.platform}, falling back to plain text:`, parseErr.message);
             }
           } catch (aiErr: any) {
+            if (aiErr instanceof SocialCopyQualityError) throw aiErr;
             console.warn(`[Manual Post] AI polish call failed for ${account.platform}, falling back to plain text:`, aiErr.message);
           }
         }
@@ -4208,7 +4217,9 @@ Return ONLY a valid JSON object (no markdown fences) with:
       res.status(201).json({ created: rows.length, posts: rows });
     } catch (err: any) {
       console.error("[Manual Post Creation Error]", err.message);
-      res.status(500).json({ error: "Failed to create posts" });
+      res.status(err instanceof SocialCopyQualityError ? 422 : 500).json({
+        error: err instanceof SocialCopyQualityError ? err.message : "Failed to create posts",
+      });
     }
   });
 
@@ -6649,14 +6660,14 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
 
     // Helper: accept parsed AI variants into the account's variant list.
     // Returns how many were accepted.
-    const acceptVariants = (
+    const acceptVariants = async (
       parsed: any[],
       pool: ContextPool,
       cleanedVariantsForAccount: { content: string; hashtags: string[]; imagePrompt: string; sourceUrl: string | null; sourceAssetId: string | null; leadImageUrl: string | null }[],
       usedOpenings: string[],
       cap: number,
       result: { text: string },
-    ): number => {
+    ): Promise<number> => {
       let accepted = 0;
       for (const p of parsed) {
         if (cleanedVariantsForAccount.length >= cap) break;
@@ -6681,13 +6692,11 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
           }
         }
         const adapted = applyPlatformRules(postContent, account.platform, hashtags);
-        const slopViolations = findSocialPostSlopViolations(adapted.content);
-        if (slopViolations.length > 0) {
-          console.warn(
-            `[Saturn] Rejecting no-slop violation for ${account.platform}: ${slopViolations.join(", ")}`,
-          );
-          continue;
-        }
+        adapted.content = await ensureSocialCopyQuality({
+          content: adapted.content, platform: account.platform, tenantDomain,
+          maxChars: account.platform === "twitter" || account.platform === "x" ? 190 : undefined,
+          assertActive: ensureNotAborted,
+        });
         cleanedVariantsForAccount.push({
           content: adapted.content,
           hashtags: adapted.hashtags,
@@ -6761,7 +6770,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             variants = buildFallbackVariants(result.text);
           }
           const countBefore = cleanedVariantsForAccount.length;
-          acceptVariants(variants, pool, cleanedVariantsForAccount, usedOpenings, effectiveTargetVariantsPerPlatform, result);
+          await acceptVariants(variants, pool, cleanedVariantsForAccount, usedOpenings, effectiveTargetVariantsPerPlatform, result);
           const added = cleanedVariantsForAccount.length - countBefore;
           if (added === 0) {
             console.warn(`[Saturn][one-per-asset] No variant accepted for pool "${pool.label}" on ${account.platform} — asset may lack coverage`);
@@ -6810,7 +6819,7 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
           variants = buildFallbackVariants(result.text);
         }
 
-        acceptVariants(variants, pool, cleanedVariantsForAccount, usedOpenings, effectiveTargetVariantsPerPlatform, result);
+        await acceptVariants(variants, pool, cleanedVariantsForAccount, usedOpenings, effectiveTargetVariantsPerPlatform, result);
       }
 
       console.log(`[Saturn] ${account.platform}/${account.accountName}: produced ${cleanedVariantsForAccount.length}/${effectiveTargetVariantsPerPlatform} unique variants across ${safetyLoops} extra batches` + (onePostPerAsset ? ` (one-per-asset guaranteed pass ran for ${Math.min(contextPools.length, effectiveTargetVariantsPerPlatform)} pools)` : ""));

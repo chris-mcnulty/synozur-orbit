@@ -1,9 +1,17 @@
 ---
 name: no-ai-slop integration
-description: Anti-AI-slop rules planned for content generation prompts and a sharpen-writing editor action. Covers rollback risk if rules prove too aggressive for human-written content.
+description: Owner-approved social editorial safeguards and the risk of applying generic AI-writing bans to human-authored copy.
 ---
 
 # No-AI-Slop Integration
+
+## Social-generation scope
+
+Apply the supplied no-ai-slop skill as editorial guidance for newly generated social copy, not as a retrieved factual grounding document or an autonomous agent workflow. Keep its style policy separate from tenant facts and brand voice. When clear patterns survive generation, allow one targeted repair of the affected text, then surface an explicit review failure rather than silently dropping it or substituting unadapted copy.
+
+**Why:** The owner supplied the editing skill specifically because social output still used “This isn’t X. It’s Y.” and “What if…” constructions despite earlier prompt rules. They approved strengthening generation across social paths, while preserving human-written edits and brand differences.
+
+**How to apply:** New generation and explicit AI rewrite requests may use the check. Manual saves, existing posts, and publishing must not trigger automatic copy edits. The repair draft is its only factual source; do not load extra strategic context to repair style. Generic banned-word lists must not override legitimate technical vocabulary, product names, attributed quotations, or a brand’s editorial identity.
 
 ## What was planned (Task #518, July 2026)
 

@@ -109,6 +109,36 @@ describe("quick-generate service prompt grounding", () => {
     expectBrandIdentityOnly(sent);
   });
 
+  it("repairs social copy once without loading more strategy or adding it to the repair", async () => {
+    vi.mocked(completeForFeature)
+      .mockResolvedValueOnce({
+        text: JSON.stringify([{ platform: "linkedin", content: "This isn't a catalog. It's an invitation to Airfield Estates." }]),
+        usage: USAGE, model: "test",
+      } as any)
+      .mockResolvedValueOnce({
+        text: "Visit Airfield Estates to see the artwork.",
+        usage: USAGE, model: "test",
+      } as any);
+    const result = await quickDraftSocialPosts({
+      ...CTX, prompt: PROMPT, platforms: ["linkedin"], count: 1,
+    });
+    expect(result.posts[0].content).toBe("Visit Airfield Estates to see the artwork.");
+    expect(completeForFeature).toHaveBeenCalledTimes(2);
+    expect(loadStrategicContext).toHaveBeenCalledTimes(1);
+    const repair = sentPromptText();
+    expect(repair).toContain("Airfield Estates");
+    expect(repair).toContain("ONLY factual source");
+    for (const sentinel of Object.values(SENTINELS)) expect(repair).not.toContain(sentinel);
+  });
+
+  it("reports a failed social repair instead of silently dropping the post", async () => {
+    mockAiResponse(JSON.stringify([{ platform: "linkedin", content: "This isn't a catalog. It's an invitation." }]));
+    await expect(quickDraftSocialPosts({
+      ...CTX, prompt: PROMPT, platforms: ["linkedin"], count: 1,
+    })).rejects.toThrow("needs review");
+    expect(completeForFeature).toHaveBeenCalledTimes(2);
+  });
+
   it("quickDraftNewsletter includes brand identity but no other strategic sections", async () => {
     mockAiResponse("===EMAIL_BODY_START===\nBody\n===EMAIL_BODY_END===");
     await quickDraftNewsletter({ ...CTX, prompt: PROMPT });

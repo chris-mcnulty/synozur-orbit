@@ -38,6 +38,8 @@ import { getRequestContext } from "../context";
 import { generateBrandedPostGraphic } from "../services/conference-promotion-service";
 import { storage } from "../storage";
 import { completeForFeature } from "../services/ai-provider";
+import { ensureSocialCopyQuality } from "../services/social-copy-quality";
+import { SOCIAL_POST_NO_SLOP_RULES } from "../services/social-post-writing-quality";
 import { guardFeature } from "./helpers";
 import { resolveSocialPostImages } from "../services/social-post-images";
 import { cancelQueuedPosts } from "../services/social-queue-cancel";
@@ -177,13 +179,18 @@ async function runRewrite(opts: {
   });
 
   const result = await completeForFeature(AI_FEATURES.MARKETING_TASKS, userPrompt, {
-    systemPrompt,
+    systemPrompt: `${systemPrompt}\n\nEditorial rules:\n- ${SOCIAL_POST_NO_SLOP_RULES}`,
     temperature: 0.7,
     maxTokens: 1500,
     tenantDomain,
   });
 
   const variants = parseVariants(result.text, body.variantCount ?? 3);
+  for (let i = 0; i < variants.length; i++) {
+    variants[i] = await ensureSocialCopyQuality({
+      content: variants[i], platform: account.platform, tenantDomain,
+    });
+  }
   return {
     variants,
     usage: result.usage,

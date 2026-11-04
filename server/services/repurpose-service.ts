@@ -9,6 +9,8 @@
 import { type ContentAsset } from "@shared/schema";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import { completeForFeature } from "./ai-provider";
+import { ensureSocialCopyQuality } from "./social-copy-quality";
+import { SOCIAL_POST_NO_SLOP_RULES } from "./social-post-writing-quality";
 import {
   parseVariants,
   coercePlatform,
@@ -89,12 +91,18 @@ export async function repurposeAsset(params: RepurposeParams): Promise<Repurpose
 
   const result = await completeForFeature("marketing_tasks", prompt, {
     tenantDomain: asset.tenantDomain,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: `${SYSTEM_PROMPT}\n\nEditorial rules:\n- ${SOCIAL_POST_NO_SLOP_RULES}`,
     maxTokens: 6000,
   });
 
+  const variants = parseVariants(result.text);
+  for (const variant of variants) {
+    variant.content = await ensureSocialCopyQuality({
+      content: variant.content, platform: variant.platform, tenantDomain: asset.tenantDomain,
+    });
+  }
   return {
-    variants: parseVariants(result.text),
+    variants,
     usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
     model: result.model,
   };
@@ -234,6 +242,7 @@ function buildFormatPrompt(
     `## Source asset\nTitle: ${sourceTitle}\n\n${sourceBody}`,
     `## Format guidance\n${def.guidance}`,
     `## Voice rules\n- ${SYNOZUR_VOICE_RULES}`,
+    def.destination === "posts" ? `## Social editorial policy\n- ${SOCIAL_POST_NO_SLOP_RULES}` : "",
     `## Output JSON shape (array of exactly ${count})\n${shape}`,
   ]
     .filter(Boolean)
@@ -296,6 +305,22 @@ export async function repurposeMultiFormat(
       }
       if (items.length === 0) {
         throw new Error(`No usable ${def.label} items returned`);
+      }
+      for (const item of items) {
+        if (item.kind !== "post") continue;
+        item.content = await ensureSocialCopyQuality({
+          content: item.content, platform: item.platform, tenantDomain: asset.tenantDomain,
+        });
+        for (const slide of item.slides ?? []) {
+          slide.headline = await ensureSocialCopyQuality({
+            content: slide.headline, platform: item.platform, tenantDomain: asset.tenantDomain,
+          });
+          for (let i = 0; i < slide.supportingLines.length; i++) {
+            slide.supportingLines[i] = await ensureSocialCopyQuality({
+              content: slide.supportingLines[i], platform: item.platform, tenantDomain: asset.tenantDomain,
+            });
+          }
+        }
       }
       return { def, items, usage: result.usage, model: result.model };
     }),

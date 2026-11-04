@@ -26,9 +26,9 @@ import {
   coercePlatform,
 } from "./repurpose-core";
 import {
-  findSocialPostSlopViolations,
   SOCIAL_POST_NO_SLOP_RULES,
 } from "./social-post-writing-quality";
+import { ensureSocialCopyQuality } from "./social-copy-quality";
 
 const SYSTEM_PROMPT =
   "You are a B2B content strategist and an honest critic. You turn a short campaign interview into a " +
@@ -174,7 +174,8 @@ export interface GeneratedSocialPostCopy {
 
 /**
  * Generate platform-tailored social copy for a single concept across the
- * requested channels. One AI call per concept; `countPerChannel` distinct posts
+ * requested channels. One generation call per concept, plus a bounded repair
+ * only for text that fails the editorial check; `countPerChannel` distinct posts
  * are produced for each channel so a multi-post window doesn't ship duplicates.
  * Platforms are normalised (x → twitter) and copy is voice-cleaned + clamped to
  * each platform's hard limit before returning.
@@ -231,13 +232,19 @@ export async function generateInterviewSocialPosts(params: {
   );
 
   const wanted = new Set(platforms);
-  return raw
+  const posts = raw
     .map((item): GeneratedSocialPostCopy | null => {
       const platform = coercePlatform(item?.platform);
       if (!wanted.has(platform)) return null;
       const content = socialCaptionForDelivery(platform, clampForPlatform(applySynozurVoice(String(item?.content ?? "").trim()), platform));
-      if (!content || findSocialPostSlopViolations(content).length > 0) return null;
+      if (!content) return null;
       return { platform, content };
     })
     .filter((p): p is GeneratedSocialPostCopy => p !== null);
+  for (const post of posts) {
+    post.content = await ensureSocialCopyQuality({
+      content: post.content, platform: post.platform, tenantDomain: params.tenantDomain,
+    });
+  }
+  return posts;
 }
