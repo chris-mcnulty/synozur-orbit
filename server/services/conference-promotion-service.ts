@@ -1171,6 +1171,11 @@ export async function renderConferenceImage(
     const sd = start.toLocaleString("en-US", { day: "numeric", timeZone: "UTC" });
     if (!conf.endDate) return `${sm} ${sd}`;
     const end = new Date(conf.endDate);
+    // Event dates are calendar days in UTC; different times on the same day
+    // must not turn a single-day event into a repeated-day range.
+    if (start.toISOString().slice(0, 10) === end.toISOString().slice(0, 10)) {
+      return `${sm} ${sd}`;
+    }
     const em = end.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
     const ed = end.toLocaleString("en-US", { day: "numeric", timeZone: "UTC" });
     return sm === em ? `${sm} ${sd}–${ed}` : `${sm} ${sd} – ${em} ${ed}`;

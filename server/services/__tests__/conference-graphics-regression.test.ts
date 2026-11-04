@@ -180,6 +180,19 @@ describe("conference brand rendering regressions", () => {
     expect(io.update).toHaveBeenCalledTimes(2);
   });
 
+  it.each(["anchor", "session"] as const)("renders a single date for a same-day event (%s)", async (role) => {
+    rows([tenant], [], [fontAsset]);
+    await renderConferenceImage(image(role), {
+      ...conference,
+      startDate: new Date("2026-10-01T00:00:00Z"),
+      endDate: new Date("2026-10-01T23:59:00Z"),
+    }, role === "session" ? session : undefined);
+    savedPng();
+    const svg = overlaySvg();
+    expect(svg).toContain('aria-label="October 1"');
+    expect(svg).not.toContain("October 1–1");
+  });
+
   it("renders a session with the intended brand gradient when no template is selected", async () => {
     rows([tenant], [], [fontAsset]);
     await renderConferenceImage(image("session"), conference, session);
