@@ -4162,10 +4162,10 @@ Return ONLY a valid JSON object (no markdown fences) with:
                   if (!existing.has(ah.toLowerCase())) hashtags.push(ah);
                 }
               }
-              const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+              const adapted = applyPlatformRules(postContent, account.platform, hashtags, { deferLengthCheck: true });
               adapted.content = await ensureSocialCopyQuality({
                 content: adapted.content, platform: account.platform, tenantDomain: ctx.tenantDomain,
-                maxChars: account.platform === "twitter" || account.platform === "x" ? 180 : undefined,
+                hashtags: adapted.hashtags,
               });
 
               rows.push({
@@ -6638,7 +6638,7 @@ GENERAL RULES:
 2. ${account.platform === "instagram" ? "Do not include any URL or tracking redirect in the caption. Source URLs below are references only, not text to publish." : pool.sourceUrl ? `Include the reference URL ONCE in the post body with a clear CTA (e.g. "Learn more: ${pool.sourceUrl}"). NEVER include the URL more than once.` : "Do NOT fabricate or include any URLs unless they appear in the brief below."}
 3. Do NOT include hashtags inline in the post content — put them only in the "hashtags" array field.
 4. Hashtags must be single words or camelCase compound words only (e.g. "DigitalTransformation", not "Digital Transformation"). No spaces, no # symbol, no special characters.
-5. ${account.platform === "twitter" ? "Twitter/X posts have a HARD 280 CHARACTER LIMIT. Write ONE complete, concise sentence. The content field, including its source URL, must be 190 characters MAX. Return only 2-3 short hashtags so content + hashtags stays within 280. Never end on a partial clause and NEVER write long-form content for Twitter." : "Follow the platform length guidelines below."}
+5. ${account.platform === "twitter" || account.platform === "x" ? "Twitter/X posts have a HARD 280 weighted-character limit for the body, two separating newlines, and hashtags combined. Each URL counts as 23 characters. Aim for a body around 190 characters to leave room for 2-3 short hashtags; 190 is a drafting target, not a separate limit. Never end on a partial clause." : "Follow the platform length guidelines below."}
 6. Write clean, professional copy. No placeholder text, no "[insert link]" or similar instructions.
 7. ${briefOnlyMode
   ? "CAMPAIGN-ONLY FACT CONTRACT: The Campaign mission, Campaign content briefs, and campaign theme/content asset below are the ONLY factual sources. Do not introduce outside facts, statistics, examples, products, industries, research, or claims from prior knowledge. Persona and platform guidance may shape audience and style only; they are not factual sources."
@@ -6691,10 +6691,10 @@ Return ONLY a valid JSON array (no markdown fences, no explanation) of ${batchSi
             if (!existing.has(ah.toLowerCase())) hashtags.push(ah);
           }
         }
-        const adapted = applyPlatformRules(postContent, account.platform, hashtags);
+        const adapted = applyPlatformRules(postContent, account.platform, hashtags, { deferLengthCheck: true });
         adapted.content = await ensureSocialCopyQuality({
           content: adapted.content, platform: account.platform, tenantDomain,
-          maxChars: account.platform === "twitter" || account.platform === "x" ? 190 : undefined,
+          hashtags: adapted.hashtags,
           assertActive: ensureNotAborted,
         });
         cleanedVariantsForAccount.push({
@@ -7097,12 +7097,14 @@ function deduplicateUrls(text: string): string {
   }).replace(/\s{2,}/g, " ").trim();
 }
 
-function applyPlatformRules(text: string, platform: string, hashtags?: string[]): { content: string; hashtags: string[] } {
+function applyPlatformRules(text: string, platform: string, hashtags?: string[], opts: { deferLengthCheck?: boolean } = {}): { content: string; hashtags: string[] } {
   let tags = hashtags ?? [];
   text = socialCaptionForDelivery(platform, text);
   text = deduplicateUrls(text);
 
-  if (platform === "twitter") {
+  // Generated copy gets a fact-preserving repair against the actual delivery
+  // length instead of being truncated before the quality check can inspect it.
+  if ((platform === "twitter" || platform === "x") && !opts.deferLengthCheck) {
     const hashtagLine = tags.map(h => `#${h}`).join(" ");
     const totalLen = text.length + (hashtagLine ? hashtagLine.length + 1 : 0);
 

@@ -83,4 +83,36 @@ describe("bounded social copy repair", () => {
     })).rejects.toThrow("cancelled");
     expect(ai).toHaveBeenCalledTimes(1);
   });
+
+  it.each([191, 220, 279, 280])("accepts valid X copy of %i characters without a needless repair", async (length) => {
+    const content = "a".repeat(length);
+    expect(await ensureSocialCopyQuality({ ...opts, platform: "twitter", content })).toBe(content);
+    expect(ai).not.toHaveBeenCalled();
+  });
+
+  it("counts separately stored hashtags and the publisher's two-newline separator", async () => {
+    const content = "a".repeat(260);
+    ai.mockResolvedValue(reply("a".repeat(250)));
+    expect(await ensureSocialCopyQuality({
+      ...opts, platform: "x", content, hashtags: ["campaign", "#research"],
+    })).toBe("a".repeat(250));
+    expect(ai).toHaveBeenCalledTimes(1);
+    expect(ai.mock.calls[0][1]).toContain('["campaign","#research"]');
+  });
+
+  it("does not reject a long raw URL that fits X's weighted limit", async () => {
+    const content = `${"a".repeat(240)} https://example.com/${"long-path".repeat(30)}`;
+    expect(content.length).toBeGreaterThan(280);
+    expect(await ensureSocialCopyQuality({ ...opts, platform: "twitter", content })).toBe(content);
+    expect(ai).not.toHaveBeenCalled();
+  });
+
+  it("still repairs slop in a valid-length X post", async () => {
+    const content = `This isn't a dashboard. It's a plan. ${"a".repeat(175)}`;
+    ai.mockResolvedValue(reply(`The plan assigns an owner. ${"a".repeat(175)}`));
+    await ensureSocialCopyQuality({ ...opts, platform: "twitter", content });
+    expect(ai).toHaveBeenCalledTimes(1);
+    expect(ai.mock.calls[0][1]).toContain("binary reframe");
+    expect(ai.mock.calls[0][1]).not.toContain("platform length limit");
+  });
 });

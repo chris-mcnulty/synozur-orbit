@@ -99,6 +99,7 @@ export async function repurposeAsset(params: RepurposeParams): Promise<Repurpose
   for (const variant of variants) {
     variant.content = await ensureSocialCopyQuality({
       content: variant.content, platform: variant.platform, tenantDomain: asset.tenantDomain,
+      hashtags: variant.hashtags,
     });
   }
   return {

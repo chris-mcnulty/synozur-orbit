@@ -13,6 +13,14 @@ Apply the supplied no-ai-slop skill as editorial guidance for newly generated so
 
 **How to apply:** New generation and explicit AI rewrite requests may use the check. Manual saves, existing posts, and publishing must not trigger automatic copy edits. The repair draft is its only factual source; do not load extra strategic context to repair style. Generic banned-word lists must not override legitimate technical vocabulary, product names, attributed quotations, or a brand’s editorial identity.
 
+## Drafting targets are not delivery limits
+
+Never enforce a suggested short-body target as a hard platform limit. For X, validate the complete delivered text with weighted counting, including separately stored hashtags and the publisher's separators; URLs and emoji do not follow JavaScript string length. Do not truncate generated text before a fact-preserving repair can inspect it.
+
+**Why:** A short-body drafting target was enforced as a hard cap, causing a production campaign job to fail at its last platform even after the other platforms had generated successfully. Repairing toward an unnecessarily low target can also force the model to discard protected facts.
+
+**How to apply:** Keep prompt brevity suggestions separate from validation. Regression tests must accept valid posts above the drafting target and test final hashtag totals, long URLs, and weighted Unicode.
+
 ## What was planned (Task #518, July 2026)
 
 Two-layer approach to remove AI writing patterns from all external-facing Orbit outputs:
