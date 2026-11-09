@@ -36,6 +36,7 @@ import {
 } from "../services/discovery-service";
 import type { DiscoveryCandidate } from "../services/discovery-provider-core";
 import { composeTouch, loadComplianceContext } from "../services/outreach-composer-service";
+import { OutreachComposeError, assertOutreachDraftContent } from "../services/outreach-draft-outcome";
 import { sharpenContent } from "../services/copywriter-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
@@ -462,16 +463,24 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
       const body = req.body ?? {};
-      const name = String(body.name ?? "").trim();
-      if (!name) return res.status(400).json({ error: "Prospect name is required" });
+      const parsedPerson = z.object({
+        name: z.string().trim().max(300).optional().default(""),
+        email: z.string().trim().toLowerCase().max(320).optional().default(""),
+        title: z.string().trim().max(300).nullish(),
+        companyName: z.string().trim().max(300).nullish(),
+        linkedinUrl: z.string().trim().max(2000).nullish(),
+      }).safeParse(body);
+      if (!parsedPerson.success) return res.status(400).json({ error: "Invalid prospect contact details" });
+      const person = parsedPerson.data;
+      if (!person.name && !person.email) return res.status(400).json({ error: "Enter a name or email address" });
+      if (person.email && !z.string().email().safeParse(person.email).success) {
+        return res.status(400).json({ error: "Enter a valid email address" });
+      }
 
       // Single contact table: find-or-create the person, then add membership.
       const { contactId } = await ensureContactForPerson(ctx.tenantDomain, {
-        name,
-        title: body.title ?? null,
-        companyName: body.companyName ?? null,
-        email: body.email ?? null,
-        linkedinUrl: body.linkedinUrl ?? null,
+        ...person,
+        email: person.email || null,
         hubspotContactId: body.hubspotContactId ?? null,
         hubspotCompanyId: body.hubspotCompanyId ?? null,
       }, "sales_manual");
@@ -576,12 +585,15 @@ export function registerSalesOutreachRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      const company = z.string().trim().max(200).optional().safeParse(req.body?.company);
+      if (!company.success) return res.status(400).json({ error: "Company must be a name or domain up to 200 characters" });
       if (!(await guardManualAction(req, res, "discoverProspects"))) return;
 
       const body = req.body ?? {};
       const result = await discoverProspects(ctx.tenantDomain, campaign.id, {
-        backend: body.backend === "salesnav" ? "salesnav" : undefined,
+        backend: ["salesnav", "apollo", "web"].includes(body.backend) ? body.backend : undefined,
         limit: body.limit,
+        company: company.data || undefined,
       });
 
       if (result.provider && result.model) {
@@ -810,6 +822,8 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!prospect || prospect.tenantDomain !== ctx.tenantDomain) {
         return res.status(404).json({ error: "Prospect not found" });
       }
+      const clarification = z.string().trim().max(6000).optional().safeParse(req.body?.additionalContext);
+      if (!clarification.success) return res.status(400).json({ error: "Clarification must be text up to 6000 characters" });
       if (!(await guardManualAction(req, res, "generateOutreachDraft"))) return;
 
       const channel: OutreachChannel | undefined =
@@ -823,6 +837,7 @@ export function registerSalesOutreachRoutes(app: Express) {
         stepNumber,
         linkedinFormat,
         intent,
+        additionalContext: clarification.data,
         isDefaultMarket: ctx.isDefaultMarket,
       });
       await logAiUsage(
@@ -834,6 +849,9 @@ export function registerSalesOutreachRoutes(app: Express) {
       );
       res.status(201).json(result);
     } catch (err: any) {
+      if (err instanceof OutreachComposeError) {
+        return res.status(422).json({ error: err.message, code: err.code, questions: err.questions });
+      }
       console.error("[sales-outreach:compose]", err);
       res.status(500).json({ error: err.message || "Failed to compose draft" });
     }
@@ -873,6 +891,7 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       const subject = typeof req.body?.subject === "string" ? req.body.subject : touch.subject;
       const body = typeof req.body?.body === "string" ? req.body.body : touch.body;
+      assertOutreachDraftContent(body ?? "", subject);
 
       const prospect = await getProspectWithContact(touch.prospectId);
       const cc = await loadComplianceContext(ctx.tenantDomain, touch.voiceProfileId);
@@ -893,6 +912,7 @@ export function registerSalesOutreachRoutes(app: Express) {
         .returning();
       res.json({ touch: updated, compliance });
     } catch (err: any) {
+      if (err instanceof OutreachComposeError) return res.status(422).json({ error: err.message, code: err.code, questions: err.questions });
       console.error("[sales-outreach:touch-edit]", err);
       res.status(500).json({ error: err.message || "Failed to update draft" });
     }
@@ -951,6 +971,14 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
       if (touch.status !== "draft_pending_approval") {
         return res.status(409).json({ error: "Draft is not pending approval." });
+      }
+      // Also stop assistant notes saved by older versions before any ledger
+      // claim, Outlook draft creation, or LinkedIn delivery is attempted.
+      try {
+        assertOutreachDraftContent(touch.body ?? "", touch.subject);
+      } catch (err) {
+        if (err instanceof OutreachComposeError) return res.status(422).json({ error: err.message, code: err.code, questions: err.questions });
+        throw err;
       }
 
       // Compliance hard blockers (suppression / self-email) cannot be approved.

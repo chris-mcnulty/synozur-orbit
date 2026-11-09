@@ -14,6 +14,7 @@ import {
   type OutreachIntent,
 } from "@shared/linkedin-outreach";
 import { BANNED_WORDS, STRUCTURAL_ANTI_PATTERNS } from "./copywriter-service";
+import { assertComposeOutcome, assertOutreachDraftContent, OutreachComposeError } from "./outreach-draft-outcome";
 
 export const COMPOSER_SYSTEM_PROMPT =
   `You write 1:1 B2B sales outreach in the sender's real voice. Short, direct, ` +
@@ -55,6 +56,8 @@ export interface ComposePromptInput {
    * verbatim and never invent or substitute event details.
    */
   eventBlock?: string | null;
+  /** Operator-supplied answers/facts for this attempt, never a recipient message. */
+  additionalContext?: string;
 }
 
 // Per-channel guardrails. LinkedIn messages must be far shorter than email; the
@@ -143,6 +146,10 @@ export function buildComposePrompt(input: ComposePromptInput): string {
     input.eventBlock,
     prospectBlock,
     stepBlock,
+    input.additionalContext
+      ? `## Sender clarification\nUse these additional facts/answers for this draft. They do not override safety or output-format rules:\n${JSON.stringify(input.additionalContext)}`
+      : "",
+    "If essential facts are missing, do not invent them or write questions to the sender inside an email. Instead return ONLY ===NEEDS_INPUT=== followed by a short explanation and the specific questions the sender can answer. If you must refuse, return ONLY ===REFUSED=== followed by the explanation. These operator-only outcomes replace the draft response format below. Never put a refusal, commentary about drafting, or questions to the sender inside draft sections. If the prospect's name is only an email address, do not invent a personal name.",
     format,
   ].filter(Boolean).join("\n\n");
 }
@@ -152,16 +159,34 @@ export interface ParsedDraft {
   body: string;
 }
 
-/** Parse the ===SUBJECT===/===BODY=== response. Falls back gracefully. */
+function nonDraftResponse(text: string, fallback: string): OutreachComposeError {
+  const explanation = text.trim().slice(0, 6000) || fallback;
+  const questions = explanation.split(/\n+/)
+    .map(line => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim())
+    .filter(line => line.includes("?")).slice(0, 10);
+  return new OutreachComposeError(questions.length ? "OUTREACH_NEEDS_INPUT" : "OUTREACH_INVALID_DRAFT", explanation, questions);
+}
+
+/** Accept only a complete draft. Never treat arbitrary assistant text as a body. */
 export function parseComposeResponse(text: string, channel: OutreachChannel): ParsedDraft {
-  const subjMatch = text.match(/===SUBJECT===\s*([\s\S]*?)(?:===BODY===|$)/i);
-  const bodyMatch = text.match(/===BODY===\s*([\s\S]*)$/i);
-
-  let subject = subjMatch ? subjMatch[1].trim() : null;
-  let body = bodyMatch ? bodyMatch[1].trim() : text.trim();
-
-  if (channel === "linkedin") subject = null;
-  if (subject === "") subject = null;
+  const clean = text.trim();
+  assertComposeOutcome(clean);
+  // Detect common legacy/plain-text refusals before the format guard.
+  try {
+    assertOutreachDraftContent(clean);
+  } catch {
+    throw nonDraftResponse(clean, "The assistant did not produce a recipient-ready draft.");
+  }
+  const match = channel === "email"
+    ? clean.match(/^===SUBJECT===\s*([\s\S]*?)\s*===BODY===\s*([\s\S]+)$/i)
+    : clean.match(/^===BODY===\s*([\s\S]+)$/i);
+  const subject = channel === "email" && match ? match[1].trim() : null;
+  const body = match ? match[channel === "email" ? 2 : 1].trim() : "";
+  if (!match || !body || (channel === "email" && !subject) || /===[A-Z_]+===/i.test(`${subject ?? ""}\n${body}`)) {
+    throw nonDraftResponse(clean,
+      "The assistant did not return a complete recipient-ready draft. Nothing was saved. Add any missing facts and try drafting again.");
+  }
+  assertOutreachDraftContent(body, subject);
   return { subject, body };
 }
 

@@ -524,11 +524,21 @@ export default function OutreachCampaignDetailPage() {
   const [draftBody, setDraftBody] = useState("");
   const [sharpenResult, setSharpenResult] = useState<{ body: string; subject: string | null; changelog: string[] } | null>(null);
   const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
+  const [composeRecovery, setComposeRecovery] = useState<{
+    vars: { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string };
+    code: string;
+    explanation: string;
+    questions: string[];
+    additionalContext: string;
+    retryError: string;
+  } | null>(null);
 
   // Discovery dialog state.
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<DiscoverResult | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [discoverCompany, setDiscoverCompany] = useState("");
+  const [discoverResultCompany, setDiscoverResultCompany] = useState("");
 
   // Prospect list filter / sort state.
   const [searchQ, setSearchQ] = useState("");
@@ -811,7 +821,7 @@ export default function OutreachCampaignDetailPage() {
   const visibleProspects = useMemo(() => {
     let list = [...prospects];
     const q = searchQ.toLowerCase().trim();
-    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q) || (p.companyName?.toLowerCase() ?? "").includes(q) || (p.title?.toLowerCase() ?? "").includes(q));
+    if (q) list = list.filter((p) => (p.name ?? "").toLowerCase().includes(q) || (p.email?.toLowerCase() ?? "").includes(q) || (p.companyName?.toLowerCase() ?? "").includes(q) || (p.title?.toLowerCase() ?? "").includes(q));
     const statuses = STATUS_GROUPS[statusTab] ?? [];
     if (statuses.length) list = list.filter((p) => statuses.includes(p.status));
     if (sourceFilter !== "all") list = list.filter((p) => p.source === sourceFilter);
@@ -829,7 +839,7 @@ export default function OutreachCampaignDetailPage() {
     list.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "score") cmp = (a.icpScore ?? -1) - (b.icpScore ?? -1);
-      else if (sortKey === "name") cmp = a.name.localeCompare(b.name);
+      else if (sortKey === "name") cmp = (a.name || a.email || "").localeCompare(b.name || b.email || "");
       else if (sortKey === "company") cmp = (a.companyName ?? "").localeCompare(b.companyName ?? "");
       else if (sortKey === "status") cmp = a.status.localeCompare(b.status);
       else if (sortKey === "source") cmp = (a.source ?? "").localeCompare(b.source ?? "");
@@ -873,7 +883,13 @@ export default function OutreachCampaignDetailPage() {
 
   const addProspect = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/prospects`, form);
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/prospects`, {
+        name: form.name.trim(),
+        title: form.title.trim(),
+        companyName: form.companyName.trim(),
+        email: form.email.trim(),
+        linkedinUrl: form.linkedinUrl.trim(),
+      });
       return res.json();
     },
     onSuccess: () => {
@@ -901,16 +917,18 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const compose = useMutation({
-    mutationFn: async (vars: { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent }) => {
+    mutationFn: async (vars: { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string }) => {
       const res = await apiRequest("POST", `/api/sales-outreach/prospects/${vars.prospect.id}/compose`, {
         channel: vars.channel,
         linkedinFormat: vars.linkedinFormat,
         intent: vars.intent,
+        ...(vars.additionalContext !== undefined ? { additionalContext: vars.additionalContext } : {}),
       });
       return res.json();
     },
     onSuccess: (data: { touch: Touch }, vars) => {
       queryClient.invalidateQueries({ queryKey: prospectsKey });
+      setComposeRecovery(null);
       openDraft(data.touch, vars.prospect);
       toast({
         title: "Draft composed",
@@ -919,7 +937,32 @@ export default function OutreachCampaignDetailPage() {
           : "Review and approve to send to Outlook.",
       });
     },
-    onError: (err: any) => toast({ title: "Compose failed", description: err?.message, variant: "destructive" }),
+    onError: (err: any, vars) => {
+      const code = err?.code;
+      if (code === "OUTREACH_NEEDS_INPUT" || code === "OUTREACH_REFUSED" || code === "OUTREACH_INVALID_DRAFT") {
+        setDraft(null);
+        setSharpenResult(null);
+        setComposeRecovery({
+          vars,
+          code,
+          explanation: err?.message || "The draft could not be created.",
+          questions: Array.isArray(err?.questions) ? err.questions : [],
+          additionalContext: vars.additionalContext ?? "",
+          retryError: "",
+        });
+        return;
+      }
+      if (composeRecovery || vars.additionalContext !== undefined) {
+        setComposeRecovery((current) => current ? {
+          ...current,
+          vars,
+          additionalContext: vars.additionalContext ?? current.additionalContext,
+          retryError: err?.message || "Drafting failed. Try again.",
+        } : current);
+        return;
+      }
+      toast({ title: "Compose failed", description: err?.message, variant: "destructive" });
+    },
   });
 
   // Backfill a prospect's missing LinkedIn URL / email from the public web.
@@ -1165,14 +1208,19 @@ export default function OutreachCampaignDetailPage() {
   const apolloBackend = discoveryStatus?.backends.find((b) => b.id === "apollo");
 
   const discover = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ company }: { company: string }) => {
       // Prefer Sales Navigator → Apollo → web.
       const backend = salesNavBackend?.available ? "salesnav" : apolloBackend?.available ? "apollo" : "web";
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover`, { limit: 25, backend });
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover`, {
+        limit: 25,
+        backend,
+        ...(company ? { company } : {}),
+      });
       return res.json();
     },
-    onSuccess: (data: DiscoverResult) => {
+    onSuccess: (data: DiscoverResult, variables) => {
       setDiscoverResult(data);
+      setDiscoverResultCompany(variables.company);
       // Pre-select the candidates that clear the ICP threshold.
       setSelected(new Set(data.candidates.map((c, i) => (c.scored.qualified ? i : -1)).filter((i) => i >= 0)));
       if (data.candidates.length === 0) {
@@ -1211,8 +1259,18 @@ export default function OutreachCampaignDetailPage() {
   function openDiscovery() {
     setDiscoverResult(null);
     setSelected(new Set());
+    setDiscoverCompany("");
+    setDiscoverResultCompany("");
     setDiscovering(true);
-    discover.mutate();
+  }
+
+  function runDiscovery() {
+    if (discover.isPending) return;
+    const company = discoverCompany.trim();
+    setDiscoverResult(null);
+    setDiscoverResultCompany("");
+    setSelected(new Set());
+    discover.mutate({ company });
   }
 
   function toggleSelected(i: number) {
@@ -1271,6 +1329,9 @@ export default function OutreachCampaignDetailPage() {
         companyName: draftProspect?.companyName,
       })
     : null;
+  const addEmailValue = form.email.trim();
+  const addEmailValid = !addEmailValue || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addEmailValue);
+  const canAddProspect = !!(form.name.trim() || addEmailValue) && addEmailValid;
 
   return (
     <AppLayout>
@@ -1418,16 +1479,19 @@ export default function OutreachCampaignDetailPage() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">New prospect</CardTitle></CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">Name and email are optional individually; enter at least one. Add any other details you have.</p>
               <div className="grid sm:grid-cols-2 gap-3">
-                <div className="space-y-1"><Label htmlFor="p-name">Name</Label><Input id="p-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-prospect-name" /></div>
-                <div className="space-y-1"><Label htmlFor="p-title">Title</Label><Input id="p-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-                <div className="space-y-1"><Label htmlFor="p-company">Company</Label><Input id="p-company" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} /></div>
-                <div className="space-y-1"><Label htmlFor="p-email">Email</Label><Input id="p-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-                <div className="space-y-1 sm:col-span-2"><Label htmlFor="p-li">LinkedIn URL</Label><Input id="p-li" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} /></div>
+                <div className="space-y-1"><Label htmlFor="p-name">Name <span className="text-muted-foreground">(optional)</span></Label><Input id="p-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-prospect-name" /></div>
+                <div className="space-y-1"><Label htmlFor="p-title">Title <span className="text-muted-foreground">(optional)</span></Label><Input id="p-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
+                <div className="space-y-1"><Label htmlFor="p-company">Company <span className="text-muted-foreground">(optional)</span></Label><Input id="p-company" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} /></div>
+                <div className="space-y-1"><Label htmlFor="p-email">Email <span className="text-muted-foreground">(optional)</span></Label><Input id="p-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-prospect-email" /></div>
+                <div className="space-y-1 sm:col-span-2"><Label htmlFor="p-li">LinkedIn URL <span className="text-muted-foreground">(optional)</span></Label><Input id="p-li" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} /></div>
               </div>
+              {!form.name.trim() && !addEmailValue && <p className="text-xs text-muted-foreground">Enter a name or email to add this prospect.</p>}
+              {!addEmailValid && <p className="text-xs text-destructive" role="alert">Enter a valid email address, or leave the email field blank.</p>}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => addProspect.mutate()} disabled={!form.name.trim() || addProspect.isPending}>
+                <Button size="sm" onClick={() => addProspect.mutate()} disabled={!canAddProspect || addProspect.isPending}>
                   {addProspect.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Add
                 </Button>
               </div>
@@ -1574,7 +1638,7 @@ export default function OutreachCampaignDetailPage() {
                   {visibleProspects.map((p) => (
                     <TableRow key={p.id} data-testid={`prospect-${p.id}`}>
                       <TableCell>
-                        <div className="font-medium">{p.name}</div>
+                        <div className="font-medium">{p.name || p.email || "—"}</div>
                         {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
                         <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
                       </TableCell>
@@ -1678,7 +1742,7 @@ export default function OutreachCampaignDetailPage() {
                             disabled={enrich.isPending && enrich.variables === p.id}
                             data-testid={`enrich-${p.id}`}
                             title="Find LinkedIn profile / email"
-                            aria-label={`Find LinkedIn profile or email for ${p.name}`}
+                            aria-label={`Find LinkedIn profile or email for ${p.name || p.email || "prospect"}`}
                           >
                             {enrich.isPending && enrich.variables === p.id
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1716,7 +1780,7 @@ export default function OutreachCampaignDetailPage() {
                           onClick={() => openEditProspect(p)}
                           data-testid={`edit-prospect-${p.id}`}
                           title="Edit contact details"
-                          aria-label={`Edit contact details for ${p.name}`}
+                          aria-label={`Edit contact details for ${p.name || p.email || "prospect"}`}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
@@ -1724,7 +1788,7 @@ export default function OutreachCampaignDetailPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            if (confirm(`Remove ${p.name} from this campaign?`)) {
+                            if (confirm(`Remove ${p.name || p.email || "this prospect"} from this campaign?`)) {
                               deleteProspect.mutate(p.id);
                             }
                           }}
@@ -2159,7 +2223,7 @@ export default function OutreachCampaignDetailPage() {
       <Dialog open={!!dossier} onOpenChange={(o) => !o && setDossier(null)}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{dossier?.name}</DialogTitle>
+            <DialogTitle>{dossier?.name || dossier?.email || "Prospect details"}</DialogTitle>
             <DialogDescription>
               {dossier?.title}{dossier?.companyName ? ` · ${dossier.companyName}` : ""}
               {dossier?.icpScore != null ? ` · ICP ${dossier.icpScore}/100` : ""}
@@ -2555,7 +2619,7 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       {/* Discovery dialog — review web-discovered candidates, then import selected */}
-      <Dialog open={discovering} onOpenChange={(o) => { if (!o) { setDiscovering(false); setDiscoverResult(null); } }}>
+      <Dialog open={discovering} onOpenChange={(o) => { if (!o) { setDiscovering(false); setDiscoverResult(null); setDiscoverResultCompany(""); setSelected(new Set()); } }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2578,6 +2642,42 @@ export default function OutreachCampaignDetailPage() {
               Net-new people matching this campaign's ICP, scored against your criteria. Pick who to add.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="discovery-company">Company name or domain <span className="text-muted-foreground">(optional)</span></Label>
+              <p className="text-xs text-muted-foreground">Limit this search to one company. This does not change the campaign's targeting.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="discovery-company"
+                value={discoverCompany}
+                disabled={discover.isPending}
+                onChange={(e) => {
+                  setDiscoverCompany(e.target.value.slice(0, 200));
+                  setDiscoverResult(null);
+                  setDiscoverResultCompany("");
+                  setSelected(new Set());
+                }}
+                onKeyDown={(e) => { if (e.key === "Enter") runDiscovery(); }}
+                placeholder="For example, northstar.com"
+                maxLength={200}
+                data-testid="input-discovery-company"
+                className="flex-1"
+              />
+              <Button onClick={runDiscovery} disabled={discover.isPending} data-testid="button-run-discovery">
+                {discover.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Search className="w-4 h-4 mr-1.5" />}
+                {discover.isPending ? "Searching" : "Search prospects"}
+              </Button>
+            </div>
+            {discoverResult && (
+              <p className="text-xs text-muted-foreground" data-testid="discovery-company-used">
+                {discoverResultCompany
+                  ? <>Results searched for <span className="font-medium text-foreground">{discoverResultCompany}</span>.</>
+                  : "Results searched without a company filter, using this campaign's targeting."}
+              </p>
+            )}
+          </div>
 
           {/* Fallback notice — shown when Apollo returned 0 and we retried with web */}
           {discoverResult?.fallbackReason && (
@@ -2660,7 +2760,7 @@ export default function OutreachCampaignDetailPage() {
               </div>
               <DialogFooter className="gap-2 items-center sm:justify-between">
                 <span className="text-xs text-muted-foreground">{selected.size} of {discoverResult.candidates.length} selected</span>
-                <Button onClick={() => importDiscovered.mutate()} disabled={selected.size === 0 || importDiscovered.isPending} data-testid="button-import-discovered">
+                <Button onClick={() => importDiscovered.mutate()} disabled={selected.size === 0 || importDiscovered.isPending || discover.isPending} data-testid="button-import-discovered">
                   {importDiscovered.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
                   Import selected
                 </Button>
@@ -2671,11 +2771,16 @@ export default function OutreachCampaignDetailPage() {
               <p className="text-sm font-medium">No new prospects found</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 {discoverResult.fallbackReason
-                  ? "Apollo returned no matches and web discovery also found no results — try broadening the campaign's roles, industries, or geographies."
-                  : "Everyone found is already on this campaign, or no matches were found — try widening the campaign's roles, industries, or geographies."}
+                  ? "Apollo returned no matches and web discovery also found no results. Try a different company filter or widen the campaign's roles, industries, or geographies."
+                  : "Everyone found is already on this campaign, or no matches were found. Try a different company filter or widen the campaign's roles, industries, or geographies."}
               </p>
             </div>
-          ) : null}
+          ) : (
+            <div className="py-8 text-center space-y-1.5" data-testid="discovery-initial-state">
+              <p className="text-sm font-medium">Ready when you are</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">Choose an optional company filter, then search to find prospects for this campaign.</p>
+            </div>
+          )}
           {discoverResult?.relaxationApplied && (
             <p className="text-[11px] text-muted-foreground border-t pt-2" data-testid="discovery-relaxation-notice">
               The exact filters returned no one, so the search was automatically broadened: {discoverResult.relaxationApplied}.
@@ -2710,6 +2815,97 @@ export default function OutreachCampaignDetailPage() {
               {discoverResult.droppedCount} candidate{discoverResult.droppedCount === 1 ? " was" : "s were"} filtered out — they appeared to be company names, role labels, or incomplete names rather than real people.
             </p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Operator-only compose clarification; blocked model output is never shown as a recipient draft. */}
+      <Dialog
+        open={!!composeRecovery}
+        onOpenChange={(open) => {
+          if (!open && !compose.isPending) setComposeRecovery(null);
+        }}
+      >
+        <DialogContent className="max-w-xl" data-testid="dialog-compose-clarification">
+          <DialogHeader>
+            <DialogTitle data-testid="compose-clarification-title">
+              {composeRecovery?.code === "OUTREACH_REFUSED"
+                ? "Drafting could not proceed"
+                : composeRecovery?.code === "OUTREACH_INVALID_DRAFT"
+                  ? "Draft needs more information"
+                  : "Clarify before drafting"}
+            </DialogTitle>
+            <DialogDescription>
+              This is an operator-only clarification. No email draft was saved. Add missing facts or answer the questions below; this context is not for overriding safeguards.
+            </DialogDescription>
+          </DialogHeader>
+
+          {composeRecovery && (
+            <div className="space-y-4">
+              <div className="rounded-md border border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/20 p-3 text-sm" data-testid="compose-clarification-explanation">
+                {composeRecovery.explanation}
+              </div>
+              {composeRecovery.questions.length > 0 && (
+                <section className="space-y-2" aria-label="Questions for the operator" data-testid="compose-clarification-questions">
+                  <h3 className="text-sm font-medium">Information to clarify</h3>
+                  <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+                    {composeRecovery.questions.map((question, index) => <li key={`${index}-${question}`}>{question}</li>)}
+                  </ul>
+                </section>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="compose-additional-context">Missing facts or clarification</Label>
+                <Textarea
+                  id="compose-additional-context"
+                  value={composeRecovery.additionalContext}
+                  onChange={(event) => setComposeRecovery((current) => current ? {
+                    ...current,
+                    additionalContext: event.target.value,
+                    retryError: "",
+                  } : current)}
+                  disabled={compose.isPending}
+                  maxLength={6000}
+                  rows={5}
+                  placeholder="Add accurate, relevant context that can help draft the outreach."
+                  data-testid="input-compose-additional-context"
+                />
+                <p className="text-xs text-muted-foreground text-right" data-testid="compose-context-count">
+                  {composeRecovery.additionalContext.length}/6000
+                </p>
+              </div>
+              {composeRecovery.retryError && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert" data-testid="compose-retry-error">
+                  {composeRecovery.retryError}
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setComposeRecovery(null)}
+              disabled={compose.isPending}
+              data-testid="button-compose-clarification-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!composeRecovery) return;
+                compose.mutate({
+                  ...composeRecovery.vars,
+                  additionalContext: composeRecovery.additionalContext,
+                });
+              }}
+              disabled={!composeRecovery || compose.isPending || composeRecovery.additionalContext.length > 6000}
+              data-testid="button-compose-retry"
+            >
+              {compose.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
+              {compose.isPending ? "Drafting…" : "Retry drafting"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

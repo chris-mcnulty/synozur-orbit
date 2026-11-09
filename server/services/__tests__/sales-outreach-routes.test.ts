@@ -208,6 +208,7 @@ import { composeTouch } from "../outreach-composer-service";
 import { discoverProspects, importDiscoveredProspects } from "../discovery-service";
 import { enrichProspectContact, EnrichError } from "../prospect-enrich-service";
 import { ensureContactForPerson } from "../prospect-contact-service";
+import { OutreachComposeError } from "../outreach-draft-outcome";
 
 // ── Shared test context ───────────────────────────────────────────────────────
 
@@ -342,6 +343,15 @@ describe("sales-outreach routes", () => {
       status: "approved",
       outlookDraftId: "draft-1",
     };
+
+    it("blocks an older saved refusal before any Outlook or LinkedIn delivery", async () => {
+      pushDb({ ...TOUCH, body: "I cannot draft this email. What date is the event?" });
+      const res = await request(app).post("/api/sales-outreach/touches/touch-1/approve");
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe("OUTREACH_INVALID_DRAFT");
+      expect(createOutlookDraft).not.toHaveBeenCalled();
+      expect(assertApprovalAllowed).not.toHaveBeenCalled();
+    });
 
     it("approves an email touch and returns 200 with the outlook webLink", async () => {
       // select touch → [TOUCH]
@@ -577,12 +587,48 @@ describe("sales-outreach routes", () => {
       expect(res.body).toMatchObject({ id: "prospect-existing", name: "Bob Smith" });
     });
 
-    it("returns 400 when prospect name is missing", async () => {
+    it("adds an email-only prospect without inventing a name", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      pushDb({ ...NEW_PROSPECT, name: "bob@partner.com" });
+      pushDb({ ...NEW_PROSPECT, name: "bob@partner.com" });
+
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/prospects")
+        .send({ email: "  Bob@Partner.com  " });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe("bob@partner.com");
+      expect(ensureContactForPerson).toHaveBeenCalledWith("acme.com",
+        expect.objectContaining({ name: "", email: "bob@partner.com" }), "sales_manual");
+    });
+
+    it("accepts optional name, title and company alongside email", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      pushDb(NEW_PROSPECT);
+      pushDb(NEW_PROSPECT);
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/prospects")
+        .send({ email: "bob@partner.com", name: " Bob Smith ", title: " CIO ", companyName: " Partner " });
+      expect(res.status).toBe(201);
+      expect(ensureContactForPerson).toHaveBeenCalledWith("acme.com",
+        expect.objectContaining({ name: "Bob Smith", title: "CIO", companyName: "Partner" }), "sales_manual");
+    });
+
+    it.each(["bad-email", "a@", "a@example.com, b@example.com"])("rejects invalid email %s even with a name", async (email) => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/prospects")
+        .send({ name: "Bob Smith", email });
+      expect(res.status).toBe(400);
+      expect(ensureContactForPerson).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when both name and email are missing", async () => {
       vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
 
       const res = await request(app)
         .post("/api/sales-outreach/campaigns/camp-1/prospects")
-        .send({ email: "bob@partner.com" });
+        .send({ name: "  ", email: "  " });
 
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: expect.stringMatching(/name/i) });
@@ -623,6 +669,40 @@ describe("sales-outreach routes", () => {
       model: "gpt-4o",
       usage: { inputTokens: 200, outputTokens: 80 },
     };
+
+    it("returns operator questions rather than a touch on a clarification outcome", async () => {
+      pushDb(PROSPECT);
+      vi.mocked(guardManualAction).mockResolvedValue(true);
+      vi.mocked(composeTouch).mockRejectedValue(new OutreachComposeError(
+        "OUTREACH_NEEDS_INPUT", "Please confirm the event details.", ["What is the event date?"],
+      ));
+      const res = await request(app).post("/api/sales-outreach/prospects/prospect-1/compose").send({ channel: "email" });
+      expect(res.status).toBe(422);
+      expect(res.body).toEqual({
+        error: "Please confirm the event details.", code: "OUTREACH_NEEDS_INPUT", questions: ["What is the event date?"],
+      });
+      expect(res.body.touch).toBeUndefined();
+    });
+
+    it("passes clarification answers into a fresh attempt with the original channel", async () => {
+      pushDb(PROSPECT);
+      vi.mocked(guardManualAction).mockResolvedValue(true);
+      vi.mocked(composeTouch).mockResolvedValue(COMPOSE_RESULT as any);
+      const res = await request(app).post("/api/sales-outreach/prospects/prospect-1/compose")
+        .send({ channel: "email", additionalContext: " The event is November 18. " });
+      expect(res.status).toBe(201);
+      expect(composeTouch).toHaveBeenCalledWith("acme.com", "prospect-1",
+        expect.objectContaining({ channel: "email", additionalContext: "The event is November 18." }));
+    });
+
+    it("rejects oversized clarification before charging for another attempt", async () => {
+      pushDb(PROSPECT);
+      const res = await request(app).post("/api/sales-outreach/prospects/prospect-1/compose")
+        .send({ channel: "email", additionalContext: "x".repeat(6001) });
+      expect(res.status).toBe(400);
+      expect(composeTouch).not.toHaveBeenCalled();
+      expect(guardManualAction).not.toHaveBeenCalled();
+    });
 
     it("composes a touch and returns 201", async () => {
       vi.mocked(guardManualAction).mockResolvedValue(true);
@@ -772,6 +852,28 @@ describe("sales-outreach routes", () => {
         "camp-1",
         expect.objectContaining({ limit: 10 }),
       );
+    });
+
+    it("passes a trimmed company restriction and selected backend into discovery", async () => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      vi.mocked(guardManualAction).mockResolvedValue(true);
+      vi.mocked(discoverProspects).mockResolvedValue(DISCOVER_RESULT as any);
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/discover")
+        .send({ company: " Acme ", backend: "web", limit: 10 });
+      expect(res.status).toBe(200);
+      expect(discoverProspects).toHaveBeenCalledWith("acme.com", "camp-1",
+        { company: "Acme", backend: "web", limit: 10 });
+    });
+
+    it.each([123, ["Acme"], "x".repeat(201)])("rejects an invalid company filter before metering", async (company) => {
+      vi.mocked(getCampaign).mockResolvedValue(CAMPAIGN as any);
+      const res = await request(app)
+        .post("/api/sales-outreach/campaigns/camp-1/discover")
+        .send({ company });
+      expect(res.status).toBe(400);
+      expect(discoverProspects).not.toHaveBeenCalled();
+      expect(guardManualAction).not.toHaveBeenCalled();
     });
 
     it("returns 404 when the campaign does not exist", async () => {

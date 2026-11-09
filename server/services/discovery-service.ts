@@ -20,6 +20,7 @@ import {
   candidateToAttributes,
   dedupeCandidates,
   normalizeLimit,
+  matchesDiscoveryCompany,
   type DiscoveryBackendId,
   type DiscoveryCandidate,
   type DiscoverySearchInput,
@@ -147,7 +148,7 @@ async function loadCampaignContext(tenantDomain: string, campaignId: string) {
 export async function discoverProspects(
   tenantDomain: string,
   campaignId: string,
-  opts: { backend?: DiscoveryBackendId; limit?: number } = {},
+  opts: { backend?: DiscoveryBackendId; limit?: number; company?: string } = {},
 ): Promise<DiscoverResult> {
   const { campaign, criteria: rawCriteria, campaignPersonas } = await loadCampaignContext(tenantDomain, campaignId);
   const limit = normalizeLimit(opts.limit);
@@ -156,7 +157,8 @@ export async function discoverProspects(
   // industries, title variants) BEFORE searching so niche/local asks don't
   // collapse to zero on literal keyword matching. Skipped when the campaign
   // targets specific named accounts — those searches are already precise.
-  const namedAccounts = campaign.targetingFilter?.namedAccounts ?? undefined;
+  const company = opts.company?.trim() || undefined;
+  const namedAccounts = company ? [company] : campaign.targetingFilter?.namedAccounts ?? undefined;
   let criteria = rawCriteria;
   let intentExpansion: IntentExpansionDetail | undefined;
   if (!namedAccounts?.length) {
@@ -168,6 +170,7 @@ export async function discoverProspects(
   const input: DiscoverySearchInput = {
     criteria,
     namedAccounts,
+    company,
     goal: campaign.salesGoal,
     limit,
   };
@@ -244,12 +247,13 @@ export async function discoverProspects(
       if (found.length === 0 && isWebSearchAvailable()) {
         console.log("[discovery] Apollo returned 0 results — falling back to web discovery");
         apolloDiagnostics = apolloResult.appliedFilters;
-        fallbackReason =
-          "Apollo returned no matches for these filters — showing broadened web research results instead.";
+        fallbackReason = company
+          ? "Apollo returned no matches — showing web research restricted to the selected company."
+          : "Apollo returned no matches for these filters — showing broadened web research results instead.";
         backend = "web";
         // Web fallback researches broadly instead of mirroring the filters
         // that already failed.
-        input.broaden = true;
+        input.broaden = !company;
       }
     } catch (err) {
       if (err instanceof ApolloDiscoveryError) {
@@ -259,7 +263,7 @@ export async function discoverProspects(
         apolloDiagnostics = undefined; // no filters to show since the call never succeeded
         fallbackReason = `Apollo search failed (${err.message}) — showing web discovery results instead.`;
         backend = "web";
-        input.broaden = true;
+        input.broaden = !company;
       } else {
         throw err;
       }
@@ -279,6 +283,9 @@ export async function discoverProspects(
     provider = web.provider;
   }
 
+  // Apply the same restriction to every backend and fallback, before scoring
+  // or displaying importable candidates. Never infer employer from an email.
+  if (company) found = found.filter(candidate => matchesDiscoveryCompany(candidate, company));
   const foundCount = found.length;
 
   // Dedup against prospects already on this campaign.

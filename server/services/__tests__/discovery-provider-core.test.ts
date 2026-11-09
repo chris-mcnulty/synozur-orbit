@@ -7,11 +7,38 @@ import {
   dedupeKeys,
   candidateToAttributes,
   normalizeLimit,
+  matchesDiscoveryCompany,
+  discoveryCompanyDomain,
   type DiscoveryCandidate,
 } from "../discovery-provider-core";
 
 
 describe("discovery-provider-core", () => {
+  it("keeps an explicit company restriction even in broadened web prompts", () => {
+    const prompt = buildDiscoveryPrompt({
+      criteria: {}, limit: 10, company: "Acme", broaden: true,
+    });
+    assert.ok(prompt.includes('HARD COMPANY RESTRICTION: "Acme"'));
+    assert.ok(prompt.includes("Never include similar companies"));
+    assert.ok(prompt.includes("companyDomain"));
+  });
+
+  it("matches company names with punctuation and legal suffixes but not similar companies", () => {
+    const candidate: DiscoveryCandidate = { name: "Jane Doe", companyName: "Acme, Inc.", source: "web" };
+    assert.equal(matchesDiscoveryCompany(candidate, "ACME"), true);
+    assert.equal(matchesDiscoveryCompany({ ...candidate, companyName: "Acme Consulting" }, "Acme"), false);
+    assert.equal(matchesDiscoveryCompany({ ...candidate, companyName: null }, "Acme"), false);
+  });
+
+  it("matches authoritative employer domains, never unrelated source URLs or email domains", () => {
+    const candidate: DiscoveryCandidate = { name: "Jane Doe", companyName: "Acme", source: "web" };
+    assert.equal(discoveryCompanyDomain("https://www.acme.com/team"), "acme.com");
+    assert.equal(discoveryCompanyDomain("Acme Capital"), null);
+    assert.equal(matchesDiscoveryCompany({ ...candidate, companyDomain: "www.acme.com" }, "acme.com"), true);
+    assert.equal(matchesDiscoveryCompany({ ...candidate, companyDomain: "https://careers.acme.com" }, "acme.com"), true);
+    assert.equal(matchesDiscoveryCompany({ ...candidate, companyDomain: "fakeacme.com" }, "acme.com"), false);
+    assert.equal(matchesDiscoveryCompany({ ...candidate, email: "jane@acme.com", sourceUrl: "https://acme.com" }, "acme.com"), false);
+  });
   it("normalizeLimit clamps and defaults", () => {
     assert.equal(normalizeLimit(undefined), 25);
     assert.equal(normalizeLimit(0), 25);

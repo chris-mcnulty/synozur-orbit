@@ -23,6 +23,8 @@ export interface DiscoveryCandidate {
   name: string;
   title?: string | null;
   companyName?: string | null;
+  /** Employer domain confirmed by the discovery source, not inferred from email. */
+  companyDomain?: string | null;
   email?: string | null;
   linkedinUrl?: string | null;
   geography?: string | null;
@@ -46,6 +48,8 @@ export interface DiscoverySearchInput {
   criteria: IcpCriteria;
   /** Named-account allow-list (company names or domains) to bias toward. */
   namedAccounts?: string[];
+  /** Explicit per-search restriction; unlike named accounts, never expand to similar employers. */
+  company?: string;
   /** The campaign goal, in the seller's words (context for relevance). */
   goal?: string | null;
   /** Max candidates to return (the model is told to stop here). */
@@ -73,6 +77,33 @@ function bulletList(label: string, items?: string[]): string | null {
   return `${label}: ${cleaned.join("; ")}`;
 }
 
+/** Normalize a domain or website filter without treating a company name as a URL. */
+export function discoveryCompanyDomain(value: string): string | null {
+  if (!/^(?:https?:\/\/)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:[/:].*)?$/i.test(value.trim())) return null;
+  try {
+    const host = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`).hostname;
+    return host.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function normalizedCompanyName(value: string): string {
+  return value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+    .replace(/(?:\s+(?:inc|incorporated|llc|ltd|limited|corp|corporation|plc))+$/g, "").trim();
+}
+
+/** Fail closed when a backend returns people outside an explicit company restriction. */
+export function matchesDiscoveryCompany(candidate: DiscoveryCandidate, company: string): boolean {
+  const domain = discoveryCompanyDomain(company);
+  if (domain) {
+    const employer = discoveryCompanyDomain(candidate.companyDomain ?? "");
+    return !!employer && (employer === domain || employer.endsWith(`.${domain}`));
+  }
+  const name = normalizedCompanyName(company);
+  return !!name && normalizedCompanyName(candidate.companyName ?? "") === name;
+}
+
 /**
  * Build the user prompt that drives a web-grounded discovery search. The model
  * is expected to run web searches and return a strict JSON array of candidates.
@@ -95,6 +126,7 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
   return [
     goal ? `Campaign goal: ${goal}` : "",
     "Find real, currently-employed people who match this Ideal Customer Profile.",
+    input.company ? `HARD COMPANY RESTRICTION: ${JSON.stringify(input.company)}. Only include people currently employed by this exact company or domain. Never include similar companies, former employees, or vendors. Return [] if none can be verified. Include companyDomain from an authoritative source (never infer it from an email). This restriction still applies when broadening other criteria.` : "",
     "",
     targeting || "(No specific targeting filters — use the campaign goal.)",
     "",
@@ -114,7 +146,7 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
       : "",
     'For each candidate set "confidence": "verified" when the title and company were confirmed on a current authoritative source (the company\'s own site, a recent press release, or an official event page), or "reconfirm" when it came from an aggregator, directory, or possibly-outdated page.',
     "",
-    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null, "confidence": "verified"|"reconfirm"}. If you find no one, return [].',
+    'Respond with ONLY a JSON array (no prose, no markdown fences). Each element: {"name": string, "title": string|null, "companyName": string|null, "companyDomain": string|null, "email": string|null, "linkedinUrl": string|null, "geography": string|null, "industry": string|null, "segment": string|null, "sourceUrl": string|null, "confidence": "verified"|"reconfirm"}. If you find no one, return [].',
   ]
     .filter(Boolean)
     .join("\n");
@@ -326,6 +358,7 @@ export function parseDiscoveryCandidates(
       name,
       title: asStringOrNull(r.title),
       companyName: asStringOrNull(r.companyName),
+      companyDomain: asStringOrNull(r.companyDomain),
       email: asStringOrNull(r.email),
       linkedinUrl: safeHttpUrl(r.linkedinUrl),
       geography: asStringOrNull(r.geography),

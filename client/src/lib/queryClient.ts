@@ -27,12 +27,16 @@ export class ApiError extends Error {
   status: number;
   upgradeRequired?: boolean;
   requiredPlan?: string;
+  code?: string;
+  questions?: string[];
 
-  constructor(status: number, message: string, upgradeRequired?: boolean, requiredPlan?: string) {
+  constructor(status: number, message: string, upgradeRequired?: boolean, requiredPlan?: string, details?: { code?: string; questions?: string[] }) {
     super(`${status}: ${message}`);
     this.status = status;
     this.upgradeRequired = upgradeRequired;
     this.requiredPlan = requiredPlan;
+    this.code = details?.code;
+    this.questions = details?.questions;
   }
 }
 
@@ -53,6 +57,8 @@ async function throwIfResNotOk(res: Response) {
     let errorMessage = res.statusText;
     let upgradeRequired = false;
     let requiredPlan: string | undefined;
+    let code: string | undefined;
+    let questions: string[] | undefined;
     try {
       const text = await res.text();
       if (text.includes("<!DOCTYPE") || text.includes("<html") || text.includes("<HTML")) {
@@ -61,6 +67,8 @@ async function throwIfResNotOk(res: Response) {
         try {
           const json = JSON.parse(text);
           errorMessage = json.error || json.message || text;
+          code = typeof json.code === "string" ? json.code : undefined;
+          questions = Array.isArray(json.questions) ? json.questions.filter((q: unknown): q is string => typeof q === "string") : undefined;
           if (json.upgradeRequired) {
             upgradeRequired = true;
             requiredPlan = json.requiredPlan;
@@ -71,7 +79,7 @@ async function throwIfResNotOk(res: Response) {
       }
     } catch {}
     maybeRecoverFromStaleTabContext(res.status, errorMessage);
-    throw new ApiError(res.status, errorMessage, upgradeRequired, requiredPlan);
+    throw new ApiError(res.status, errorMessage, upgradeRequired, requiredPlan, { code, questions });
   }
 }
 

@@ -201,6 +201,9 @@ export async function searchWeb(
   tenantDomain: string,
   input: DiscoverySearchInput,
 ): Promise<WebDiscoveryResult> {
+  // The company is already chosen. Do not run broad company discovery first,
+  // which could replace the explicit employer with adjacent organizations.
+  if (input.company) return searchWebSinglePass(tenantDomain, input);
   try {
     return await searchWebTwoStage(tenantDomain, input);
   } catch (err) {

@@ -65,6 +65,35 @@ describe("searchApollo — bounded batch call count", () => {
     vi.restoreAllMocks();
   });
 
+  it.each(["Acme", "acme.com"])("restricts explicit company %s by organization IDs without expanding", async (company) => {
+    const fetchMock = vi.fn(async (_url: string, opts?: RequestInit) => {
+      const body = JSON.parse(String(opts?.body));
+      const data = body.organization_ids
+        ? { people: [
+            { name: "Alice Chen", organization: { id: "org-acme", name: "Acme" } },
+            { name: "Bob Jones", organization: { id: "org-other", name: "Other" } },
+          ] }
+        : { organizations: [
+            { id: "org-acme", name: "Acme, Inc.", primary_domain: "acme.com" },
+            { id: "org-other", name: "Acme Consulting", primary_domain: "other.com" },
+          ] };
+      return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchApollo("tenant.example", { criteria: {}, company, limit: 10 });
+    assert.equal(fetchMock.mock.calls.length, 2);
+    const orgBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const peopleBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    if (company.includes(".")) assert.deepEqual(orgBody.q_organization_domains_list, ["acme.com"]);
+    else assert.equal(orgBody.q_organization_name, "Acme");
+    assert.deepEqual(peopleBody.organization_ids, ["org-acme"]);
+    assert.equal(peopleBody.organization_names, undefined);
+    assert.equal(result.expansionSummary, undefined);
+    assert.equal(result.candidates.length, 1);
+    assert.equal(result.candidates[0].name, "Alice Chen");
+    assert.equal(result.candidates[0].companyDomain, "acme.com");
+  });
+
   it("caps people-search batches at MAX_PEOPLE_SEARCH_BATCHES for a large named-account list", async () => {
     // 35 accounts → 4 natural batches of 10 — the cap should limit it to 3.
     const accounts = makeAccountList(35);

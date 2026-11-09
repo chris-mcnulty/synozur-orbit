@@ -63,9 +63,47 @@ describe("outreach-composer-core", () => {
     assert.equal(r.body, "Hey Sam, saw your post.");
   });
 
-  it("parse falls back to whole text as body when unformatted", () => {
-    const r = parseComposeResponse("Just a plain draft.", "email");
-    assert.equal(r.body, "Just a plain draft.");
+  it("rejects unformatted text rather than saving it as a recipient email", () => {
+    assert.throws(() => parseComposeResponse("Just a plain draft.", "email"));
+  });
+
+  it.each([
+    "I can't draft this. Could you confirm the event date?",
+    "===SUBJECT===\nDraft\n===BODY===\nI cannot write this email. What is the event date?",
+    "===NEEDS_INPUT===\nPlease clarify:\n1. What is the event date?\n2. Who is the sender?",
+    "===REFUSED===\nI cannot help with this request.",
+    "===SUBJECT===\nOnly a subject",
+    "===SUBJECT===\n\n===BODY===\nHi Jane",
+    "===BODY===\n",
+    "",
+  ])("rejects assistant/non-draft output: %s", (text) => {
+    assert.throws(() => parseComposeResponse(text, "email"));
+  });
+
+  it("returns operator questions without any recipient draft", () => {
+    try {
+      parseComposeResponse("===NEEDS_INPUT===\n1. What is the event date?\n2. Who is the sender?", "email");
+      assert.fail("Expected operator-only outcome");
+    } catch (err: any) {
+      assert.equal(err.code, "OUTREACH_NEEDS_INPUT");
+      assert.deepEqual(err.questions, ["What is the event date?", "Who is the sender?"]);
+    }
+  });
+
+  it("does not mistake a real recipient question or scheduling decline for a refusal", () => {
+    const text = "===SUBJECT===\nTuesday\n===BODY===\nHi Jane, I can't make Tuesday. Would Thursday work?";
+    assert.equal(parseComposeResponse(text, "email").body, "Hi Jane, I can't make Tuesday. Would Thursday work?");
+  });
+
+  it("includes sender answers separately from recipient copy and offers operator-only outcomes", () => {
+    const prompt = buildComposePrompt({
+      channel: "email", stepNumber: 1, purpose: "invite", prospect: { name: "Jane" },
+      additionalContext: "The event is November 18.",
+    });
+    assert.ok(prompt.includes("Sender clarification"));
+    assert.ok(prompt.includes("November 18"));
+    assert.ok(prompt.includes("===NEEDS_INPUT==="));
+    assert.ok(prompt.includes("===REFUSED==="));
   });
 
   it("enforceLength trims linkedin body to the cap on a word boundary", () => {

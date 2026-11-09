@@ -21,8 +21,9 @@ import { describe, it, beforeEach, vi, expect } from "vitest";
 // .values() is reached, so tests can pre-load results in call order with
 // pushDb(...rows).
 
-const { dbQ, makeMockDb } = vi.hoisted(() => {
+const { dbQ, makeMockDb, writes } = vi.hoisted(() => {
   const dbQ: any[][] = [];
+  const writes = vi.fn();
 
   function terminal(): any {
     const val = dbQ.shift() ?? [];
@@ -56,13 +57,13 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
   function makeMockDb() {
     return {
       select: mkChain,
-      insert: mkChain,
-      update: mkChain,
+      insert: (...args: unknown[]) => { writes(...args); return mkChain(); },
+      update: (...args: unknown[]) => { writes(...args); return mkChain(); },
       delete: () => ({ where: () => Promise.resolve([]) }),
     };
   }
 
-  return { dbQ, makeMockDb };
+  return { dbQ, makeMockDb, writes };
 });
 
 // ── Mock all I/O dependencies ─────────────────────────────────────────────────
@@ -82,9 +83,9 @@ vi.mock("../strategic-context", () => ({
   formatStrategicContextForPrompt: vi.fn().mockReturnValue(""),
 }));
 
-vi.mock("../outreach-composer-core", () => ({
+vi.mock("../outreach-composer-core", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../outreach-composer-core")>(),
   buildComposePrompt: vi.fn().mockReturnValue("composed prompt"),
-  parseComposeResponse: vi.fn().mockReturnValue({ subject: null, body: "Hi Jane via LinkedIn" }),
   enforceLength: vi.fn().mockImplementation((body: string) => body),
   COMPOSER_SYSTEM_PROMPT: "system prompt",
 }));
@@ -153,6 +154,23 @@ describe("composeTouch — recipient guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dbQ.length = 0;
+  });
+
+  it.each([
+    "I can't draft this email. What is the event date?",
+    "===NEEDS_INPUT===\nWhat is the event date?",
+    "===REFUSED===\nI cannot help with this request.",
+    "===SUBJECT===\nQuestions\n===BODY===\nBefore I can draft this, who is the sender?",
+    "An arbitrary unformatted response",
+  ])("does not save a touch or change prospect status for non-draft output: %s", async (text) => {
+    vi.mocked(getProspectWithContact).mockResolvedValue({ ...PROSPECT_NO_EMAIL, email: "jane@fund.com" } as any);
+    pushDb(CAMPAIGN);
+    pushDb();
+    vi.mocked(completeForFeature).mockResolvedValue({
+      text, usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any);
+    await expect(composeTouch("acme.com", "prospect-1", { channel: "email" })).rejects.toThrow();
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it("throws before calling the AI when channel=email and the prospect has no email address", async () => {

@@ -35,7 +35,7 @@
  */
 
 import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provider-core";
-import { isBadName } from "./discovery-provider-core";
+import { isBadName, discoveryCompanyDomain, matchesDiscoveryCompany } from "./discovery-provider-core";
 
 const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/api_search";
 const APOLLO_ORG_SEARCH_URL = "https://api.apollo.io/v1/mixed_companies/search";
@@ -294,8 +294,11 @@ interface ApolloPerson {
   state?: string;
   country?: string;
   organization?: {
+    id?: string;
     name?: string;
     industry?: string;
+    primary_domain?: string;
+    website_url?: string;
   };
 }
 
@@ -313,8 +316,10 @@ interface ApolloSearchResponse {
 
 interface ApolloOrganization {
   id?: string;
+  organization_id?: string;
   name?: string;
   primary_domain?: string;
+  website_url?: string;
   industry?: string;
   estimated_num_employees?: number;
 }
@@ -591,7 +596,8 @@ export async function searchApollo(
     throw new ApolloDiscoveryError(apolloReason(), "not_available");
   }
 
-  const { criteria, namedAccounts, limit } = input;
+  const { criteria, limit } = input;
+  const namedAccounts = input.company ? [input.company] : input.namedAccounts;
 
   // ── Base request body ──────────────────────────────────────────────────────
 
@@ -645,7 +651,7 @@ export async function searchApollo(
   let finalAccountList: string[] = namedAccounts ? [...namedAccounts] : [];
 
   if (namedAccounts?.length) {
-    const isSeedMode = namedAccounts.length <= 3;
+    const isSeedMode = namedAccounts.length <= 3 && !input.company;
 
     if (isSeedMode) {
       // Expand seed companies into a broader similar-company list.
@@ -732,6 +738,42 @@ export async function searchApollo(
         }
       }
     }
+  } else if (input.company) {
+    // Resolve an explicit employer to Apollo IDs. organization_names is not a
+    // documented people-search filter; never rely on it for a hard restriction.
+    const domain = discoveryCompanyDomain(input.company);
+    const orgResponse = await fetch(APOLLO_ORG_SEARCH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": apiKey },
+      body: JSON.stringify({
+        page: 1, per_page: 100,
+        ...(domain ? { q_organization_domains_list: [domain] } : { q_organization_name: input.company }),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!orgResponse.ok) throw new ApolloDiscoveryError("Company lookup failed", "api_error");
+    const orgData = await orgResponse.json();
+    const employers = ((orgData.organizations ?? orgData.accounts ?? []) as ApolloOrganization[])
+      .filter(org => (org.id || org.organization_id) && matchesDiscoveryCompany({
+        name: "", source: "apollo", companyName: org.name,
+        companyDomain: org.primary_domain ?? org.website_url,
+      }, input.company!));
+    if (employers.length) {
+      const employerById = new Map(employers.map(org => [org.id ?? org.organization_id!, org]));
+      const people = await apolloPeopleSearch(apiKey, {
+        ...baseBody, organization_ids: [...employerById.keys()],
+      });
+      // Only retain current employers, not historical-domain matches. Copy
+      // authoritative organization metadata when the people API omits it.
+      allPeople = people.filter(person => person.organization?.id && employerById.has(person.organization.id))
+        .map(person => {
+          const org = employerById.get(person.organization!.id!)!;
+          return { ...person, organization: {
+            ...person.organization, name: org.name,
+            primary_domain: org.primary_domain ?? org.website_url,
+          } };
+        });
+    }
   } else if (finalAccountList.length <= 10) {
     // Fits in a single call.
     const body = { ...baseBody, organization_names: finalAccountList };
@@ -805,6 +847,7 @@ export async function searchApollo(
       name: name || "Unknown",
       title: p.title ?? null,
       companyName: p.organization?.name ?? null,
+      companyDomain: p.organization?.primary_domain ?? p.organization?.website_url ?? null,
       email: p.email ?? null,
       linkedinUrl: p.linkedin_url
         ? p.linkedin_url.startsWith("http")

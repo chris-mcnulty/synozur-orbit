@@ -47,6 +47,7 @@ export interface ComposeTouchOptions {
   linkedinFormat?: LinkedInFormat | null;
   /** Draft intent — outreach (ask) vs engagement (warm, no ask). */
   intent?: OutreachIntent | null;
+  additionalContext?: string;
 }
 
 export interface ComposeTouchResult {
@@ -218,6 +219,7 @@ export async function composeTouch(
     linkedinFormat,
     intent,
     eventBlock,
+    additionalContext: opts.additionalContext,
   });
 
   const result = await completeForFeature("outreach_composer", prompt, {
