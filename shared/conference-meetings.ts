@@ -73,6 +73,29 @@ export interface MeetingDraftContext {
   fingerprint: string;
   historyCheckedAt: string;
 }
+export interface WarmConferenceContact {
+  hubspotContactId: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  jobTitle: string | null;
+  linkedinUrl: string | null;
+  crmOwnerId: string | null;
+  ownerUserIds: string[];
+  relatedCampaigns: string[];
+  relationships: string[];
+  score: number;
+  reasons: string[];
+  activities: RelationshipActivity[];
+  limitations: string[];
+  attendance: "unknown";
+}
+export interface WarmConferenceShortlist {
+  contacts: WarmConferenceContact[];
+  checkedAt: string;
+  candidateCount: number;
+  limitations: string[];
+}
 export const defaultMeetingContact = (): MeetingContact => ({
   relationships: ["unknown"], attendance: "unknown", attendanceEvidence: "",
   relationshipNotes: "", ownerNotes: "", stage: "shortlisted",

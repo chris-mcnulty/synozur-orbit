@@ -884,6 +884,66 @@ export async function listContacts(
   });
 }
 
+/** Conference discovery is a sample, not a full CRM sync. No unbounded paging. */
+export interface ConferenceHubspotContact extends HubspotContactLite {
+  crmOwnerId: string | null;
+  lifecycleStage: string | null;
+  optedOut: boolean;
+}
+const CONFERENCE_CONTACT_PROPS = [...CONTACT_PROPS, "hubspot_owner_id", "lifecyclestage", "hs_email_optout"];
+function conferenceContact(row: any): ConferenceHubspotContact {
+  const p = row.properties ?? {};
+  return {
+    hubspotContactId: String(row.id), name: contactName(p), email: p.email || null,
+    firstName: p.firstname || null, lastName: p.lastname || null,
+    company: p.company || null, jobTitle: p.jobtitle || null, linkedinUrl: p.hs_linkedin_url || null,
+    crmOwnerId: p.hubspot_owner_id || null, lifecycleStage: p.lifecyclestage || null,
+    optedOut: p.hs_email_optout === "true",
+  };
+}
+
+/** A bounded REST reader with a request-wide deadline, also used to revalidate selections. */
+export async function readConferenceHubspotContacts(
+  tenantDomain: string, opts: { queries?: string[]; ids?: string[] },
+): Promise<{ contacts: ConferenceHubspotContact[]; limitations: string[] }> {
+  const { accessToken } = await getTenantAccessToken(tenantDomain);
+  const signal = AbortSignal.timeout(20000);
+  const request = async (path: string, body: unknown) => {
+    const response = await fetch(`${HUBSPOT_REST_HOST}${path}`, {
+      method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal,
+    });
+    if (!response.ok) throw new Error(`HubSpot contact read failed (${response.status}). Check the connection and contact permissions.`);
+    return response.json();
+  };
+  if (opts.ids) {
+    if (!opts.ids.length || opts.ids.length > 10) throw new Error("Select between 1 and 10 contacts.");
+    const data = await request("/crm/v3/objects/contacts/batch/read", {
+      properties: CONFERENCE_CONTACT_PROPS, inputs: opts.ids.map(id => ({ id })),
+    });
+    if (data.errors?.length || data.results?.length !== opts.ids.length) throw new Error("Some selected HubSpot contacts are unavailable. Refresh the shortlist.");
+    return { contacts: data.results.filter((r: any) => !r.archived).map(conferenceContact), limitations: [] };
+  }
+  const contacts = new Map<string, ConferenceHubspotContact>();
+  const limitations = ["Sampled up to 100 recently modified HubSpot contacts plus up to 25 matches for each of three target-account searches. This is not a complete CRM scan."];
+  const queries = ["", ...Array.from(new Set(opts.queries ?? [])).filter(Boolean).slice(0, 3)];
+  for (const query of queries) {
+    try {
+      const data = await request("/crm/v3/objects/contacts/search", {
+        ...(query ? { query } : {}), filterGroups: [], properties: CONFERENCE_CONTACT_PROPS,
+        sorts: [{ propertyName: "lastmodifieddate", direction: "DESCENDING" }], limit: query ? 25 : 100,
+      });
+      for (const row of data.results ?? []) if (!row.archived) contacts.set(String(row.id), conferenceContact(row));
+      if (data.paging?.next) limitations.push(`${query ? `Target search “${query}”` : "Recently modified sample"} has more matches than this preview includes.`);
+    } catch (error) {
+      if (!contacts.size) throw error;
+      limitations.push("A target-account search was unavailable; the candidate sample is partial.");
+      break;
+    }
+  }
+  return { contacts: [...contacts.values()], limitations };
+}
+
 /**
  * Create or update a contact in HubSpot from an outreach prospect. Dedupes by
  * email when present. Returns the HubSpot contact id.

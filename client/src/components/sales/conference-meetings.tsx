@@ -13,6 +13,7 @@ import type { EventPresence, MeetingAngle, MeetingBrief, MeetingContact, Relatio
 import type { ReactNode } from "react";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
+import ConferenceWarmContacts from "@/components/sales/conference-warm-contacts";
 
 type Workspace = {
   campaignId: string;
@@ -357,6 +358,8 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
           </Card>
 
           <div className="space-y-4">
+            <ConferenceWarmContacts key={`${campaignId}:${workspace.fingerprint}`} campaignId={campaignId}
+              planSaved={!!workspace.brief?.enabled && JSON.stringify(brief) === JSON.stringify(workspace.brief) && (!!brief.goals.trim() || !!brief.targetAccounts.trim())} />
             <Card className="border-[#d9ded5] bg-[#fbfaf5] shadow-none">
               <CardHeader className="pb-2"><CardTitle className="font-serif text-lg text-[#2c443b]">Event facts</CardTitle></CardHeader>
               <CardContent>

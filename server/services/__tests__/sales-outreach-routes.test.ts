@@ -1373,7 +1373,9 @@ describe("sales-outreach routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.imported).toBe(1);
-      expect(res.body.skipped).toBe(0); // intra-batch dedup is silent
+      // Every input row is accounted for, including an intra-batch duplicate.
+      expect(res.body.skipped).toBe(1);
+      expect(res.body.total).toBe(2);
     });
 
     it("a retried import does not duplicate memberships (conflict-safe insert)", async () => {

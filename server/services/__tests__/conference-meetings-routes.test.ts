@@ -5,7 +5,7 @@ import { defaultMeetingContact, meetingBriefSchema } from "@shared/conference-me
 
 const mocks = vi.hoisted(() => ({
   ctx: vi.fn(), workspace: vi.fn(), person: vi.fn(), save: vi.fn(), review: vi.fn(), compose: vi.fn(),
-  contact: vi.fn(), membership: vi.fn(), feature: vi.fn(), quota: vi.fn(),
+  contact: vi.fn(), membership: vi.fn(), feature: vi.fn(), quota: vi.fn(), recommend: vi.fn(), importWarm: vi.fn(),
 }));
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("../../context", () => ({
@@ -18,6 +18,7 @@ vi.mock("../conference-meetings-service", () => ({
   MeetingError: class MeetingError extends Error { constructor(message: string, public status = 409) { super(message); } },
 }));
 vi.mock("../conference-relationship-review", () => ({ reviewConferenceRelationship: mocks.review }));
+vi.mock("../conference-warm-contacts", () => ({ recommendConferenceContacts: mocks.recommend, importConferenceRecommendations: mocks.importWarm }));
 vi.mock("../outreach-composer-service", () => ({ composeTouch: mocks.compose }));
 vi.mock("../prospect-contact-service", () => ({ ensureContactForPerson: mocks.contact, addCampaignMembership: mocks.membership }));
 import { registerConferenceMeetingsRoutes } from "../../routes/conference-meetings";
@@ -46,6 +47,30 @@ beforeEach(() => {
 });
 
 describe("conference meeting API permissions and persistence", () => {
+  it("previews recommendations without importing, within the active tenant and market", async () => {
+    mocks.recommend.mockResolvedValue({ contacts: [], limitations: [] });
+    expect((await request(app).post(`${campaignUrl}/recommendations`).send({})).status).toBe(200);
+    expect(mocks.recommend).toHaveBeenCalledWith("tenant", "campaign", "market");
+    expect(mocks.importWarm).not.toHaveBeenCalled();
+    expect(mocks.contact).not.toHaveBeenCalled();
+  });
+  it("requires explicit bounded ids for warm imports and rejects client-supplied contact data", async () => {
+    const url = `${campaignUrl}/recommendations/import`;
+    for (const body of [{}, { contactIds: [] }, { contactIds: Array(11).fill("123") }, { contactIds: ["123"], contacts: [] }, { contactIds: ["bad"] }]) {
+      expect((await request(app).post(url).send(body)).status).toBe(400);
+    }
+    expect(mocks.importWarm).not.toHaveBeenCalled();
+    mocks.importWarm.mockResolvedValue({ imported: 1, skipped: 0 });
+    expect((await request(app).post(url).send({ contactIds: ["123"] })).status).toBe(201);
+    expect(mocks.importWarm).toHaveBeenCalledWith("tenant", "campaign", ["123"], "market");
+  });
+  it.each(["Standard User", "Consultant"])("allows %s previews but blocks importing recommendations", async userRole => {
+    mocks.ctx.mockResolvedValue({ tenantDomain: "tenant", marketId: "market", userRole });
+    mocks.recommend.mockResolvedValue({ contacts: [] });
+    expect((await request(app).post(`${campaignUrl}/recommendations`).send({})).status).toBe(200);
+    expect((await request(app).post(`${campaignUrl}/recommendations/import`).send({ contactIds: ["123"] })).status).toBe(403);
+    expect(mocks.importWarm).not.toHaveBeenCalled();
+  });
   it("scopes workspace access to both tenant and active market", async () => {
     expect((await request(app).get(campaignUrl)).status).toBe(200);
     expect(mocks.workspace).toHaveBeenCalledWith("tenant", "campaign", "market");

@@ -9,7 +9,7 @@ const clean = (value: unknown) => String(value ?? "").replace(/<[^>]*>/g, " ").r
 
 /** Bounded, permission-aware CRM read. Never equate inaccessible activity with no history. */
 export async function readHubspotRelationship(
-  tenantDomain: string, contactId: string, since: Date,
+  tenantDomain: string, contactId: string, since: Date, signal?: AbortSignal,
 ): Promise<{ activities: RelationshipActivity[]; limitations: string[] }> {
   const activities: RelationshipActivity[] = [];
   const limitations: string[] = [];
@@ -21,7 +21,7 @@ export async function readHubspotRelationship(
         method: body ? "POST" : "GET",
         headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
         ...(body ? { body: JSON.stringify(body) } : {}),
-        signal: AbortSignal.timeout(12000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
       });
       if (!response.ok) throw new Error(`HubSpot returned ${response.status}`);
       return response.json();

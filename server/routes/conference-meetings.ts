@@ -15,6 +15,7 @@ import { composeTouch } from "../services/outreach-composer-service";
 import { OutreachComposeError } from "../services/outreach-draft-outcome";
 import { ensureContactForPerson, addCampaignMembership } from "../services/prospect-contact-service";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
+import { recommendConferenceContacts, importConferenceRecommendations } from "../services/conference-warm-contacts";
 
 const externalPerson = z.object({
   name: z.string().trim().max(300).optional(),
@@ -44,6 +45,14 @@ export function registerConferenceMeetingsRoutes(app: Express) {
   app.get(base, route(async (req, res, ctx) => {
     res.json(await getConferenceWorkspace(ctx.tenantDomain, req.params.id, ctx.marketId));
   }));
+  app.post(`${base}/recommendations`, route(async (req, res, ctx) => {
+    z.object({}).strict().parse(req.body);
+    res.json(await recommendConferenceContacts(ctx.tenantDomain, req.params.id, ctx.marketId));
+  }));
+  app.post(`${base}/recommendations/import`, route(async (req, res, ctx) => {
+    const data = z.object({ contactIds: z.array(z.string().regex(/^\d+$/).max(100)).min(1).max(10) }).strict().parse(req.body);
+    res.status(201).json(await importConferenceRecommendations(ctx.tenantDomain, req.params.id, data.contactIds, ctx.marketId));
+  }, true));
   app.patch(base, route(async (req, res, ctx) => {
     const patch = z.object({ brief: meetingBriefSchema, presence: eventPresenceSchema }).strict().parse(req.body);
     const workspace = await getConferenceWorkspace(ctx.tenantDomain, req.params.id, ctx.marketId);
