@@ -12,6 +12,7 @@ import type { Conference, ConferenceSession } from "@shared/schema";
 import type { EventPresence, MeetingAngle, MeetingBrief, MeetingContact, RelationshipReview } from "@shared/conference-meetings";
 import type { ReactNode } from "react";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
+import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
 
 type Workspace = {
   campaignId: string;
@@ -158,6 +159,7 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
   const [externalSelected, setExternalSelected] = useState<Set<number>>(new Set());
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [importSource, setImportSource] = useState<"manual" | "wiza" | "salesnav">("manual");
+  const [pasteContactsOpen, setPasteContactsOpen] = useState(false);
   const [draftChannel, setDraftChannel] = useState<"email" | "linkedin">("email");
   const [additionalContext, setAdditionalContext] = useState("");
   const [draftError, setDraftError] = useState<{ message: string; questions: string[] } | null>(null);
@@ -248,11 +250,21 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
     },
   });
   const importContacts = useMutation({
-    mutationFn: async () => {
-      const contacts = externalRows.filter((row, i) => row.valid && externalSelected.has(i)).slice(0, 100).map(({ name, email, companyName, title, linkedinUrl }) => ({ name, email, companyName, title, linkedinUrl }));
+    mutationFn: async (rows?: ExternalRow[]) => {
+      const contacts = (rows ?? externalRows.filter((row, i) => row.valid && externalSelected.has(i))).slice(0, 100).map(({ name, email, companyName, title, linkedinUrl }) => ({ name, email, companyName, title, linkedinUrl }));
       return (await apiRequest("POST", `${endpoint(campaignId)}/import`, { source: importSource, contacts })).json() as Promise<{ imported: number; skipped: number }>;
     },
-    onSuccess: async (result) => { await qc.invalidateQueries({ queryKey: key }); setImportResult(result); setExternalRows([]); setExternalText(""); setExternalSelected(new Set()); setError(""); },
+    onSuccess: async (result) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: key }),
+        qc.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns", campaignId, "prospects"] }),
+      ]);
+      setImportResult(result);
+      setExternalRows([]);
+      setExternalText("");
+      setExternalSelected(new Set());
+      setError("");
+    },
     onError: (e) => setError(`Import failed: ${messageOf(e)}`),
   });
 
@@ -276,6 +288,19 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
     setExternalSelected(new Set(rows.map((row, i) => row.valid && i < 100 ? i : -1).filter((i) => i >= 0)));
     setImportSource(source);
     setError(rows.length ? "" : "No data rows were found. Include a header row and try again.");
+  }
+
+  function changeExternalText(text: string) {
+    setExternalText(text);
+    setExternalRows([]);
+    setExternalSelected(new Set());
+    setImportResult(null);
+    setError("");
+  }
+
+  async function importPastedContacts(contacts: ParsedContact[]) {
+    const rows: ExternalRow[] = contacts.map((contact) => ({ ...contact, valid: true, issue: "" }));
+    await importContacts.mutateAsync(rows);
   }
 
   if (query.isLoading) return <Card className="border-slate-200 bg-[#f8f7f2]"><CardContent className="space-y-3 p-6"><div className="h-5 w-48 animate-pulse rounded bg-slate-200" /><div className="h-24 animate-pulse rounded bg-slate-100" /></CardContent></Card>;
@@ -354,9 +379,10 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
                 <div className="flex flex-wrap gap-2">
                   <select value={importSource} onChange={(e) => setImportSource(e.target.value as typeof importSource)} className="h-9 rounded-md border border-input bg-background px-2.5 text-sm"><option value="manual">Manual paste</option><option value="wiza">Wiza export</option><option value="salesnav">Sales Navigator export</option></select>
                   <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>Upload CSV</Button>
+                  <Button variant="outline" size="sm" onClick={() => setPasteContactsOpen(true)}><MessageSquareText className="mr-1.5 h-3.5 w-3.5" />Paste contacts</Button>
                   <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void f.text().then((text) => loadPreview(text, importSource)); e.target.value = ""; }} />
                 </div>
-                <Textarea value={externalText} onChange={(e) => setExternalText(e.target.value)} rows={3} placeholder={"Paste CSV rows with headers: Name, Email, Company, Title, LinkedIn URL"} />
+                <Textarea value={externalText} onChange={(e) => changeExternalText(e.target.value)} rows={3} placeholder={"Paste CSV rows with headers: Name, Email, Company, Title, LinkedIn URL"} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => loadPreview(externalText, importSource)} disabled={!externalText.trim()}>Preview contacts</Button>
                   {externalRows.length > 0 && <span className="text-xs text-muted-foreground">{externalSelected.size} of {externalRows.length} selected</span>}
@@ -367,7 +393,7 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
                   {externalRows.map((row, i) => <label key={`${row.email}-${i}`} className={`flex items-start gap-2 rounded px-1.5 py-1 text-xs ${row.valid ? "cursor-pointer hover:bg-[#f1f1e9]" : "bg-rose-50 text-rose-900"}`}><input type="checkbox" checked={externalSelected.has(i)} disabled={!row.valid || i >= 100 || (!externalSelected.has(i) && externalSelected.size >= 100)} onChange={(e) => setExternalSelected((old) => { const next = new Set(old); if (e.target.checked) next.add(i); else next.delete(i); return next; })} /><span><strong>{row.name || row.email || `Row ${i + 2}`}</strong>{row.issue ? <span className="block font-medium text-rose-800">Invalid: {row.issue}</span> : <span className="block text-muted-foreground">{[row.title, row.companyName, row.email].filter(Boolean).join(" · ") || "No additional details"}</span>}</span></label>)}
                 </div>}
                 {externalRows.length > 100 && <p className="text-xs text-amber-800">Showing all {externalRows.length} rows; only the first 100 valid rows can be selected per import. Use a smaller batch for later rows.</p>}
-                <Button size="sm" onClick={() => importContacts.mutate()} disabled={!externalSelected.size || importContacts.isPending} className="bg-[#315849] text-white hover:bg-[#284a3d]">{importContacts.isPending ? "Importing…" : `Import ${externalSelected.size} selected`}</Button>
+                <Button size="sm" onClick={() => importContacts.mutate(undefined)} disabled={!externalSelected.size || importContacts.isPending} className="bg-[#315849] text-white hover:bg-[#284a3d]">{importContacts.isPending ? "Importing…" : `Import ${externalSelected.size} selected`}</Button>
               </CardContent>
             </Card>
           </div>
@@ -443,6 +469,14 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
           </div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-[#d7d9ce] bg-[#fbfaf5] p-8 text-center"><Users className="mb-3 h-7 w-7 text-[#82978b]" /><h3 className="font-serif text-lg text-[#33493f]">No event contacts yet</h3><p className="mt-1 max-w-sm text-sm text-muted-foreground">Use HubSpot, manual prospect entry, or reviewed external research to bring people into this campaign.</p></div>}
         </div>
       </div>}
+      <PasteContactsDialog
+        open={pasteContactsOpen}
+        onOpenChange={setPasteContactsOpen}
+        campaignId={campaignId}
+        heading="Paste event contacts"
+        requireEmailOrLinkedin
+        onImport={importPastedContacts}
+      />
     </div>
   </section>;
 }

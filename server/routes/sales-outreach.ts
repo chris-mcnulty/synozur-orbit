@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { registerRoughContactImportRoutes } from "./rough-contact-import";
 import { z } from "zod";
 import { db } from "../db";
 import {
@@ -160,6 +161,7 @@ const NUMERIC_CAPS: { key: keyof typeof DEFAULT_SETTINGS; min: number; max: numb
 ];
 
 export function registerSalesOutreachRoutes(app: Express) {
+  registerRoughContactImportRoutes(app);
   // Readiness — informational, ungated (matches /api/marketing/context-readiness).
   app.get("/api/sales-outreach/readiness", async (req, res) => {
     try {
@@ -1517,8 +1519,8 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       const noEmailCount = insertedRows.filter((r) => !r.email).length;
       res.json({
-        imported: toInsert.length,
-        skipped: dedupedRows.length - toInsert.length,
+        imported: insertedRows.length,
+        skipped: rawRows.length - insertedRows.length,
         total: rawRows.length,
         noEmailCount,
       });

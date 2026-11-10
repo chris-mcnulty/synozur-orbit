@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
+import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -580,6 +581,7 @@ export default function OutreachCampaignDetailPage() {
   const [csvSelected, setCsvSelected] = useState<Set<number>>(new Set());
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [pasteContactsOpen, setPasteContactsOpen] = useState(false);
   const csvFileRef = useRef<HTMLInputElement>(null);
 
   const parseApolloCSV = useCallback((text: string): CsvProspectRow[] => {
@@ -651,6 +653,13 @@ export default function OutreachCampaignDetailPage() {
       setCsvImporting(false);
     }
   }, [csvRows, csvSelected, id, queryClient, toast]);
+
+  const importPastedProspects = useCallback(async (rows: ParsedContact[]) => {
+    const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/import-csv`, { rows });
+    const data = await res.json();
+    queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns", id, "prospects"] });
+    toast({ title: "Contacts added", description: `${data.imported} imported, ${data.skipped} already on this campaign.` });
+  }, [id, queryClient, toast]);
 
   const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
   const campaignKey = ["/api/sales-outreach/campaigns", id];
@@ -1473,6 +1482,10 @@ export default function OutreachCampaignDetailPage() {
             <Button variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects">
               <Upload className="w-4 h-4 mr-1.5" />
               Import from CSV
+            </Button>
+            <Button variant="outline" onClick={() => setPasteContactsOpen(true)} data-testid="button-paste-contacts">
+              <Sparkles className="w-4 h-4 mr-1.5" />
+              Paste contacts
             </Button>
             <Button onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
               <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
@@ -2639,6 +2652,13 @@ export default function OutreachCampaignDetailPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <PasteContactsDialog
+        open={pasteContactsOpen}
+        onOpenChange={setPasteContactsOpen}
+        campaignId={id}
+        onImport={importPastedProspects}
+      />
 
       {/* Discovery dialog — review web-discovered candidates, then import selected */}
       <Dialog open={discovering} onOpenChange={(o) => { if (!o) { setDiscovering(false); setDiscoverResult(null); setDiscoverResultCompany(""); setSelected(new Set()); } }}>
