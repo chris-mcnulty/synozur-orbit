@@ -1,5 +1,30 @@
 import { z } from "zod";
 
+export const calendarInvitationSchema = z.object({
+  subject: z.string().trim().min(1).max(300),
+  agenda: z.string().trim().min(1).max(6000),
+  location: z.string().trim().min(1).max(2000),
+  durationMinutes: z.number().int().min(5).max(480),
+  attendees: z.array(z.string().trim().email().max(320)).min(1).max(50)
+    .transform(emails => [...new Set(emails.map(email => email.toLowerCase()))]),
+}).strict();
+export type CalendarInvitationInput = z.infer<typeof calendarInvitationSchema>;
+export interface CalendarInvitationPreview extends CalendarInvitationInput {
+  start: string;
+  end: string;
+  timezone: string;
+  owner: string;
+  organizer: string;
+  fingerprint: string;
+}
+export interface CalendarInvitationState {
+  status: "creating" | "sent" | "cancelled";
+  eventId?: string;
+  webLink?: string;
+  organizerUserId: string;
+  preview: CalendarInvitationPreview;
+}
+
 export const relationshipRoles = ["customer", "prospect", "partner", "former_customer", "industry_peer", "unknown"] as const;
 export const meetingStages = ["shortlisted", "researched", "ready_for_review", "contacted", "replied", "meeting_booked", "follow_up", "declined", "unavailable", "do_not_contact"] as const;
 export const attendanceStates = ["confirmed", "suggested", "unknown", "not_attending"] as const;

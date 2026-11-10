@@ -1,9 +1,19 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, bigint, jsonb, serial, boolean, check, index, uniqueIndex, unique, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, uuid, timestamp, integer, bigint, jsonb, serial, boolean, check, index, uniqueIndex, unique, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
-import type { EventPresence, MeetingBrief, MeetingContact, MeetingDraftContext } from "./conference-meetings";
+import type { EventPresence, MeetingBrief, MeetingContact, MeetingDraftContext, CalendarInvitationState } from "./conference-meetings";
+
+// Preserve the delivery ledger even if manual meeting prep is edited or removed.
+export const conferenceCalendarInvitations = pgTable("conference_calendar_invitations", {
+  prospectId: varchar("prospect_id").primaryKey(),
+  tenantDomain: text("tenant_domain").notNull(),
+  transactionId: uuid("transaction_id").notNull().unique(),
+  state: jsonb("state").$type<CalendarInvitationState>().notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

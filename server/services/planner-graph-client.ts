@@ -29,6 +29,64 @@ export const MAIL_SCOPES = [
   "offline_access",
 ];
 
+export const CALENDAR_SCOPES = ["Calendars.ReadWrite", "User.Read", "offline_access"];
+
+export function hasCalendarPermission(scopes: string | null | undefined): boolean {
+  return (scopes || "").split(/\s+/).some(s => s.toLowerCase().replace("https://graph.microsoft.com/", "") === "calendars.readwrite");
+}
+
+export async function getCalendarOrganizer(token: string): Promise<string> {
+  const me = await graphRequest<{ mail?: string; userPrincipalName?: string }>(token, "/me?$select=mail,userPrincipalName");
+  const email = me.mail || me.userPrincipalName;
+  if (!email) throw new Error("Microsoft did not return a mailbox address.");
+  return email;
+}
+
+const INVITATION_PROPERTY = "String {776f6528-9aa4-4762-9cb0-085769a104ca} Name OrbitConferenceInvitation";
+export interface CalendarEventResult { id: string; webLink?: string; isCancelled?: boolean }
+
+export async function findConferenceCalendarEvent(token: string, transactionId: string): Promise<CalendarEventResult | undefined> {
+  const filter = `singleValueExtendedProperties/Any(ep: ep/id eq '${INVITATION_PROPERTY}' and ep/value eq '${transactionId}')`;
+  const result = await graphRequest<{ value: CalendarEventResult[] }>(token,
+    `/me/events?$filter=${encodeURIComponent(filter)}&$select=id,webLink,isCancelled`);
+  return result.value[0];
+}
+
+export async function createConferenceCalendarEvent(
+  token: string, transactionId: string, preview: import("@shared/conference-meetings").CalendarInvitationPreview,
+): Promise<CalendarEventResult> {
+  const zonedDateTime = (instant: string) => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+      timeZone: preview.timezone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(instant)).map(p => [p.type, p.value]));
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  };
+  return graphRequest(token, "/me/events", {
+    method: "POST",
+    body: JSON.stringify({
+      transactionId, subject: preview.subject,
+      body: { contentType: "Text", content: `${preview.agenda}\n\nMeeting owner: ${preview.owner}\nEvent timezone: ${preview.timezone}` },
+      start: { dateTime: zonedDateTime(preview.start), timeZone: preview.timezone },
+      end: { dateTime: zonedDateTime(preview.end), timeZone: preview.timezone },
+      location: { displayName: preview.location },
+      attendees: preview.attendees.map(address => ({ emailAddress: { address }, type: "required" })),
+      singleValueExtendedProperties: [{ id: INVITATION_PROPERTY, value: transactionId }],
+    }),
+  });
+}
+
+export async function cancelConferenceCalendarEvent(token: string, eventId: string): Promise<void> {
+  try {
+    // Deleting an organizer's meeting sends cancellations. Repeated DELETE is
+    // safe even when the first response or our local commit was lost.
+    await graphRequest(token, `/me/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+  } catch (error) {
+    if (error instanceof GraphHttpError && [404, 410].includes(error.status)) return;
+    throw error;
+  }
+}
+
 export interface PlannerGroup {
   id: string;
   displayName: string;
@@ -193,7 +251,7 @@ async function graphRequest<T>(token: string, path: string, init: RequestInit = 
     "Content-Type": "application/json",
     ...((init.headers as Record<string, string>) || {}),
   };
-  const res = await fetch(`${GRAPH_BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${GRAPH_BASE}${path}`, { ...init, headers, signal: init.signal ?? AbortSignal.timeout(25_000) });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new GraphHttpError(

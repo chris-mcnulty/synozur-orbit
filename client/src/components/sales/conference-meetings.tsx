@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
 import ConferenceWarmContacts from "@/components/sales/conference-warm-contacts";
+import ConferenceCalendarInvitation from "@/components/sales/conference-calendar-invitation";
 
 type Workspace = {
   campaignId: string;
@@ -418,6 +419,7 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
           </Card>
 
           {selectedContact && draftContact ? <div className="space-y-4">
+            <ConferenceCalendarInvitation key={selectedContact.id} personId={selectedContact.id} name={selectedContact.name} email={selectedContact.email} eventName={event.name} meeting={selectedContact.meeting} disabled={personBusy} />
             <Card className="border-[#d9ded5] bg-[#fbfaf5] shadow-none">
               <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
                 <div><CardTitle className="font-serif text-xl text-[#2c443b]">{selectedContact.name}</CardTitle><p className="mt-1 text-sm text-slate-600">{[selectedContact.title, selectedContact.companyName].filter(Boolean).join(" · ")}{selectedContact.email ? ` · ${selectedContact.email}` : ""}</p>{selectedContact.linkedinUrl && <a href={selectedContact.linkedinUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-[#315849] underline">LinkedIn profile <ExternalLink className="h-3 w-3" /></a>}</div>

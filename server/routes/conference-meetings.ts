@@ -15,6 +15,12 @@ import { composeTouch } from "../services/outreach-composer-service";
 import { OutreachComposeError } from "../services/outreach-draft-outcome";
 import { ensureContactForPerson, addCampaignMembership } from "../services/prospect-contact-service";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
+import { randomBytes } from "crypto";
+import { storage } from "../storage";
+import { getRedirectUri } from "./planner";
+import { buildPlannerConsentUrl, CALENDAR_SCOPES } from "../services/planner-graph-client";
+import { calendarConnection, previewCalendarInvitation, getCalendarInvitation, sendCalendarInvitation, cancelCalendarInvitation } from "../services/conference-calendar-service";
+import { calendarInvitationSchema } from "@shared/conference-meetings";
 import { recommendConferenceContacts, importConferenceRecommendations } from "../services/conference-warm-contacts";
 
 const externalPerson = z.object({
@@ -38,7 +44,7 @@ export function registerConferenceMeetingsRoutes(app: Express) {
         if (error instanceof OutreachComposeError) return res.status(422).json({ error: error.message, code: error.code, questions: error.questions });
         if (error instanceof MeetingError || error instanceof ContextError) return res.status(error.status).json({ error: error.message });
         console.error("[conference-meetings] Request failed", error instanceof Error ? error.name : "Unknown");
-        res.status(500).json({ error: "The meeting operation failed. Nothing was sent. Please try again." });
+        res.status(500).json({ error: "The meeting operation could not be confirmed. For calendar delivery, check the invitation status before retrying; nothing will be resent automatically." });
       }
     };
   const base = "/api/sales-outreach/campaigns/:id/meetings";
@@ -81,6 +87,39 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     res.status(201).json({ imported, skipped: data.contacts.length - imported });
   }, true));
   const personBase = "/api/sales-outreach/prospects/:id/meeting";
+  app.get(`${personBase}/calendar`, route(async (req, res, ctx) => {
+    await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json({
+      ...await calendarConnection(ctx.userId),
+      invitation: await getCalendarInvitation(ctx.tenantDomain, req.params.id),
+      userId: ctx.userId,
+    });
+  }));
+  app.get(`${personBase}/calendar/consent-url`, route(async (req, res, ctx) => {
+    await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    const user = await storage.getUser(ctx.userId);
+    const scopes = Array.from(new Set([...(user?.graphScopes || "").split(/\s+/).filter(Boolean), ...CALENDAR_SCOPES]));
+    const state = Buffer.from(JSON.stringify({
+      userId: ctx.userId, returnTo: req.query.returnTo || "/app/sales/outreach",
+      nonce: randomBytes(16).toString("hex"),
+    })).toString("base64url");
+    const url = buildPlannerConsentUrl({ state, redirectUri: getRedirectUri(req), scopes });
+    if (!url) throw new MeetingError("Microsoft Entra is not configured.", 503);
+    res.json({ url });
+  }, true));
+  app.post(`${personBase}/calendar/preview`, route(async (req, res, ctx) => {
+    res.json(await previewCalendarInvitation(ctx.tenantDomain, req.params.id, ctx.marketId, ctx.userId, req.body));
+  }, true));
+  app.post(`${personBase}/calendar/send`, route(async (req, res, ctx) => {
+    const data = z.object({ invitation: calendarInvitationSchema, fingerprint: z.string().length(64), confirmed: z.literal(true) }).strict().parse(req.body);
+    await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json(await sendCalendarInvitation(ctx.tenantDomain, req.params.id, ctx.marketId, ctx.userId, data.invitation, data.fingerprint));
+  }, true));
+  app.post(`${personBase}/calendar/cancel`, route(async (req, res, ctx) => {
+    const data = z.object({ confirmed: z.literal(true), fingerprint: z.string().length(64) }).strict().parse(req.body);
+    await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json(await cancelCalendarInvitation(ctx.tenantDomain, req.params.id, ctx.userId, data.fingerprint));
+  }, true));
   app.patch(personBase, route(async (req, res, ctx) => {
     const edit = meetingContactEditSchema.parse(req.body);
     const { person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);

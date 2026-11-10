@@ -6,6 +6,14 @@ import { defaultMeetingContact, meetingBriefSchema } from "@shared/conference-me
 const mocks = vi.hoisted(() => ({
   ctx: vi.fn(), workspace: vi.fn(), person: vi.fn(), save: vi.fn(), review: vi.fn(), compose: vi.fn(),
   contact: vi.fn(), membership: vi.fn(), feature: vi.fn(), quota: vi.fn(), recommend: vi.fn(), importWarm: vi.fn(),
+  calendarPreview: vi.fn(), calendarSend: vi.fn(), calendarCancel: vi.fn(), calendarStatus: vi.fn(),
+}));
+vi.mock("../../storage", () => ({ storage: { getUser: vi.fn() } }));
+vi.mock("../../routes/planner", () => ({ getRedirectUri: vi.fn() }));
+vi.mock("../conference-calendar-service", () => ({
+  previewCalendarInvitation: mocks.calendarPreview, sendCalendarInvitation: mocks.calendarSend,
+  cancelCalendarInvitation: mocks.calendarCancel, getCalendarInvitation: mocks.calendarStatus,
+  calendarConnection: vi.fn().mockResolvedValue({ connected: true }),
 }));
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("../../context", () => ({
@@ -162,5 +170,40 @@ describe("meeting drafting", () => {
     expect(response.status).toBe(422);
     expect(response.body.questions).toEqual(["Who is attending?"]);
     expect(response.body.touch).toBeUndefined();
+  });
+});
+
+describe("reviewed calendar delivery", () => {
+  const invitation = { subject: "Meeting", agenda: "Agreed agenda", location: "Lobby", durationMinutes: 30, attendees: ["guest@example.com"] };
+  const payload = { confirmed: true, fingerprint: "a".repeat(64), invitation };
+  it("requires explicit confirmation before external delivery or cancellation", async () => {
+    expect((await request(app).post(`${personUrl}/calendar/send`).send({ ...payload, confirmed: false })).status).toBe(400);
+    expect((await request(app).post(`${personUrl}/calendar/cancel`).send({ fingerprint: payload.fingerprint })).status).toBe(400);
+    expect(mocks.calendarSend).not.toHaveBeenCalled();
+    expect(mocks.calendarCancel).not.toHaveBeenCalled();
+  });
+  it("scopes delivery to the authenticated user, tenant and market", async () => {
+    mocks.calendarSend.mockResolvedValue({ status: "sent" });
+    expect((await request(app).post(`${personUrl}/calendar/send`).send(payload)).status).toBe(200);
+    expect(mocks.calendarSend).toHaveBeenCalledWith("tenant", "person", "market", "operator", invitation, payload.fingerprint);
+  });
+  it.each(["Standard User", "Consultant"])("blocks %s invitation actions", async userRole => {
+    mocks.ctx.mockResolvedValue({ tenantDomain: "tenant", userRole });
+    expect((await request(app).post(`${personUrl}/calendar/send`).send(payload)).status).toBe(403);
+    expect((await request(app).post(`${personUrl}/calendar/cancel`).send({ confirmed: true, fingerprint: payload.fingerprint })).status).toBe(403);
+    expect(mocks.calendarSend).not.toHaveBeenCalled();
+    expect(mocks.calendarCancel).not.toHaveBeenCalled();
+  });
+  it("checks meeting visibility before reading an invitation", async () => {
+    mocks.person.mockRejectedValue(new MeetingError("Prospect not found", 404));
+    expect((await request(app).get(`${personUrl}/calendar`)).status).toBe(404);
+    expect(mocks.calendarStatus).not.toHaveBeenCalled();
+  });
+  it("does not falsely claim nothing was sent after a lost response", async () => {
+    mocks.calendarSend.mockRejectedValue(new Error("timeout"));
+    const response = await request(app).post(`${personUrl}/calendar/send`).send(payload);
+    expect(response.status).toBe(500);
+    expect(response.body.error).toContain("could not be confirmed");
+    expect(response.body.error).not.toContain("Nothing was sent");
   });
 });
