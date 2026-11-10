@@ -3,6 +3,7 @@
 - [Cascadia social editorial direction](cascadia-social-editorial.md) — art-first storytelling, optional sales CTAs, and link-free Instagram captions; separate from Synozur B2B rules.
 - [Compositor font portability](compositor-font-portability.md) — SVG font declarations do not prove raster identity; use outlines, container checks, and independent glyph raster oracles.
 - [Event promotion identity](event-promotion-identity.md) — shared Visual Assets, not a separate event library; webinars need no sessions/logo; image variety must not control post volume.
+- [Conference ABM context](conference-abm-context.md) — meeting development uses relationship roles, event goals, confirmed presence and sessions, with shared Event Promotion context.
 // hint: Logic changed on both sides. Requires understanding intent of each change.
 - [Bleu Trail angles-first pattern](bleu-trail-signal-ai.md) — Bleu Trail = github.com/chris-mcnulty/signal-ai; user wants facts→angles→format ideation; angle = one hook string, strategy fields optional.
 - [Prompt-grounded generation contract](prompt-grounded-generation.md) — "prompt is the only fact source" means NO strategic context or voice profile in prompts, HMAC-sign client round-trips, tests must prove exclusion.
