@@ -1527,6 +1527,9 @@ export async function generateCopyVariants(opts: {
     conf.website ? `Link: ${conf.website}` : "",
     conf.description ? `Event description: ${conf.description}` : "",
     conf.thematicBrief ? `Theme/brief (may include historical background, not a current event schedule): ${conf.thematicBrief}` : "",
+    conf.presence?.confirmation === "confirmed"
+      ? `Shared confirmed event presence (facts only; does not override the invitation or booth rules below): ${JSON.stringify(conf.presence)}`
+      : "Shared event presence is not confirmed. Do not turn proposed attendance or activities into public claims.",
     conf.discountStatement ? `Registration offer (mention verbatim in at least one variation if it fits naturally): ${conf.discountStatement}` : "",
     conf.boothDetails?.trim()
       ? `Confirmed booth details: ${conf.boothDetails.trim()}`

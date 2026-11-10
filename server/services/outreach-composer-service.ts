@@ -141,6 +141,10 @@ export async function composeTouch(
     .from(outreachCampaigns)
     .where(eq(outreachCampaigns.id, prospect.campaignId));
   if (!campaign) throw new Error("Campaign not found");
+  if (prospect.meeting && (["do_not_contact", "declined", "unavailable"].includes(prospect.meeting.stage) || prospect.meeting.attendance === "not_attending")) {
+    const { MeetingError } = await import("./conference-meetings-service");
+    throw new MeetingError("This contact is excluded from event outreach.", 422);
+  }
 
   const channel: OutreachChannel = opts.channel ?? ((campaign.channels?.[0] as OutreachChannel) || "email");
   // Fail closed: an email touch needs a recipient. LinkedIn-only prospects
@@ -182,6 +186,9 @@ export async function composeTouch(
   const strategicBlock = formatStrategicContextForPrompt(strategicCtx);
 
   const resource = await resolveStepResource(campaign.id, stepNumber);
+  const meetingContext = campaign.meetingBrief?.enabled
+    ? await (await import("./conference-meetings-service")).meetingCompositionContext(tenantDomain, prospectId)
+    : null;
 
   // Load the linked conference so the AI uses real event facts, not invented ones.
   let eventBlock: string | null = null;
@@ -218,7 +225,7 @@ export async function composeTouch(
     resource,
     linkedinFormat,
     intent,
-    eventBlock,
+    eventBlock: [eventBlock, meetingContext?.block].filter(Boolean).join("\n\n") || null,
     additionalContext: opts.additionalContext,
   });
 
@@ -261,6 +268,7 @@ export async function composeTouch(
       status: "draft_pending_approval",
       complianceFlags: compliance,
       voiceProfileId: campaign.voiceProfileId ?? null,
+      meetingContext: meetingContext?.context ?? null,
     })
     .returning();
 

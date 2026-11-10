@@ -3,6 +3,7 @@ import { pgTable, text, varchar, timestamp, integer, bigint, jsonb, serial, bool
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
+import type { EventPresence, MeetingBrief, MeetingContact, MeetingDraftContext } from "./conference-meetings";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3592,6 +3593,7 @@ export const conferences = pgTable("conferences", {
   discountStatement: text("discount_statement"),
   // Explicit confirmation of a booth; blank means copy must not claim one.
   boothDetails: text("booth_details"),
+  presence: jsonb("presence").$type<EventPresence>(),
   alwaysHashtags: jsonb("always_hashtags").$type<string[]>().default([]),
   productIds: text("product_ids").array(),
   // Event media for hero image composition (logo_composite source)
@@ -5183,6 +5185,7 @@ export const outreachCampaigns = pgTable("outreach_campaigns", {
   goalType: text("goal_type").notNull().default("meeting"), // OutreachGoalType
   // The goal in the user's words ("book 10 discovery calls for Polaris").
   salesGoal: text("sales_goal"),
+  meetingBrief: jsonb("meeting_brief").$type<MeetingBrief>(),
   // The captured interview brief (mirrors campaigns.interview).
   interview: jsonb("interview").$type<OutreachInterview>(),
   // The product/service this campaign is about (optional).
@@ -5323,6 +5326,7 @@ export const prospects = pgTable("prospects", {
   disqualifiedReason: text("disqualified_reason"),
   // The AI research summary (markdown) — the "dossier".
   researchDossier: text("research_dossier"),
+  meeting: jsonb("meeting").$type<MeetingContact>(),
   signals: jsonb("signals").$type<ProspectSignals>(),
   status: text("status").notNull().default("new"), // ProspectStatus
   // Seller who owns this prospect (drives whose mailbox/voice is used).
@@ -5361,6 +5365,7 @@ export const outreachTouches = pgTable("outreach_touches", {
   prospectId: varchar("prospect_id").notNull().references(() => prospects.id, { onDelete: "cascade" }),
   campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
+  meetingContext: jsonb("meeting_context").$type<MeetingDraftContext>(),
   channel: text("channel").notNull().default("email"), // OutreachChannel
   // LinkedIn message shape (null for email): connect_request | direct_message.
   // Drives the char limit and which deep link / paste flow the seller gets.

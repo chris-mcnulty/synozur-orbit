@@ -35,6 +35,7 @@ import {
   Play,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
+import ConferenceMeetings from "@/components/sales/conference-meetings";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1209,8 +1210,10 @@ export default function OutreachCampaignDetailPage() {
 
   const discover = useMutation({
     mutationFn: async ({ company }: { company: string }) => {
-      // Prefer Sales Navigator → Apollo → web.
-      const backend = salesNavBackend?.available ? "salesnav" : apolloBackend?.available ? "apollo" : "web";
+      // Event-linked campaigns prioritize Apollo; Wiza and Sales Navigator remain external-only research sources.
+      const backend = campaign?.conferenceId
+        ? apolloBackend?.available ? "apollo" : "web"
+        : salesNavBackend?.available ? "salesnav" : apolloBackend?.available ? "apollo" : "web";
       const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover`, {
         limit: 25,
         backend,
@@ -1226,7 +1229,9 @@ export default function OutreachCampaignDetailPage() {
       if (data.candidates.length === 0) {
         toast({
           title: "No new prospects found",
-          description: data.foundCount > 0
+          description: campaign?.conferenceId && data.foundCount === 0
+            ? "For event contacts, research in Wiza or Sales Navigator outside Orbit, then import reviewed rows above."
+            : data.foundCount > 0
             ? "Everyone found is already on this campaign."
             : "Try widening the campaign's roles, industries, or geographies.",
         });
@@ -1474,6 +1479,23 @@ export default function OutreachCampaignDetailPage() {
             </Button>
           </div>
         </div>
+
+        {campaign.conferenceId ? (
+          <ConferenceMeetings
+            campaignId={campaign.id}
+            onDraftCreated={(result) => {
+              const composed = result as { touch: Touch; prospect: Prospect };
+              queryClient.invalidateQueries({ queryKey: prospectsKey });
+              openDraft(composed.touch, composed.prospect);
+              toast({ title: "Pending draft created", description: "Review it before any approval or send." });
+            }}
+          />
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/30 px-4 py-3 text-sm">
+            <p className="text-muted-foreground">Link an event to this campaign to prepare shared presence, relationship notes, and meeting briefs here.</p>
+            {canEdit && <Button variant="outline" size="sm" onClick={openEdit}><CalendarDays className="mr-2 h-4 w-4" />Link an event</Button>}
+          </div>
+        )}
 
         {adding && (
           <Card>
@@ -2686,6 +2708,11 @@ export default function OutreachCampaignDetailPage() {
               diagnostics={discoverResult.apolloDiagnostics}
             />
           )}
+          {campaign.conferenceId && discoverResult && (discoverResult.backend !== "apollo" || !!discoverResult.fallbackReason) && (
+            <div className="rounded-md border border-[#d9ded5] bg-[#f5f4ec] px-3 py-2 text-xs text-[#52665c]">
+              Apollo did not return an event contact set. You can research in Wiza or Sales Navigator outside Orbit, then import the people you have reviewed in the meeting workspace.
+            </div>
+          )}
 
           {/* Sales Navigator availability notice */}
           {salesNavBackend && !salesNavBackend.available && (
@@ -2770,7 +2797,9 @@ export default function OutreachCampaignDetailPage() {
             <div className="py-8 text-center space-y-1.5" data-testid="discovery-empty-state">
               <p className="text-sm font-medium">No new prospects found</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                {discoverResult.fallbackReason
+                {campaign.conferenceId && discoverResult.foundCount === 0
+                  ? "No Orbit discovery results for this event. Research in Wiza or Sales Navigator outside Orbit, then import reviewed contacts above."
+                  : discoverResult.fallbackReason
                   ? "Apollo returned no matches and web discovery also found no results. Try a different company filter or widen the campaign's roles, industries, or geographies."
                   : "Everyone found is already on this campaign, or no matches were found. Try a different company filter or widen the campaign's roles, industries, or geographies."}
               </p>

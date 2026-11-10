@@ -37,6 +37,7 @@ import {
 import type { DiscoveryCandidate } from "../services/discovery-provider-core";
 import { composeTouch, loadComplianceContext } from "../services/outreach-composer-service";
 import { OutreachComposeError, assertOutreachDraftContent } from "../services/outreach-draft-outcome";
+import { MeetingError, validateMeetingApproval } from "../services/conference-meetings-service";
 import { sharpenContent } from "../services/copywriter-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
@@ -852,6 +853,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (err instanceof OutreachComposeError) {
         return res.status(422).json({ error: err.message, code: err.code, questions: err.questions });
       }
+      if (err instanceof MeetingError) return res.status(err.status).json({ error: err.message });
       console.error("[sales-outreach:compose]", err);
       res.status(500).json({ error: err.message || "Failed to compose draft" });
     }
@@ -991,6 +993,16 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       // Circuit breakers: master + per-channel + per-domain caps + global pause,
       // counted from the durable send ledger. Fails closed.
+      const meetingCampaign = prospect ? await getCampaign(ctx.tenantDomain, prospect.campaignId) : undefined;
+      if (touch.meetingContext || meetingCampaign?.meetingBrief?.enabled) {
+        try {
+          await validateMeetingApproval(ctx.tenantDomain, touch.prospectId, touch.meetingContext, touch.generatedAt);
+        } catch (error) {
+          return res.status(error instanceof MeetingError ? error.status : 409).json({
+            error: error instanceof Error ? error.message : "Review the meeting context before approving.",
+          });
+        }
+      }
       const decision = await assertApprovalAllowed(
         ctx.tenantDomain,
         touch.channel as OutreachChannel,

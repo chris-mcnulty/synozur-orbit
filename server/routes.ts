@@ -51,6 +51,7 @@ import { registerContentProductionRoutes } from "./routes/content-production";
 import { registerCampaignIdeationRoutes } from "./routes/campaign-ideation";
 import { registerDistributionPlannerRoutes } from "./routes/distribution-planner";
 import { registerSalesOutreachRoutes } from "./routes/sales-outreach";
+import { registerConferenceMeetingsRoutes } from "./routes/conference-meetings";
 import { registerMarketingPerformanceRoutes } from "./routes/marketing-performance";
 import { registerPlanningHubRoutes } from "./routes/planning-hub";
 import { registerMarketingNextActionsRoutes } from "./routes/marketing-next-actions";
@@ -84,6 +85,7 @@ export async function registerRoutes(
   registerMarketingPostsRoutes(app);
   // Conference social promotion: conferences, sessions, image space, generation
   registerConferencePromotionRoutes(app);
+  registerConferenceMeetingsRoutes(app);
 
   app.get("/api/content/:filename", (req, res) => {
     const allowedFiles = ["changelog.md", "backlog.md", "user_guide.md"];

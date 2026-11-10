@@ -19,6 +19,7 @@ import { rejectedBatchAccountIds } from "@/lib/conference-regeneration";
 import { archiveEventPoolImage } from "@/lib/conference-image-pool";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, Image as ImageIcon, Sparkles, Upload, RefreshCw, Calendar, Download, Pencil, CheckCircle2, Ban, X, ExternalLink } from "lucide-react";
+import type { EventPresence } from "@shared/conference-meetings";
 
 interface Speaker {
   name: string;
@@ -207,6 +208,7 @@ interface Conference {
   images: ConfImage[];
   eventLogoFileUrl?: string | null;
   eventLogoFileType?: string | null;
+  presence?: EventPresence | null;
 }
 interface Post {
   id: string;
@@ -376,6 +378,31 @@ export default function ConferenceDetailPage() {
             <EditEventDialog conf={conf} onSaved={refresh} />
           </div>
         </div>
+
+        <Card className="border-[#d9ded5] bg-[#f5f4ec] shadow-none">
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="font-serif text-lg text-[#2c443b]">Shared event presence</CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">Event coordination shared with the ABM meeting workspace. Private ABM goals, target accounts, availability, and relationship notes are not shown here.</p>
+              </div>
+              {conf.presence && <Badge variant="outline" className="border-[#cbd8cd] bg-[#e5ede5] text-[#315849]">{conf.presence.confirmation === "confirmed" ? "Confirmed" : "Proposed"}</Badge>}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {conf.presence ? (
+              <div className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#718077]">Timezone</p><p className="mt-1 text-[#33493f]">{conf.presence.timezone || "UTC"}</p></div>
+                <div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#718077]">Team</p><p className="mt-1 whitespace-pre-wrap text-[#33493f]">{conf.presence.team || "Not set"}</p></div>
+                <div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#718077]">Attendance dates</p><p className="mt-1 whitespace-pre-wrap text-[#33493f]">{conf.presence.attendanceDates || "Not set"}</p></div>
+                <div><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#718077]">Meeting locations</p><p className="mt-1 whitespace-pre-wrap text-[#33493f]">{conf.presence.meetingLocations || "Not set"}</p></div>
+                <div className="sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#718077]">Activities</p><p className="mt-1 whitespace-pre-wrap text-[#33493f]">{conf.presence.activities || "Not set"}</p></div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No shared event presence details yet. They can be added from an event-linked ABM campaign.</p>
+            )}
+          </CardContent>
+        </Card>
 
         <Tabs value={activeTab} onValueChange={(tab) => {
           setActiveTab(tab as ConferenceTab);
