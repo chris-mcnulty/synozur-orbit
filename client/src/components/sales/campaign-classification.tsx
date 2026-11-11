@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Pencil, Tags, X } from "lucide-react";
 import { attendanceStates, relationshipRoles } from "@shared/conference-meetings";
-import { campaignEventRoles, campaignSourceLabel, classificationLabel, type ClassificationPatch } from "@shared/campaign-classification";
+import { campaignEventRoles, campaignSourceLabel, classificationLabel, meetingPriorities, type ClassificationPatch } from "@shared/campaign-classification";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { UNCLASSIFIED, classificationGroupLabel, classificationValues, type ClassifiedPerson, type ClassificationFilters, type ClassificationGroupBy } from "./campaign-classification-helpers";
+import { UNCLASSIFIED, classificationGroupLabel, classificationValues, meetingPriorityLabel, type ClassifiedPerson, type ClassificationFilters, type ClassificationGroupBy } from "./campaign-classification-helpers";
 
 const selectClass = "h-8 max-w-full rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
-const dimensionLabels = { relationship: "Relationships", attendance: "Attendance", eventRole: "Event roles", sourceDetail: "Source details", tag: "Tags" } as const;
+const dimensionLabels = { meetingPriority: "Meeting priorities", relationship: "Relationships", attendance: "Attendance", eventRole: "Event roles", sourceDetail: "Source details", tag: "Tags" } as const;
 
 export function ClassificationToolbar({ people, filters, onFiltersChange, groupBy, onGroupByChange, selectedCount, canEdit, onEdit, onClear, uniqueCount, membershipCount }: {
   people: ClassifiedPerson[]; filters: ClassificationFilters; onFiltersChange: (filters: ClassificationFilters) => void;
@@ -22,16 +22,16 @@ export function ClassificationToolbar({ people, filters, onFiltersChange, groupB
   return <div className="mb-3 space-y-2" data-testid="classification-toolbar">
     <div className="flex flex-wrap items-center gap-2">
       {(Object.keys(dimensionLabels) as (keyof ClassificationFilters)[]).map(dimension => {
-        const options = [...new Set(people.flatMap(person => classificationValues(person, dimension)))].filter(value => value !== UNCLASSIFIED).sort();
+         const options = dimension === "meetingPriority" ? [...meetingPriorities] : [...new Set(people.flatMap(person => classificationValues(person, dimension)))].filter(value => value !== UNCLASSIFIED).sort();
         return <select key={dimension} aria-label={`Filter ${dimensionLabels[dimension].toLowerCase()}`} data-testid={`classification-filter-${dimension}`} className={selectClass} value={filters[dimension]} onChange={event => onFiltersChange({ ...filters, [dimension]: event.target.value })}>
           <option value="all">All {dimensionLabels[dimension].toLowerCase()}</option>
           {options.map(value => <option key={value} value={value}>{classificationGroupLabel(dimension, value)}</option>)}
-          <option value={UNCLASSIFIED}>Unclassified {dimensionLabels[dimension].toLowerCase()}</option>
+           {dimension !== "meetingPriority" && <option value={UNCLASSIFIED}>Unclassified {dimensionLabels[dimension].toLowerCase()}</option>}
         </select>;
       })}
       <span className="hidden h-5 border-l md:block" />
       <select className={selectClass} aria-label="Group contacts by" data-testid="classification-group-by" value={groupBy} onChange={event => onGroupByChange(event.target.value as ClassificationGroupBy)}>
-        <option value="none">No grouping</option><option value="relationship">Group by relationship</option><option value="attendance">Group by attendance</option><option value="eventRole">Group by event role</option><option value="source">Group by source</option><option value="sourceDetail">Group by source detail</option><option value="tag">Group by tag</option>
+         <option value="none">No grouping</option><option value="meetingPriority">Group by meeting priority</option><option value="relationship">Group by relationship</option><option value="attendance">Group by attendance</option><option value="eventRole">Group by event role</option><option value="source">Group by source</option><option value="sourceDetail">Group by source detail</option><option value="tag">Group by tag</option>
       </select>
       <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={onClear} data-testid="classification-clear-filters">Clear filters</Button>
     </div>
@@ -46,13 +46,14 @@ export function ClassificationBadges({ person }: { person: ClassifiedPerson }) {
   const relationships = person.meeting?.relationships?.filter(value => value !== "unknown") ?? [];
   const attendance = person.meeting?.attendance;
   const labels = [
+    ...(person.classification?.meetingPriority && person.classification.meetingPriority !== "normal" ? [{ key: "meeting-priority", label: meetingPriorityLabel(person.classification.meetingPriority), title: "Meeting priority only — independent of ICP score, attendance and consent" }] : []),
     ...relationships.map(value => ({ key: `relationship-${value}`, label: classificationLabel(value), title: "Relationship" })),
     ...(attendance && attendance !== "unknown" ? [{ key: "attendance", label: attendance === "confirmed" ? "Confirmed attendee" : classificationLabel(attendance), title: person.meeting?.attendanceEvidence || "Attendance — no evidence recorded" }] : []),
     ...(person.classification?.eventRoles ?? []).map(value => ({ key: `role-${value}`, label: classificationLabel(value), title: "Event role" })),
     ...(person.classification?.tags ?? []).map(value => ({ key: `tag-${value.toLowerCase()}`, label: value, title: "Campaign tag" })),
   ];
   return <div className="mt-1 flex max-w-sm flex-wrap gap-1" data-testid={`classification-badges-${person.id}`}>
-    {labels.map(item => <Badge variant="outline" className={`px-1.5 py-0 text-[10px] font-normal ${item.key === "attendance" && attendance === "confirmed" ? "border-primary/30 bg-primary/5 text-primary" : ""}`} key={item.key} title={item.title}>{item.label}</Badge>)}
+     {labels.map(item => <Badge variant="outline" data-testid={item.key === "meeting-priority" ? `meeting-priority-${person.id}` : undefined} className={`px-1.5 py-0 text-[10px] font-normal ${item.key === "meeting-priority" ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300" : item.key === "attendance" && attendance === "confirmed" ? "border-primary/30 bg-primary/5 text-primary" : ""}`} key={item.key} title={item.title}>{item.label}</Badge>)}
     {!labels.length && <span className="text-[10px] text-muted-foreground">Unclassified</span>}
   </div>;
 }
@@ -118,6 +119,7 @@ export function ClassificationEditor({ people, onClose, onSave, isSaving, error 
       <DialogHeader><DialogTitle>{single ? `Classify ${single.name || single.email || "contact"}` : `Classify ${people.length} contacts`}</DialogTitle><DialogDescription>Only marked fields will change.{!single && " Relationship and event-role changes replace those lists for every selected person."} Source provenance cannot be changed.</DialogDescription></DialogHeader>
       {single && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Source: {campaignSourceLabel(single.source)} <span className="ml-1">· Read-only provenance</span></p>}
       <div className="space-y-4">
+        {field("meetingPriority", "Meeting priority · independent of ICP score", single?.classification?.meetingPriority ?? "normal", <div className="space-y-2"><select className={`${selectClass} w-full`} aria-label="Meeting priority" data-testid="classification-meeting-priority" disabled={!hasField("meetingPriority")} value={patch.meetingPriority ?? single?.classification?.meetingPriority ?? "normal"} onChange={event => setField("meetingPriority", event.target.value as ClassificationPatch["meetingPriority"])}>{meetingPriorities.map(value => <option key={value} value={value}>{meetingPriorityLabel(value)}</option>)}</select><p className="text-xs text-muted-foreground">Priority does not change the score or confirm attendance, consent, or a booked meeting. Only the selected campaign contacts change.</p></div>)}
         {field("relationships", "Relationships · select all that apply", relationships, <div className="flex flex-wrap gap-1.5">{relationshipRoles.map(value => <Button key={value} type="button" size="sm" variant={relationships.includes(value) ? "secondary" : "outline"} className="h-7 px-2 text-xs" aria-pressed={relationships.includes(value)} disabled={!hasField("relationships")} data-testid={`classification-relationship-${value}`} onClick={() => {
           let next = relationships.includes(value) ? relationships.filter(role => role !== value) : [...relationships, value];
           next = value === "unknown" && !relationships.includes(value) ? ["unknown"] : next.filter(role => role !== "unknown");

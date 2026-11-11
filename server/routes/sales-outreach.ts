@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { registerRoughContactImportRoutes } from "./rough-contact-import";
 import { registerApolloRevealRoutes } from "./apollo-reveal";
 import { registerCampaignClassificationRoutes } from "./campaign-classification";
+import { effectiveScoringFacts } from "@shared/prospect-scoring";
 import { signApolloPreviews } from "../services/apollo-reveal-core";
 import { z } from "zod";
 import { db } from "../db";
@@ -108,11 +109,8 @@ async function scoreAndUpdateImportedProspects(
     await Promise.all(
       importedProspects.map(async (prospect) => {
         const attrs = {
-          title: prospect.title,
           companyName: prospect.companyName,
-          geography: (prospect.signals as any)?.geography ?? null,
-          industry: (prospect.signals as any)?.industry ?? null,
-          segment: (prospect.signals as any)?.segment ?? null,
+          ...effectiveScoringFacts(prospect),
           email: prospect.email,
           linkedinUrl: prospect.linkedinUrl,
         };

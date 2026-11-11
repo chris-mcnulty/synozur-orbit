@@ -42,5 +42,20 @@ suite("campaign classifications database isolation", () => {
     })));
     const [final] = await db.select().from(prospects).where(eq(prospects.id, a.membershipId));
     expect(final.classification?.tags.sort()).toEqual(["Breakfast", "Follow up", "VIP"]);
+    const { rescoreCampaignProspect } = await import("../prospect-rescore-service");
+    await db.update(outreachCampaigns).set({ targetingFilter: {
+      targetRoles: ["Chief Information Officer"], industries: ["IT Services"], geographies: ["United States"], segments: ["Enterprise"],
+    } }).where(eq(outreachCampaigns.id, campaigns[0].id));
+    const facts = { title: "Chief Information Officer", industry: "IT Services", geography: "US", segment: "Enterprise" };
+    const score = await rescoreCampaignProspect(tenant, "", campaigns[0].id, a.membershipId, { facts });
+    expect(score.score).toBe(92); // All fit facts + email; no LinkedIn supplied.
+    expect((await rescoreCampaignProspect(tenant, "", campaigns[0].id, a.membershipId, {})).score).toBe(92);
+    const [afterScore] = await listCampaignProspects(campaigns[0].id);
+    expect(afterScore.classification?.scoringFacts).toEqual(facts);
+    expect(afterScore.classification?.tags).toContain("VIP");
+    expect(afterScore.status).toBe(saved.status);
+    expect(afterScore.title).toBe(saved.title); // Campaign scoring override, not shared title.
+    await expect(rescoreCampaignProspect(tenant, "", campaigns[1].id, a.membershipId, {})).rejects.toMatchObject({ status: 404 });
+    await expect(rescoreCampaignProspect("wrong.example.invalid", "", campaigns[0].id, a.membershipId, {})).rejects.toMatchObject({ status: 404 });
   }, 30000);
 });

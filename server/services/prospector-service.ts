@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { completeForFeature } from "./ai-provider";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import { buildIcpCriteria, scoreProspect, scoreProspectAgainstAll, type ScoredProspect, type ScoredProspectWithPersona, type PersonaRef, type IcpCriteria, type ProspectAttributes } from "./prospector-core";
+import { effectiveScoringFacts } from "@shared/prospect-scoring";
 
 const SYSTEM_PROMPT = `You are a B2B sales researcher. Write a tight, factual prospect dossier for a seller preparing 1:1 outreach. Lead with why this person fits (or doesn't) the ICP, then the few facts that would shape a first message. Be specific and cite what you're inferring from. Never fabricate — if something is unknown, say "unknown". No filler, no hype, no clichés. 180 words max.`;
 
@@ -144,13 +145,8 @@ export async function researchProspect(
   }
 
   const attrs: ProspectAttributes = {
-    title: prospect.title,
     companyName: prospect.companyName,
-    // Geography/industry/segment aren't first-class prospect columns yet; the
-    // research signals jsonb can carry them. Fall back to what we have.
-    geography: (prospect.signals as any)?.geography ?? null,
-    industry: (prospect.signals as any)?.industry ?? null,
-    segment: (prospect.signals as any)?.segment ?? null,
+    ...effectiveScoringFacts(prospect),
     email: prospect.email,
     linkedinUrl: prospect.linkedinUrl,
   };
@@ -171,7 +167,7 @@ export async function researchProspect(
   // rescore against ALL personas so scoreProspectAgainstAll picks the best
   // persona correctly — persona metadata stays consistent with the signals.
   const roleSignal = scored.breakdown.signals.find((s) => s.key === "role");
-  const hasTitleNoRolePoints = prospect.title && roleSignal && !roleSignal.matched && !roleSignal.absent;
+  const hasTitleNoRolePoints = attrs.title && roleSignal && !roleSignal.matched && !roleSignal.absent;
   if (hasTitleNoRolePoints) {
     // Collect all ICP roles across all targeted personas + filter (deduped).
     const allRoleSet = new Set<string>();
@@ -184,13 +180,13 @@ export async function researchProspect(
     const allRoles = Array.from(allRoleSet);
 
     if (allRoles.length > 0) {
-      const aiMatch = await aiSemanticRoleCheck(tenantDomain, prospect.title!, allRoles);
+      const aiMatch = await aiSemanticRoleCheck(tenantDomain, attrs.title!, allRoles);
       if (aiMatch) {
         // Patch the title with the AI-matched role so the literal matcher in
         // scoreProspectAgainstAll will award role points for the right persona.
         const patchedAttrs: ProspectAttributes = {
           ...attrs,
-          title: `${prospect.title} ${aiMatch.matchedRole}`,
+          title: `${attrs.title} ${aiMatch.matchedRole}`,
         };
         // Re-run the full multi-persona scorer so best persona is correctly selected.
         const rescored = scoreProspectAgainstAll(

@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { defaultMeetingContact } from "@shared/conference-meetings";
 import { apiRequest } from "@/lib/queryClient";
 import { ClassificationBadges, ClassificationEditor, ClassificationSource, ClassificationToolbar } from "../campaign-classification";
-import { canClassifyCampaign, classificationSearchText, emptyClassificationFilters, groupClassifiedPeople, matchesClassification, UNCLASSIFIED, visibleSelectedIds, type ClassifiedPerson } from "../campaign-classification-helpers";
+import { canClassifyCampaign, classificationSearchText, emptyClassificationFilters, groupClassifiedPeople, matchesClassification, meetingPriorityRank, UNCLASSIFIED, visibleSelectedIds, type ClassifiedPerson } from "../campaign-classification-helpers";
 import { useCampaignClassification } from "../use-campaign-classification";
 
 vi.mock("@/lib/queryClient", () => ({ apiRequest: vi.fn() }));
@@ -18,6 +18,16 @@ const people: ClassifiedPerson[] = [
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("campaign classification helpers", () => {
+  it("filters, searches and groups meeting priority independently of attendance and score", () => {
+    const requested: ClassifiedPerson = { ...people[1], classification: { tags: [], eventRoles: [], sourceDetail: "", meetingPriority: "requested_meeting" } };
+    const high: ClassifiedPerson = { id: "three", classification: { tags: [], eventRoles: [], sourceDetail: "", meetingPriority: "high" } };
+    expect(matchesClassification(requested, { ...emptyClassificationFilters(), meetingPriority: "requested_meeting" })).toBe(true);
+    expect(matchesClassification(people[0], { ...emptyClassificationFilters(), meetingPriority: "normal" })).toBe(true);
+    expect(classificationSearchText(requested)).toContain("requested a meeting");
+    expect(groupClassifiedPeople([people[0], high, requested], "meetingPriority").map(group => group.label)).toEqual(["Requested a meeting", "High", "Normal"]);
+    expect([people[0], requested, high].sort((a, b) => meetingPriorityRank(b) - meetingPriorityRank(a)).map(person => person.id)).toEqual(["two", "three", "one"]);
+    expect(requested.meeting).toBeUndefined();
+  });
   it("keeps flat contacts unique and exposes overlapping memberships", () => {
     expect(groupClassifiedPeople([...people, people[0]], "none")[0].people).toHaveLength(2);
     const groups = groupClassifiedPeople(people, "relationship");
@@ -55,6 +65,19 @@ describe("campaign classification helpers", () => {
 });
 
 describe("classification controls", () => {
+  it.each([true, false])("supports sparse priority edits for single (%s) and bulk without changing attendance", async single => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={single ? [people[0]] : people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.click(screen.getByTestId("classification-change-meetingPriority"));
+    fireEvent.change(screen.getByLabelText("Meeting priority"), { target: { value: "requested_meeting" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ meetingPriority: "requested_meeting" }));
+  });
+  it("renders requested priority as an independent badge without attendance claims", () => {
+    render(<ClassificationBadges person={{ ...people[1], classification: { tags: [], eventRoles: [], sourceDetail: "", meetingPriority: "requested_meeting" } }} />);
+    expect(screen.getByTestId("meeting-priority-two").textContent).toBe("Requested a meeting");
+    expect(screen.queryByText("Confirmed attendee")).toBeNull();
+  });
   it("shows overlapping badges, confirmation evidence and read-only honest source", () => {
     render(<><ClassificationBadges person={people[0]} /><ClassificationSource person={people[0]} /></>);
     for (const text of ["Customer", "Partner", "Confirmed attendee", "Speaker", "Sponsor", "Added manually", "Referred by colleague"]) expect(screen.getByText(text)).toBeTruthy();

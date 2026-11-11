@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
-const mocks = vi.hoisted(() => ({ context: vi.fn(), feature: vi.fn(), update: vi.fn() }));
+const mocks = vi.hoisted(() => ({ context: vi.fn(), feature: vi.fn(), update: vi.fn(), rescore: vi.fn() }));
+vi.mock("../../services/prospect-rescore-service", () => ({ rescoreCampaignProspect: mocks.rescore }));
 vi.mock("../../context", () => ({
   getRequestContext: mocks.context,
   ContextError: class extends Error { status = 401; },
@@ -23,6 +24,15 @@ beforeEach(() => {
 });
 const url = "/api/sales-outreach/campaigns/campaign/prospects/classification";
 describe("campaign classification permissions", () => {
+  it("scopes non-AI rescore and blocks a read-only role", async () => {
+    mocks.rescore.mockResolvedValue({ score: 55 });
+    const path = "/api/sales-outreach/campaigns/campaign/prospects/person/rescore";
+    expect((await request(app).post(path).send({})).status).toBe(200);
+    expect(mocks.rescore).toHaveBeenCalledWith("tenant", "market", "campaign", "person", {});
+    mocks.context.mockResolvedValue({ userRole: "Standard User" });
+    expect((await request(app).post(path).send({})).status).toBe(403);
+    expect(mocks.rescore).toHaveBeenCalledTimes(1);
+  });
   it("passes only authorized tenant and market to persistence", async () => {
     const body = { prospectIds: ["p"], patch: { relationships: ["partner"] } };
     expect((await request(app).patch(url).send(body)).status).toBe(200);

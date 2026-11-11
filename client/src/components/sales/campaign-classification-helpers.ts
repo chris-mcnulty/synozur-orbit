@@ -9,19 +9,26 @@ export interface ClassifiedPerson {
   classification?: CampaignClassification | null;
   meeting?: MeetingContact | null;
 }
-export type ClassificationGroupBy = "none" | "relationship" | "attendance" | "eventRole" | "source" | "sourceDetail" | "tag";
-export type ClassificationFilters = Record<"relationship" | "attendance" | "eventRole" | "sourceDetail" | "tag", string>;
+export type ClassificationGroupBy = "none" | "relationship" | "attendance" | "eventRole" | "source" | "sourceDetail" | "tag" | "meetingPriority";
+export type ClassificationFilters = Record<"relationship" | "attendance" | "eventRole" | "sourceDetail" | "tag" | "meetingPriority", string>;
 export const ALL_CLASSIFICATIONS = "all";
 export const UNCLASSIFIED = "__unclassified__";
 export const emptyClassificationFilters = (): ClassificationFilters => ({
-  relationship: "all", attendance: "all", eventRole: "all", sourceDetail: "all", tag: "all",
+  relationship: "all", attendance: "all", eventRole: "all", sourceDetail: "all", tag: "all", meetingPriority: "all",
 });
+export function meetingPriorityLabel(value: string) {
+  return value === "requested_meeting" ? "Requested a meeting" : classificationLabel(value);
+}
+export function meetingPriorityRank(person: ClassifiedPerson) {
+  return person.classification?.meetingPriority === "requested_meeting" ? 2 : person.classification?.meetingPriority === "high" ? 1 : 0;
+}
 export function canClassifyCampaign(role?: string | null) {
   return role === "Analyst" || role === "Domain Admin" || role === "Global Admin";
 }
 export function classificationValues(person: ClassifiedPerson, dimension: Exclude<ClassificationGroupBy, "none">): string[] {
   let values: string[];
   switch (dimension) {
+    case "meetingPriority": values = [person.classification?.meetingPriority ?? "normal"]; break;
     case "relationship": values = (person.meeting?.relationships ?? []).filter(value => value !== "unknown"); break;
     case "attendance": values = person.meeting?.attendance && person.meeting.attendance !== "unknown" ? [person.meeting.attendance] : []; break;
     case "eventRole": values = person.classification?.eventRoles ?? []; break;
@@ -43,9 +50,11 @@ export function classificationSearchText(person: ClassifiedPerson) {
     ...(person.classification?.eventRoles ?? []).map(classificationLabel),
     ...(person.meeting?.relationships ?? []).map(classificationLabel),
     campaignSourceLabel(person.source),
+    meetingPriorityLabel(person.classification?.meetingPriority ?? "normal"),
   ].join(" ").toLocaleLowerCase();
 }
 export function classificationGroupLabel(dimension: Exclude<ClassificationGroupBy, "none">, value: string) {
+  if (dimension === "meetingPriority") return meetingPriorityLabel(value);
   if (value === UNCLASSIFIED) return dimension === "source" ? "Unknown source" : "Unclassified";
   if (dimension === "source") return campaignSourceLabel(value);
   if (dimension === "attendance" && value === "confirmed") return "Confirmed attendee";
@@ -64,7 +73,9 @@ export function groupClassifiedPeople<T extends ClassifiedPerson>(people: T[], d
     }
   }
   return [...groups].map(([key, members]) => ({ key, label: classificationGroupLabel(dimension, key), people: members }))
-    .sort((a, b) => a.key === UNCLASSIFIED ? 1 : b.key === UNCLASSIFIED ? -1 : a.label.localeCompare(b.label));
+    .sort((a, b) => dimension === "meetingPriority"
+      ? ["requested_meeting", "high", "normal"].indexOf(a.key) - ["requested_meeting", "high", "normal"].indexOf(b.key)
+      : a.key === UNCLASSIFIED ? 1 : b.key === UNCLASSIFIED ? -1 : a.label.localeCompare(b.label));
 }
 export function visibleSelectedIds(selected: Iterable<string>, people: ClassifiedPerson[]) {
   const visible = new Set(people.map(person => person.id));

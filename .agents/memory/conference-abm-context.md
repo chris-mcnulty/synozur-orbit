@@ -32,3 +32,9 @@ Campaign contacts need overlapping classifications for why they are included: cu
 **Why:** The user asked to tag and group people by these dimensions, including “what came from me” versus HubSpot.
 
 **How to apply:** Keep classification campaign-specific, reuse the existing relationship/attendance truth, and preserve original import provenance separately from operator-entered source details. A speaker role or a free-text tag must not silently confirm attendance.
+
+Meeting priority must remain separate from ICP fit. An inbound meeting request is a strong follow-up signal, not evidence of a matching title, industry, location, or company size.
+
+**Why:** The user approved editable scoring facts and independent meeting priority after known contacts and an inbound requester both scored 20 based only on email and LinkedIn.
+
+**How to apply:** Explain missing evidence separately from mismatches. Allow non-AI rescoring from operator-supplied campaign facts; retain those overrides through research. Do not manufacture fit scores, attendance, or send consent from meeting interest.

@@ -37,7 +37,8 @@ import {
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
 import { useCampaignClassification } from "@/components/sales/use-campaign-classification";
-import { classificationSearchText } from "@/components/sales/campaign-classification-helpers";
+import { classificationSearchText, meetingPriorityRank } from "@/components/sales/campaign-classification-helpers";
+import ProspectScoreDialog, { ProspectScoreButton } from "@/components/sales/prospect-score-dialog";
 import { ClassificationToolbar, ClassificationRows, ClassificationSelect, ClassificationBadges, ClassificationSource, ClassificationEditButton, ClassificationEditor } from "@/components/sales/campaign-classification";
 import { campaignSourceLabel, type CampaignClassification } from "@shared/campaign-classification";
 import type { MeetingContact } from "@shared/conference-meetings";
@@ -225,7 +226,7 @@ interface Prospect {
   hubspotContactId: string | null;
   disqualifiedReason: string | null;
   researchDossier: string | null;
-  signals?: { discoveryConfidence?: "verified" | "reconfirm" | null } | null;
+  signals?: { discoveryConfidence?: "verified" | "reconfirm" | null; industry?: string; geography?: string; segment?: string; [key: string]: unknown } | null;
   scoreBreakdown?: {
     signals?: {
       key: string;
@@ -376,7 +377,7 @@ const STATUS_TAB_LABELS: Record<string, string> = {
   disqualified: "Disqualified",
 };
 
-type ProspectSortKey = "name" | "company" | "score" | "status" | "source";
+type ProspectSortKey = "name" | "company" | "score" | "status" | "source" | "priority";
 
 function SortIcon({ col, sortKey, sortDir }: { col: ProspectSortKey; sortKey: ProspectSortKey; sortDir: "asc" | "desc" }) {
   if (sortKey !== col) return <ChevronsUpDown className="ml-1 inline h-3 w-3 opacity-30" />;
@@ -522,6 +523,8 @@ export default function OutreachCampaignDetailPage() {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
+  const [scoreContact, setScoreContact] = useState<{ scope: string; person: Prospect } | null>(null);
+  const scoreScope = JSON.stringify([getTabTenantId(), user?.id, id]);
   const [marketingTouchesExpanded, setMarketingTouchesExpanded] = useState(true);
   const [form, setForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
 
@@ -567,7 +570,7 @@ export default function OutreachCampaignDetailPage() {
 
   function toggleSort(key: ProspectSortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir(key === "score" ? "desc" : "asc"); }
+    else { setSortKey(key); setSortDir(key === "score" || key === "priority" ? "desc" : "asc"); }
   }
 
   // HubSpot import dialog state.
@@ -864,6 +867,7 @@ export default function OutreachCampaignDetailPage() {
     list.sort((a, b) => {
       let cmp = 0;
       if (sortKey === "score") cmp = (a.icpScore ?? -1) - (b.icpScore ?? -1);
+      else if (sortKey === "priority") cmp = meetingPriorityRank(a) - meetingPriorityRank(b) || (a.icpScore ?? -1) - (b.icpScore ?? -1);
       else if (sortKey === "name") cmp = (a.name || a.email || "").localeCompare(b.name || b.email || "");
       else if (sortKey === "company") cmp = (a.companyName ?? "").localeCompare(b.companyName ?? "");
       else if (sortKey === "status") cmp = a.status.localeCompare(b.status);
@@ -1676,6 +1680,12 @@ export default function OutreachCampaignDetailPage() {
                       <option value="low">Low (&lt;50)</option>
                       <option value="unscored">Unscored</option>
                     </select>
+                    <select aria-label="Sort contacts" data-testid="select-prospect-sort" value={`${sortKey}:${sortDir}`} onChange={event => { const [key, direction] = event.target.value.split(":"); setSortKey(key as ProspectSortKey); setSortDir(direction as "asc" | "desc"); }} className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value={`${sortKey}:${sortDir}`}>Sort: {sortKey === "priority" ? "meeting priority" : sortKey} ({sortDir === "asc" ? "ascending" : "descending"})</option>
+                      <option value="priority:desc">Requested meetings first</option>
+                      <option value="score:desc">Highest score first</option>
+                      <option value="name:asc">Name A–Z</option>
+                    </select>
                   </div>
                 </div>
               <ClassificationToolbar people={visibleProspects} filters={classification.filters}
@@ -1759,7 +1769,7 @@ export default function OutreachCampaignDetailPage() {
                       </TableCell>
                       <TableCell className="text-sm">{p.companyName ?? "—"}</TableCell>
                       <TableCell className={`text-center font-semibold ${scoreColor(p.icpScore)}`}>
-                        {p.icpScore ?? "—"}
+                        <ProspectScoreButton person={p} criteria={campaign.targetingFilter} onClick={() => setScoreContact({ scope: scoreScope, person: p })} />
                       </TableCell>
                       <TableCell>
                         <Badge variant={STATE_VARIANT[p.status] ?? "outline"} className="text-[10px] capitalize">
@@ -2976,6 +2986,7 @@ export default function OutreachCampaignDetailPage() {
       {classification.editingPeople.length > 0 && <ClassificationEditor key={classification.editorKey}
         people={classification.editingPeople} onClose={classification.closeEditor}
         onSave={classification.save} isSaving={classification.isSaving} error={classification.error} />}
+      {scoreContact?.scope === scoreScope && <ProspectScoreDialog key={`${scoreScope}:${scoreContact.person.id}`} person={scoreContact.person} campaignId={id} criteria={campaign.targetingFilter} role={user?.role} onClose={() => setScoreContact(null)} />}
       {composeRecovery && <ComposeClarificationDialog
         open={clarifications.open}
         onOpenChange={clarifications.setOpen}

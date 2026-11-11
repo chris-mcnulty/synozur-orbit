@@ -67,6 +67,16 @@ function norm(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
 
+/** Country aliases only; do not treat an unknown location as a match. */
+function normalizeGeography(value: string | null | undefined): string {
+  const aliases: Record<string, string> = {
+    us: "united states", usa: "united states", "u.s.": "united states",
+    "u.s.a.": "united states", "united states of america": "united states",
+    uk: "united kingdom", "u.k.": "united kingdom",
+  };
+  return aliases[norm(value)] ?? norm(value);
+}
+
 /** Case-insensitive substring match of `value` against any criteria entry. */
 export function matchesAny(value: string | null | undefined, criteria?: string[]): boolean {
   const v = norm(value);
@@ -299,7 +309,7 @@ export function scoreProspect(attrs: ProspectAttributes, criteria: IcpCriteria):
 
   // ── Geography / Segment ───────────────────────────────────────────────────
   const hasGeoCriteria = (criteria.geographies?.length ?? 0) > 0;
-  const geoMatched = matchesAny(attrs.geography, criteria.geographies);
+  const geoMatched = matchesAny(normalizeGeography(attrs.geography), criteria.geographies?.map(normalizeGeography));
   const geoAbsent = !norm(attrs.geography) && hasGeoCriteria;
 
   const hasSegmentCriteria = (criteria.segments?.length ?? 0) > 0;

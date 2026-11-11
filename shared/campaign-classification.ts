@@ -1,11 +1,15 @@
 import { z } from "zod";
 import { attendanceStates, defaultMeetingContact, relationshipRoles, type MeetingContact } from "./conference-meetings";
+import type { ScoringFacts } from "./prospect-scoring";
+export const meetingPriorities = ["normal", "high", "requested_meeting"] as const;
 
 export const campaignEventRoles = ["speaker", "sponsor", "exhibitor", "organizer"] as const;
 export interface CampaignClassification {
   tags: string[];
   eventRoles: (typeof campaignEventRoles)[number][];
   sourceDetail: string;
+  meetingPriority?: (typeof meetingPriorities)[number];
+  scoringFacts?: ScoringFacts;
 }
 export const emptyCampaignClassification = (): CampaignClassification => ({ tags: [], eventRoles: [], sourceDetail: "" });
 export const classificationPatchSchema = z.object({
@@ -13,6 +17,7 @@ export const classificationPatchSchema = z.object({
   tagsMode: z.enum(["replace", "add", "remove"]).optional(),
   eventRoles: z.array(z.enum(campaignEventRoles)).max(4).optional(),
   sourceDetail: z.string().trim().max(500).optional(),
+  meetingPriority: z.enum(meetingPriorities).optional(),
   relationships: z.array(z.enum(relationshipRoles)).min(1).max(6).optional(),
   attendance: z.enum(attendanceStates).optional(),
   attendanceEvidence: z.string().trim().max(2000).optional(),
@@ -46,6 +51,7 @@ export function applyCampaignClassification(
   }
   if (patch.eventRoles) next.eventRoles = [...new Set(patch.eventRoles)];
   if (patch.sourceDetail !== undefined) next.sourceDetail = patch.sourceDetail;
+  if (patch.meetingPriority !== undefined) next.meetingPriority = patch.meetingPriority;
   const changesMeeting = patch.relationships !== undefined || patch.attendance !== undefined || patch.attendanceEvidence !== undefined;
   const nextMeeting = changesMeeting ? { ...defaultMeetingContact(), ...meeting } : meeting;
   if (nextMeeting && changesMeeting) {
