@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { registerRoughContactImportRoutes } from "./rough-contact-import";
+import { registerApolloRevealRoutes } from "./apollo-reveal";
+import { signApolloPreviews } from "../services/apollo-reveal-core";
 import { z } from "zod";
 import { db } from "../db";
 import {
@@ -162,6 +164,7 @@ const NUMERIC_CAPS: { key: keyof typeof DEFAULT_SETTINGS; min: number; max: numb
 
 export function registerSalesOutreachRoutes(app: Express) {
   registerRoughContactImportRoutes(app);
+  registerApolloRevealRoutes(app);
   // Readiness — informational, ungated (matches /api/marketing/context-readiness).
   app.get("/api/sales-outreach/readiness", async (req, res) => {
     try {
@@ -610,7 +613,14 @@ export function registerSalesOutreachRoutes(app: Express) {
           { searchCount: result.searchCount, backend: result.backend },
         );
       }
-      res.json(result);
+      res.json({
+        ...result,
+        apolloPreviews: result.apolloPreviews?.length
+          ? signApolloPreviews(result.apolloPreviews, {
+              tenantDomain: ctx.tenantDomain, campaignId: campaign.id, userId: ctx.userId,
+            }, company.data || undefined, process.env.SESSION_SECRET ?? "")
+          : [],
+      });
     } catch (err: any) {
       console.error("[sales-outreach-discovery:search]", err);
       res.status(500).json({ error: err.message || "Failed to discover prospects" });

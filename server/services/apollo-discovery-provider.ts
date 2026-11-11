@@ -36,6 +36,7 @@
 
 import type { DiscoveryCandidate, DiscoverySearchInput } from "./discovery-provider-core";
 import { isBadName, discoveryCompanyDomain, matchesDiscoveryCompany } from "./discovery-provider-core";
+import type { ApolloSearchPreview } from "@shared/apollo-reveal";
 
 const APOLLO_API_URL = "https://api.apollo.io/v1/mixed_people/api_search";
 const APOLLO_ORG_SEARCH_URL = "https://api.apollo.io/v1/mixed_companies/search";
@@ -286,6 +287,7 @@ interface ApolloPerson {
   name?: string;
   first_name?: string;
   last_name?: string;
+  last_name_obfuscated?: string;
   title?: string;
   linkedin_url?: string;
   email?: string;
@@ -360,6 +362,9 @@ export interface ApolloExpansionSummary {
 
 export interface ApolloSearchResult {
   candidates: DiscoveryCandidate[];
+  previews?: ApolloSearchPreview[];
+  /** In-scope search previews whose full identity requires Apollo enrichment. */
+  unrevealedCount?: number;
   /** Structured record of every filter sent to Apollo — used by the UI to
    *  surface diagnostic hints when 0 results are returned. */
   appliedFilters: ApolloAppliedFilters;
@@ -765,14 +770,30 @@ export async function searchApollo(
       };
       // Only retain current employers, not historical-domain matches. Copy
       // authoritative organization metadata when the people API omits it.
-      const inScope = (people: ApolloPerson[]) => people.filter(person => person.organization?.id && employerById.has(person.organization.id))
-        .map(person => {
-          const org = employerById.get(person.organization!.id!)!;
-          return { ...person, organization: {
-            ...person.organization, name: org.name,
-            primary_domain: org.primary_domain ?? org.website_url,
-          } };
-        });
+      const inScope = (people: ApolloPerson[]) => people.flatMap(person => {
+        const current = person.organization;
+        if (!current) return [];
+        // api_search normally returns a current-employer NAME, not an ID.
+        // A present but conflicting ID must still fail closed. With no ID,
+        // require an exact normalized name match to a resolved employer.
+        const org = current.id
+          ? employerById.get(current.id)
+          : employers.find(employer => {
+              if (!employer.name || !matchesDiscoveryCompany({
+                name: "", source: "apollo", companyName: current.name,
+              }, employer.name)) return false;
+              const currentDomain = current.primary_domain ?? current.website_url;
+              const resolvedDomain = employer.primary_domain ?? employer.website_url;
+              return !currentDomain || (!!resolvedDomain && matchesDiscoveryCompany({
+                name: "", source: "apollo", companyDomain: currentDomain,
+              }, resolvedDomain));
+            });
+        if (!org) return [];
+        return [{ ...person, organization: {
+          ...current, name: org.name,
+          primary_domain: org.primary_domain ?? org.website_url,
+        } }];
+      });
       allPeople = inScope(await apolloPeopleSearch(apiKey, scopedBody));
       if (allPeople.length === 0) {
         // A selected employer is authoritative. Persona industry prose should
@@ -870,7 +891,14 @@ export async function searchApollo(
 
   // ── Map Apollo person → DiscoveryCandidate ─────────────────────────────────
 
-  const candidates: DiscoveryCandidate[] = allPeople.slice(0, limit).map((p) => {
+  // Search previews are not complete contact identities. Never invent surnames
+  // from obfuscated values or silently spend enrichment credits to reveal them.
+  const unrevealedCount = allPeople.filter(p =>
+    !!p.last_name_obfuscated && !p.name?.trim() && !p.last_name?.trim(),
+  ).length;
+  const candidates: DiscoveryCandidate[] = allPeople
+    .filter(p => !(p.last_name_obfuscated && !p.name?.trim() && !p.last_name?.trim()))
+    .slice(0, limit).map((p) => {
     const name = p.name?.trim() || [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
     const locationParts = [p.city, p.state, p.country].filter(Boolean);
 
@@ -925,6 +953,16 @@ export async function searchApollo(
     expansionSummary,
     relaxationApplied,
     droppedCount,
+    unrevealedCount,
+    previews: allPeople.filter(p =>
+      !!p.id && !!p.last_name_obfuscated && !p.name?.trim() && !p.last_name?.trim(),
+    ).slice(0, limit).map(p => ({
+      id: p.id!,
+      displayName: [p.first_name, p.last_name_obfuscated].filter(Boolean).join(" ").trim() || "Hidden identity",
+      title: p.title ?? null,
+      companyName: p.organization?.name ?? null,
+      companyDomain: p.organization?.primary_domain ?? p.organization?.website_url ?? null,
+    })),
   };
 }
 
@@ -940,6 +978,7 @@ function apolloPersonToCandidate(p: ApolloPerson): DiscoveryCandidate {
     name: name || "Unknown",
     title: p.title ?? null,
     companyName: p.organization?.name ?? null,
+    companyDomain: p.organization?.primary_domain ?? p.organization?.website_url ?? null,
     email: p.email ?? null,
     linkedinUrl: li,
     geography: locationParts.length ? locationParts.join(", ") : null,
@@ -1100,6 +1139,30 @@ export async function searchApolloCompaniesFirst(
 // ---------------------------------------------------------------------------
 
 const APOLLO_MATCH_URL = "https://api.apollo.io/v1/people/match";
+
+/** Explicitly authorized reveal only. One bounded call, never retried on uncertainty. */
+export async function revealApolloPersonById(id: string): Promise<DiscoveryCandidate | null> {
+  const apiKey = process.env.APOLLO_API_KEY?.trim();
+  if (!apiKey) throw new ApolloDiscoveryError(apolloReason(), "not_available");
+  const response = await fetch(APOLLO_MATCH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Api-Key": apiKey, "Cache-Control": "no-cache" },
+    body: JSON.stringify({
+      id, reveal_personal_emails: false, reveal_phone_number: false,
+      run_waterfall_email: false, run_waterfall_phone: false,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new ApolloDiscoveryError(`Apollo reveal failed (HTTP ${response.status}); no automatic retry was made.`, "api_error");
+  const { person } = await response.json() as { person?: ApolloPerson };
+  if (!person || person.id !== id) return null;
+  const candidate = apolloPersonToCandidate(person);
+  if (candidate.name === "Unknown" || !candidate.name.includes(" ") || candidate.name.includes("*") || isBadName(candidate.name)) return null;
+  candidate.email = isUsableApolloEmail(person.email) ? person.email!.toLowerCase() : null;
+  candidate.linkedinUrl = normalizeApolloLinkedIn(person.linkedin_url);
+  candidate.sourceUrl = candidate.linkedinUrl;
+  return candidate;
+}
 
 export interface ApolloMatchInput {
   name?: string | null;

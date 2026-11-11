@@ -68,4 +68,28 @@ describe("per-search company restriction", () => {
     expect(result.candidates).toHaveLength(1);
     expect(result.fallbackReason).toContain("restricted to the selected company");
   });
+
+  it("explains hidden Apollo identities instead of claiming there were no matches", async () => {
+    io.apollo.mockResolvedValue({
+      candidates: [], droppedCount: 0, appliedFilters: {}, unrevealedCount: 5,
+    });
+    const result = await discoverProspects("test.example", "campaign", { company: "Acme", backend: "apollo" });
+    expect(result.fallbackReason).toContain("5 matching previews with hidden surnames");
+    expect(result.fallbackReason).toContain("no enrichment was requested");
+    expect(result.fallbackReason).not.toContain("no matches");
+    expect(io.web).toHaveBeenCalledWith("test.example", expect.objectContaining({ company: "Acme" }));
+    expect(result.candidates).toHaveLength(1);
+  });
+
+  it.each([false, true])("retains revealable previews even when the optional web fallback fails: %s", async (webFails) => {
+    const previews = [{ id: "person", displayName: "Alice C***n", companyName: "Acme", companyDomain: "acme.com", title: "Director" }];
+    io.apollo.mockResolvedValue({ candidates: [], previews, droppedCount: 0, appliedFilters: {}, unrevealedCount: 1 });
+    if (webFails) io.web.mockRejectedValueOnce(new Error("web unavailable"));
+    const result = await discoverProspects("test.example", "campaign", { company: "Acme", backend: "apollo" });
+    expect(result.apolloPreviews).toEqual(previews);
+    if (webFails) {
+      expect(result.backend).toBe("apollo");
+      expect(result.fallbackReason).toContain("Web research could not complete");
+    }
+  });
 });

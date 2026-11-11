@@ -41,6 +41,7 @@ import {
   type ApolloAppliedFilters,
 } from "./apollo-discovery-provider";
 import { expandCriteria, type IntentExpansionDetail } from "./discovery-intent-expansion";
+import type { ApolloSearchPreview } from "@shared/apollo-reveal";
 
 /** A discovered candidate with its computed ICP fit (preview, not persisted). */
 export interface ScoredDiscoveryCandidate {
@@ -50,6 +51,7 @@ export interface ScoredDiscoveryCandidate {
 
 export interface DiscoverResult {
   backend: DiscoveryBackendId;
+  apolloPreviews?: ApolloSearchPreview[];
   candidates: ScoredDiscoveryCandidate[];
   /** Raw count found before dedup/scoring — lets the UI explain "0 new". */
   foundCount: number;
@@ -103,7 +105,7 @@ export function getDiscoveryBackends(): DiscoveryBackendStatus[] {
 }
 
 /** Load a campaign and flatten its ICP personas + targeting filter into criteria. */
-async function loadCampaignContext(tenantDomain: string, campaignId: string) {
+export async function loadCampaignContext(tenantDomain: string, campaignId: string) {
   const [campaign] = await db
     .select()
     .from(outreachCampaigns)
@@ -196,6 +198,7 @@ export async function discoverProspects(
   let expansionSummary: DiscoverResult["expansionSummary"] | undefined;
   let relaxationApplied: string | undefined;
   let accountCluster: string[] | undefined;
+  let apolloPreviews: ApolloSearchPreview[] | undefined;
 
   if (backend === "salesnav") {
     try {
@@ -219,6 +222,7 @@ export async function discoverProspects(
       droppedCount = apolloResult.droppedCount;
       expansionSummary = apolloResult.expansionSummary;
       relaxationApplied = apolloResult.relaxationApplied;
+      apolloPreviews = apolloResult.previews;
 
       // Companies-first pass for event campaigns: when the people-search
       // yields little, find fitting organizations in the target geography and
@@ -245,9 +249,13 @@ export async function discoverProspects(
       // so the user sees something useful rather than a blank list. Capture
       // the applied filters so the UI can explain which fields were too narrow.
       if (found.length === 0 && isWebSearchAvailable()) {
-        console.log("[discovery] Apollo returned 0 results — falling back to web discovery");
-        apolloDiagnostics = apolloResult.appliedFilters;
-        fallbackReason = company
+        console.log(`[discovery] Apollo returned 0 importable contacts (${apolloResult.unrevealedCount ?? 0} unrevealed previews) — falling back to web discovery`);
+        // Hidden identities are not a filter failure; don't suggest changing
+        // campaign targeting when Apollo already returned matching previews.
+        apolloDiagnostics = apolloResult.unrevealedCount ? undefined : apolloResult.appliedFilters;
+        fallbackReason = apolloResult.unrevealedCount
+          ? `Apollo returned ${apolloResult.unrevealedCount} matching previews with hidden surnames, not importable contacts. Revealing them requires Apollo enrichment; no enrichment was requested. Showing web research${company ? " restricted to the selected company" : ""} instead.`
+          : company
           ? "Apollo returned no matches — showing web research restricted to the selected company."
           : "Apollo returned no matches for these filters — showing broadened web research results instead.";
         backend = "web";
@@ -274,13 +282,19 @@ export async function discoverProspects(
     if (!isWebSearchAvailable()) {
       throw new Error(webDiscoveryReason());
     }
-    const web = await searchWeb(tenantDomain, input);
-    found = web.candidates;
-    droppedCount = web.droppedCount;
-    usage = web.usage;
-    searchCount = web.searchCount;
-    model = web.model;
-    provider = web.provider;
+    try {
+      const web = await searchWeb(tenantDomain, input);
+      found = web.candidates;
+      droppedCount = web.droppedCount;
+      usage = web.usage;
+      searchCount = web.searchCount;
+      model = web.model;
+      provider = web.provider;
+    } catch (err) {
+      if (!apolloPreviews?.length) throw err;
+      backend = "apollo";
+      fallbackReason = "Web research could not complete. Matching Apollo previews are available below for an optional, explicitly confirmed paid reveal.";
+    }
   }
 
   // Apply the same restriction to every backend and fallback, before scoring
@@ -304,7 +318,7 @@ export async function discoverProspects(
   }));
   scored.sort((a, b) => b.scored.score - a.scored.score);
 
-  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics, expansionSummary, relaxationApplied, intentExpansion, accountCluster };
+  return { backend, candidates: scored, foundCount, droppedCount, usage, searchCount, model, provider, fallbackReason, apolloDiagnostics, expansionSummary, relaxationApplied, intentExpansion, accountCluster, apolloPreviews };
 }
 
 /**

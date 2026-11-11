@@ -66,8 +66,9 @@ export default function ConferenceCalendarInvitation({ personId, name, email, ev
   return <div className="space-y-3 rounded-lg border p-4" data-testid="conference-calendar-invitation">
     <h3 className="text-sm font-semibold">Outlook calendar invitation</h3>
     <p className="text-xs text-muted-foreground">Saving meeting prep or a scheduling link does not send invitations. Save prep first, then review here. The connected Outlook account is the organizer; include the meeting owner’s email in participants if different.</p>
-    {status.isError && <p role="alert" className="text-sm text-red-700">{errorMessage(status.error)} <Button variant="outline" size="sm" onClick={() => status.refetch()}>Retry status</Button></p>}
-    {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+    {status.isLoading && <div aria-live="polite" className="h-8 animate-pulse rounded-md bg-muted" />}
+    {status.isError && <p role="alert" className="text-sm text-destructive">{errorMessage(status.error)} <Button variant="outline" size="sm" onClick={() => status.refetch()}>Retry status</Button></p>}
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {stored && <div className="space-y-1 text-sm">
       <p role="status">{stored.status === "sent" ? "Invitation created in Outlook." : stored.status === "cancelled" ? "Invitation cancelled. No further invitations will be sent from this booking." : "Delivery not confirmed. Check status; retries never send a second invitation."}</p>
       <p>Organizer: {stored.preview.organizer} · Owner: {stored.preview.owner}</p>

@@ -36,7 +36,10 @@ import {
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
+import ComposeClarificationDialog from "@/components/sales/compose-clarification";
+import { useComposeClarifications } from "@/hooks/use-compose-clarifications";
 import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
+import ApolloRevealPreview from "@/components/sales/apollo-reveal-preview";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,7 +84,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { getTabMarketId } from "@/lib/tabContext";
+import { getTabMarketId, getTabTenantId } from "@/lib/tabContext";
 import { useUser } from "@/lib/userContext";
 import { parseCSV } from "@/lib/csv-export";
 import {
@@ -92,6 +95,7 @@ import {
   type LinkedInFormat,
   type OutreachIntent,
 } from "@shared/linkedin-outreach";
+import type { ApolloRevealPreview as ApolloRevealPreviewType } from "@shared/apollo-reveal";
 
 interface OutreachCampaign {
   id: string;
@@ -303,6 +307,7 @@ interface ApolloDiagnostics {
 interface DiscoverResult {
   backend: "web" | "salesnav" | "apollo";
   candidates: ScoredDiscoveryCandidate[];
+  apolloPreviews?: ApolloRevealPreviewType[];
   foundCount: number;
   droppedCount: number;
   /** Set when the primary backend returned 0 results and was retried with a fallback. */
@@ -526,21 +531,22 @@ export default function OutreachCampaignDetailPage() {
   const [draftBody, setDraftBody] = useState("");
   const [sharpenResult, setSharpenResult] = useState<{ body: string; subject: string | null; changelog: string[] } | null>(null);
   const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
-  const [composeRecovery, setComposeRecovery] = useState<{
-    vars: { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string };
-    code: string;
-    explanation: string;
-    questions: string[];
-    additionalContext: string;
-    retryError: string;
-  } | null>(null);
+  type ComposeVars = { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string };
+  const composeScope = JSON.stringify([getTabTenantId(), user?.id, id]);
+  const composeScopeRef = useRef(composeScope);
+  composeScopeRef.current = composeScope;
+  const clarifications = useComposeClarifications<ComposeVars>(composeScope);
+  const composeRecovery = clarifications.recovery;
 
   // Discovery dialog state.
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<DiscoverResult | null>(null);
+  const [discoverResultGeneration, setDiscoverResultGeneration] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [discoverCompany, setDiscoverCompany] = useState("");
   const [discoverResultCompany, setDiscoverResultCompany] = useState("");
+  const [apolloRevealBusy, setApolloRevealBusy] = useState(false);
+  const discoveryGeneration = useRef(0);
 
   // Prospect list filter / sort state.
   const [searchQ, setSearchQ] = useState("");
@@ -927,7 +933,8 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const compose = useMutation({
-    mutationFn: async (vars: { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string }) => {
+    onMutate: () => ({ scope: composeScope }),
+    mutationFn: async (vars: ComposeVars) => {
       const res = await apiRequest("POST", `/api/sales-outreach/prospects/${vars.prospect.id}/compose`, {
         channel: vars.channel,
         linkedinFormat: vars.linkedinFormat,
@@ -936,9 +943,10 @@ export default function OutreachCampaignDetailPage() {
       });
       return res.json();
     },
-    onSuccess: (data: { touch: Touch }, vars) => {
+    onSuccess: (data: { touch: Touch }, vars, request) => {
+      if (request?.scope !== composeScopeRef.current) return;
       queryClient.invalidateQueries({ queryKey: prospectsKey });
-      setComposeRecovery(null);
+      clarifications.succeeded(vars, request.scope);
       openDraft(data.touch, vars.prospect);
       toast({
         title: "Draft composed",
@@ -947,31 +955,12 @@ export default function OutreachCampaignDetailPage() {
           : "Review and approve to send to Outlook.",
       });
     },
-    onError: (err: any, vars) => {
-      const code = err?.code;
-      if (code === "OUTREACH_NEEDS_INPUT" || code === "OUTREACH_REFUSED" || code === "OUTREACH_INVALID_DRAFT") {
-        setDraft(null);
-        setSharpenResult(null);
-        setComposeRecovery({
-          vars,
-          code,
-          explanation: err?.message || "The draft could not be created.",
-          questions: Array.isArray(err?.questions) ? err.questions : [],
-          additionalContext: vars.additionalContext ?? "",
-          retryError: "",
-        });
-        return;
-      }
-      if (composeRecovery || vars.additionalContext !== undefined) {
-        setComposeRecovery((current) => current ? {
-          ...current,
-          vars,
-          additionalContext: vars.additionalContext ?? current.additionalContext,
-          retryError: err?.message || "Drafting failed. Try again.",
-        } : current);
-        return;
-      }
-      toast({ title: "Compose failed", description: err?.message, variant: "destructive" });
+    onError: (err: unknown, vars, request) => {
+      if (request?.scope !== composeScopeRef.current) return;
+      setDraft(null);
+      setSharpenResult(null);
+      // Every failure gets a persistent response area, not a disappearing toast.
+      clarifications.reportFailure(err, vars, request.scope);
     },
   });
 
@@ -1218,7 +1207,7 @@ export default function OutreachCampaignDetailPage() {
   const apolloBackend = discoveryStatus?.backends.find((b) => b.id === "apollo");
 
   const discover = useMutation({
-    mutationFn: async ({ company }: { company: string }) => {
+    mutationFn: async ({ company }: { company: string; generation: number }) => {
       // Event-linked campaigns prioritize Apollo; Wiza and Sales Navigator remain external-only research sources.
       const backend = campaign?.conferenceId
         ? apolloBackend?.available ? "apollo" : "web"
@@ -1231,11 +1220,13 @@ export default function OutreachCampaignDetailPage() {
       return res.json();
     },
     onSuccess: (data: DiscoverResult, variables) => {
+      if (variables.generation !== discoveryGeneration.current) return;
       setDiscoverResult(data);
+      setDiscoverResultGeneration(variables.generation);
       setDiscoverResultCompany(variables.company);
       // Pre-select the candidates that clear the ICP threshold.
       setSelected(new Set(data.candidates.map((c, i) => (c.scored.qualified ? i : -1)).filter((i) => i >= 0)));
-      if (data.candidates.length === 0) {
+      if (data.candidates.length === 0 && !(data.apolloPreviews?.length)) {
         toast({
           title: "No new prospects found",
           description: campaign?.conferenceId && data.foundCount === 0
@@ -1246,7 +1237,10 @@ export default function OutreachCampaignDetailPage() {
         });
       }
     },
-    onError: (err: any) => toast({ title: "Discovery failed", description: err?.message, variant: "destructive" }),
+    onError: (err: any, variables) => {
+      if (variables.generation !== discoveryGeneration.current) return;
+      toast({ title: "Discovery failed", description: err?.message, variant: "destructive" });
+    },
   });
 
   const importDiscovered = useMutation({
@@ -1271,7 +1265,9 @@ export default function OutreachCampaignDetailPage() {
   });
 
   function openDiscovery() {
+    discoveryGeneration.current += 1;
     setDiscoverResult(null);
+    setDiscoverResultGeneration(discoveryGeneration.current);
     setSelected(new Set());
     setDiscoverCompany("");
     setDiscoverResultCompany("");
@@ -1279,12 +1275,36 @@ export default function OutreachCampaignDetailPage() {
   }
 
   function runDiscovery() {
-    if (discover.isPending) return;
+    if (discover.isPending || apolloRevealBusy || importDiscovered.isPending) return;
     const company = discoverCompany.trim();
+    const generation = ++discoveryGeneration.current;
     setDiscoverResult(null);
+    setDiscoverResultGeneration(generation);
     setDiscoverResultCompany("");
     setSelected(new Set());
-    discover.mutate({ company });
+    discover.mutate({ company, generation });
+  }
+
+  function mergeRevealedCandidates(revealed: ScoredDiscoveryCandidate[]) {
+    if (!discoverResult || !revealed.length) return;
+    const candidateKey = (candidate: DiscoveryCandidate) => {
+      const normalized = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+      const email = normalized(candidate.email);
+      if (email) return `email:${email}`;
+      return `person:${normalized(candidate.name)}|${normalized(candidate.companyName)}|${normalized(candidate.title)}`;
+    };
+    const original = discoverResult.candidates;
+    const selectedKeys = new Set(original.filter((_, index) => selected.has(index)).map((item) => candidateKey(item.candidate)));
+    const seen = new Set(original.map((item) => candidateKey(item.candidate)));
+    const additions = revealed.filter((item) => {
+      const key = candidateKey(item.candidate);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const merged = [...original, ...additions];
+    setDiscoverResult({ ...discoverResult, candidates: merged });
+    setSelected(new Set(merged.flatMap((item, index) => selectedKeys.has(candidateKey(item.candidate)) ? [index] : [])));
   }
 
   function toggleSelected(i: number) {
@@ -1354,8 +1374,8 @@ export default function OutreachCampaignDetailPage() {
           <Link href="/app/sales/outreach"><ArrowLeft className="w-4 h-4 mr-1" /> Campaigns</Link>
         </Button>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div className="flex flex-col items-stretch gap-5">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-[11px] capitalize">{campaign.goalType.replace("_", " ")}</Badge>
               <Badge variant="secondary" className="text-[11px] capitalize">{campaign.status}</Badge>
@@ -1379,14 +1399,14 @@ export default function OutreachCampaignDetailPage() {
               })()}
             </div>
             <h1 className="text-2xl font-bold tracking-tight mt-1.5">{campaign.name}</h1>
-            {campaign.salesGoal && <p className="text-muted-foreground mt-1 max-w-2xl">{campaign.salesGoal}</p>}
+            {campaign.salesGoal && <p className="mt-1 max-w-5xl whitespace-pre-wrap break-words text-muted-foreground">{campaign.salesGoal}</p>}
             {campaign.status === "draft" && canEdit && (
               <p className="text-xs text-muted-foreground mt-2">
                 This campaign is in setup. Activate it when you are ready for cadence follow-ups to advance; every outreach message still requires approval.
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {canEdit && campaign.status === "draft" && (
               <Button
                 size="sm"
@@ -1492,6 +1512,19 @@ export default function OutreachCampaignDetailPage() {
             </Button>
           </div>
         </div>
+
+        {clarifications.records.length > 0 && (
+          <section className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3" aria-label="Drafts waiting for your input" data-testid="compose-clarification-reminders">
+            <p className="text-sm font-medium">Drafting needs your input</p>
+            {clarifications.records.map(([key, recovery]) => (
+              <div key={key} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span>{recovery.vars.prospect.name} · {recovery.vars.channel === "linkedin" ? "LinkedIn" : "Email"}</span>
+                <Button size="sm" variant="outline" disabled={compose.isPending} onClick={() => clarifications.resume(key)}>Answer questions / resume</Button>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">Questions and answers are kept on this page until you finish the draft or explicitly discard them.</p>
+          </section>
+        )}
 
         {campaign.conferenceId ? (
           <ConferenceMeetings
@@ -2661,8 +2694,22 @@ export default function OutreachCampaignDetailPage() {
       />
 
       {/* Discovery dialog — review web-discovered candidates, then import selected */}
-      <Dialog open={discovering} onOpenChange={(o) => { if (!o) { setDiscovering(false); setDiscoverResult(null); setDiscoverResultCompany(""); setSelected(new Set()); } }}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={discovering} onOpenChange={(o) => {
+        if (!o) {
+          if (apolloRevealBusy) return;
+          discoveryGeneration.current += 1;
+          setDiscovering(false);
+          setDiscoverResult(null);
+          setDiscoverResultGeneration(discoveryGeneration.current);
+          setDiscoverResultCompany("");
+          setSelected(new Set());
+        }
+      }}>
+        <DialogContent
+          className="max-w-2xl"
+          onEscapeKeyDown={(event) => { if (apolloRevealBusy) event.preventDefault(); }}
+          onPointerDownOutside={(event) => { if (apolloRevealBusy) event.preventDefault(); }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Radar className="w-4 h-4" /> Discover prospects
@@ -2694,10 +2741,12 @@ export default function OutreachCampaignDetailPage() {
               <Input
                 id="discovery-company"
                 value={discoverCompany}
-                disabled={discover.isPending}
+                disabled={discover.isPending || apolloRevealBusy}
                 onChange={(e) => {
+                  discoveryGeneration.current += 1;
                   setDiscoverCompany(e.target.value.slice(0, 200));
                   setDiscoverResult(null);
+                  setDiscoverResultGeneration(discoveryGeneration.current);
                   setDiscoverResultCompany("");
                   setSelected(new Set());
                 }}
@@ -2707,7 +2756,7 @@ export default function OutreachCampaignDetailPage() {
                 data-testid="input-discovery-company"
                 className="flex-1"
               />
-              <Button onClick={runDiscovery} disabled={discover.isPending} data-testid="button-run-discovery">
+              <Button onClick={runDiscovery} disabled={discover.isPending || apolloRevealBusy} data-testid="button-run-discovery">
                 {discover.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Search className="w-4 h-4 mr-1.5" />}
                 {discover.isPending ? "Searching" : "Search prospects"}
               </Button>
@@ -2728,10 +2777,24 @@ export default function OutreachCampaignDetailPage() {
               diagnostics={discoverResult.apolloDiagnostics}
             />
           )}
-          {campaign.conferenceId && discoverResult && discoverResult.foundCount === 0 && (discoverResult.backend !== "apollo" || !!discoverResult.fallbackReason) && (
-            <div className="rounded-md border border-[#d9ded5] bg-[#f5f4ec] px-3 py-2 text-xs text-[#52665c]">
+          {campaign.conferenceId && discoverResult && !discoverResult.apolloPreviews?.length && discoverResult.foundCount === 0 && (discoverResult.backend !== "apollo" || !!discoverResult.fallbackReason) && (
+            <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
               No matching contacts were returned by the available discovery sources. This does not mean the company has no relevant people or that anyone's event attendance was checked. You can also research externally in Wiza or Sales Navigator, then paste or import reviewed contacts.
             </div>
+          )}
+
+          {discoverResult?.apolloPreviews && discoverResult.apolloPreviews.length > 0 && (
+            <ApolloRevealPreview
+              key={discoverResultGeneration}
+              campaignId={id}
+              previews={discoverResult.apolloPreviews}
+              disabled={importDiscovered.isPending || discover.isPending}
+              onBusyChange={setApolloRevealBusy}
+              onRevealed={(candidates) => {
+                if (discoverResultGeneration !== discoveryGeneration.current || !discovering) return;
+                mergeRevealedCandidates(candidates);
+              }}
+            />
           )}
 
           {/* Sales Navigator availability notice */}
@@ -2769,7 +2832,7 @@ export default function OutreachCampaignDetailPage() {
                     {discoverResult.candidates.map((c, i) => (
                       <TableRow key={i} data-testid={`discovery-candidate-${i}`}>
                         <TableCell>
-                          <Checkbox checked={selected.has(i)} onCheckedChange={() => toggleSelected(i)} data-testid={`discovery-select-${i}`} />
+                          <Checkbox checked={selected.has(i)} disabled={apolloRevealBusy} onCheckedChange={() => toggleSelected(i)} data-testid={`discovery-select-${i}`} />
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{c.candidate.name}</div>
@@ -2807,7 +2870,7 @@ export default function OutreachCampaignDetailPage() {
               </div>
               <DialogFooter className="gap-2 items-center sm:justify-between">
                 <span className="text-xs text-muted-foreground">{selected.size} of {discoverResult.candidates.length} selected</span>
-                <Button onClick={() => importDiscovered.mutate()} disabled={selected.size === 0 || importDiscovered.isPending || discover.isPending} data-testid="button-import-discovered">
+                <Button onClick={() => importDiscovered.mutate()} disabled={selected.size === 0 || importDiscovered.isPending || discover.isPending || apolloRevealBusy} data-testid="button-import-discovered">
                   {importDiscovered.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
                   Import selected
                 </Button>
@@ -2815,9 +2878,11 @@ export default function OutreachCampaignDetailPage() {
             </>
           ) : discoverResult ? (
             <div className="py-8 text-center space-y-1.5" data-testid="discovery-empty-state">
-              <p className="text-sm font-medium">No new prospects found</p>
+              <p className="text-sm font-medium">{discoverResult.apolloPreviews?.length ? "Apollo previews are ready to review" : "No new prospects found"}</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                {campaign.conferenceId && discoverResult.foundCount === 0
+                {discoverResult.apolloPreviews?.length
+                  ? "Apollo found masked matches. Select any you want to reveal above; they will appear here for manual import review only after a separate paid confirmation."
+                  : campaign.conferenceId && discoverResult.foundCount === 0
                   ? "No Orbit discovery results for this event. Research in Wiza or Sales Navigator outside Orbit, then import reviewed contacts above."
                   : discoverResult.fallbackReason
                   ? "Apollo returned no matches and web discovery also found no results. Try a different company filter or widen the campaign's roles, industries, or geographies."
@@ -2868,95 +2933,23 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       {/* Operator-only compose clarification; blocked model output is never shown as a recipient draft. */}
-      <Dialog
-        open={!!composeRecovery}
-        onOpenChange={(open) => {
-          if (!open && !compose.isPending) setComposeRecovery(null);
-        }}
-      >
-        <DialogContent className="max-w-xl" data-testid="dialog-compose-clarification">
-          <DialogHeader>
-            <DialogTitle data-testid="compose-clarification-title">
-              {composeRecovery?.code === "OUTREACH_REFUSED"
-                ? "Drafting could not proceed"
-                : composeRecovery?.code === "OUTREACH_INVALID_DRAFT"
-                  ? "Draft needs more information"
-                  : "Clarify before drafting"}
-            </DialogTitle>
-            <DialogDescription>
-              This is an operator-only clarification. No email draft was saved. Add missing facts or answer the questions below; this context is not for overriding safeguards.
-            </DialogDescription>
-          </DialogHeader>
-
-          {composeRecovery && (
-            <div className="space-y-4">
-              <div className="rounded-md border border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/20 p-3 text-sm" data-testid="compose-clarification-explanation">
-                {composeRecovery.explanation}
-              </div>
-              {composeRecovery.questions.length > 0 && (
-                <section className="space-y-2" aria-label="Questions for the operator" data-testid="compose-clarification-questions">
-                  <h3 className="text-sm font-medium">Information to clarify</h3>
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                    {composeRecovery.questions.map((question, index) => <li key={`${index}-${question}`}>{question}</li>)}
-                  </ul>
-                </section>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="compose-additional-context">Missing facts or clarification</Label>
-                <Textarea
-                  id="compose-additional-context"
-                  value={composeRecovery.additionalContext}
-                  onChange={(event) => setComposeRecovery((current) => current ? {
-                    ...current,
-                    additionalContext: event.target.value,
-                    retryError: "",
-                  } : current)}
-                  disabled={compose.isPending}
-                  maxLength={6000}
-                  rows={5}
-                  placeholder="Add accurate, relevant context that can help draft the outreach."
-                  data-testid="input-compose-additional-context"
-                />
-                <p className="text-xs text-muted-foreground text-right" data-testid="compose-context-count">
-                  {composeRecovery.additionalContext.length}/6000
-                </p>
-              </div>
-              {composeRecovery.retryError && (
-                <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert" data-testid="compose-retry-error">
-                  {composeRecovery.retryError}
-                </p>
-              )}
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setComposeRecovery(null)}
-              disabled={compose.isPending}
-              data-testid="button-compose-clarification-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (!composeRecovery) return;
-                compose.mutate({
-                  ...composeRecovery.vars,
-                  additionalContext: composeRecovery.additionalContext,
-                });
-              }}
-              disabled={!composeRecovery || compose.isPending || composeRecovery.additionalContext.length > 6000}
-              data-testid="button-compose-retry"
-            >
-              {compose.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
-              {compose.isPending ? "Drafting…" : "Retry drafting"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {composeRecovery && <ComposeClarificationDialog
+        open={clarifications.open}
+        onOpenChange={clarifications.setOpen}
+        recipientName={composeRecovery.vars.prospect.name}
+        channelLabel={composeRecovery.vars.channel === "linkedin" ? "LinkedIn" : "Email"}
+        code={composeRecovery.code}
+        explanation={composeRecovery.explanation}
+        questions={composeRecovery.questions}
+        additionalContext={composeRecovery.additionalContext}
+        onContextChange={clarifications.updateContext}
+        retryError={composeRecovery.retryError}
+        isPending={compose.isPending}
+        onDiscard={clarifications.discard}
+        onRetry={() => compose.mutate({
+          ...composeRecovery.vars, additionalContext: composeRecovery.additionalContext,
+        })}
+      />}
 
       {/* Draft review dialog */}
       <Dialog open={!!draft} onOpenChange={(o) => { if (!o) { setDraft(null); setSharpenResult(null); } }}>

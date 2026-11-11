@@ -95,6 +95,18 @@ describe("outreach-composer-core", () => {
     assert.equal(parseComposeResponse(text, "email").body, "Hi Jane, I can't make Tuesday. Would Thursday work?");
   });
 
+  it("does not display rejected draft sections or recipient questions as operator clarification", () => {
+    try {
+      parseComposeResponse("===SUBJECT===\nIncomplete\n===BODY===\nI cannot draft this email. Would Tuesday work?", "email");
+      assert.fail("Expected invalid draft outcome");
+    } catch (err: any) {
+      assert.equal(err.code, "OUTREACH_INVALID_DRAFT");
+      assert.ok(!err.message.includes("===SUBJECT==="));
+      assert.ok(!err.message.includes("Would Tuesday work?"));
+      assert.deepEqual(err.questions, []);
+    }
+  });
+
   it("includes sender answers separately from recipient copy and offers operator-only outcomes", () => {
     const prompt = buildComposePrompt({
       channel: "email", stepNumber: 1, purpose: "invite", prospect: { name: "Jane" },

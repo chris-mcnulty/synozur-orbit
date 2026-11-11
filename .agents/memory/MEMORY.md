@@ -1,5 +1,6 @@
 - [Outreach draft boundaries](outreach-draft-boundaries.md) — refusals and sender clarification questions are operator-only, never prospect email drafts.
 - [Outreach discovery company scope](outreach-discovery-company-scope.md) — explicit company filters restrict one search; campaign named-account seeds retain separate similarity behavior.
+- [Apollo search preview contract](apollo-search-previews.md) — search returns masked identities and employer names without IDs; revealing contacts is a separate credit-consuming step.
 - [Cascadia social editorial direction](cascadia-social-editorial.md) — art-first storytelling, optional sales CTAs, and link-free Instagram captions; separate from Synozur B2B rules.
 - [Compositor font portability](compositor-font-portability.md) — SVG font declarations do not prove raster identity; use outlines, container checks, and independent glyph raster oracles.
 - [Event promotion identity](event-promotion-identity.md) — shared Visual Assets, not a separate event library; webinars need no sessions/logo; image variety must not control post volume.

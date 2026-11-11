@@ -94,6 +94,53 @@ describe("searchApollo — bounded batch call count", () => {
     assert.equal(result.candidates[0].companyDomain, "acme.com");
   });
 
+  it.each(["Acme", "acme.com"])("accepts exact current-employer names without IDs for %s, never conflicting employers", async (company) => {
+    const fetchMock = vi.fn(async (_url: string, opts?: RequestInit) => {
+      const body = JSON.parse(String(opts?.body));
+      const data = body.organization_ids ? { people: [
+        { name: "Alice Chen", organization: { name: "Acme, Inc." } },
+        { name: "Bob Jones", organization: { name: "Acme Consulting" } },
+        { name: "Carol Chen", organization: { id: "org-other", name: "Acme" } },
+        { name: "Dan Jones", organization: { name: "Acme", primary_domain: "other.com" } },
+        { name: "Emma Jones", email: "emma@acme.com" },
+        { first_name: "Fiona", last_name_obfuscated: "J***s", organization: { name: "Acme" } },
+      ] } : { organizations: [{ id: "org-acme", name: "Acme", primary_domain: "acme.com" }] };
+      return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchApollo("tenant.example", { company, criteria: {}, limit: 10 });
+    assert.deepEqual(result.candidates.map(person => person.name), ["Alice Chen"]);
+    assert.equal(result.candidates[0].companyDomain, "acme.com");
+    assert.equal(result.unrevealedCount, 1);
+    assert.equal(fetchMock.mock.calls.length, 2);
+  });
+
+  it("recognizes masked Apollo previews after relaxation without further broadening or paid enrichment", async () => {
+    const bodies: Record<string, any>[] = [];
+    const fetchMock = vi.fn(async (_url: string, opts?: RequestInit) => {
+      const body = JSON.parse(String(opts?.body));
+      bodies.push(body);
+      const data = !body.organization_ids
+        ? { organizations: [{ id: "org-accenture", name: "Accenture plc", primary_domain: "accenture.com" }] }
+        : body.q_keywords ? { people: [] } : { total_entries: 5, people: [
+          { id: "preview-1", first_name: "Alice", last_name_obfuscated: "C***n", organization: { name: "Accenture" } },
+        ] };
+      return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchApollo("tenant.example", {
+      company: "Accenture", limit: 25,
+      criteria: { roles: ["Head of Microsoft Practice"], industries: ["content-intensive enterprises"], geographies: ["United States"] },
+    });
+    assert.equal(result.unrevealedCount, 1);
+    assert.deepEqual(result.candidates, []);
+    assert.equal(bodies.length, 3); // lookup, strict search, industry retry; no enrichment
+    assert.match(result.relaxationApplied!, /industry keywords removed/);
+    assert.deepEqual(bodies[2].organization_ids, ["org-accenture"]);
+    assert.deepEqual(bodies[2].person_locations, ["United States"]);
+    assert.deepEqual(bodies[2].person_titles, ["Head of Microsoft Practice"]);
+  });
+
   it("retries restrictive industry and role filters without widening the selected employer or geography", async () => {
     const bodies: Record<string, any>[] = [];
     const fetchMock = vi.fn(async (_url: string, opts?: RequestInit) => {

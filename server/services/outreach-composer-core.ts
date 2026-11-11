@@ -160,6 +160,12 @@ export interface ParsedDraft {
 }
 
 function nonDraftResponse(text: string, fallback: string): OutreachComposeError {
+  // A rejected formatted draft is not an explanation to the sender. In
+  // particular, recipient-facing questions inside it are not clarification
+  // questions for the operator, and section markers must not leak into UI.
+  if (/===(?:SUBJECT|BODY)===/i.test(text)) {
+    return new OutreachComposeError("OUTREACH_INVALID_DRAFT", fallback);
+  }
   const explanation = text.trim().slice(0, 6000) || fallback;
   const questions = explanation.split(/\n+/)
     .map(line => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim())
