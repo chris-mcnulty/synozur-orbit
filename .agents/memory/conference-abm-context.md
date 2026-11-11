@@ -27,6 +27,12 @@ An explicit operator-supplied drafting brief can replace generated-angle selecti
 
 **How to apply:** Review current relationship history automatically for this path, preserve suppression and exclusion rules, and retain the server-reviewed context with the pending draft for approval validation. Never treat drafting as consent to send or invent recipient-specific personalization.
 
+Normal Compose must also work when private context is empty: use the saved event/campaign brief and check history automatically. Generated angles are optional, not a mandatory drafting gate.
+
+**Why:** The user repeatedly encountered the same prerequisite error after the supplied-brief fix because the ordinary Compose button submits no private context. Requiring them to paste the brief again did not solve the actual workflow.
+
+**How to apply:** Cover absent, empty and whitespace-only private context in compose regression tests. Do not confuse private page-local answers with durable campaign context, and do not weaken suppression or send approval.
+
 Campaign contacts need overlapping classifications for why they are included: customer/partner relationships, explicit attendance, event roles such as speaker, custom tags, and source context.
 
 **Why:** The user asked to tag and group people by these dimensions, including “what came from me” versus HubSpot.

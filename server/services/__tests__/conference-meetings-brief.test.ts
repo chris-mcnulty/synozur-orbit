@@ -58,10 +58,18 @@ describe("operator-supplied event direction", () => {
     await expect(approve(result!.context)).resolves.toBeUndefined();
     expect(mocks.review).toHaveBeenCalledTimes(2);
   });
-  it("still requires angles without a supplied direction", async () => {
+  it.each([undefined, "", "  "])("normal Compose uses saved campaign context with private context %j", async privateContext => {
     queueWorkspace();
-    await expect(meetingCompositionContext("tenant", "person", "  ")).rejects.toThrow(/select an angle/);
-    expect(mocks.review).not.toHaveBeenCalled();
+    const result = await meetingCompositionContext("tenant", "person", privateContext);
+    expect(result!.block).toContain("Partner meetings");
+    expect(result!.context.operatorBrief).toContain("saved event and campaign brief");
+    expect(mocks.review).toHaveBeenCalledTimes(1);
+    await expect(approve(result!.context)).resolves.toBeUndefined();
+  });
+  it("normal Compose still blocks suppression without private context", async () => {
+    review.suppressed = true;
+    queueWorkspace();
+    await expect(meetingCompositionContext("tenant", "person")).rejects.toThrow(/suppressed/);
   });
   it("fails closed on a failed relationship check", async () => {
     mocks.review.mockRejectedValue(new Error("History unavailable"));

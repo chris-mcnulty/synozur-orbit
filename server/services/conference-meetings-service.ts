@@ -56,19 +56,24 @@ export async function saveMeeting(tenantDomain: string, id: string, meeting: Mee
 export async function meetingCompositionContext(tenantDomain: string, prospectId: string, additionalContext?: string) {
   const { workspace, person } = await getMeetingPerson(tenantDomain, prospectId);
   if (!workspace.brief?.enabled) return null;
-  const operatorBrief = additionalContext?.trim() || undefined;
-  // Review current history for a supplied direction, without changing saved angles
-  // or overwriting contact prep. The draft retains this server-created snapshot.
-  const meeting = operatorBrief ? {
+  const currentAngle = person.meeting.anglesFingerprint === meetingContactFingerprint(workspace.fingerprint, person.meeting)
+    && person.meeting.angles?.some(angle => angle.id === person.meeting.selectedAngleId)
+    && person.meeting.selectedHook && person.meeting.selectedAsk;
+  // Compose must work from the already-saved campaign context. Private notes and
+  // generated angles are optional directions, not prerequisites for making a draft.
+  const operatorBrief = additionalContext?.trim() || (currentAngle
+    ? `${person.meeting.selectedHook}\n${person.meeting.selectedAsk}`
+    : "Draft from the saved event and campaign brief below. Use only supplied facts; do not invent missing recipient details.");
+  const meeting = {
     ...person.meeting,
     review: await reviewConferenceRelationship(tenantDomain, prospectId, workspace.brief.lookbackDays ?? 90),
-  } : person.meeting;
+  };
   const fingerprint = meetingContactFingerprint(workspace.fingerprint, meeting);
   try { assertMeetingCanDraft(meeting, fingerprint, operatorBrief); }
   catch (error) { throw new MeetingError(error instanceof Error ? error.message : "Review meeting context first.", 422); }
   // A short freshness window avoids reusing an old cached relationship snapshot.
   if (!meeting.review || Date.now() - Date.parse(meeting.review.checkedAt) > 15 * 60_000) {
-    throw new MeetingError("Refresh the relationship history and regenerate angles before drafting.");
+    throw new MeetingError("The relationship check did not return current history. Please retry drafting.");
   }
   return {
     context: {
