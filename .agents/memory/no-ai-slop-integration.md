@@ -5,6 +5,14 @@ description: Owner-approved social editorial safeguards and the risk of applying
 
 # No-AI-Slop Integration
 
+## Outreach generation scope
+
+Ordinary outreach Compose must include outreach-appropriate voice and no-slop guidance and check newly generated subjects and bodies before persistence. Use at most one targeted repair, preserving voice, intent and facts; fail explicitly if it cannot be verified. Do not impose a sales CTA on engagement messages.
+
+**Why:** The user reported repeated em dashes in a conference email because outreach imported only some writing rules, not the punctuation policy. An optional Sharpen action was not an acceptable substitute for correct initial generation.
+
+**How to apply:** Keep checks limited to new AI generation. Existing drafts, manual edits, approval and sending must not trigger automatic style rewrites. The draft is the repair's only factual source; voice guidance is style, not permission to add facts.
+
 ## Social-generation scope
 
 Apply the supplied no-ai-slop skill as editorial guidance for newly generated social copy, not as a retrieved factual grounding document or an autonomous agent workflow. Keep its style policy separate from tenant facts and brand voice. When clear patterns survive generation, allow one targeted repair of the affected text, then surface an explicit review failure rather than silently dropping it or substituting unadapted copy.

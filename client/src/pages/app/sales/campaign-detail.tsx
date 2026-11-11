@@ -1338,6 +1338,11 @@ export default function OutreachCampaignDetailPage() {
 
   const approve = useMutation({
     mutationFn: async () => {
+      // Sharpen acceptance changes local text. Persist it before approval so
+      // Outlook cannot receive an older version of the message.
+      if (draftBody !== (draft!.body ?? "") || draftSubject !== (draft!.subject ?? "")) {
+        await saveDraft.mutateAsync();
+      }
       const res = await apiRequest("POST", `/api/sales-outreach/touches/${draft!.id}/approve`, {});
       return res.json();
     },
@@ -3169,11 +3174,11 @@ export default function OutreachCampaignDetailPage() {
               Sharpen writing
             </Button>
             <div className="flex-1" />
-            <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending} data-testid="button-save-draft">
+            <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending || approve.isPending} data-testid="button-save-draft">
               {saveDraft.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PenLine className="w-4 h-4 mr-1" />}
               Save & re-scan
             </Button>
-            <Button onClick={() => approve.mutate()} disabled={approve.isPending || draftHardBlocked} data-testid="button-approve-draft">
+            <Button onClick={() => approve.mutate()} disabled={approve.isPending || saveDraft.isPending || sharpenTouch.isPending || !!sharpenResult || draftHardBlocked} data-testid="button-approve-draft">
               {approve.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : draft?.channel === "email" ? <Send className="w-4 h-4 mr-1" /> : <ExternalLink className="w-4 h-4 mr-1" />}
               {draft?.channel === "email" ? "Approve → Outlook" : "Approve"}
             </Button>

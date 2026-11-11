@@ -186,6 +186,19 @@ describe("composeTouch — recipient guard", () => {
     expect(completeForFeature).not.toHaveBeenCalled();
   });
 
+  it("never persists or advances a prospect when generated style cannot be repaired", async () => {
+    vi.mocked(getProspectWithContact).mockResolvedValue({ ...PROSPECT_NO_EMAIL, email: "jane@fund.com" } as any);
+    pushDb(CAMPAIGN);
+    pushDb();
+    vi.mocked(completeForFeature).mockResolvedValue({
+      text: "===SUBJECT===\nMeeting—Tuesday\n===BODY===\nHi Jane—can we meet Tuesday?",
+      usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any);
+    await expect(composeTouch("acme.com", "prospect-1", { channel: "email" })).rejects.toThrow("Nothing was saved or sent");
+    expect(completeForFeature).toHaveBeenCalledTimes(2);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
   it("composes a LinkedIn touch for a prospect with no email address", async () => {
     vi.mocked(getProspectWithContact).mockResolvedValue(PROSPECT_NO_EMAIL as any);
 

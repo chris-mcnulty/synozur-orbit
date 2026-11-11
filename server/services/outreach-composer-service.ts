@@ -33,11 +33,11 @@ import { loadStrategicContext, formatStrategicContextForPrompt } from "./strateg
 import {
   buildComposePrompt,
   parseComposeResponse,
-  enforceLength,
   COMPOSER_SYSTEM_PROMPT,
   type ComposeResource,
 } from "./outreach-composer-core";
 import { scanCompliance, type ComplianceResult } from "./compliance-core";
+import { ensureOutreachCopyQuality } from "./outreach-copy-quality";
 import type { LinkedInFormat, OutreachIntent } from "@shared/linkedin-outreach";
 
 export interface ComposeTouchOptions {
@@ -236,8 +236,12 @@ export async function composeTouch(
     maxTokens: 1200,
   });
 
-  const parsed = parseComposeResponse(result.text, channel);
-  const body = enforceLength(parsed.body, channel, linkedinFormat);
+  const checked = await ensureOutreachCopyQuality({
+    draft: parseComposeResponse(result.text, channel),
+    channel, linkedinFormat, tenantDomain, voiceBlock,
+  });
+  const parsed = checked.draft;
+  const body = parsed.body;
 
   // Compliance scan: suppression list + own domain + voice forbidden phrases.
   const suppressions = await db
@@ -289,7 +293,10 @@ export async function composeTouch(
     touch,
     prospect: updatedProspect,
     compliance,
-    usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+    usage: {
+      inputTokens: result.usage.inputTokens + checked.usage.inputTokens,
+      outputTokens: result.usage.outputTokens + checked.usage.outputTokens,
+    },
     model: result.model,
     provider: result.provider,
   };

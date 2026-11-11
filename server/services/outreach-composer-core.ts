@@ -15,6 +15,7 @@ import {
 } from "@shared/linkedin-outreach";
 import { BANNED_WORDS, STRUCTURAL_ANTI_PATTERNS } from "./copywriter-service";
 import { assertComposeOutcome, assertOutreachDraftContent, OutreachComposeError } from "./outreach-draft-outcome";
+import { OUTREACH_WRITING_RULES } from "./outreach-writing-rules";
 
 export const COMPOSER_SYSTEM_PROMPT =
   `You write 1:1 B2B sales outreach in the sender's real voice. Short, direct, ` +
@@ -23,6 +24,7 @@ export const COMPOSER_SYSTEM_PROMPT =
   `be ready for a human to review and send — not a template.\n\n` +
   `Banned words and phrases — never use: ${BANNED_WORDS}; also "I hope this finds you well".\n\n` +
   STRUCTURAL_ANTI_PATTERNS + "\n\n" +
+  OUTREACH_WRITING_RULES + "\n\n" +
   `Additional patterns that kill 1:1 credibility — never write:\n` +
   `- Fake-strong verb openers: "Excited to share", "Thrilled to connect", "Wanted to reach out"\n` +
   `- Throat-clearing openers: "I wanted to take a moment", "I was hoping we could", "I'm reaching out because"\n` +

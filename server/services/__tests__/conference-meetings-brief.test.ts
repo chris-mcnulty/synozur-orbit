@@ -20,6 +20,8 @@ vi.mock("../conference-outreach-context", () => ({
   }),
 }));
 import { meetingCompositionContext, validateMeetingApproval } from "../conference-meetings-service";
+import { meetingContactFingerprint, meetingDraftFingerprint } from "../conference-meetings-core";
+import { createHash } from "crypto";
 
 const campaign = { id: "campaign", tenantDomain: "tenant", conferenceId: "event", meetingBrief: meetingBriefSchema.parse({ enabled: true }) };
 const conference = { id: "event", name: "Conference" };
@@ -47,6 +49,25 @@ beforeEach(() => {
 });
 
 describe("operator-supplied event direction", () => {
+  it("retains fingerprints created before the JSONB comparison fix", () => {
+    const original = { ...person.meeting, review };
+    const legacy = createHash("sha256").update(JSON.stringify({
+      relationship: meetingContactFingerprint("facts", original),
+      selectedAngleId: original.selectedAngleId,
+      selectedHook: original.selectedHook,
+      selectedAsk: original.selectedAsk,
+      operatorBrief: direction,
+    })).digest("hex");
+    expect(meetingDraftFingerprint("facts", original, direction)).toBe(legacy);
+  });
+  it("approves an unchanged draft after JSONB reorders the saved review keys", async () => {
+    review.activities = [{ id: "activity", source: "hubspot", kind: "notes", at: "2026-01-01T00:00:00Z", summary: "Met previously", url: "https://example.com/note" }];
+    const result = await compose();
+    const reorder = (value: any): any => Array.isArray(value) ? value.map(reorder)
+      : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map(k => [k, reorder(value[k])]))
+      : value;
+    await expect(approve(reorder(result!.context))).resolves.toBeUndefined();
+  });
   it("checks history and drafts without any saved review or angle, preserving the brief", async () => {
     const result = await compose();
     expect(mocks.review).toHaveBeenCalledWith("tenant", "person", campaign.meetingBrief.lookbackDays);

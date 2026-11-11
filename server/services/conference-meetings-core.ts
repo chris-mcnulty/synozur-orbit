@@ -33,8 +33,26 @@ export function meetingContactFingerprint(facts: string, meeting: MeetingContact
 }
 
 export function meetingDraftFingerprint(facts: string, meeting: MeetingContact, operatorBrief?: string): string {
+  // JSONB reorders object keys. Reconstruct server-produced review order so
+  // persisted snapshots hash exactly as they did when originally generated.
+  // Keep the historical order for compatibility with already-created drafts.
+  const review = meeting.review;
+  const normalized = operatorBrief?.trim() && review ? {
+    ...meeting,
+    review: {
+      checkedAt: review.checkedAt,
+      coverage: review.coverage,
+      limitations: review.limitations,
+      activities: review.activities.map(a => ({
+        id: a.id, source: a.source, kind: a.kind, at: a.at, summary: a.summary,
+        ...(a.url !== undefined ? { url: a.url } : {}),
+      })),
+      relatedCampaigns: review.relatedCampaigns,
+      suppressed: review.suppressed,
+    },
+  } : meeting;
   return createHash("sha256").update(JSON.stringify({
-    relationship: meetingContactFingerprint(facts, meeting), selectedAngleId: meeting.selectedAngleId,
+    relationship: meetingContactFingerprint(facts, normalized), selectedAngleId: meeting.selectedAngleId,
     selectedHook: meeting.selectedHook, selectedAsk: meeting.selectedAsk,
     ...(operatorBrief?.trim() ? { operatorBrief: operatorBrief.trim() } : {}),
   })).digest("hex");
