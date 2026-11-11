@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
-import { emailSuppressions, marketingContacts, outreachCampaigns, outreachTouches, prospects } from "@shared/schema";
+import { emailSuppressions, externalOutreachActivities, marketingContacts, outreachCampaigns, outreachTouches, prospects } from "@shared/schema";
 import type { RelationshipActivity, RelationshipReview } from "@shared/conference-meetings";
 import { getTenantAccessToken, HUBSPOT_REST_HOST } from "./hubspot-integration";
 import { storage } from "../storage";
@@ -88,6 +88,14 @@ export async function reviewConferenceRelationship(
   const limitations = [...crm.limitations, "Only activity logged in Orbit and accessible HubSpot records is included; external mailboxes and LinkedIn messages are not covered."];
   if (touches.length > 200) limitations.push("Orbit history is limited to the 200 most recent activities.");
   const activities: RelationshipActivity[] = [
+    ...(await db.select().from(externalOutreachActivities).where(and(
+      eq(externalOutreachActivities.contactId, person.contact.id),
+      eq(externalOutreachActivities.tenantDomain, tenantDomain),
+      gte(externalOutreachActivities.occurredAt, since),
+    )).orderBy(desc(externalOutreachActivities.occurredAt))).map(a => ({
+      id: `external:${a.id}`, source: "external" as const, kind: `${a.channel} ${a.outcome} (logged manually)`,
+      at: a.occurredAt.toISOString(), summary: clean(`${a.sender}: ${a.message}${a.reply ? ` Reply: ${a.reply}` : ""}`),
+    })),
     ...crm.activities,
     ...touches.slice(0, 200).map(t => ({
       id: `orbit:${t.id}`, source: "orbit" as const,

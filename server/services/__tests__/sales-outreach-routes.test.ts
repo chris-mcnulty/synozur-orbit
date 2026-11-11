@@ -64,6 +64,11 @@ const { dbQ, makeMockDb } = vi.hoisted(() => {
 // ── Mock all I/O modules used by the route file ───────────────────────────────
 
 vi.mock("../../db", () => ({ db: makeMockDb() }));
+vi.mock("../outreach-context-service", () => ({
+  OutreachContextError: class extends Error {},
+  outreachContextPerson: vi.fn().mockResolvedValue({}),
+  validateOutreachContext: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../context", () => ({
   getRequestContext: vi.fn(),

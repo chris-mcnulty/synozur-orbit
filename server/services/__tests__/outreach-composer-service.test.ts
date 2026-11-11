@@ -77,6 +77,10 @@ vi.mock("../prospect-contact-service", () => ({
 vi.mock("../ai-provider", () => ({
   completeForFeature: vi.fn(),
 }));
+vi.mock("../outreach-context-service", () => ({
+  outreachCompositionContext: vi.fn().mockResolvedValue({ block: "", snapshot: { fingerprint: "test", group: null } }),
+  validateOutreachContext: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../strategic-context", () => ({
   loadStrategicContext: vi.fn().mockResolvedValue({}),

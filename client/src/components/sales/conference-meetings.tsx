@@ -17,6 +17,8 @@ import PasteContactsDialog, { type ParsedContact } from "@/components/sales/past
 import ConferenceWarmContacts from "@/components/sales/conference-warm-contacts";
 import ConferenceCalendarInvitation from "@/components/sales/conference-calendar-invitation";
 import { formatClarificationText } from "@/components/sales/compose-clarification";
+import { OutreachPreflightCancelled, useOutreachPreflight } from "./outreach-preflight";
+import { generateWithOutreachReview, isOutreachContextError } from "./outreach-generation";
 
 type Workspace = {
   campaignId: string;
@@ -148,11 +150,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{label}</span>{children}</label>;
 }
 
-export default function ConferenceMeetings({ campaignId, selectedContactId, onSelectedContactChange, onDraftCreated }: {
+export default function ConferenceMeetings({ campaignId, selectedContactId, onSelectedContactChange, onDraftCreated, canEditOutreach = false }: {
   campaignId: string;
   selectedContactId: string | null;
   onSelectedContactChange: (id: string | null) => void;
   onDraftCreated?: (result: unknown) => void;
+  canEditOutreach?: boolean;
 }) {
   const qc = useQueryClient();
   const key = [endpoint(campaignId)];
@@ -180,6 +183,8 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
   const [meetingTimeError, setMeetingTimeError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const initialized = useRef<string | null>(null);
+  const outreachPreflight = useOutreachPreflight(campaignId);
+  const acknowledgedContext = useRef<{ contactId: string; fingerprint: string } | null>(null);
 
   useEffect(() => {
     if (!workspace || initialized.current === campaignId) return;
@@ -252,11 +257,27 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
         throw new Error("A booked meeting needs a date and time plus a meeting owner.");
       }
       await apiRequest("PATCH", contactPath(""), contactPayload(draftContact));
-      const res = await apiRequest("POST", contactPath("/draft"), { channel: draftChannel, additionalContext });
-      return res.json();
+      if (!selectedContact) throw new Error("Choose a contact first.");
+      return generateWithOutreachReview({
+        fingerprint: acknowledgedContext.current?.contactId === activeId ? acknowledgedContext.current.fingerprint : undefined,
+        confirm: (fingerprint) => outreachPreflight.confirm(selectedContact, fingerprint),
+        generate: async (contextFingerprint) => {
+          acknowledgedContext.current = { contactId: activeId, fingerprint: contextFingerprint };
+          const res = await apiRequest("POST", contactPath("/draft"), { channel: draftChannel, additionalContext, contextFingerprint });
+          return await res.json();
+        },
+      });
     },
     onSuccess: async (result: unknown) => { await qc.invalidateQueries({ queryKey: key }); setDraftSuccess(true); setDraftError(null); onDraftCreated?.(result); },
     onError: (e) => {
+      if (e instanceof OutreachPreflightCancelled) return;
+      if (isOutreachContextError(e)) {
+        acknowledgedContext.current = null;
+        setDraftError({ message: e.code === "OUTREACH_ON_HOLD"
+          ? "This contact is on hold across campaigns. Retry to review history and hold settings; no additional private context is needed."
+          : "The contact’s outreach context changed again. Drafting stopped. Retry to review the latest relationship history; no additional private context is needed.", questions: [] });
+        return;
+      }
       const questions = e instanceof ApiError ? e.questions ?? [] : [];
       setDraftError({ message: messageOf(e), questions });
     },
@@ -497,6 +518,7 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
         requireEmailOrLinkedin
         onImport={importPastedContacts}
       />
+      {outreachPreflight.dialog(canEditOutreach)}
     </div>
   </section>;
 }

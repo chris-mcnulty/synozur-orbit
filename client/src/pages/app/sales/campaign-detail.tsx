@@ -36,6 +36,13 @@ import {
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
+import OutreachContactContext from "@/components/sales/outreach-contact-context";
+import CampaignMessagingBriefs from "@/components/sales/campaign-messaging-briefs";
+import { OutreachPreflightCancelled, useOutreachPreflight } from "@/components/sales/outreach-preflight";
+import { fetchOutreachContext, matchesAssignedMessagingGroup, useOutreachContext } from "@/components/sales/use-outreach-context";
+import { generateWithOutreachReview, isOutreachContextError } from "@/components/sales/outreach-generation";
+import { messagingGroups, messagingGroupLabels } from "@shared/outreach-context";
+import type { MessagingGroup } from "@/components/sales/use-outreach-context";
 import { useCampaignClassification } from "@/components/sales/use-campaign-classification";
 import { classificationSearchText, meetingPriorityRank } from "@/components/sales/campaign-classification-helpers";
 import ProspectScoreDialog, { ProspectScoreButton } from "@/components/sales/prospect-score-dialog";
@@ -213,6 +220,7 @@ function TagInput({
 
 interface Prospect {
   id: string;
+  messagingGroup?: MessagingGroup | null;
   classification?: CampaignClassification | null;
   meeting?: MeetingContact | null;
   name: string;
@@ -539,16 +547,21 @@ export default function OutreachCampaignDetailPage() {
   // Draft review dialog state.
   const [draft, setDraft] = useState<Touch | null>(null);
   const [draftProspect, setDraftProspect] = useState<Prospect | null>(null);
+  const [historyContact, setHistoryContact] = useState<Prospect | null>(null);
+  const draftOutreachContext = useOutreachContext(draftProspect?.id ?? null);
+  const canEditOutreach = ["Analyst", "Domain Admin", "Global Admin"].includes(user?.role ?? "");
   const [draftSubject, setDraftSubject] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [sharpenResult, setSharpenResult] = useState<{ body: string; subject: string | null; changelog: string[] } | null>(null);
   const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
-  type ComposeVars = { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string };
+  type ComposeVars = { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string; contextFingerprint?: string };
   const composeScope = JSON.stringify([getTabTenantId(), user?.id, id]);
   const composeScopeRef = useRef(composeScope);
   composeScopeRef.current = composeScope;
   const clarifications = useComposeClarifications<ComposeVars>(composeScope);
+  const outreachPreflight = useOutreachPreflight(composeScope);
   const composeRecovery = clarifications.recovery;
+  const [outreachBlocked, setOutreachBlocked] = useState<{ vars: ComposeVars; message: string } | null>(null);
 
   // Discovery dialog state.
   const [discovering, setDiscovering] = useState(false);
@@ -564,6 +577,7 @@ export default function OutreachCampaignDetailPage() {
   const [searchQ, setSearchQ] = useState("");
   const [statusTab, setStatusTab] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [messagingGroupFilter, setMessagingGroupFilter] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all"); // all | high | medium | low | unscored
   const [sortKey, setSortKey] = useState<ProspectSortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -853,6 +867,7 @@ export default function OutreachCampaignDetailPage() {
     const statuses = STATUS_GROUPS[statusTab] ?? [];
     if (statuses.length) list = list.filter((p) => statuses.includes(p.status));
     if (sourceFilter !== "all") list = list.filter((p) => p.source === sourceFilter);
+    list = list.filter((p) => matchesAssignedMessagingGroup(p, messagingGroupFilter));
     // Score buckets mirror the scoreColor thresholds (70+ / 50–69 / <50).
     if (scoreFilter !== "all") {
       list = list.filter((p) => {
@@ -875,14 +890,15 @@ export default function OutreachCampaignDetailPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [prospects, searchQ, statusTab, sourceFilter, scoreFilter, sortKey, sortDir]);
+  }, [prospects, searchQ, statusTab, sourceFilter, messagingGroupFilter, scoreFilter, sortKey, sortDir]);
   const classification = useCampaignClassification({
     campaignId: id, people: visibleProspects, role: user?.role,
-    filterScope: JSON.stringify([getTabTenantId(), searchQ, statusTab, sourceFilter, scoreFilter]),
+    filterScope: JSON.stringify([getTabTenantId(), searchQ, statusTab, sourceFilter, messagingGroupFilter, scoreFilter]),
   });
   function clearPeopleFilters() {
     classification.clearFilters();
     setSearchQ(""); setStatusTab("all"); setSourceFilter("all"); setScoreFilter("all");
+    setMessagingGroupFilter("all");
   }
 
   const { data: performance } = useQuery<{
@@ -956,13 +972,24 @@ export default function OutreachCampaignDetailPage() {
   const compose = useMutation({
     onMutate: () => ({ scope: composeScope }),
     mutationFn: async (vars: ComposeVars) => {
-      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${vars.prospect.id}/compose`, {
-        channel: vars.channel,
-        linkedinFormat: vars.linkedinFormat,
-        intent: vars.intent,
-        ...(vars.additionalContext !== undefined ? { additionalContext: vars.additionalContext } : {}),
+      // Private clarification records remain intact while relationship review is open.
+      clarifications.setOpen(false);
+      setOutreachBlocked(null);
+      return generateWithOutreachReview({
+        fingerprint: vars.contextFingerprint,
+        confirm: (fingerprint) => outreachPreflight.confirm(vars.prospect, fingerprint),
+        generate: async (fingerprint) => {
+          vars.contextFingerprint = fingerprint;
+          const res = await apiRequest("POST", `/api/sales-outreach/prospects/${vars.prospect.id}/compose`, {
+            channel: vars.channel,
+            linkedinFormat: vars.linkedinFormat,
+            intent: vars.intent,
+            contextFingerprint: vars.contextFingerprint,
+            ...(vars.additionalContext !== undefined ? { additionalContext: vars.additionalContext } : {}),
+          });
+          return await res.json();
+        },
       });
-      return res.json();
     },
     onSuccess: (data: { touch: Touch }, vars, request) => {
       if (request?.scope !== composeScopeRef.current) return;
@@ -978,6 +1005,11 @@ export default function OutreachCampaignDetailPage() {
     },
     onError: (err: unknown, vars, request) => {
       if (request?.scope !== composeScopeRef.current) return;
+      if (err instanceof OutreachPreflightCancelled) return;
+      if (isOutreachContextError(err)) {
+        setOutreachBlocked({ vars, message: err.code === "OUTREACH_ON_HOLD" ? "Outreach is on hold across campaigns. Review contact settings before drafting again." : "The contact’s outreach context changed again. Drafting stopped. Review the latest history before trying again." });
+        return;
+      }
       setDraft(null);
       setSharpenResult(null);
       // Every failure gets a persistent response area, not a disappearing toast.
@@ -1338,6 +1370,9 @@ export default function OutreachCampaignDetailPage() {
 
   const approve = useMutation({
     mutationFn: async () => {
+      if (!draftProspect) throw new Error("Select a contact before approving.");
+      const currentContext = await fetchOutreachContext(draftProspect.id);
+      if (currentContext.hold) throw new Error("Outreach is on hold for this contact across all campaigns. Release the hold before approval.");
       // Sharpen acceptance changes local text. Persist it before approval so
       // Outlook cannot receive an older version of the message.
       if (draftBody !== (draft!.body ?? "") || draftSubject !== (draft!.subject ?? "")) {
@@ -1555,10 +1590,20 @@ export default function OutreachCampaignDetailPage() {
           </section>
         )}
 
+        {outreachBlocked && <section role="alert" className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+          <p className="text-sm font-medium">{outreachBlocked.vars.prospect.name}: {outreachBlocked.message}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setHistoryContact(outreachBlocked.vars.prospect)}>History & hold</Button>
+            <Button size="sm" disabled={compose.isPending} onClick={() => compose.mutate({ ...outreachBlocked.vars, contextFingerprint: undefined })}>Review context & retry</Button>
+            <Button size="sm" variant="ghost" onClick={() => setOutreachBlocked(null)}>Dismiss</Button>
+          </div>
+        </section>}
+        <CampaignMessagingBriefs campaignId={campaign.id} canEdit={canEditOutreach} />
         {campaign.conferenceId ? (
           <ConferenceMeetings
             key={campaign.id}
             campaignId={campaign.id}
+            canEditOutreach={canEditOutreach}
             selectedContactId={meetingContact?.campaignId === campaign.id ? meetingContact.contactId : null}
             onSelectedContactChange={(contactId) => setMeetingContact(contactId ? { campaignId: campaign.id, contactId } : null)}
             onDraftCreated={(result) => {
@@ -1660,6 +1705,17 @@ export default function OutreachCampaignDetailPage() {
                         className="w-full rounded-md border border-input bg-background pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                     </div>
+                    <select
+                      aria-label="Filter contacts by assigned messaging group"
+                      value={messagingGroupFilter}
+                      onChange={(e) => setMessagingGroupFilter(e.target.value)}
+                      data-testid="select-messaging-group-filter"
+                      className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="all">All messaging groups</option>
+                      <option value="unassigned">Shared brief / unassigned</option>
+                      {messagingGroups.map((group) => <option key={group} value={group}>{messagingGroupLabels[group]}</option>)}
+                    </select>
                     {uniqueSources.length > 1 && (
                       <select
                         value={sourceFilter}
@@ -1765,6 +1821,9 @@ export default function OutreachCampaignDetailPage() {
                       <TableCell>
                         <div className="font-medium">{p.name || p.email || "—"}</div>
                         {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
+                        <Button variant="link" size="sm" className="h-auto px-0 py-1 text-[10px] text-muted-foreground" onClick={() => setHistoryContact(p)} aria-label={`Messaging group for ${p.name || p.email || "contact"}: ${p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief, unassigned"}`} data-testid={`messaging-group-${p.id}`}>
+                          {p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief · unassigned"}
+                        </Button>
                         <ClassificationBadges person={p} />
                         <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
                         {campaign.conferenceId && <Button variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={() => {
@@ -1786,6 +1845,7 @@ export default function OutreachCampaignDetailPage() {
                       </TableCell>
                       <TableCell className="w-[300px] min-w-[250px]">
                         <div className="flex flex-wrap items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setHistoryContact(p)} data-testid={`outreach-history-${p.id}`}>History & hold</Button>
                         {classification.canEdit && <ClassificationEditButton person={p} onEdit={() => classification.openEditor([p.id])} />}
                         {p.researchDossier && (
                           <Button variant="ghost" size="sm" onClick={() => setDossier(p)} data-testid={`view-dossier-${p.id}`}>Dossier</Button>
@@ -2987,6 +3047,8 @@ export default function OutreachCampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
+      <OutreachContactContext contact={historyContact} canEdit={canEditOutreach} onClose={() => setHistoryContact(null)} />
+      {outreachPreflight.dialog(canEditOutreach)}
       {/* Operator-only compose clarification; blocked model output is never shown as a recipient draft. */}
       {classification.editingPeople.length > 0 && <ClassificationEditor key={classification.editorKey}
         people={classification.editingPeople} onClose={classification.closeEditor}
@@ -3031,6 +3093,8 @@ export default function OutreachCampaignDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
+          {draftOutreachContext.data?.hold && <div role="alert" className="rounded-lg border border-amber-400/60 bg-amber-500/10 p-3 text-sm">This contact is on hold across all campaigns. Approval is blocked until the hold is released.</div>}
+          {draftOutreachContext.isError && <div role="alert" className="text-sm text-destructive">Contact hold could not be checked. <Button size="sm" variant="outline" onClick={() => draftOutreachContext.refetch()}>Retry context</Button></div>}
           {draft?.channel === "email" && (
             <div className="space-y-1.5">
               <Label htmlFor="d-subject">Subject</Label>
@@ -3178,7 +3242,7 @@ export default function OutreachCampaignDetailPage() {
               {saveDraft.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PenLine className="w-4 h-4 mr-1" />}
               Save & re-scan
             </Button>
-            <Button onClick={() => approve.mutate()} disabled={approve.isPending || saveDraft.isPending || sharpenTouch.isPending || !!sharpenResult || draftHardBlocked} data-testid="button-approve-draft">
+            <Button onClick={() => approve.mutate()} disabled={approve.isPending || saveDraft.isPending || sharpenTouch.isPending || !!sharpenResult || draftHardBlocked || !draftOutreachContext.data || draftOutreachContext.isError || draftOutreachContext.data.hold} data-testid="button-approve-draft">
               {approve.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : draft?.channel === "email" ? <Send className="w-4 h-4 mr-1" /> : <ExternalLink className="w-4 h-4 mr-1" />}
               {draft?.channel === "email" ? "Approve → Outlook" : "Approve"}
             </Button>

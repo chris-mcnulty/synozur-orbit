@@ -44,3 +44,9 @@ Meeting priority must remain separate from ICP fit. An inbound meeting request i
 **Why:** The user approved editable scoring facts and independent meeting priority after known contacts and an inbound requester both scored 20 based only on email and LinkedIn.
 
 **How to apply:** Explain missing evidence separately from mismatches. Allow non-AI rescoring from operator-supplied campaign facts; retain those overrides through research. Do not manufacture fit scores, attendance, or send consent from meeting interest.
+
+External correspondence belongs to the shared contact across campaigns; messaging direction belongs to a campaign membership. The user requested distinct directions for customers, prospective customers, partners and prospective partners.
+
+**Why:** Manual email outside Orbit must inform the next draft, and an existing customer may also be a partner. Guessing one relationship from overlapping classifications can produce the wrong message.
+
+**How to apply:** Require an explicit messaging group or shared-brief choice. Log actual sender, time, message and outcome; do not infer a reply or established partnership. Keep holds contact-wide and explicit. Follow-up dates are reminders, not consent or automatic scheduling. Editing/deleting shared activity must be clearly identified as affecting history across campaigns.

@@ -75,7 +75,7 @@ export type MeetingBrief = z.infer<typeof meetingBriefSchema>;
 export type MeetingAngle = z.infer<typeof meetingAngleSchema>;
 export interface RelationshipActivity {
   id: string;
-  source: "hubspot" | "orbit";
+  source: "hubspot" | "orbit" | "external";
   kind: string;
   at: string;
   summary: string;

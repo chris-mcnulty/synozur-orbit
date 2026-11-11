@@ -15,6 +15,7 @@ import {
   prospects,
   outreachTouches,
   cadenceSteps,
+  marketingContacts,
   type OutreachChannel,
 } from "@shared/schema";
 import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
@@ -213,7 +214,8 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
     const awaiting = await db
       .select()
       .from(prospects)
-      .where(and(eq(prospects.campaignId, campaign.id), eq(prospects.status, "awaiting_reply")));
+      .where(and(eq(prospects.campaignId, campaign.id), eq(prospects.status, "awaiting_reply"),
+        sql`not exists (select 1 from ${marketingContacts} where ${marketingContacts.id} = ${prospects.contactId} and ${marketingContacts.tenantDomain} = ${prospects.tenantDomain} and ${marketingContacts.outreachHold} = true)`));
 
     const anchor = anchorFor(campaign);
 

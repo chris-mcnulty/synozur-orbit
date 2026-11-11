@@ -13,6 +13,7 @@ import { meetingContactFingerprint, proposeMeetingAngles } from "../services/con
 import { reviewConferenceRelationship } from "../services/conference-relationship-review";
 import { composeTouch } from "../services/outreach-composer-service";
 import { OutreachComposeError } from "../services/outreach-draft-outcome";
+import { OutreachContextError } from "../services/outreach-context-service";
 import { ensureContactForPerson, addCampaignMembership } from "../services/prospect-contact-service";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 import { randomBytes } from "crypto";
@@ -42,6 +43,7 @@ export function registerConferenceMeetingsRoutes(app: Express) {
       } catch (error) {
         if (error instanceof z.ZodError) return res.status(400).json({ error: error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ") });
         if (error instanceof OutreachComposeError) return res.status(422).json({ error: error.message, code: error.code, questions: error.questions });
+        if (error instanceof OutreachContextError) return res.status(error.status).json({ error: error.message, code: error.code });
         if (error instanceof MeetingError || error instanceof ContextError) return res.status(error.status).json({ error: error.message });
         console.error("[conference-meetings] Request failed", error instanceof Error ? error.name : "Unknown");
         res.status(500).json({ error: "The meeting operation could not be confirmed. For calendar delivery, check the invitation status before retrying; nothing will be resent automatically." });
@@ -152,12 +154,12 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     res.json({ angles, fingerprint });
   }, true));
   app.post(`${personBase}/draft`, route(async (req, res, ctx) => {
-    const data = z.object({ channel: z.enum(["email", "linkedin"]), additionalContext: z.string().trim().max(6000).optional() }).strict().parse(req.body);
+    const data = z.object({ channel: z.enum(["email", "linkedin"]), additionalContext: z.string().trim().max(6000).optional(), contextFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().parse(req.body);
     const { workspace } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     if (!workspace.brief?.enabled) throw new MeetingError("Enable and save the meeting brief first.", 422);
     if (!(await guardFeature(req, res, "outreachComposer")) || !(await guardManualAction(req, res, "generateOutreachDraft"))) return;
     const result = await composeTouch(ctx.tenantDomain, req.params.id, {
-      channel: data.channel, additionalContext: data.additionalContext, intent: "outreach", isDefaultMarket: ctx.isDefaultMarket,
+      channel: data.channel, additionalContext: data.additionalContext, contextFingerprint: data.contextFingerprint, intent: "outreach", isDefaultMarket: ctx.isDefaultMarket,
     });
     await logAiUsage({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },
       "generateOutreachDraft", result.provider, result.model,

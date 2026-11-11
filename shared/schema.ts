@@ -5196,6 +5196,7 @@ export const outreachCampaigns = pgTable("outreach_campaigns", {
   // The goal in the user's words ("book 10 discovery calls for Polaris").
   salesGoal: text("sales_goal"),
   meetingBrief: jsonb("meeting_brief").$type<MeetingBrief>(),
+  messagingBriefs: jsonb("messaging_briefs").$type<import("./outreach-context").SegmentBrief[]>(),
   // The captured interview brief (mirrors campaigns.interview).
   interview: jsonb("interview").$type<OutreachInterview>(),
   // The product/service this campaign is about (optional).
@@ -5331,6 +5332,7 @@ export const prospects = pgTable("prospects", {
   contactId: varchar("contact_id").notNull().references((): AnyPgColumn => marketingContacts.id, { onDelete: "cascade" }),
   source: text("source").notNull().default("manual"), // hubspot | manual | linkedin | import
   classification: jsonb("classification").$type<import("./campaign-classification").CampaignClassification>(),
+  messagingGroup: text("messaging_group"),
   // ICP qualification.
   icpScore: integer("icp_score"),
   scoreBreakdown: jsonb("score_breakdown").$type<ProspectScoreBreakdown>(),
@@ -5371,12 +5373,30 @@ export type OutreachTouchStatus =
   | "replied";
 
 // One generated draft / touch in a prospect's history.
+export const externalOutreachActivities = pgTable("external_outreach_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  contactId: varchar("contact_id").notNull().references((): AnyPgColumn => marketingContacts.id, { onDelete: "cascade" }),
+  campaignId: varchar("campaign_id").references(() => outreachCampaigns.id, { onDelete: "set null" }),
+  channel: text("channel").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  sender: text("sender").notNull(),
+  message: text("message").notNull(),
+  outcome: text("outcome").notNull(),
+  reply: text("reply").notNull().default(""),
+  followUpAt: timestamp("follow_up_at", { withTimezone: true }),
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [index("external_outreach_contact_idx").on(table.tenantDomain, table.contactId, table.occurredAt)]);
+
 export const outreachTouches = pgTable("outreach_touches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   prospectId: varchar("prospect_id").notNull().references(() => prospects.id, { onDelete: "cascade" }),
   campaignId: varchar("campaign_id").notNull().references(() => outreachCampaigns.id, { onDelete: "cascade" }),
   tenantDomain: text("tenant_domain").notNull(),
   meetingContext: jsonb("meeting_context").$type<MeetingDraftContext>(),
+  outreachContext: jsonb("outreach_context").$type<import("./outreach-context").OutreachContextSnapshot>(),
   channel: text("channel").notNull().default("email"), // OutreachChannel
   // LinkedIn message shape (null for email): connect_request | direct_message.
   // Drives the char limit and which deep link / paste flow the seller gets.
@@ -5591,6 +5611,7 @@ export const marketingContacts = pgTable(
     // links back to the originating prospects row for attribution.
     sourceProspectId: varchar("source_prospect_id"),
     metadata: jsonb("metadata"),
+    outreachHold: boolean("outreach_hold").notNull().default(false),
     lastEventAt: timestamp("last_event_at"),
     // Cross-channel opt-out: set true when a contact opts out via any channel
     // (SendGrid unsubscribe event, HubSpot opt-out, webbase form, etc.).

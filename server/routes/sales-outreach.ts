@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { registerRoughContactImportRoutes } from "./rough-contact-import";
 import { registerApolloRevealRoutes } from "./apollo-reveal";
 import { registerCampaignClassificationRoutes } from "./campaign-classification";
+import { registerOutreachContextRoutes } from "./outreach-context";
+import { OutreachContextError, outreachContextPerson, validateOutreachContext } from "../services/outreach-context-service";
 import { effectiveScoringFacts } from "@shared/prospect-scoring";
 import { signApolloPreviews } from "../services/apollo-reveal-core";
 import { z } from "zod";
@@ -162,6 +164,7 @@ const NUMERIC_CAPS: { key: keyof typeof DEFAULT_SETTINGS; min: number; max: numb
 ];
 
 export function registerSalesOutreachRoutes(app: Express) {
+  registerOutreachContextRoutes(app);
   registerCampaignClassificationRoutes(app);
   registerRoughContactImportRoutes(app);
   registerApolloRevealRoutes(app);
@@ -837,6 +840,8 @@ export function registerSalesOutreachRoutes(app: Express) {
       }
       const clarification = z.string().trim().max(6000).optional().safeParse(req.body?.additionalContext);
       if (!clarification.success) return res.status(400).json({ error: "Clarification must be text up to 6000 characters" });
+      await outreachContextPerson(ctx.tenantDomain, prospect.id, ctx.marketId);
+      const contextFingerprint = z.string().regex(/^[a-f0-9]{64}$/).optional().parse(req.body?.contextFingerprint);
       if (!(await guardManualAction(req, res, "generateOutreachDraft"))) return;
 
       const channel: OutreachChannel | undefined =
@@ -846,6 +851,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       const intent = isOutreachIntent(req.body?.intent) ? req.body.intent : undefined;
 
       const result = await composeTouch(ctx.tenantDomain, req.params.id, {
+        contextFingerprint,
         channel,
         stepNumber,
         linkedinFormat,
@@ -866,6 +872,8 @@ export function registerSalesOutreachRoutes(app: Express) {
         return res.status(422).json({ error: err.message, code: err.code, questions: err.questions });
       }
       if (err instanceof MeetingError) return res.status(err.status).json({ error: err.message });
+      if (err instanceof OutreachContextError) return res.status(err.status).json({ error: err.message, code: err.code });
+      if (err instanceof z.ZodError) return res.status(400).json({ error: "Invalid composition context." });
       console.error("[sales-outreach:compose]", err);
       res.status(500).json({ error: err.message || "Failed to compose draft" });
     }
@@ -1005,6 +1013,13 @@ export function registerSalesOutreachRoutes(app: Express) {
 
       // Circuit breakers: master + per-channel + per-domain caps + global pause,
       // counted from the durable send ledger. Fails closed.
+      try {
+        await outreachContextPerson(ctx.tenantDomain, touch.prospectId, ctx.marketId);
+        await validateOutreachContext(ctx.tenantDomain, touch.prospectId, touch.outreachContext);
+      } catch (error) {
+        if (error instanceof OutreachContextError) return res.status(error.status).json({ error: error.message, code: error.code });
+        throw error;
+      }
       const meetingCampaign = prospect ? await getCampaign(ctx.tenantDomain, prospect.campaignId) : undefined;
       if (touch.meetingContext || meetingCampaign?.meetingBrief?.enabled) {
         try {

@@ -38,9 +38,11 @@ import {
 } from "./outreach-composer-core";
 import { scanCompliance, type ComplianceResult } from "./compliance-core";
 import { ensureOutreachCopyQuality } from "./outreach-copy-quality";
+import { outreachCompositionContext, validateOutreachContext } from "./outreach-context-service";
 import type { LinkedInFormat, OutreachIntent } from "@shared/linkedin-outreach";
 
 export interface ComposeTouchOptions {
+  contextFingerprint?: string;
   channel?: OutreachChannel;
   stepNumber?: number;
   isDefaultMarket?: boolean;
@@ -142,6 +144,7 @@ export async function composeTouch(
     .from(outreachCampaigns)
     .where(eq(outreachCampaigns.id, prospect.campaignId));
   if (!campaign) throw new Error("Campaign not found");
+  const outreachContext = await outreachCompositionContext(tenantDomain, prospectId, opts.contextFingerprint);
   if (prospect.meeting && (["do_not_contact", "declined", "unavailable"].includes(prospect.meeting.stage) || prospect.meeting.attendance === "not_attending")) {
     const { MeetingError } = await import("./conference-meetings-service");
     throw new MeetingError("This contact is excluded from event outreach.", 422);
@@ -219,9 +222,9 @@ export async function composeTouch(
     purpose,
     prospect: { name: prospect.name, title: prospect.title, companyName: prospect.companyName },
     dossier: prospect.researchDossier,
-    salesGoal: campaign.salesGoal,
-    callToAction: campaign.interview?.callToAction ?? null,
-    strategicBlock,
+    salesGoal: outreachContext.brief?.goal || campaign.salesGoal,
+    callToAction: outreachContext.brief?.ask || campaign.interview?.callToAction || null,
+    strategicBlock: [strategicBlock, outreachContext.block].filter(Boolean).join("\n\n"),
     voiceBlock,
     resource,
     linkedinFormat,
@@ -258,6 +261,8 @@ export async function composeTouch(
     forbiddenPhrases: forbidden,
   });
 
+  // Do not persist a draft grounded in context changed while AI was running.
+  await validateOutreachContext(tenantDomain, prospectId, outreachContext.snapshot);
   const [touch] = await db
     .insert(outreachTouches)
     .values({
@@ -274,6 +279,7 @@ export async function composeTouch(
       complianceFlags: compliance,
       voiceProfileId: campaign.voiceProfileId ?? null,
       meetingContext: meetingContext?.context ?? null,
+      outreachContext: outreachContext.snapshot,
     })
     .returning();
 
