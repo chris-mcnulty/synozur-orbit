@@ -11,6 +11,20 @@ function protectedDetails(draft: ParsedDraft): string[] {
   ) ?? []).sort();
 }
 
+/** Mechanical punctuation cleanup cannot invent facts or require sender input.
+ * Leave literal URLs and quoted evidence intact. Never used on manual saves.
+ */
+function normalizePunctuation(draft: ParsedDraft): ParsedDraft {
+  const clean = (text: string) => text.replace(
+    /https?:\/\/\S+|"[^"\n]*"|“[^”\n]*”|[ \t]*—[ \t]*/g,
+    token => token.includes("—") && !/^(?:https?:\/\/|"|“)/.test(token)
+      ? ", " : token,
+  ).replace(/, +\n/g, ",\n");
+  const subject = draft.subject === null ? null : clean(draft.subject);
+  const body = clean(draft.body);
+  return subject === draft.subject && body === draft.body ? draft : { subject, body };
+}
+
 /** New generation only: one repair, then fail before saving if still invalid. */
 export async function ensureOutreachCopyQuality(opts: {
   draft: ParsedDraft;
@@ -26,8 +40,9 @@ export async function ensureOutreachCopyQuality(opts: {
     ...(draft.body.length > max ? [`body exceeds ${max} characters`] : []),
     ...((draft.subject?.length ?? 0) > 80 ? ["subject exceeds 80 characters"] : []),
   ];
-  const violations = violationsFor(opts.draft);
-  if (!violations.length) return { draft: opts.draft, usage: { inputTokens: 0, outputTokens: 0 } };
+  const original = normalizePunctuation(opts.draft);
+  const violations = violationsFor(original);
+  if (!violations.length) return { draft: original, usage: { inputTokens: 0, outputTokens: 0 } };
   try {
     const result = await completeForFeature("outreach_composer", [
       `Repair only these writing problems: ${[...new Set(violations)].join(", ")}.`,
@@ -39,16 +54,16 @@ export async function ensureOutreachCopyQuality(opts: {
       opts.channel === "email"
         ? "Return exactly ===SUBJECT=== followed by the subject, then ===BODY=== followed by the body."
         : "Return exactly ===BODY=== followed by the message. No subject.",
-      JSON.stringify(opts.draft),
+      JSON.stringify(original),
     ].join("\n\n"), {
       tenantDomain: opts.tenantDomain,
       systemPrompt: `You are a conservative outreach copy editor. Make the minimum effective edit.\n${OUTREACH_WRITING_RULES}`,
       temperature: 0.2,
       maxTokens: 1200,
     });
-    const draft = parseComposeResponse(result.text, opts.channel);
+    const draft = normalizePunctuation(parseComposeResponse(result.text, opts.channel));
     const remaining = violationsFor(draft);
-    if (JSON.stringify(protectedDetails(opts.draft)) !== JSON.stringify(protectedDetails(draft))) {
+    if (JSON.stringify(protectedDetails(original)) !== JSON.stringify(protectedDetails(draft))) {
       remaining.push("repair changed protected facts or links");
     }
     if (remaining.length) throw new Error(remaining.join(", "));

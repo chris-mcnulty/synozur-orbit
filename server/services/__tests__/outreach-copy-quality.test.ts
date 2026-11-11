@@ -6,7 +6,7 @@ import { COMPOSER_SYSTEM_PROMPT } from "../outreach-composer-core";
 import { findOutreachWritingViolations } from "../outreach-writing-rules";
 
 const clean = { subject: "Meet Tuesday?", body: "Hi Ben,\nCan we meet at 10 on Tuesday?\nChris" };
-const dirty = { ...clean, subject: "Tuesday—meeting", body: clean.body.replace("Hi Ben,", "Hi Ben—") };
+const dirty = { ...clean, subject: "Tuesday—meeting", body: "I hope this finds you well.\n" + clean.body };
 const options = { channel: "email" as const, tenantDomain: "example.com" };
 function response(subject: string, body: string) {
   return { text: `===SUBJECT===\n${subject}\n===BODY===\n${body}`, usage: { inputTokens: 10, outputTokens: 20 } } as any;
@@ -33,7 +33,7 @@ describe("outreach generation writing gate", () => {
     expect(dirty.subject).toContain("—");
   });
   it.each([
-    ["uncorrected punctuation", response(dirty.subject, dirty.body)],
+    ["uncorrected generic opener", response(dirty.subject, dirty.body)],
     ["changed number", response(clean.subject, clean.body.replace("10", "11"))],
     ["malformed output", { text: "Try again", usage: {} }],
     ["overlong subject", response("x".repeat(81), clean.body)],
@@ -64,5 +64,26 @@ describe("outreach generation writing gate", () => {
       ...options, channel: "linkedin", draft: { subject: null, body: "Hi Ben—your report clarified the tradeoff." },
     });
     expect(result.draft).toEqual({ subject: null, body: "Hi Ben, your report clarified the tradeoff." });
+    expect(completeForFeature).not.toHaveBeenCalled();
+  });
+  it("cleans subject and body without another AI call or private context", async () => {
+    vi.mocked(completeForFeature).mockRejectedValue(new Error("AI unavailable"));
+    const result = await ensureOutreachCopyQuality({ ...options, draft: {
+      subject: "Tuesday — meeting", body: "Hi Peter—can we meet at 10?\nChris",
+    } });
+    expect(result.draft).toEqual({ subject: "Tuesday, meeting", body: "Hi Peter, can we meet at 10?\nChris" });
+    expect(completeForFeature).not.toHaveBeenCalled();
+  });
+  it("preserves literal links and quotations", async () => {
+    const draft = { subject: "Notes", body: 'See https://example.com/a—b and “A—B” — can we discuss?' };
+    const result = await ensureOutreachCopyQuality({ ...options, draft });
+    expect(result.draft.body).toBe('See https://example.com/a—b and “A—B”, can we discuss?');
+    expect(completeForFeature).not.toHaveBeenCalled();
+  });
+  it("cleans punctuation introduced by a repair without another call", async () => {
+    vi.mocked(completeForFeature).mockResolvedValue(response(clean.subject, clean.body.replace("Hi Ben,", "Hi Ben—")));
+    const result = await ensureOutreachCopyQuality({ ...options, draft: dirty });
+    expect(result.draft).toEqual(clean);
+    expect(completeForFeature).toHaveBeenCalledOnce();
   });
 });

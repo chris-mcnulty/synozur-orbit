@@ -18,7 +18,7 @@ export function findOutreachWritingViolations(text: string): string[] {
   return [...new Set([
     ...findSocialPostSlopViolations(text),
     ...lines.flatMap(findSocialPostSlopViolations),
-    ...(/[—]/u.test(text) ? ["em dash"] : []),
+    ...(/[—]/u.test(prose) ? ["em dash"] : []),
     ...(/(?:^|\s)#[\p{L}\p{N}_]+/u.test(prose) ? ["hashtag"] : []),
     ...(/\*\*[^*]+\*\*/.test(prose) ? ["decorative bold"] : []),
     ...(/\b(?:I hope this finds you well|excited to share|thrilled to connect|wanted to reach out|I wanted to take a moment|I was hoping we could|I'm reaching out because)\b/i.test(prose)

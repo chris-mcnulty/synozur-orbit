@@ -61,11 +61,11 @@ const knownOperatorCodes: Record<string, { title: string; savedDraftNotice: stri
   },
   OUTREACH_REFUSED: {
     title: "Drafting could not proceed",
-    savedDraftNotice: "This is a private, operator-only clarification. No draft was saved. Add relevant facts or answer the questions below; this context is not for overriding safety safeguards and will not be sent to the prospect.",
+    savedDraftNotice: "Orbit could not fulfill this drafting request. No draft was saved or sent. The explanation below is private and is not a message to the recipient.",
   },
   OUTREACH_INVALID_DRAFT: {
-    title: "Draft needs more information",
-    savedDraftNotice: "This is a private, operator-only clarification. No draft was saved. Add relevant facts or answer the questions below; this context is not for overriding safety safeguards and will not be sent to the prospect.",
+    title: "Orbit could not finish this draft",
+    savedDraftNotice: "Orbit generated a draft that failed its own checks. This is not an error in your input. No additional context is required. Nothing was saved or sent.",
   },
 };
 
@@ -85,6 +85,7 @@ export function ComposeClarification({
   onDiscard,
 }: ComposeClarificationProps) {
   const knownCode = knownOperatorCodes[code];
+  const needsInput = code === "OUTREACH_NEEDS_INPUT";
   const title = knownCode?.title ?? "Drafting could not finish";
   const formattedExplanation = formatClarificationText(explanation);
   const formattedQuestions = questions
@@ -116,13 +117,13 @@ export function ComposeClarification({
               Private to you
             </span>
             <span aria-hidden="true">/</span>
-            <span>Outreach clarification</span>
+            <span>{needsInput ? "Outreach clarification" : "Draft generation"}</span>
           </div>
           <DialogTitle className="pr-10 text-xl font-semibold tracking-tight sm:text-2xl" data-testid="compose-clarification-title">
             {title}
           </DialogTitle>
           <DialogDescription className="mt-2 max-w-xl text-sm leading-relaxed">
-            {knownCode?.savedDraftNotice ?? "Review the details and add context before trying again. This private clarification will not be included in the prospect email, and nothing is sent automatically."}
+            {knownCode?.savedDraftNotice ?? "Orbit could not finish generating the draft. Nothing was sent. You can retry without adding context."}
           </DialogDescription>
           <button
             type="button"
@@ -152,17 +153,17 @@ export function ComposeClarification({
             <section
               className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-4 py-3.5"
               data-testid="compose-clarification-explanation"
-              aria-label="Why clarification is needed"
+              aria-label={needsInput ? "Why clarification is needed" : "Generation error"}
             >
               <div className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <AlertCircle className="h-4 w-4 text-amber-700 dark:text-amber-400" aria-hidden="true" />
-                What needs attention
+                {needsInput ? "What needs attention" : "What happened"}
               </div>
               <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{formattedExplanation}</p>
             </section>
           )}
 
-          {formattedQuestions.length > 0 && (
+          {needsInput && formattedQuestions.length > 0 && (
             <section
               className="space-y-2.5"
               aria-label="Questions for you"
@@ -182,7 +183,7 @@ export function ComposeClarification({
             </section>
           )}
 
-          <div className="space-y-2">
+          {needsInput && <div className="space-y-2">
             <div className="flex items-end justify-between gap-3">
               <Label htmlFor="input-compose-additional-context" className="text-sm font-semibold">
                 Your private context
@@ -206,7 +207,7 @@ export function ComposeClarification({
             <p id="compose-context-help" className="text-xs leading-relaxed text-muted-foreground">
               Only used to help you prepare this draft. It is not part of the message to {recipientName}.
             </p>
-          </div>
+          </div>}
 
           {retryError && (
             <div
@@ -223,7 +224,7 @@ export function ComposeClarification({
         <DialogFooter className="shrink-0 flex-col gap-3 border-t border-border/70 bg-background px-5 py-4 sm:flex-col sm:items-stretch sm:space-x-0 sm:gap-3 sm:px-7">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Clock3 className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>Keep for later closes this window without discarding your answers on this page.</span>
+            <span>{needsInput ? "Keep for later closes this window without discarding your answers on this page." : "Retry uses the same saved brief and any context you already provided."}</span>
           </div>
           <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
@@ -235,7 +236,7 @@ export function ComposeClarification({
               className="text-muted-foreground hover:text-destructive"
             >
               <FileX2 className="mr-2 h-4 w-4" />
-              Discard clarification
+              {needsInput ? "Discard clarification" : "Dismiss"}
             </Button>
             <Button
               type="button"

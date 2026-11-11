@@ -7,6 +7,10 @@ description: Owner-approved social editorial safeguards and the risk of applying
 
 ## Outreach generation scope
 
+Orbit-generated writing failures are system errors, never evidence that the user supplied bad or insufficient context. Ask for private clarification only for genuinely missing facts. Mechanical punctuation cleanup must not require another model call or user retry; protect literal links and quoted evidence.
+
+**Why:** The user explicitly objected when Orbit wrote em dashes, failed its own repair, then asked the user to fix the draft through a private-context form.
+
 Ordinary outreach Compose must include outreach-appropriate voice and no-slop guidance and check newly generated subjects and bodies before persistence. Use at most one targeted repair, preserving voice, intent and facts; fail explicitly if it cannot be verified. Do not impose a sales CTA on engagement messages.
 
 **Why:** The user reported repeated em dashes in a conference email because outreach imported only some writing rules, not the punctuation policy. An optional Sharpen action was not an acceptable substitute for correct initial generation.

@@ -99,6 +99,7 @@ vi.mock("../compliance-core", () => ({
 import { composeTouch } from "../outreach-composer-service";
 import { getProspectWithContact } from "../prospect-contact-service";
 import { completeForFeature } from "../ai-provider";
+import { scanCompliance } from "../compliance-core";
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -191,12 +192,31 @@ describe("composeTouch — recipient guard", () => {
     pushDb(CAMPAIGN);
     pushDb();
     vi.mocked(completeForFeature).mockResolvedValue({
-      text: "===SUBJECT===\nMeeting—Tuesday\n===BODY===\nHi Jane—can we meet Tuesday?",
+      text: "===SUBJECT===\nMeeting—Tuesday\n===BODY===\nI hope this finds you well. Can we meet Tuesday?",
       usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
     } as any);
     await expect(composeTouch("acme.com", "prospect-1", { channel: "email" })).rejects.toThrow("Nothing was saved or sent");
     expect(completeForFeature).toHaveBeenCalledTimes(2);
     expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("completes ordinary email Compose with em dashes without asking for private context", async () => {
+    vi.mocked(getProspectWithContact).mockResolvedValue({ ...PROSPECT_NO_EMAIL, email: "jane@fund.com" } as any);
+    pushDb(CAMPAIGN);
+    pushDb();
+    pushDb();
+    pushDb({ ...TOUCH_ROW, channel: "email" });
+    pushDb(UPDATED_PROSPECT);
+    vi.mocked(completeForFeature).mockResolvedValue({
+      text: "===SUBJECT===\nMeeting—Tuesday\n===BODY===\nHi Jane—can we meet Tuesday?",
+      usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any);
+    await composeTouch("acme.com", "prospect-1", { channel: "email" });
+    expect(completeForFeature).toHaveBeenCalledOnce();
+    expect(scanCompliance).toHaveBeenCalledWith(expect.objectContaining({
+      subject: "Meeting, Tuesday", body: "Hi Jane, can we meet Tuesday?",
+    }));
+    expect(writes).toHaveBeenCalledTimes(2);
   });
 
   it("composes a LinkedIn touch for a prospect with no email address", async () => {

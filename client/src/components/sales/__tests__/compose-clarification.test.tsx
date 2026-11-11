@@ -11,6 +11,17 @@ const props = {
 };
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("compose clarification dialog", () => {
+  it("owns generation failures without asking the user to correct their input", () => {
+    render(<ComposeClarification {...props} code="OUTREACH_INVALID_DRAFT" explanation="Orbit could not verify its generated copy." />);
+    expect(screen.getByText("Orbit could not finish this draft")).toBeTruthy();
+    expect(screen.getByText(/This is not an error in your input/)).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText("What needs attention")).toBeNull();
+    expect(screen.queryByTestId("compose-clarification-questions")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry drafting" }));
+    expect(props.onRetry).toHaveBeenCalledOnce();
+    expect(props.onContextChange).not.toHaveBeenCalled();
+  });
   it("formats markdown as readable private questions with an accessible answer area", () => {
     render(<ComposeClarification {...props} />);
     expect(screen.getByText("Clarify before drafting")).toBeTruthy();
