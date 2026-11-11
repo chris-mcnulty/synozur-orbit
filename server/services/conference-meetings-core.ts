@@ -7,6 +7,7 @@ export function meetingFactsFingerprint(
   conference: Pick<Conference, "id" | "name" | "startDate" | "endDate" | "location" | "website" | "boothDetails" | "presence"> & Partial<Pick<Conference, "description" | "thematicBrief">>,
   sessions: (Pick<ConferenceSession, "id" | "title" | "sessionStart" | "sessionEnd" | "room" | "speakers" | "url"> & Partial<Pick<ConferenceSession, "speaker" | "abstract" | "track" | "sessionType">>)[],
   brief: MeetingBrief | null,
+  sourceContext?: Record<string, unknown>,
 ): string {
   return createHash("sha256").update(JSON.stringify({
     event: {
@@ -19,6 +20,7 @@ export function meetingFactsFingerprint(
       speaker: s.speaker, abstract: s.abstract, track: s.track, sessionType: s.sessionType,
     })),
     brief,
+    sourceContext,
   })).digest("hex");
 }
 
@@ -41,6 +43,7 @@ export function meetingDraftFingerprint(facts: string, meeting: MeetingContact):
 export function proposeMeetingAngles(
   eventName: string, contact: MeetingContact, review: RelationshipReview,
   sessions: Pick<ConferenceSession, "id" | "title" | "speakers">[],
+  sharedContext?: { goals?: string; brief?: string },
 ): MeetingAngle[] {
   const cautions = [
     ...(contact.attendance !== "confirmed" ? ["Attendance is not confirmed. Ask whether they will attend; do not assume."] : []),
@@ -50,7 +53,7 @@ export function proposeMeetingAngles(
   const activity = review.activities.find(a => a.kind !== "draft_pending_approval" && a.kind !== "approved");
   const relationship = contact.relationships.filter(r => r !== "unknown").join(", ").replace(/_/g, " ") || "relationship not yet classified";
   const staffSession = sessions.find(s => s.speakers?.some(speaker => speaker.isStaff));
-  return [
+  const angles: MeetingAngle[] = [
     {
       id: "continue-conversation",
       hook: activity ? "Continue a recent conversation" : "Establish the context for a conversation",
@@ -80,6 +83,11 @@ export function proposeMeetingAngles(
       cautions: [...cautions, "A session listing is not proof that this contact plans to attend it."],
     },
   ];
+  const sharedEvidence = [
+    ...(sharedContext?.goals ? [`Saved event/campaign goals: ${sharedContext.goals}`.slice(0, 2000)] : []),
+    ...(sharedContext?.brief ? [`Saved event/campaign brief: ${sharedContext.brief}`.slice(0, 2000)] : []),
+  ];
+  return angles.map(angle => ({ ...angle, evidence: [...angle.evidence, ...sharedEvidence] }));
 }
 
 export function assertMeetingCanDraft(meeting: MeetingContact, fingerprint: string): void {

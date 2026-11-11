@@ -119,3 +119,17 @@ mtime_ms = 1793654455973
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/20451492-e2e0-4349-bcdf-47c2c4ab264c/5534a9ca-ff65-46e0-a765-6f450b716f6d"
 storage_version_token = "1793654462993152"
 content_type = "text/csv"
+
+[[outputs]]
+id = "o8zv0z9G3WsOGLxF4WDCj"
+uri = "file://generated-artifacts/event-workspace-desktop.png"
+type = "image"
+title = "Compact event outreach workspace"
+description = "The updated screen rendered with test contacts: one contact list, collapsed event setup, and per-contact meeting prep."
+logical_id = "252b6f16-3a4d-494b-862b-50bead89e56d"
+content_hash = "sha256:9883b29e5995444e8e0fe54ba306e98d1d17acabdce75a6f045d4f2b263df3ca"
+size = 141915
+mtime_ms = 1794378609423
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/252b6f16-3a4d-494b-862b-50bead89e56d/72b817f1-2c28-4dca-8d34-3a91e429fa55"
+storage_version_token = "1794378657971585"
+content_type = "image/png"

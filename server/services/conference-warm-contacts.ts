@@ -68,18 +68,19 @@ export async function recommendConferenceContacts(tenant: string, campaignId: st
 
 async function buildConferenceShortlist(tenant: string, campaignId: string, marketId?: string): Promise<WarmConferenceShortlist> {
   const workspace = await getConferenceWorkspace(tenant, campaignId, marketId);
-  if (!workspace.brief?.enabled || (!workspace.brief.goals.trim() && !workspace.brief.targetAccounts.trim())) {
+  const brief = workspace.effectiveBrief ?? workspace.brief;
+  if (!workspace.brief?.enabled || !brief || (!brief.goals.trim() && !brief.targetAccounts.trim())) {
     throw new MeetingError("Save an active event brief with goals or target accounts before requesting recommendations.", 422);
   }
   let crm;
   try {
-    crm = await readConferenceHubspotContacts(tenant, { queries: workspace.brief.targetAccounts.split(/[\n;,]+/).map(s => s.trim()).filter(Boolean).slice(0, 3) });
+    crm = await readConferenceHubspotContacts(tenant, { queries: brief.targetAccounts.split(/[\n;,]+/).map(s => s.trim()).filter(Boolean).slice(0, 3) });
   } catch {
     throw new MeetingError("HubSpot contacts are unavailable. Check the connection and contact permissions, then retry.", 409);
   }
   const context = await localContext(tenant, crm.contacts);
   const eligible = crm.contacts.map(c => resolveCandidate(c, context, campaignId)).filter((c): c is NonNullable<typeof c> => !!c);
-  const since = new Date(Date.now() - workspace.brief.lookbackDays * 86400000);
+  const since = new Date(Date.now() - brief.lookbackDays * 86400000);
   const membershipIds = eligible.flatMap(e => e.memberships.map(m => m.person.id));
   const touches = membershipIds.length ? await db.select().from(outreachTouches)
     .where(and(eq(outreachTouches.tenantDomain, tenant), inArray(outreachTouches.prospectId, membershipIds),
@@ -92,7 +93,6 @@ async function buildConferenceShortlist(tenant: string, campaignId: string, mark
       at: t.sentAt!.toISOString(), summary: clean([t.subject, t.body].filter(Boolean).join(" — ")),
     }));
   }
-  const brief = workspace.brief;
   const top = sortWarmContacts(eligible.map(e => rankWarmContact(e.candidate, brief))).slice(0, 10);
   // Two contacts at a time, at most 100 CRM association/batch requests, 25s overall history deadline.
   const signal = AbortSignal.timeout(25000);

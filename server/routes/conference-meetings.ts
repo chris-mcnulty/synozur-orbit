@@ -141,7 +141,10 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     if (!workspace.brief?.enabled) throw new MeetingError("Enable and save the meeting brief first.", 422);
     if (!person.meeting.review) throw new MeetingError("Review the relationship first.", 422);
     if (person.meeting.review.suppressed || person.meeting.stage === "do_not_contact") throw new MeetingError("This contact is suppressed or marked do not contact.", 422);
-    const angles = proposeMeetingAngles(workspace.conference.name, person.meeting, person.meeting.review, workspace.sessions);
+    const angles = proposeMeetingAngles(workspace.conference.name, person.meeting, person.meeting.review, workspace.sessions, {
+      goals: workspace.effectiveBrief?.goals ?? workspace.brief.goals,
+      brief: [workspace.sourceContext?.eventBrief, workspace.sourceContext?.campaignBrief].filter(Boolean).join("\n\n"),
+    });
     const fingerprint = meetingContactFingerprint(workspace.fingerprint, person.meeting);
     await saveMeeting(ctx.tenantDomain, req.params.id, {
       ...person.meeting, angles, anglesFingerprint: fingerprint, selectedAngleId: null, selectedHook: "", selectedAsk: "",

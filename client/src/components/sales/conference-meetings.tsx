@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CalendarClock, Check, ChevronDown, ChevronUp, ExternalLink, FileUp, Loader2, MessageSquareText, RefreshCw, Save, Search, ShieldAlert, Users } from "lucide-react";
+import { AlertCircle, CalendarClock, Check, ChevronDown, ExternalLink, FileUp, Loader2, MessageSquareText, RefreshCw, Save, ShieldAlert } from "lucide-react";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Conference, ConferenceSession } from "@shared/schema";
 import type { EventPresence, MeetingAngle, MeetingBrief, MeetingContact, RelationshipReview } from "@shared/conference-meetings";
 import type { ReactNode } from "react";
@@ -22,6 +23,11 @@ type Workspace = {
   conference: Conference & { presence: EventPresence | null };
   sessions: ConferenceSession[];
   brief: MeetingBrief | null;
+  suggestedBrief?: MeetingBrief;
+  sourceContext?: {
+    eventBrief: string; eventDescription: string; eventGoals: string;
+    campaignBrief: string; campaignGoal: string; sourceCampaignName: string | null;
+  };
   fingerprint: string;
   contacts: {
     id: string; name: string; email: string | null; title: string | null; companyName: string | null;
@@ -142,7 +148,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{label}</span>{children}</label>;
 }
 
-export default function ConferenceMeetings({ campaignId, onDraftCreated }: { campaignId: string; onDraftCreated?: (result: unknown) => void }) {
+export default function ConferenceMeetings({ campaignId, selectedContactId, onSelectedContactChange, onDraftCreated }: {
+  campaignId: string;
+  selectedContactId: string | null;
+  onSelectedContactChange: (id: string | null) => void;
+  onDraftCreated?: (result: unknown) => void;
+}) {
   const qc = useQueryClient();
   const key = [endpoint(campaignId)];
   const query = useQuery<Workspace>({
@@ -150,13 +161,12 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
     queryFn: async () => (await apiRequest("GET", endpoint(campaignId))).json(),
   });
   const workspace = query.data;
-  const [activeId, setActiveId] = useState("");
+  const activeId = selectedContactId ?? "";
   const [presence, setPresence] = useState<EventPresence>(blankPresence);
   const [brief, setBrief] = useState<MeetingBrief>(blankBrief);
   const [draftContact, setDraftContact] = useState<MeetingContact | null>(null);
   const [error, setError] = useState("");
-  const [expanded, setExpanded] = useState(true);
-  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [externalText, setExternalText] = useState("");
   const [externalRows, setExternalRows] = useState<ExternalRow[]>([]);
   const [externalSelected, setExternalSelected] = useState<Set<number>>(new Set());
@@ -169,26 +179,22 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
   const [draftSuccess, setDraftSuccess] = useState(false);
   const [meetingTimeError, setMeetingTimeError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  const initialized = useRef(false);
+  const initialized = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!workspace || initialized.current) return;
-    initialized.current = true;
+    if (!workspace || initialized.current === campaignId) return;
+    initialized.current = campaignId;
     setPresence(workspace.conference.presence ?? blankPresence);
-    setBrief(workspace.brief ?? blankBrief);
-    if (workspace.contacts[0]) setActiveId(workspace.contacts[0].id);
-  }, [workspace]);
+    const suggested = workspace.suggestedBrief ?? blankBrief;
+    setBrief(workspace.brief
+      ? { ...workspace.brief,
+          goals: workspace.brief.goals?.trim() ? workspace.brief.goals : suggested.goals,
+          targetAccounts: workspace.brief.targetAccounts?.trim() ? workspace.brief.targetAccounts : suggested.targetAccounts }
+      : { ...suggested });
+  }, [workspace, campaignId]);
 
   const selectedContact = workspace?.contacts.find((contact) => contact.id === activeId);
   useEffect(() => { setDraftContact(selectedContact?.meeting ?? null); setDraftError(null); setDraftSuccess(false); setMeetingTimeError(""); }, [selectedContact?.id]);
-  useEffect(() => {
-    if (workspace?.contacts.length && (!activeId || !workspace.contacts.some((contact) => contact.id === activeId))) {
-      setActiveId(workspace.contacts[0].id);
-    }
-  }, [workspace?.contacts, activeId]);
-  const filteredContacts = useMemo(() => (workspace?.contacts ?? []).filter((contact) =>
-    `${contact.name} ${contact.companyName ?? ""} ${contact.title ?? ""}`.toLowerCase().includes(search.toLowerCase())
-  ), [workspace?.contacts, search]);
   const bookedCount = workspace?.contacts.filter((contact) => contact.meeting.stage === "meeting_booked" && !!contact.meeting.meetingAt && !!contact.meeting.meetingOwner.trim()).length ?? 0;
   const contactPath = (suffix: string) => `/api/sales-outreach/prospects/${activeId}/meeting${suffix}`;
   function contactPayload(contact: MeetingContact) {
@@ -275,13 +281,11 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
     setDraftContact((current) => current ? { ...current, [field]: value } : current);
   }
   const personBusy = saveContact.isPending || review.isPending || generateAngles.isPending || createDraft.isPending;
-  function selectContact(contact: Workspace["contacts"][number]) {
+  function closePrep() {
     if (personBusy) return;
-    setActiveId(contact.id);
-    setDraftContact(contact.meeting);
-    setDraftError(null);
-    setDraftSuccess(false);
-    setMeetingTimeError("");
+    if (draftContact && selectedContact && JSON.stringify(contactPayload(draftContact)) !== JSON.stringify(contactPayload(selectedContact.meeting))
+      && !window.confirm("Close meeting prep without saving your changes?")) return;
+    onSelectedContactChange(null);
   }
   function loadPreview(text: string, source: "manual" | "wiza" | "salesnav") {
     const rows = parseExternal(text);
@@ -312,26 +316,38 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
   const event = workspace.conference;
   const staleAngles = !!selectedContact?.meeting.angles?.length && selectedContact.meeting.anglesFingerprint !== selectedContact.meetingFingerprint;
 
-  return <section className="space-y-4" data-testid="conference-meetings">
-    <div className="rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-border px-5 py-5 sm:px-7 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-2xl">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.16em] text-muted-foreground"><CalendarClock className="h-4 w-4" /> Event meetings</div>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{event.name}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Prepare for useful, credible conversations. Every external contact is reviewed before it enters the workspace.</p>
+  return <section className="min-w-0 space-y-3" data-testid="conference-meetings">
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground"><CalendarClock className="h-4 w-4 shrink-0 text-primary" /><span className="break-words">{event.name}</span></h2>
+          <p className="mt-1 text-xs text-muted-foreground">Shared event context reused · Open meeting prep from a contact below.</p>
+          {brief.goals.trim() && <p className="mt-1 line-clamp-2 break-words text-xs text-muted-foreground"><span className="font-medium text-foreground">{workspace.brief?.goals?.trim() ? "Saved conversation goals: " : "Inherited goals: "}</span>{brief.goals}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{bookedCount} meetings booked</Badge>
           <Button asChild variant="outline" size="sm">
-            <a href={`/app/marketing/conferences/${encodeURIComponent(event.id)}`}><ExternalLink className="mr-2 h-3.5 w-3.5" />Event Promotion</a>
+              <a href={`/app/marketing/conferences/${encodeURIComponent(event.id)}`}><ExternalLink className="mr-2 h-3.5 w-3.5" />Shared event</a>
           </Button>
-          <Button variant="ghost" size="icon" aria-label={expanded ? "Collapse meeting prep" : "Expand meeting prep"} onClick={() => setExpanded((v) => !v)}>{expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
+          <Button variant="outline" size="sm" aria-expanded={expanded} aria-controls="event-context-setup" onClick={() => setExpanded((v) => !v)}>Context & setup<ChevronDown className={`ml-1.5 h-4 w-4 ${expanded ? "rotate-180" : ""}`} /></Button>
         </div>
       </div>
-      {expanded && <div className="space-y-6 p-5 sm:p-7">
-        {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
-
-        <div className="grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
+      {error && <p role="alert" className="px-4 pb-3 text-sm text-destructive">{error}</p>}
+      <div id="event-context-setup" hidden={!expanded} className="space-y-4 border-t border-border p-4">
+        {workspace.sourceContext && <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="meeting-inherited-context">
+          <h3 className="text-sm font-semibold">Inherited source context <Badge variant="outline" className="ml-1 text-[10px]">Read only</Badge></h3>
+          <p className="mt-1 text-xs text-muted-foreground">Reused from the shared event{workspace.sourceContext.sourceCampaignName ? ` and ${workspace.sourceContext.sourceCampaignName}` : ""}. Edit the originals in their source; use the private brief below for outreach-specific overrides.</p>
+          <dl className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
+            {([
+              ["Event brief", workspace.sourceContext.eventBrief],
+              ["Event description", workspace.sourceContext.eventDescription],
+              ["Event goals", workspace.sourceContext.eventGoals],
+              ["Source campaign brief", workspace.sourceContext.campaignBrief],
+              ["Source campaign goal", workspace.sourceContext.campaignGoal],
+            ] as const).filter(([, value]) => value?.trim()).map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted-foreground">{label} · inherited</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{value}</dd></div>)}
+          </dl>
+        </div>}
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
           <Card className="border-border bg-card shadow-none">
             <CardHeader className="pb-3"><CardTitle className="text-lg">Shared event plan</CardTitle></CardHeader>
             <CardContent className="space-y-4">
@@ -346,7 +362,8 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
               <div className="border-t border-border pt-4">
                 <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold text-foreground">Private campaign brief</h3><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={brief.enabled} onChange={(e) => setBrief({ ...brief, enabled: e.target.checked })} />Active</label></div>
                 <div className="space-y-3">
-                  <Field label="Conversation goals"><Textarea rows={2} value={brief.goals} onChange={(e) => setBrief({ ...brief, goals: e.target.value })} placeholder="What would make these conversations worthwhile?" /></Field>
+                  <p className="text-xs text-muted-foreground">{workspace.brief ? "Saved private overrides are kept. Blank goals start from the shared source." : "Suggested from the shared event plan. Changes stay local until you save."}</p>
+                  <Field label="Conversation goals (private override)"><Textarea rows={2} value={brief.goals} onChange={(e) => setBrief({ ...brief, goals: e.target.value })} placeholder="What would make these conversations worthwhile?" /></Field>
                   <Field label="Target accounts"><Textarea rows={2} value={brief.targetAccounts} onChange={(e) => setBrief({ ...brief, targetAccounts: e.target.value })} placeholder="Accounts and why they matter" /></Field>
                   <Field label="Availability"><Textarea rows={2} value={brief.availability} onChange={(e) => setBrief({ ...brief, availability: e.target.value })} placeholder="Windows, constraints, preferred days" /></Field>
                   <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
@@ -368,7 +385,7 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
                 <div className="grid gap-x-5 gap-y-3 text-sm sm:grid-cols-2">
                   <p><span className="block text-[11px] uppercase tracking-wider text-muted-foreground">Dates</span>{event.startDate ? new Date(event.startDate).toLocaleDateString() : "Not set"}{event.endDate ? ` – ${new Date(event.endDate).toLocaleDateString()}` : ""}</p>
                   <p><span className="block text-[11px] uppercase tracking-wider text-muted-foreground">Location</span>{event.location || "Not listed"}</p>
-                  <p className="sm:col-span-2"><span className="block text-[11px] uppercase tracking-wider text-muted-foreground">Website</span>{event.website ? <a className="inline-flex items-center gap-1 text-primary underline" href={event.website} target="_blank" rel="noreferrer">{event.website}<ExternalLink className="h-3 w-3" /></a> : "Not listed"}</p>
+                  <p className="min-w-0 sm:col-span-2"><span className="block text-[11px] uppercase tracking-wider text-muted-foreground">Website</span>{event.website ? <a className="inline-flex max-w-full items-center gap-1 break-all text-primary underline" href={event.website} target="_blank" rel="noreferrer">{event.website}<ExternalLink className="h-3 w-3 shrink-0" /></a> : "Not listed"}</p>
                 </div>
                 <div className="mt-4 border-t border-border pt-3">
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sessions · {workspace.sessions.length}</h3>
@@ -404,25 +421,18 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
           </div>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <Card className="h-fit border-border bg-card shadow-none">
-            <CardHeader className="pb-2"><CardTitle className="flex items-center justify-between text-lg">People <Badge variant="outline">{workspace.contacts.length}</Badge></CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a person" /></div>
-              <div className="max-h-[420px] space-y-1 overflow-auto">
-                {filteredContacts.map((contact) => <button key={contact.id} disabled={personBusy} onClick={() => selectContact(contact)} className={`w-full rounded-lg border p-3 text-left transition-colors disabled:cursor-wait disabled:opacity-60 ${activeId === contact.id ? "border-primary/50 bg-primary/10" : "border-transparent hover:bg-muted"}`}>
-                  <span className="block truncate text-sm font-semibold text-foreground">{contact.name}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{[contact.title, contact.companyName].filter(Boolean).join(" · ") || contact.email || "Contact"}</span>
-                  <span className="mt-2 flex flex-wrap gap-1"><Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">{contact.meeting.stage.replaceAll("_", " ")}</Badge>{contact.meeting.attendance === "confirmed" && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">Attending</Badge>}</span>
-                </button>)}
-                {!filteredContacts.length && <p className="px-2 py-6 text-center text-xs text-muted-foreground"><Users className="mx-auto mb-2 h-5 w-5" />No people found. Add existing campaign prospects or import external research above.</p>}
-              </div>
-            </CardContent>
-          </Card>
-
-          {selectedContact && draftContact ? <div className="space-y-4">
+      </div>
+      <Dialog open={!!activeId} onOpenChange={(open) => { if (!open) closePrep(); }}>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto overflow-x-hidden">
+          <DialogHeader className="pr-6">
+            <DialogTitle>Meeting prep · {selectedContact?.name || "Selected contact"}</DialogTitle>
+            <DialogDescription>{event.name} · Review relationships, prepare an approach, and plan the meeting. Nothing is sent automatically.</DialogDescription>
+          </DialogHeader>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          {selectedContact && draftContact ? <div className="min-w-0 space-y-4 [&_fieldset]:min-w-0 [&_p]:break-words">
             <ConferenceCalendarInvitation key={selectedContact.id} personId={selectedContact.id} name={selectedContact.name} email={selectedContact.email} eventName={event.name} meeting={selectedContact.meeting} disabled={personBusy} />
-            <Card className="border-border bg-card shadow-none">
-              <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+            <Card className="min-w-0 border-border bg-card shadow-none">
+              <CardHeader className="flex flex-col items-start justify-between gap-3 pb-3 sm:flex-row">
                 <div><CardTitle className="text-xl">{selectedContact.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{[selectedContact.title, selectedContact.companyName].filter(Boolean).join(" · ")}{selectedContact.email ? ` · ${selectedContact.email}` : ""}</p>{selectedContact.linkedinUrl && <a href={selectedContact.linkedinUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary underline">LinkedIn profile <ExternalLink className="h-3 w-3" /></a>}</div>
                 <Button size="sm" onClick={() => saveContact.mutate()} disabled={personBusy || !!meetingTimeError} className="shrink-0"><Save className="mr-1.5 h-4 w-4" />{saveContact.isPending ? "Saving…" : "Save prep"}</Button>
               </CardHeader>
@@ -472,9 +482,9 @@ export default function ConferenceMeetings({ campaignId, onDraftCreated }: { cam
                 </div>
               </fieldset></CardContent>
             </Card>
-          </div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30 p-8 text-center"><Users className="mb-3 h-7 w-7 text-muted-foreground" /><h3 className="text-lg font-semibold text-foreground">No event contacts yet</h3><p className="mt-1 max-w-sm text-sm text-muted-foreground">Use HubSpot, manual prospect entry, or reviewed external research to bring people into this campaign.</p></div>}
-        </div>
-      </div>}
+          </div> : <div className="rounded-lg border border-dashed p-5"><p className="text-sm text-muted-foreground">Meeting prep for this contact is not available yet. Refresh the workspace to load recently added contacts.</p><Button className="mt-3" variant="outline" size="sm" onClick={() => query.refetch()}>Refresh workspace</Button></div>}
+        </DialogContent>
+      </Dialog>
       <PasteContactsDialog
         open={pasteContactsOpen}
         onOpenChange={setPasteContactsOpen}

@@ -511,6 +511,8 @@ export default function OutreachCampaignDetailPage() {
   const queryClient = useQueryClient();
   const { user } = useUser();
   const [adding, setAdding] = useState(false);
+  const [meetingContact, setMeetingContact] = useState<{ campaignId: string; contactId: string } | null>(null);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [dossier, setDossier] = useState<Prospect | null>(null);
   const [marketingTouchesExpanded, setMarketingTouchesExpanded] = useState(true);
@@ -1369,14 +1371,14 @@ export default function OutreachCampaignDetailPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6" data-testid="page-outreach-campaign-detail">
+      <div className="min-w-0 space-y-4" data-testid="page-outreach-campaign-detail">
         <Button variant="ghost" size="sm" asChild className="-ml-2">
           <Link href="/app/sales/outreach"><ArrowLeft className="w-4 h-4 mr-1" /> Campaigns</Link>
         </Button>
 
-        <div className="flex flex-col items-stretch gap-5">
+        <div className="flex min-w-0 flex-col items-stretch gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="text-[11px] capitalize">{campaign.goalType.replace("_", " ")}</Badge>
               <Badge variant="secondary" className="text-[11px] capitalize">{campaign.status}</Badge>
               {campaign.eventDate && (
@@ -1398,8 +1400,11 @@ export default function OutreachCampaignDetailPage() {
                 );
               })()}
             </div>
-            <h1 className="text-2xl font-bold tracking-tight mt-1.5">{campaign.name}</h1>
-            {campaign.salesGoal && <p className="mt-1 max-w-5xl whitespace-pre-wrap break-words text-muted-foreground">{campaign.salesGoal}</p>}
+            <h1 className="text-2xl font-bold tracking-tight mt-1.5 break-words">{campaign.name}</h1>
+            {campaign.salesGoal && <div className="mt-1 max-w-5xl">
+              <p id="outreach-campaign-description" className={`whitespace-pre-wrap break-words text-sm text-muted-foreground ${descriptionExpanded ? "" : "line-clamp-2"}`}>{campaign.salesGoal}</p>
+              <button type="button" className="mt-1 text-xs font-medium text-primary hover:underline" aria-expanded={descriptionExpanded} aria-controls="outreach-campaign-description" onClick={() => setDescriptionExpanded((value) => !value)}>{descriptionExpanded ? "Show less" : "Read full campaign brief"}</button>
+            </div>}
             {campaign.status === "draft" && canEdit && (
               <p className="text-xs text-muted-foreground mt-2">
                 This campaign is in setup. Activate it when you are ready for cadence follow-ups to advance; every outreach message still requires approval.
@@ -1482,12 +1487,12 @@ export default function OutreachCampaignDetailPage() {
               Refresh cadence
             </Button>
             {discoveryStatus?.backends?.some((b: DiscoveryBackend) => b.available) && (
-              <Button variant="outline" onClick={openDiscovery} disabled={discover.isPending} data-testid="button-discover-prospects">
+              <Button size="sm" variant="outline" onClick={openDiscovery} disabled={discover.isPending} data-testid="button-discover-prospects">
                 {discover.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Radar className="w-4 h-4 mr-1.5" />}
                 Discover prospects
               </Button>
             )}
-            <Button variant="outline" onClick={openHubspotDialog} data-testid="button-import-hubspot">
+            <Button size="sm" variant="outline" onClick={openHubspotDialog} data-testid="button-import-hubspot">
               <Download className="w-4 h-4 mr-1.5" />
               Import from HubSpot
             </Button>
@@ -1499,15 +1504,15 @@ export default function OutreachCampaignDetailPage() {
               onChange={onCsvFileChange}
               data-testid="input-import-csv-prospects"
             />
-            <Button variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects">
+            <Button size="sm" variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects">
               <Upload className="w-4 h-4 mr-1.5" />
               Import from CSV
             </Button>
-            <Button variant="outline" onClick={() => setPasteContactsOpen(true)} data-testid="button-paste-contacts">
+            <Button size="sm" variant="outline" onClick={() => setPasteContactsOpen(true)} data-testid="button-paste-contacts">
               <Sparkles className="w-4 h-4 mr-1.5" />
               Paste contacts
             </Button>
-            <Button onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
+            <Button size="sm" onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
               <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
             </Button>
           </div>
@@ -1528,9 +1533,13 @@ export default function OutreachCampaignDetailPage() {
 
         {campaign.conferenceId ? (
           <ConferenceMeetings
+            key={campaign.id}
             campaignId={campaign.id}
+            selectedContactId={meetingContact?.campaignId === campaign.id ? meetingContact.contactId : null}
+            onSelectedContactChange={(contactId) => setMeetingContact(contactId ? { campaignId: campaign.id, contactId } : null)}
             onDraftCreated={(result) => {
               const composed = result as { touch: Touch; prospect: Prospect };
+              setMeetingContact(null);
               queryClient.invalidateQueries({ queryKey: prospectsKey });
               openDraft(composed.touch, composed.prospect);
               toast({ title: "Pending draft created", description: "Review it before any approval or send." });
@@ -1572,6 +1581,7 @@ export default function OutreachCampaignDetailPage() {
             <CardTitle className="text-base">
               Prospects ({visibleProspects.length}{visibleProspects.length !== prospects.length ? ` of ${prospects.length}` : ""})
             </CardTitle>
+            {campaign.conferenceId && <p className="text-xs text-muted-foreground">Your campaign contacts · Choose Meeting prep for relationship history, conversation angles, and calendar invitations.</p>}
           </CardHeader>
           <CardContent>
             {prospects.length === 0 ? (
@@ -1709,6 +1719,10 @@ export default function OutreachCampaignDetailPage() {
                         <div className="font-medium">{p.name || p.email || "—"}</div>
                         {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
                         <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
+                        {campaign.conferenceId && <Button variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={() => {
+                          setMeetingContact({ campaignId: campaign.id, contactId: p.id });
+                          void queryClient.invalidateQueries({ queryKey: [`/api/sales-outreach/campaigns/${campaign.id}/meetings`] });
+                        }} data-testid={`meeting-prep-${p.id}`} aria-label={`Open meeting prep for ${p.name || p.email || "contact"}`}><CalendarDays className="mr-1 h-3 w-3" />Meeting prep</Button>}
                       </TableCell>
                       <TableCell className="text-sm">{p.companyName ?? "—"}</TableCell>
                       <TableCell className={`text-center font-semibold ${scoreColor(p.icpScore)}`}>
@@ -1732,7 +1746,8 @@ export default function OutreachCampaignDetailPage() {
                           )
                         )}
                       </TableCell>
-                      <TableCell className="text-right space-x-1 whitespace-nowrap">
+                      <TableCell className="w-[300px] min-w-[250px]">
+                        <div className="flex flex-wrap items-center justify-end gap-1">
                         {p.researchDossier && (
                           <Button variant="ghost" size="sm" onClick={() => setDossier(p)} data-testid={`view-dossier-${p.id}`}>Dossier</Button>
                         )}
@@ -1869,6 +1884,7 @@ export default function OutreachCampaignDetailPage() {
                             ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             : <X className="w-3.5 h-3.5" />}
                         </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

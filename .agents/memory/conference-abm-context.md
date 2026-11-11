@@ -9,6 +9,12 @@ Conference meeting development must distinguish relationship roles such as custo
 
 **How to apply:** When designing this addition, reuse confirmed event facts across ABM and Event Promotion instead of creating conflicting briefs. Keep this as a design requirement, not a claim that integration has shipped. Do not infer attendance, speaking, or exhibiting from generic goals; follow the explicit event-confirmation rules.
 
+Event outreach should have one canonical contact directory and reuse the original event goals and brief rather than requiring duplicate setup.
+
+**Why:** The user called the stacked event workspace nearly unusable: too tall, the same contacts shown twice, and no visible reuse of the original planning context.
+
+**How to apply:** Keep setup secondary to contact work, open per-person prep from the canonical list, preserve private overrides, and carry original event and campaign context into generation. Inheriting context is not consent to enable a workflow, confirm attendance, or send anything.
+
 Wiza and Sales Navigator are external research tools for this workflow. Use Apollo in-app; when it produces no usable contacts, support reviewed imports of contacts the operator finds externally rather than adding Wiza or Sales Navigator integrations.
 
 **Why:** The user explicitly chose external Wiza and Sales Navigator research as the fallback to Apollo.

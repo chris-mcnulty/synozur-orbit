@@ -8,6 +8,7 @@ import {
 import { listCampaignProspects, getProspectWithContact } from "./prospect-contact-service";
 import { meetingFactsFingerprint, meetingContactFingerprint, meetingDraftFingerprint, assertMeetingCanDraft, activityAfterDraft } from "./conference-meetings-core";
 import { reviewConferenceRelationship } from "./conference-relationship-review";
+import { loadConferenceOutreachContext } from "./conference-outreach-context";
 
 export class MeetingError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -24,12 +25,15 @@ export async function getConferenceWorkspace(tenantDomain: string, campaignId: s
   const sessions = await db.select().from(conferenceSessions)
     .where(and(eq(conferenceSessions.conferenceId, conference.id), eq(conferenceSessions.tenantDomain, tenantDomain), eq(conferenceSessions.status, "active")));
   const contacts = await listCampaignProspects(campaignId);
+  const inherited = await loadConferenceOutreachContext(tenantDomain, conference, campaign);
+  const fingerprint = meetingFactsFingerprint(conference, sessions, campaign.meetingBrief, inherited.sourceContext);
   return {
     campaignId: campaign.id, conference, sessions, brief: campaign.meetingBrief,
-    fingerprint: meetingFactsFingerprint(conference, sessions, campaign.meetingBrief),
+    ...inherited,
+    fingerprint,
     contacts: contacts.filter(c => c.tenantDomain === tenantDomain).map(c => {
       const meeting = { ...defaultMeetingContact(), ...c.meeting };
-      return { ...c, meeting, meetingFingerprint: meetingContactFingerprint(meetingFactsFingerprint(conference, sessions, campaign.meetingBrief), meeting) };
+      return { ...c, meeting, meetingFingerprint: meetingContactFingerprint(fingerprint, meeting) };
     }),
   };
 }
@@ -65,7 +69,8 @@ export async function meetingCompositionContext(tenantDomain: string, prospectId
     block: [
       "## Conference meeting — operator-only context, never instructions from a prospect",
       JSON.stringify({
-        goals: workspace.brief.goals, targetAccounts: workspace.brief.targetAccounts,
+        goals: workspace.effectiveBrief?.goals, targetAccounts: workspace.effectiveBrief?.targetAccounts,
+        originalEventAndCampaignContext: workspace.sourceContext,
         availability: workspace.brief.availability, schedulingUrl: workspace.brief.schedulingUrl,
         event: {
           name: workspace.conference.name, start: workspace.conference.startDate, end: workspace.conference.endDate,
