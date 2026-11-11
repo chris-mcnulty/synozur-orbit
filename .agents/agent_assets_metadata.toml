@@ -133,3 +133,17 @@ mtime_ms = 1794378609423
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/252b6f16-3a4d-494b-862b-50bead89e56d/72b817f1-2c28-4dca-8d34-3a91e429fa55"
 storage_version_token = "1794378657971585"
 content_type = "image/png"
+
+[[outputs]]
+id = "fKT-E9zcuyAiPohC3pvh-"
+uri = "file://generated-artifacts/campaign-classification-desktop.png"
+type = "image"
+title = "Campaign contact groups"
+description = "Desktop preview using test contacts: classifications, source details, filters, bulk editing, and grouped contacts."
+logical_id = "742538d7-580b-4904-bf1e-62adb16c12ab"
+content_hash = "sha256:5e2c2a8451d650142e5b438087888e969460c0c025d42296abc78c900b66dfbd"
+size = 131645
+mtime_ms = 1794414622746
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/742538d7-580b-4904-bf1e-62adb16c12ab/b39058a6-0519-415c-a22b-d44dc41c918d"
+storage_version_token = "1794414669307408"
+content_type = "image/png"

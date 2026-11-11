@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { registerRoughContactImportRoutes } from "./rough-contact-import";
 import { registerApolloRevealRoutes } from "./apollo-reveal";
+import { registerCampaignClassificationRoutes } from "./campaign-classification";
 import { signApolloPreviews } from "../services/apollo-reveal-core";
 import { z } from "zod";
 import { db } from "../db";
@@ -163,6 +164,7 @@ const NUMERIC_CAPS: { key: keyof typeof DEFAULT_SETTINGS; min: number; max: numb
 ];
 
 export function registerSalesOutreachRoutes(app: Express) {
+  registerCampaignClassificationRoutes(app);
   registerRoughContactImportRoutes(app);
   registerApolloRevealRoutes(app);
   // Readiness — informational, ungated (matches /api/marketing/context-readiness).

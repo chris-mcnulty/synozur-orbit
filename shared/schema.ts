@@ -5330,6 +5330,7 @@ export const prospects = pgTable("prospects", {
   // The person this membership belongs to (single contact spine).
   contactId: varchar("contact_id").notNull().references((): AnyPgColumn => marketingContacts.id, { onDelete: "cascade" }),
   source: text("source").notNull().default("manual"), // hubspot | manual | linkedin | import
+  classification: jsonb("classification").$type<import("./campaign-classification").CampaignClassification>(),
   // ICP qualification.
   icpScore: integer("icp_score"),
   scoreBreakdown: jsonb("score_breakdown").$type<ProspectScoreBreakdown>(),

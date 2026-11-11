@@ -218,7 +218,10 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
     },
     onSuccess: async (saved: MeetingContact) => {
       qc.setQueryData<Workspace>(key, (old) => old ? { ...old, contacts: old.contacts.map((contact) => contact.id === activeId ? { ...contact, meeting: { ...contact.meeting, ...saved } } : contact) } : old);
-      await qc.invalidateQueries({ queryKey: key });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: key }),
+        qc.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns", campaignId, "prospects"] }),
+      ]);
       setError("");
     },
     onError: (e) => setError(`Could not save contact prep: ${messageOf(e)}`),

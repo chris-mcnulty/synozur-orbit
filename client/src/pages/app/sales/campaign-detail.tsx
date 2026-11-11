@@ -36,6 +36,11 @@ import {
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
+import { useCampaignClassification } from "@/components/sales/use-campaign-classification";
+import { classificationSearchText } from "@/components/sales/campaign-classification-helpers";
+import { ClassificationToolbar, ClassificationRows, ClassificationSelect, ClassificationBadges, ClassificationSource, ClassificationEditButton, ClassificationEditor } from "@/components/sales/campaign-classification";
+import { campaignSourceLabel, type CampaignClassification } from "@shared/campaign-classification";
+import type { MeetingContact } from "@shared/conference-meetings";
 import ComposeClarificationDialog from "@/components/sales/compose-clarification";
 import { useComposeClarifications } from "@/hooks/use-compose-clarifications";
 import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
@@ -207,6 +212,8 @@ function TagInput({
 
 interface Prospect {
   id: string;
+  classification?: CampaignClassification | null;
+  meeting?: MeetingContact | null;
   name: string;
   title: string | null;
   companyName: string | null;
@@ -839,7 +846,7 @@ export default function OutreachCampaignDetailPage() {
   const visibleProspects = useMemo(() => {
     let list = [...prospects];
     const q = searchQ.toLowerCase().trim();
-    if (q) list = list.filter((p) => (p.name ?? "").toLowerCase().includes(q) || (p.email?.toLowerCase() ?? "").includes(q) || (p.companyName?.toLowerCase() ?? "").includes(q) || (p.title?.toLowerCase() ?? "").includes(q));
+    if (q) list = list.filter((p) => (p.name ?? "").toLowerCase().includes(q) || (p.email?.toLowerCase() ?? "").includes(q) || (p.companyName?.toLowerCase() ?? "").includes(q) || (p.title?.toLowerCase() ?? "").includes(q) || classificationSearchText(p).includes(q));
     const statuses = STATUS_GROUPS[statusTab] ?? [];
     if (statuses.length) list = list.filter((p) => statuses.includes(p.status));
     if (sourceFilter !== "all") list = list.filter((p) => p.source === sourceFilter);
@@ -865,6 +872,14 @@ export default function OutreachCampaignDetailPage() {
     });
     return list;
   }, [prospects, searchQ, statusTab, sourceFilter, scoreFilter, sortKey, sortDir]);
+  const classification = useCampaignClassification({
+    campaignId: id, people: visibleProspects, role: user?.role,
+    filterScope: JSON.stringify([getTabTenantId(), searchQ, statusTab, sourceFilter, scoreFilter]),
+  });
+  function clearPeopleFilters() {
+    classification.clearFilters();
+    setSearchQ(""); setStatusTab("all"); setSourceFilter("all"); setScoreFilter("all");
+  }
 
   const { data: performance } = useQuery<{
     total: number;
@@ -1579,7 +1594,7 @@ export default function OutreachCampaignDetailPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
-              Prospects ({visibleProspects.length}{visibleProspects.length !== prospects.length ? ` of ${prospects.length}` : ""})
+              Prospects ({classification.filteredPeople.length}{classification.filteredPeople.length !== prospects.length ? ` of ${prospects.length}` : ""})
             </CardTitle>
             {campaign.conferenceId && <p className="text-xs text-muted-foreground">Your campaign contacts · Choose Meeting prep for relationship history, conversation angles, and calendar invitations.</p>}
           </CardHeader>
@@ -1645,7 +1660,7 @@ export default function OutreachCampaignDetailPage() {
                       >
                         <option value="all">All sources</option>
                         {uniqueSources.map((s) => (
-                          <option key={s} value={s} className="capitalize">{s}</option>
+                          <option key={s} value={s} className="capitalize">{campaignSourceLabel(s)}</option>
                         ))}
                       </select>
                     )}
@@ -1663,9 +1678,20 @@ export default function OutreachCampaignDetailPage() {
                     </select>
                   </div>
                 </div>
+              <ClassificationToolbar people={visibleProspects} filters={classification.filters}
+                onFiltersChange={classification.setFilters} groupBy={classification.groupBy}
+                onGroupByChange={classification.setGroupBy} selectedCount={classification.selectedIds.length}
+                canEdit={classification.canEdit} onEdit={() => classification.openEditor(classification.selectedIds)}
+                onClear={clearPeopleFilters} uniqueCount={classification.filteredPeople.length}
+                membershipCount={classification.membershipCount} />
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {classification.canEdit && <TableHead className="w-9"><ClassificationSelect
+                      label="Select visible contacts (up to 200)"
+                      checked={classification.selectedIds.length > 0 ? classification.selectedIds.length === Math.min(200, classification.filteredPeople.length) ? true : "indeterminate" : false}
+                      disabled={!classification.filteredPeople.length} onChange={classification.toggleAll}
+                      testId="classification-select-all" /></TableHead>}
                     <TableHead
                       className="cursor-pointer select-none whitespace-nowrap"
                       onClick={() => toggleSort("name")}
@@ -1705,19 +1731,26 @@ export default function OutreachCampaignDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleProspects.length === 0 ? (
+                  {classification.filteredPeople.length === 0 ? (
                     <TableRow>
-                      <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan={classification.canEdit ? 7 : 6} className="py-8 text-center text-sm text-muted-foreground">
                         No prospects match this filter.{" "}
-                        <button className="underline" onClick={() => { setSearchQ(""); setStatusTab("all"); setSourceFilter("all"); }}>Clear filters</button>
+                        <button className="underline" onClick={clearPeopleFilters}>Clear filters</button>
                       </td>
                     </TableRow>
                   ) : null}
-                  {visibleProspects.map((p) => (
-                    <TableRow key={p.id} data-testid={`prospect-${p.id}`}>
+                  <ClassificationRows groups={classification.groups} grouped={classification.groupBy !== "none"}
+                    colSpan={classification.canEdit ? 7 : 6} renderPerson={(p, rowKey) => (
+                    <TableRow key={rowKey} data-testid={`prospect-${p.id}`}>
+                      {classification.canEdit && <TableCell><ClassificationSelect
+                        checked={classification.selectedIds.includes(p.id)}
+                        disabled={!classification.selectedIds.includes(p.id) && classification.selectedIds.length >= 200}
+                        onChange={checked => classification.togglePerson(p.id, checked)}
+                        label={`Select ${p.name || p.email || "contact"}`} testId={`classification-select-${p.id}`} /></TableCell>}
                       <TableCell>
                         <div className="font-medium">{p.name || p.email || "—"}</div>
                         {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
+                        <ClassificationBadges person={p} />
                         <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
                         {campaign.conferenceId && <Button variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={() => {
                           setMeetingContact({ campaignId: campaign.id, contactId: p.id });
@@ -1734,20 +1767,11 @@ export default function OutreachCampaignDetailPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {p.source && (
-                          p.source === "hubspot" ? (
-                            <Badge variant="outline" className="text-[10px] border-orange-400 text-orange-600 dark:text-orange-400" data-testid={`badge-source-hubspot-${p.id}`}>
-                              From HubSpot
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] capitalize">
-                              {p.source}
-                            </Badge>
-                          )
-                        )}
+                        <ClassificationSource person={p} />
                       </TableCell>
                       <TableCell className="w-[300px] min-w-[250px]">
                         <div className="flex flex-wrap items-center justify-end gap-1">
+                        {classification.canEdit && <ClassificationEditButton person={p} onEdit={() => classification.openEditor([p.id])} />}
                         {p.researchDossier && (
                           <Button variant="ghost" size="sm" onClick={() => setDossier(p)} data-testid={`view-dossier-${p.id}`}>Dossier</Button>
                         )}
@@ -1887,7 +1911,7 @@ export default function OutreachCampaignDetailPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )} />
                 </TableBody>
               </Table>
               </>
@@ -2949,6 +2973,9 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       {/* Operator-only compose clarification; blocked model output is never shown as a recipient draft. */}
+      {classification.editingPeople.length > 0 && <ClassificationEditor key={classification.editorKey}
+        people={classification.editingPeople} onClose={classification.closeEditor}
+        onSave={classification.save} isSaving={classification.isSaving} error={classification.error} />}
       {composeRecovery && <ComposeClarificationDialog
         open={clarifications.open}
         onOpenChange={clarifications.setOpen}
