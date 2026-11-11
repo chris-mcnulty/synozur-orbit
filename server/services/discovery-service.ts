@@ -253,7 +253,7 @@ export async function discoverProspects(
         backend = "web";
         // Web fallback researches broadly instead of mirroring the filters
         // that already failed.
-        input.broaden = !company;
+        input.broaden = true;
       }
     } catch (err) {
       if (err instanceof ApolloDiscoveryError) {
@@ -263,7 +263,7 @@ export async function discoverProspects(
         apolloDiagnostics = undefined; // no filters to show since the call never succeeded
         fallbackReason = `Apollo search failed (${err.message}) — showing web discovery results instead.`;
         backend = "web";
-        input.broaden = !company;
+        input.broaden = true;
       } else {
         throw err;
       }

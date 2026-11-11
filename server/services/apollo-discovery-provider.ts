@@ -215,7 +215,7 @@ function normalizePersonTitles(roles: string[]): string[] {
       // Strip context qualifiers that follow the title: "at a ...", "for ...",
       // "in ...", "managing ...", "with ...", "overseeing ...", etc.
       const clean = part
-        .replace(/\s+(at|for|in|of|with|managing|overseeing|within|across|reporting)\s+.*/i, "")
+        .replace(/\s+(at|for|in|with|managing|overseeing|within|across|reporting)\s+.*/i, "")
         .trim();
       if (clean.length <= 1 || clean.length >= 80) continue;
 
@@ -760,12 +760,12 @@ export async function searchApollo(
       }, input.company!));
     if (employers.length) {
       const employerById = new Map(employers.map(org => [org.id ?? org.organization_id!, org]));
-      const people = await apolloPeopleSearch(apiKey, {
+      const scopedBody = {
         ...baseBody, organization_ids: [...employerById.keys()],
-      });
+      };
       // Only retain current employers, not historical-domain matches. Copy
       // authoritative organization metadata when the people API omits it.
-      allPeople = people.filter(person => person.organization?.id && employerById.has(person.organization.id))
+      const inScope = (people: ApolloPerson[]) => people.filter(person => person.organization?.id && employerById.has(person.organization.id))
         .map(person => {
           const org = employerById.get(person.organization!.id!)!;
           return { ...person, organization: {
@@ -773,6 +773,37 @@ export async function searchApollo(
             primary_domain: org.primary_domain ?? org.website_url,
           } };
         });
+      allPeople = inScope(await apolloPeopleSearch(apiKey, scopedBody));
+      if (allPeople.length === 0) {
+        // A selected employer is authoritative. Persona industry prose should
+        // not prevent finding its people. Retry a bounded number of times,
+        // preserving employer IDs and geography in EVERY request.
+        const tiers: RelaxationTier[] = [];
+        let current: Record<string, unknown> = scopedBody;
+        if (current.q_keywords || current.q_organization_keyword_tags) {
+          const { q_keywords: _keywords, q_organization_keyword_tags: _tags, ...rest } = current;
+          current = rest;
+          tiers.push({ label: "industry keywords removed within the selected company", body: current });
+        }
+        if (current.person_titles) {
+          const { person_titles: _titles, ...rest } = current;
+          current = { ...rest, person_seniorities: DECISION_MAKER_SENIORITIES };
+          tiers.push({ label: "titles broadened to senior decision-makers within the selected company", body: current });
+        }
+        for (const tier of tiers) {
+          console.log(`[Apollo] 0 company matches — relaxing: ${tier.label}`);
+          try {
+            const people = inScope(await apolloPeopleSearch(apiKey, tier.body));
+            if (people.length) {
+              allPeople = people;
+              relaxationApplied = tier.label;
+              break;
+            }
+          } catch {
+            console.warn(`[Apollo] selected-company relaxation failed: ${tier.label}`);
+          }
+        }
+      }
     }
   } else if (finalAccountList.length <= 10) {
     // Fits in a single call.

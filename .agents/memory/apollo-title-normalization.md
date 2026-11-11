@@ -14,6 +14,10 @@ Apollo's `person_titles` filter does fuzzy matching against actual LinkedIn job 
 2. Strips trailing qualifiers: "at a ...", "for ...", "managing ...", "overseeing ...", "within ...", etc.
 3. Dedupes case-insensitively, caps at 10 (Apollo API limit)
 
+Preserve “of” inside real titles such as “Head of Microsoft Practice” and “Director of Alliances”; it is not a trailing-context delimiter.
+
+**Why:** Removing the phrase after “of” turns a specific job title into a generic word such as “Head”, reducing search relevance.
+
 Called in `searchApollo()` before building `person_titles`: `const titles = normalizePersonTitles(criteria.roles)`.
 
 ## AUM ≠ headcount (second issue)

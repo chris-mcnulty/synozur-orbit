@@ -64,7 +64,7 @@ describe("per-search company restriction", () => {
   it("keeps the restriction through Apollo's web fallback", async () => {
     const result = await discoverProspects("test.example", "campaign", { company: "Acme", backend: "apollo" });
     expect(io.apollo).toHaveBeenCalledWith("test.example", expect.objectContaining({ company: "Acme", namedAccounts: ["Acme"] }));
-    expect(io.web).toHaveBeenCalledWith("test.example", expect.objectContaining({ company: "Acme", broaden: false }));
+    expect(io.web).toHaveBeenCalledWith("test.example", expect.objectContaining({ company: "Acme", broaden: true }));
     expect(result.candidates).toHaveLength(1);
     expect(result.fallbackReason).toContain("restricted to the selected company");
   });

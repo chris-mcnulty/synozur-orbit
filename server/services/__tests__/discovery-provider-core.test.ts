@@ -21,6 +21,10 @@ describe("discovery-provider-core", () => {
     assert.ok(prompt.includes('HARD COMPANY RESTRICTION: "Acme"'));
     assert.ok(prompt.includes("Never include similar companies"));
     assert.ok(prompt.includes("companyDomain"));
+    assert.ok(prompt.includes("Broaden title wording ONLY within the selected company"));
+    assert.ok(prompt.includes("Keep the stated geographies and hard exclusions"));
+    assert.ok(prompt.includes("do not claim anyone is attending"));
+    assert.ok(!prompt.includes("Include adjacent industries"));
   });
 
   it("matches company names with punctuation and legal suffixes but not similar companies", () => {

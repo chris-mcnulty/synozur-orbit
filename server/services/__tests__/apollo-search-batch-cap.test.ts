@@ -94,6 +94,83 @@ describe("searchApollo — bounded batch call count", () => {
     assert.equal(result.candidates[0].companyDomain, "acme.com");
   });
 
+  it("retries restrictive industry and role filters without widening the selected employer or geography", async () => {
+    const bodies: Record<string, any>[] = [];
+    const fetchMock = vi.fn(async (_url: string, opts?: RequestInit) => {
+      const body = JSON.parse(String(opts?.body));
+      bodies.push(body);
+      const data = !body.organization_ids
+        ? { organizations: [{ id: "org-accenture", name: "Accenture plc", primary_domain: "accenture.com" }] }
+        : body.person_titles || body.q_keywords || body.q_organization_keyword_tags
+          ? { people: [] }
+          : { people: [
+              { name: "Alice Chen", title: "Microsoft Alliance Lead", organization: { id: "org-accenture", name: "Accenture plc" } },
+              { name: "Bob Jones", organization: { id: "org-other", name: "Unrelated Consulting" } },
+            ] };
+      return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchApollo("tenant.example", {
+      company: "Accenture",
+      criteria: {
+        roles: ["Head of Microsoft Practice", "Director of Alliances"],
+        industries: ["Large regulated or content-intensive enterprises"],
+        geographies: ["United States", "United Kingdom"],
+      },
+      limit: 25,
+    });
+    const peopleBodies = bodies.filter(body => body.organization_ids);
+    assert.equal(peopleBodies.length, 3);
+    assert.deepEqual(peopleBodies[0].person_titles, ["Head of Microsoft Practice", "Director of Alliances"]);
+    assert.ok(peopleBodies[0].q_keywords);
+    assert.equal(peopleBodies[1].q_keywords, undefined);
+    assert.deepEqual(peopleBodies[1].person_titles, peopleBodies[0].person_titles);
+    assert.equal(peopleBodies[2].person_titles, undefined);
+    assert.ok(peopleBodies[2].person_seniorities.length);
+    for (const body of peopleBodies) {
+      assert.deepEqual(body.organization_ids, ["org-accenture"]);
+      assert.deepEqual(body.person_locations, ["United States", "United Kingdom"]);
+      assert.equal(body.organization_names, undefined);
+    }
+    assert.equal(result.candidates.length, 1);
+    assert.equal(result.candidates[0].companyName, "Accenture plc");
+    assert.match(result.relaxationApplied!, /within the selected company/);
+    assert.equal(result.expansionSummary, undefined);
+  });
+
+  it("does not broaden the employer when lookup has no exact match", async () => {
+    const fetchMock = vi.fn(async () => {
+      const data = { organizations: [{ id: "org-other", name: "Acme Consulting", primary_domain: "other.com" }] };
+      return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchApollo("tenant.example", { criteria: { roles: ["CTO"] }, company: "Acme", limit: 10 });
+    assert.equal(fetchMock.mock.calls.length, 1);
+    assert.equal(result.candidates.length, 0);
+  });
+
+  it("stops after a successful industry-only retry, preserving exact titles", async () => {
+    const bodies: Record<string, any>[] = [];
+    const fetchMock = vi.fn(async (_url: string, opts?: RequestInit) => {
+      const body = JSON.parse(String(opts?.body));
+      bodies.push(body);
+      const data = !body.organization_ids
+        ? { organizations: [{ id: "org-acme", name: "Acme" }] }
+        : body.q_keywords
+          ? { people: [] }
+          : { people: [{ name: "Alice Chen", organization: { id: "org-acme", name: "Acme" } }] };
+      return { ok: true, status: 200, json: async () => data, text: async () => JSON.stringify(data) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await searchApollo("tenant.example", {
+      criteria: { roles: ["Microsoft Alliance Director"], industries: ["An overly descriptive industry"] },
+      company: "Acme", limit: 10,
+    });
+    assert.equal(bodies.length, 3);
+    assert.deepEqual(bodies[2].person_titles, ["Microsoft Alliance Director"]);
+    assert.equal(result.relaxationApplied, "industry keywords removed within the selected company");
+  });
+
   it("caps people-search batches at MAX_PEOPLE_SEARCH_BATCHES for a large named-account list", async () => {
     // 35 accounts → 4 natural batches of 10 — the cap should limit it to 3.
     const accounts = makeAccountList(35);

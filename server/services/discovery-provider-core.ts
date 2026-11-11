@@ -135,7 +135,15 @@ export function buildDiscoveryPrompt(input: DiscoverySearchInput): string {
     "Every candidate MUST have a full name (first name AND last name). If you can only find a first name for someone — for example because a source only lists a first name — skip that person entirely and do not include them in the results.",
     "",
     broaden
-      ? [
+      ? input.company ? [
+          "A strict database search returned no matches. Broaden title wording ONLY within the selected company:",
+          "- Accept equivalent leadership and practice titles for the same buying or partnership role; use the campaign goal to rank relevance.",
+          "- Industry descriptions and company-size labels are context, not extra keyword requirements for this known employer.",
+          "- Keep the stated geographies and hard exclusions. Never switch to similar companies or treat subsidiaries as the selected employer without verification.",
+          "- Research the selected company's practice leaders, alliance teams, official leadership pages, press releases and public speaker profiles.",
+          "- The event goal does not establish attendance: do not claim anyone is attending or exhibiting without explicit evidence.",
+          "",
+        ].join("\n") : [
           "IMPORTANT — a strict database search with these exact filters already returned zero results, so interpret the intent broadly rather than literally:",
           "- Treat each city as its whole metro area (include surrounding suburbs and nearby business hubs).",
           "- Include adjacent industries that share the same buyers and problems (e.g. fintech also means banks, credit unions, insurers, wealth managers).",

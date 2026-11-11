@@ -2728,9 +2728,9 @@ export default function OutreachCampaignDetailPage() {
               diagnostics={discoverResult.apolloDiagnostics}
             />
           )}
-          {campaign.conferenceId && discoverResult && (discoverResult.backend !== "apollo" || !!discoverResult.fallbackReason) && (
+          {campaign.conferenceId && discoverResult && discoverResult.foundCount === 0 && (discoverResult.backend !== "apollo" || !!discoverResult.fallbackReason) && (
             <div className="rounded-md border border-[#d9ded5] bg-[#f5f4ec] px-3 py-2 text-xs text-[#52665c]">
-              Apollo did not return an event contact set. You can research in Wiza or Sales Navigator outside Orbit, then import the people you have reviewed in the meeting workspace.
+              No matching contacts were returned by the available discovery sources. This does not mean the company has no relevant people or that anyone's event attendance was checked. You can also research externally in Wiza or Sales Navigator, then paste or import reviewed contacts.
             </div>
           )}
 
