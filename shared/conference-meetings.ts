@@ -97,6 +97,9 @@ export type MeetingContact = z.infer<typeof meetingContactEditSchema> & {
 export interface MeetingDraftContext {
   fingerprint: string;
   historyCheckedAt: string;
+  /** Server-recorded direction; never accepted from an approval request. */
+  operatorBrief?: string;
+  relationshipReview?: RelationshipReview;
 }
 export interface WarmConferenceContact {
   hubspotContactId: string;

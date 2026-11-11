@@ -32,10 +32,11 @@ export function meetingContactFingerprint(facts: string, meeting: MeetingContact
   })).digest("hex");
 }
 
-export function meetingDraftFingerprint(facts: string, meeting: MeetingContact): string {
+export function meetingDraftFingerprint(facts: string, meeting: MeetingContact, operatorBrief?: string): string {
   return createHash("sha256").update(JSON.stringify({
     relationship: meetingContactFingerprint(facts, meeting), selectedAngleId: meeting.selectedAngleId,
     selectedHook: meeting.selectedHook, selectedAsk: meeting.selectedAsk,
+    ...(operatorBrief?.trim() ? { operatorBrief: operatorBrief.trim() } : {}),
   })).digest("hex");
 }
 
@@ -90,11 +91,15 @@ export function proposeMeetingAngles(
   return angles.map(angle => ({ ...angle, evidence: [...angle.evidence, ...sharedEvidence] }));
 }
 
-export function assertMeetingCanDraft(meeting: MeetingContact, fingerprint: string): void {
+export function assertMeetingCanDraft(meeting: MeetingContact, fingerprint: string, operatorBrief?: string): void {
   if (["do_not_contact", "declined", "unavailable"].includes(meeting.stage) || meeting.attendance === "not_attending") {
     throw new Error("This contact is unavailable or excluded from event outreach.");
   }
   if (meeting.review?.suppressed) throw new Error("This contact is suppressed. Event outreach is blocked.");
+  if (operatorBrief?.trim()) {
+    if (!meeting.review) throw new Error("Review the relationship before drafting from your brief.");
+    return;
+  }
   if (!meeting.review || !meeting.angles?.some(a => a.id === meeting.selectedAngleId) || !meeting.selectedHook || !meeting.selectedAsk) {
     throw new Error("Review the relationship, generate angles, and select an angle before drafting.");
   }

@@ -20,3 +20,9 @@ Wiza and Sales Navigator are external research tools for this workflow. Use Apol
 **Why:** The user explicitly chose external Wiza and Sales Navigator research as the fallback to Apollo.
 
 **How to apply:** Preserve source attribution on reviewed imports. Do not silently invoke either external provider or treat a Sales Navigator subscription as automated API access.
+
+An explicit operator-supplied drafting brief can replace generated-angle selection for event outreach, but not relationship checks or send approval.
+
+**Why:** The user approved direct drafting after a detailed message brief was repeatedly blocked by the generated-angle prerequisite.
+
+**How to apply:** Review current relationship history automatically for this path, preserve suppression and exclusion rules, and retain the server-reviewed context with the pending draft for approval validation. Never treat drafting as consent to send or invent recipient-specific personalization.

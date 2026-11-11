@@ -188,7 +188,7 @@ export async function composeTouch(
 
   const resource = await resolveStepResource(campaign.id, stepNumber);
   const meetingContext = campaign.meetingBrief?.enabled
-    ? await (await import("./conference-meetings-service")).meetingCompositionContext(tenantDomain, prospectId)
+    ? await (await import("./conference-meetings-service")).meetingCompositionContext(tenantDomain, prospectId, opts.additionalContext)
     : null;
 
   // Load the linked conference so the AI uses real event facts, not invented ones.
