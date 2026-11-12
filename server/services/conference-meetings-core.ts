@@ -25,10 +25,24 @@ export function meetingFactsFingerprint(
 }
 
 export function meetingContactFingerprint(facts: string, meeting: MeetingContact): string {
+  const review = meeting.review;
+  // Preserve the historical server-produced key order, including nested
+  // activities, rather than hashing the order returned by JSONB.
+  const normalizedReview = review ? {
+    checkedAt: review.checkedAt,
+    coverage: review.coverage,
+    limitations: review.limitations,
+    activities: review.activities.map(a => ({
+      id: a.id, source: a.source, kind: a.kind, at: a.at, summary: a.summary,
+      ...(a.url !== undefined ? { url: a.url } : {}),
+    })),
+    relatedCampaigns: review.relatedCampaigns,
+    suppressed: review.suppressed,
+  } : undefined;
   return createHash("sha256").update(JSON.stringify({
     facts, relationships: meeting.relationships, attendance: meeting.attendance,
     attendanceEvidence: meeting.attendanceEvidence, notes: meeting.relationshipNotes,
-    ownerNotes: meeting.ownerNotes, review: meeting.review,
+    ownerNotes: meeting.ownerNotes, review: normalizedReview,
   })).digest("hex");
 }
 

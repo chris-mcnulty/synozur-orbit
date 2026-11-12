@@ -32,6 +32,7 @@ vi.mock("../prospect-contact-service", () => ({ ensureContactForPerson: mocks.co
 import { registerConferenceMeetingsRoutes } from "../../routes/conference-meetings";
 import { MeetingError } from "../conference-meetings-service";
 import { OutreachComposeError } from "../outreach-draft-outcome";
+import { meetingContactFingerprint } from "../conference-meetings-core";
 
 const campaignUrl = "/api/sales-outreach/campaigns/campaign/meetings";
 const personUrl = "/api/sales-outreach/prospects/person/meeting";
@@ -120,8 +121,61 @@ describe("conference meeting API permissions and persistence", () => {
     expect(mocks.compose).not.toHaveBeenCalled();
   });
   it("will not propose outreach for a suppressed contact", async () => {
+    mocks.review.mockResolvedValue({ ...review, suppressed: true });
     mocks.person.mockResolvedValue({ workspace, person: { meeting: { ...defaultMeetingContact(), review: { ...review, suppressed: true } } } });
     expect((await request(app).post(`${personUrl}/angles`).send({})).status).toBe(422);
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("checks history on first generation and fingerprints the new review", async () => {
+    const meeting = defaultMeetingContact();
+    mocks.person.mockResolvedValue({ workspace, person: { meeting } });
+    const response = await request(app).post(`${personUrl}/angles`).send({});
+    expect(response.status).toBe(200);
+    expect(mocks.person).toHaveBeenCalledWith("tenant", "person", "market");
+    expect(mocks.review).toHaveBeenCalledWith("tenant", "person", workspace.brief.lookbackDays, { requireAvailableSources: true });
+    expect(response.body.review).toEqual(review);
+    expect(response.body.fingerprint).toBe(meetingContactFingerprint(workspace.fingerprint, { ...meeting, review }));
+    expect(mocks.save).toHaveBeenCalledWith("tenant", "person", expect.objectContaining({
+      review, angles: response.body.angles, anglesFingerprint: response.body.fingerprint,
+      selectedAngleId: null, selectedHook: "", selectedAsk: "",
+    }));
+    expect(mocks.compose).not.toHaveBeenCalled();
+    expect(mocks.calendarSend).not.toHaveBeenCalled();
+  });
+  it("detects a new suppression instead of trusting the previously clear review", async () => {
+    mocks.review.mockResolvedValue({ ...review, suppressed: true });
+    expect((await request(app).post(`${personUrl}/angles`).send({})).status).toBe(422);
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.compose).not.toHaveBeenCalled();
+  });
+  it.each([
+    { stage: "do_not_contact" }, { stage: "declined" }, { stage: "unavailable" }, { attendance: "not_attending" },
+  ])("preserves explicit exclusions: %j", async exclusion => {
+    mocks.person.mockResolvedValue({ workspace, person: { meeting: { ...defaultMeetingContact(), ...exclusion } } });
+    const response = await request(app).post(`${personUrl}/angles`).send({});
+    expect(response.status).toBe(422);
+    expect(response.body.error).toContain("excluded");
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("does not reuse stale history when a source fails", async () => {
+    mocks.review.mockRejectedValue(new Error("source failure"));
+    const response = await request(app).post(`${personUrl}/angles`).send({});
+    expect(response.status).toBe(503);
+    expect(response.body.error).toMatch(/Retry Generate 3 angles.*HubSpot.*permissions/);
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.compose).not.toHaveBeenCalled();
+  });
+  it("allows checked but limited history without fabricating prior conversations", async () => {
+    mocks.review.mockResolvedValue({ ...review, coverage: "unavailable", limitations: ["This contact has no linked HubSpot record."] });
+    const response = await request(app).post(`${personUrl}/angles`).send({});
+    expect(response.status).toBe(200);
+    expect(response.body.angles[0].cautions).toContain("Do not imply a prior conversation.");
+  });
+  it.each(["Standard User", "Consultant"])("blocks %s angle generation before reviewing or writing", async userRole => {
+    mocks.ctx.mockResolvedValue({ tenantDomain: "tenant", marketId: "market", userRole });
+    expect((await request(app).post(`${personUrl}/angles`).send({})).status).toBe(403);
+    expect(mocks.review).not.toHaveBeenCalled();
     expect(mocks.save).not.toHaveBeenCalled();
   });
 });

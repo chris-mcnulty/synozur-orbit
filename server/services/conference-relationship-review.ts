@@ -10,11 +10,12 @@ const clean = (value: unknown) => String(value ?? "").replace(/<[^>]*>/g, " ").r
 /** Bounded, permission-aware CRM read. Never equate inaccessible activity with no history. */
 export async function readHubspotRelationship(
   tenantDomain: string, contactId: string, since: Date, signal?: AbortSignal,
-): Promise<{ activities: RelationshipActivity[]; limitations: string[] }> {
+): Promise<{ activities: RelationshipActivity[]; limitations: string[]; unavailable: boolean }> {
   const activities: RelationshipActivity[] = [];
   const limitations: string[] = [];
+  let unavailable = false;
   try {
-    if (!(await storage.getHubspotConnection(tenantDomain))) return { activities, limitations: ["HubSpot is not connected."] };
+    if (!(await storage.getHubspotConnection(tenantDomain))) return { activities, limitations: ["HubSpot is not connected."], unavailable: true };
     const { accessToken, connection } = await getTenantAccessToken(tenantDomain);
     const request = async (path: string, body?: unknown) => {
       const response = await fetch(`${HUBSPOT_REST_HOST}${path}`, {
@@ -40,7 +41,10 @@ export async function readHubspotRelationship(
         const ids = (assoc.results ?? []).map((r: any) => ({ id: String(r.toObjectId) }));
         if (!ids.length) return;
         const result = await request(`/crm/v3/objects/${spec.kind}/batch/read`, { properties: spec.properties, inputs: ids });
-        if (result.errors?.length || (result.results ?? []).length !== ids.length) limitations.push(`Some HubSpot ${spec.kind} could not be read.`);
+        if (result.errors?.length || (result.results ?? []).length !== ids.length) {
+          unavailable = true;
+          limitations.push(`Some HubSpot ${spec.kind} could not be read.`);
+        }
         for (const row of result.results ?? []) {
           const p = row.properties ?? {};
           const rawAt = p.hs_timestamp ?? p.hs_lastmodifieddate ?? row.updatedAt;
@@ -55,17 +59,20 @@ export async function readHubspotRelationship(
           });
         }
       } catch {
+        unavailable = true;
         limitations.push(`HubSpot ${spec.kind} history is unavailable. Check connection permissions and CRM access.`);
       }
     }));
   } catch {
+    unavailable = true;
     limitations.push("HubSpot history is unavailable. Check the connection.");
   }
-  return { activities, limitations };
+  return { activities, limitations, unavailable };
 }
 
 export async function reviewConferenceRelationship(
   tenantDomain: string, prospectId: string, lookbackDays: number,
+  options: { requireAvailableSources?: boolean } = {},
 ): Promise<RelationshipReview> {
   const [person] = await db.select({ membership: prospects, contact: marketingContacts })
     .from(prospects).innerJoin(marketingContacts, eq(marketingContacts.id, prospects.contactId))
@@ -84,7 +91,10 @@ export async function reviewConferenceRelationship(
     .where(and(eq(emailSuppressions.tenantDomain, tenantDomain), eq(emailSuppressions.email, person.contact.email.toLowerCase()))).limit(1) : [];
   const crm = person.contact.hubspotContactId
     ? await readHubspotRelationship(tenantDomain, person.contact.hubspotContactId, since)
-    : { activities: [], limitations: ["This contact has no linked HubSpot record."] };
+    : { activities: [], limitations: ["This contact has no linked HubSpot record."], unavailable: false };
+  if (options.requireAvailableSources && crm.unavailable) {
+    throw new Error("HubSpot history could not be checked. Reconnect HubSpot or check its CRM activity permissions, then retry Generate 3 angles.");
+  }
   const limitations = [...crm.limitations, "Only activity logged in Orbit and accessible HubSpot records is included; external mailboxes and LinkedIn messages are not covered."];
   if (touches.length > 200) limitations.push("Orbit history is limited to the 200 most recent activities.");
   const activities: RelationshipActivity[] = [

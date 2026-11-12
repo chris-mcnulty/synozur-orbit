@@ -47,6 +47,17 @@ describe("conference meeting facts and validation", () => {
     const contact = defaultMeetingContact();
     expect(meetingDraftFingerprint("facts", { ...contact, selectedAsk: "New ask" })).not.toBe(meetingDraftFingerprint("facts", contact));
   });
+  it("keeps angle fingerprints current through recursively reordered JSONB snapshots", () => {
+    const contact = { ...defaultMeetingContact(), review: {
+      ...review, activities: [{ id: "activity", source: "hubspot" as const, kind: "note", at: review.checkedAt, summary: "Discuss priorities", url: "https://example.com" }],
+    } };
+    const reorder = (value: any): any => Array.isArray(value) ? value.map(reorder)
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).reverse().map(([key, v]) => [key, reorder(v)])) : value;
+    const fingerprint = meetingContactFingerprint("facts", contact);
+    expect(meetingContactFingerprint("facts", reorder(contact))).toBe(fingerprint);
+    expect(meetingContactFingerprint("facts", { ...contact, review: { ...contact.review, suppressed: true } })).not.toBe(fingerprint);
+    expect(meetingContactFingerprint("facts", { ...contact, review: { ...contact.review, activities: [] } })).not.toBe(fingerprint);
+  });
 });
 
 describe("grounded meeting angles", () => {

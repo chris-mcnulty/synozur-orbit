@@ -18,7 +18,9 @@ suite("conference meeting persistence and isolation", () => {
     const { eq } = await import("drizzle-orm");
     const { defaultMeetingContact, eventPresenceSchema, meetingBriefSchema } = await import("@shared/conference-meetings");
     const { ensureContactForPerson, addCampaignMembership } = await import("../prospect-contact-service");
-    const { getConferenceWorkspace, saveMeeting } = await import("../conference-meetings-service");
+    const { getConferenceWorkspace, saveMeeting, meetingCompositionContext } = await import("../conference-meetings-service");
+    const { meetingContactFingerprint, proposeMeetingAngles } = await import("../conference-meetings-core");
+    const { reviewConferenceRelationship } = await import("../conference-relationship-review");
     const [user] = await db.select({ id: users.id }).from(users).limit(1);
     expect(user, "Development test database needs an existing user").toBeDefined();
     const [event] = await db.insert(conferences).values({
@@ -45,6 +47,17 @@ suite("conference meeting persistence and isolation", () => {
     await saveMeeting("other-tenant.example.com", first.membershipId, { ...defaultMeetingContact(), stage: "do_not_contact" });
     const [unchanged] = await db.select().from(prospects).where(eq(prospects.id, first.membershipId));
     expect(unchanged.meeting?.stage).toBe("shortlisted");
+    const review = await reviewConferenceRelationship(tenant, first.membershipId, 90, { requireAvailableSources: true });
+    const reviewed = { ...result.contacts[0].meeting, review };
+    const angles = proposeMeetingAngles(event.name, reviewed, review, []);
+    await saveMeeting(tenant, first.membershipId, {
+      ...reviewed, angles, anglesFingerprint: meetingContactFingerprint(result.fingerprint, reviewed),
+      selectedAngleId: angles[1].id, selectedHook: angles[1].hook, selectedAsk: angles[1].ask,
+    });
+    const reloaded = await getConferenceWorkspace(tenant, campaign.id);
+    expect(reloaded.contacts[0].meeting.anglesFingerprint).toBe(reloaded.contacts[0].meetingFingerprint);
+    const direction = await meetingCompositionContext(tenant, first.membershipId);
+    expect(direction?.context.operatorBrief).toBe(`${angles[1].hook}\n${angles[1].ask}`);
     await db.update(conferences).set({ tenantDomain: "wrong-tenant.example.com" }).where(eq(conferences.id, event.id));
     try {
       await expect(getConferenceWorkspace(tenant, campaign.id)).rejects.toThrow("Event not found");

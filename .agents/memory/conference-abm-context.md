@@ -33,6 +33,12 @@ Normal Compose must also work when private context is empty: use the saved event
 
 **How to apply:** Cover absent, empty and whitespace-only private context in compose regression tests. Do not confuse private page-local answers with durable campaign context, and do not weaken suppression or send approval.
 
+For automatic angle-generation history checks, distinguish no linked CRM record from failure to read a linked CRM record.
+
+**Why:** Requiring CRM membership would exclude legitimate externally researched contacts, but treating a permission failure as empty history could generate misleading relationship suggestions.
+
+**How to apply:** Allow missing links with visible coverage cautions; fail with retry/connection guidance when linked history reads fail. Do not silently change the separate compose or approval policy when adjusting angle generation.
+
 Campaign contacts need overlapping classifications for why they are included: customer/partner relationships, explicit attendance, event roles such as speaker, custom tags, and source context.
 
 **Why:** The user asked to tag and group people by these dimensions, including “what came from me” versus HubSpot.

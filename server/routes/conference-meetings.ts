@@ -141,17 +141,26 @@ export function registerConferenceMeetingsRoutes(app: Express) {
   app.post(`${personBase}/angles`, route(async (req, res, ctx) => {
     const { workspace, person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     if (!workspace.brief?.enabled) throw new MeetingError("Enable and save the meeting brief first.", 422);
-    if (!person.meeting.review) throw new MeetingError("Review the relationship first.", 422);
-    if (person.meeting.review.suppressed || person.meeting.stage === "do_not_contact") throw new MeetingError("This contact is suppressed or marked do not contact.", 422);
-    const angles = proposeMeetingAngles(workspace.conference.name, person.meeting, person.meeting.review, workspace.sessions, {
+    if (["do_not_contact", "declined", "unavailable"].includes(person.meeting.stage) || person.meeting.attendance === "not_attending") {
+      throw new MeetingError("This contact is excluded from event outreach. Review and save their attendance and meeting stage before generating angles.", 422);
+    }
+    let review;
+    try {
+      review = await reviewConferenceRelationship(ctx.tenantDomain, req.params.id, workspace.brief.lookbackDays ?? 90, { requireAvailableSources: true });
+    } catch {
+      throw new MeetingError("Relationship history could not be checked. Retry Generate 3 angles. If the problem continues, check the HubSpot connection and CRM activity permissions or ask an administrator to check Orbit history access. No angles were generated.", 503);
+    }
+    if (review.suppressed) throw new MeetingError("This contact is suppressed or opted out. Angles cannot be generated.", 422);
+    const meeting = { ...person.meeting, review };
+    const angles = proposeMeetingAngles(workspace.conference.name, meeting, review, workspace.sessions, {
       goals: workspace.effectiveBrief?.goals ?? workspace.brief.goals,
       brief: [workspace.sourceContext?.eventBrief, workspace.sourceContext?.campaignBrief].filter(Boolean).join("\n\n"),
     });
-    const fingerprint = meetingContactFingerprint(workspace.fingerprint, person.meeting);
+    const fingerprint = meetingContactFingerprint(workspace.fingerprint, meeting);
     await saveMeeting(ctx.tenantDomain, req.params.id, {
-      ...person.meeting, angles, anglesFingerprint: fingerprint, selectedAngleId: null, selectedHook: "", selectedAsk: "",
+      ...meeting, angles, anglesFingerprint: fingerprint, selectedAngleId: null, selectedHook: "", selectedAsk: "",
     });
-    res.json({ angles, fingerprint });
+    res.json({ angles, fingerprint, review });
   }, true));
   app.post(`${personBase}/draft`, route(async (req, res, ctx) => {
     const data = z.object({ channel: z.enum(["email", "linkedin"]), additionalContext: z.string().trim().max(6000).optional(), contextFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().parse(req.body);
