@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { conferences, conferenceSessions, outreachCampaigns, prospects } from "@shared/schema";
 import {
@@ -47,9 +47,21 @@ export async function getMeetingPerson(tenantDomain: string, id: string, marketI
   return { workspace, person };
 }
 
-export async function saveMeeting(tenantDomain: string, id: string, meeting: MeetingContact) {
-  await db.update(prospects).set({ meeting, updatedAt: new Date() })
-    .where(and(eq(prospects.id, id), eq(prospects.tenantDomain, tenantDomain)));
+export async function saveMeeting(tenantDomain: string, id: string, meeting: MeetingContact, expectedMeeting?: MeetingContact) {
+  // Compare the entire snapshot, not the drafting fingerprint (which deliberately
+  // omits some fields). JSONB equality ignores object key order. Apply the same
+  // defaults as getConferenceWorkspace for legacy null/partial meeting records.
+  const [saved] = await db.update(prospects).set({ meeting, updatedAt: new Date() })
+    .where(and(
+      eq(prospects.id, id),
+      eq(prospects.tenantDomain, tenantDomain),
+      expectedMeeting === undefined ? undefined : sql`
+        (${JSON.stringify(defaultMeetingContact())}::jsonb || coalesce(${prospects.meeting}, '{}'::jsonb))
+        = ${JSON.stringify(expectedMeeting)}::jsonb`,
+    )).returning({ id: prospects.id });
+  if (expectedMeeting !== undefined && !saved) {
+    throw new MeetingError("This contact's meeting details changed while this operation was running. Nothing was saved. Refresh the meeting workspace, review the latest attendance, stage and notes, then retry.");
+  }
 }
 
 /** Called by every compose path, including the original compose button. */

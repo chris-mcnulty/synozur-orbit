@@ -56,6 +56,39 @@ beforeEach(() => {
 });
 
 describe("conference meeting API permissions and persistence", () => {
+  it.each(["review", "angles"])("%s rejects stale history results after concurrent contact edits", async operation => {
+    for (const edit of [
+      { stage: "do_not_contact" },
+      { attendance: "not_attending" },
+      { ownerNotes: "Coordinate with the account owner first." },
+    ]) {
+      let stored = defaultMeetingContact();
+      mocks.person.mockImplementation(async () => ({ workspace, person: { meeting: structuredClone(stored) } }));
+      mocks.save.mockImplementation(async (_tenant, _id, next, expected) => {
+        if (JSON.stringify(expected) !== JSON.stringify(stored)) {
+          throw new MeetingError("Meeting details changed. Refresh the meeting workspace and retry.");
+        }
+        stored = structuredClone(next);
+      });
+      let release!: (value: typeof review) => void;
+      let started!: () => void;
+      const historyStarted = new Promise<void>(resolve => { started = resolve; });
+      mocks.review.mockImplementation(() => {
+        started();
+        return new Promise(resolve => { release = resolve; });
+      });
+      const pending = request(app).post(`${personUrl}/${operation}`).send({}).then(response => response);
+      await historyStarted;
+      const edited = { ...defaultMeetingContact(), ...edit };
+      expect((await request(app).patch(personUrl).send(edited)).status).toBe(200);
+      release(review);
+      const response = await pending;
+      expect(response.status).toBe(409);
+      expect(response.body.error).toMatch(/Refresh.*retry/);
+      expect(stored).toEqual(edited);
+      expect(response.body.angles).toBeUndefined();
+    }
+  });
   it("previews recommendations without importing, within the active tenant and market", async () => {
     mocks.recommend.mockResolvedValue({ contacts: [], limitations: [] });
     expect((await request(app).post(`${campaignUrl}/recommendations`).send({})).status).toBe(200);
@@ -138,7 +171,7 @@ describe("conference meeting API permissions and persistence", () => {
     expect(mocks.save).toHaveBeenCalledWith("tenant", "person", expect.objectContaining({
       review, angles: response.body.angles, anglesFingerprint: response.body.fingerprint,
       selectedAngleId: null, selectedHook: "", selectedAsk: "",
-    }));
+    }), meeting);
     expect(mocks.compose).not.toHaveBeenCalled();
     expect(mocks.calendarSend).not.toHaveBeenCalled();
   });

@@ -58,6 +58,31 @@ suite("conference meeting persistence and isolation", () => {
     expect(reloaded.contacts[0].meeting.anglesFingerprint).toBe(reloaded.contacts[0].meetingFingerprint);
     const direction = await meetingCompositionContext(tenant, first.membershipId);
     expect(direction?.context.operatorBrief).toBe(`${angles[1].hook}\n${angles[1].ask}`);
+    // Exercise the real atomic database predicate, including JSONB key ordering,
+    // legacy records, concurrent edits, and tenant isolation.
+    const snapshot = reloaded.contacts[0].meeting;
+    const reordered = Object.fromEntries(Object.entries(snapshot).reverse()) as typeof snapshot;
+    await saveMeeting(tenant, first.membershipId, snapshot, reordered);
+    for (const edit of [
+      { stage: "do_not_contact" as const },
+      { attendance: "not_attending" as const },
+      { ownerNotes: "New operator instruction" },
+    ]) {
+      await saveMeeting(tenant, first.membershipId, snapshot);
+      const newer = { ...snapshot, ...edit };
+      await saveMeeting(tenant, first.membershipId, newer, snapshot);
+      await expect(saveMeeting(tenant, first.membershipId, reviewed, snapshot)).rejects.toMatchObject({
+        status: 409, message: expect.stringMatching(/Nothing was saved.*Refresh.*retry/),
+      });
+      const [preserved] = await db.select().from(prospects).where(eq(prospects.id, first.membershipId));
+      expect(preserved.meeting).toEqual(newer);
+    }
+    await expect(saveMeeting("other-tenant.example.com", first.membershipId, snapshot, snapshot)).rejects.toMatchObject({ status: 409 });
+    for (const legacy of [null, { ownerNotes: "Legacy note" }]) {
+      await db.update(prospects).set({ meeting: legacy as any }).where(eq(prospects.id, first.membershipId));
+      const normalized = { ...defaultMeetingContact(), ...legacy };
+      await saveMeeting(tenant, first.membershipId, { ...normalized, review }, normalized);
+    }
     await db.update(conferences).set({ tenantDomain: "wrong-tenant.example.com" }).where(eq(conferences.id, event.id));
     try {
       await expect(getConferenceWorkspace(tenant, campaign.id)).rejects.toThrow("Event not found");

@@ -128,14 +128,14 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     if (edit.selectedAngleId && !person.meeting.angles?.some(a => a.id === edit.selectedAngleId)) throw new MeetingError("Select an existing proposed angle.", 422);
     if (edit.stage === "meeting_booked" && (!edit.meetingAt || !edit.meetingOwner.trim())) throw new MeetingError("A booked meeting needs a time and owner.", 422);
     const meeting = { ...person.meeting, ...edit };
-    await saveMeeting(ctx.tenantDomain, req.params.id, meeting);
+    await saveMeeting(ctx.tenantDomain, req.params.id, meeting, person.meeting);
     res.json(meeting);
   }, true));
   app.post(`${personBase}/review`, route(async (req, res, ctx) => {
     const { workspace, person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     const review = await reviewConferenceRelationship(ctx.tenantDomain, req.params.id, workspace.brief?.lookbackDays ?? 90);
     // Refreshing the review intentionally invalidates old angle evidence.
-    await saveMeeting(ctx.tenantDomain, req.params.id, { ...person.meeting, review });
+    await saveMeeting(ctx.tenantDomain, req.params.id, { ...person.meeting, review }, person.meeting);
     res.json(review);
   }, true));
   app.post(`${personBase}/angles`, route(async (req, res, ctx) => {
@@ -159,7 +159,7 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     const fingerprint = meetingContactFingerprint(workspace.fingerprint, meeting);
     await saveMeeting(ctx.tenantDomain, req.params.id, {
       ...meeting, angles, anglesFingerprint: fingerprint, selectedAngleId: null, selectedHook: "", selectedAsk: "",
-    });
+    }, person.meeting);
     res.json({ angles, fingerprint, review });
   }, true));
   app.post(`${personBase}/draft`, route(async (req, res, ctx) => {
