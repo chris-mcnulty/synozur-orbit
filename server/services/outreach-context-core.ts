@@ -16,7 +16,9 @@ export function buildOutreachContextBlock(group: string | null, briefs: SegmentB
     brief ? `Group brief: ${JSON.stringify(brief)}` : "",
     "Group selection controls message direction, not factual relationship status. Never assume a contract, partnership, attendance, reply, or consent from the group label.",
     `Familiarity with this campaign's sender: ${familiarity}. This is independent of customer/partner messaging group.`,
-    familiarity === "known"
+    familiarity === "personal_friend"
+      ? "Personal friendship explicitly confirmed by the sender: write a warm, relaxed, conversational email to a friend, using their first name and natural contractions. Skip the sender bio, cold introduction, formal salutation, corporate pleasantries and stiff sales language. Keep the business purpose clear without turning this into a cold pitch. This explicit relationship controls formality over generic campaign or professional voice guidance. Do not invent shared memories, nicknames, private details, jokes, attendance, consent or commitments. Friendship does not override opt-outs, holds or factual accuracy."
+      : familiarity === "known"
       ? "Known contact: skip the sender bio and cold introduction. Use a familiar, professional opening, but never invent shared experiences, meetings or personal details."
       : familiarity === "cold"
         ? "Cold introduction: introduce the sender briefly using only supplied facts and relevant credibility. Do not invent a bio. Recorded correspondence takes precedence: if already contacted, continue that conversation rather than repeating an introduction."

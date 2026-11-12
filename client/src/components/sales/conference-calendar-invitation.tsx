@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,16 @@ export default function ConferenceCalendarInvitation({ personId, name, email, ev
   personId: string; name: string; email: string | null; eventName: string; meeting: MeetingContact; disabled: boolean;
 }) {
   const path = `/api/sales-outreach/prospects/${personId}/meeting/calendar`;
+  const queryClient = useQueryClient();
   const status = useQuery<{ connected: boolean; userId: string; invitation: CalendarInvitationState | null }>({
     queryKey: [path], queryFn: async () => (await apiRequest("GET", path)).json(),
   });
+  async function refreshCalendarAndDirectory() {
+    await status.refetch();
+    await queryClient.invalidateQueries({
+      predicate: query => query.queryKey[0] === "/api/sales-outreach/campaigns" && query.queryKey.at(-1) === "prospects",
+    });
+  }
   const [subject, setSubject] = useState(`${eventName} — meeting with ${name}`);
   const [attendees, setAttendees] = useState(email ?? "");
   const [durationMinutes, setDuration] = useState(30);
@@ -46,13 +53,13 @@ export default function ConferenceCalendarInvitation({ personId, name, email, ev
         invitation: { subject, agenda, location, durationMinutes, attendees }, fingerprint: preview.fingerprint, confirmed: true,
       })).json();
     },
-    onSuccess: async () => { setError(""); setPreview(null); await status.refetch(); },
-    onError: async e => { setError(errorMessage(e)); setPreview(null); await status.refetch(); },
+    onSuccess: async () => { setError(""); setPreview(null); await refreshCalendarAndDirectory(); },
+    onError: async e => { setError(errorMessage(e)); setPreview(null); await refreshCalendarAndDirectory(); },
   });
   const cancel = useMutation({
     mutationFn: async () => (await apiRequest("POST", `${path}/cancel`, { confirmed: true, fingerprint: stored?.preview.fingerprint })).json(),
-    onSuccess: async () => { setError(""); setCancelOpen(false); await status.refetch(); },
-    onError: async e => { setError(errorMessage(e)); setCancelOpen(false); await status.refetch(); },
+    onSuccess: async () => { setError(""); setCancelOpen(false); await refreshCalendarAndDirectory(); },
+    onError: async e => { setError(errorMessage(e)); setCancelOpen(false); await refreshCalendarAndDirectory(); },
   });
   const connect = useMutation({
     mutationFn: async () => {

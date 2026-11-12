@@ -20,3 +20,9 @@ Explicit sender facts about their own relationship take precedence over automate
 **Why:** The user supplied a known partner/reseller relationship and asked to explore the recipient's Microsoft work; drafting instead demanded vendor certification and AI practice confirmation. These are distinct relationships, and asking about work does not assert that it exists.
 
 **How to apply:** Use the supplied relationship without inventing vendor credentials, attendance or shared experiences. Ask the recipient about unknown work or omit optional claims. Never require reconfirmation merely because public research lacks evidence, and retain all consent, exclusion and hold protections.
+
+An explicitly declared personal friendship must change drafting tone, not merely appear as a contact tag. Keep personal familiarity independent of business categories such as customer or partner.
+
+**Why:** The user reported that classifying a personal friendship was not available and the system was producing overly formal emails to friends.
+
+**How to apply:** Use a warm, conversational opening without a cold introduction or invented shared memories. Do not infer friendship from a generic personal tag or business relationship. Preserve factual accuracy, holds, opt-outs and reviewed delivery.

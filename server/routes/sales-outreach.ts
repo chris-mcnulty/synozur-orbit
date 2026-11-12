@@ -3,6 +3,12 @@ import { registerRoughContactImportRoutes } from "./rough-contact-import";
 import { registerApolloRevealRoutes } from "./apollo-reveal";
 import { registerCampaignClassificationRoutes } from "./campaign-classification";
 import { registerOutreachContextRoutes } from "./outreach-context";
+import { registerOutreachWorkspaceRoutes } from "./outreach-workspace";
+import { registerEmailThreadRoutes } from "./email-thread";
+import { newProspectMetadata } from "@shared/outreach-campaign-workspace";
+import { editCampaignContact } from "../services/campaign-contact-edit-service";
+import { ClassificationError } from "../services/campaign-classification-service";
+import { campaignDirectoryMeetings } from "../services/campaign-directory-meetings";
 import { OutreachContextError, outreachContextPerson, validateOutreachContext } from "../services/outreach-context-service";
 import { effectiveScoringFacts } from "@shared/prospect-scoring";
 import { signApolloPreviews } from "../services/apollo-reveal-core";
@@ -167,6 +173,8 @@ const NUMERIC_CAPS: { key: keyof typeof DEFAULT_SETTINGS; min: number; max: numb
 export function registerSalesOutreachRoutes(app: Express) {
   registerOutreachContextRoutes(app);
   registerCampaignClassificationRoutes(app);
+  registerOutreachWorkspaceRoutes(app);
+  registerEmailThreadRoutes(app);
   registerRoughContactImportRoutes(app);
   registerApolloRevealRoutes(app);
   // Readiness — informational, ungated (matches /api/marketing/context-readiness).
@@ -420,7 +428,13 @@ export function registerSalesOutreachRoutes(app: Express) {
         inArray(externalOutreachActivities.contactId, rows.map(r => r.contactId))))
         .orderBy(externalOutreachActivities.contactId, desc(externalOutreachActivities.occurredAt), desc(externalOutreachActivities.id)) : [];
       const summaries = new Map(recent.map(({ contactId, ...summary }) => [contactId, summary]));
-      res.json(rows.map(row => ({ ...row, externalActivitySummary: summaries.get(row.contactId) ?? null })));
+      const meetings = campaign.conferenceId && rows.length
+        ? await campaignDirectoryMeetings(ctx.tenantDomain, campaign.id, campaign.conferenceId) : null;
+      res.json(rows.map(row => ({
+        ...row, externalActivitySummary: summaries.get(row.contactId) ?? null,
+        meetingTimezone: meetings?.byPerson.get(row.id)?.timezone ?? meetings?.timezone ?? null,
+        calendarInvitation: meetings?.byPerson.has(row.id) ? { status: meetings.byPerson.get(row.id)!.status } : null,
+      })));
     } catch (err: any) {
       console.error("[sales-outreach-prospects:list]", err);
       res.status(500).json({ error: err.message || "Failed to list prospects" });
@@ -480,6 +494,13 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
 
       const body = req.body ?? {};
+      const metadata = newProspectMetadata(body);
+      if (Object.keys(metadata).length && !["Analyst", "Domain Admin", "Global Admin"].includes(ctx.userRole)) {
+        return res.status(403).json({ error: "Your role cannot classify campaign contacts." });
+      }
+      if (campaign.marketId && campaign.marketId !== ctx.marketId) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
       const parsedPerson = z.object({
         name: z.string().trim().max(300).optional().default(""),
         email: z.string().trim().toLowerCase().max(320).optional().default(""),
@@ -510,11 +531,13 @@ export function registerSalesOutreachRoutes(app: Express) {
         signals: body.signals ?? null,
         ownerUserId: body.ownerUserId ?? ctx.userId,
         status: "new",
+        ...metadata,
       });
       // Repeated add of the same person returns the existing membership (200).
       res.status(created ? 201 : 200).json(await getProspectWithContact(membershipId));
     } catch (err: any) {
       console.error("[sales-outreach-prospects:create]", err);
+      if (err instanceof z.ZodError) return res.status(400).json({ error: err.issues.map(issue => issue.message).join("; ") });
       res.status(500).json({ error: err.message || "Failed to add prospect" });
     }
   });
@@ -573,10 +596,18 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (body.companyName !== undefined) {
         patch.companyName = typeof body.companyName === "string" && body.companyName.trim() ? body.companyName.trim() : null;
       }
-      await updateContactPersonFields(prospect.contactId, patch);
+      const hasCampaignSettings = ["classification", "messagingGroup", "familiarity"].some(key => body[key] !== undefined);
+      if (hasCampaignSettings) {
+        if (!["Analyst", "Domain Admin", "Global Admin"].includes(ctx.userRole)) return res.status(403).json({ error: "Your role cannot edit campaign contacts." });
+        await editCampaignContact(ctx.tenantDomain, ctx.marketId, prospect.id, patch, body);
+      } else {
+        await updateContactPersonFields(prospect.contactId, patch);
+      }
       res.json(await getProspectWithContact(prospect.id));
     } catch (err: any) {
       console.error("[sales-outreach-prospects:patch]", err);
+      if (err instanceof ClassificationError) return res.status(err.status).json({ error: err.message });
+      if (err instanceof z.ZodError) return res.status(400).json({ error: err.issues.map(issue => issue.message).join("; ") });
       res.status(500).json({ error: err.message || "Failed to update prospect" });
     }
   });

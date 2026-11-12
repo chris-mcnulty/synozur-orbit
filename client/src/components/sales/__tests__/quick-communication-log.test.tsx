@@ -30,6 +30,22 @@ beforeEach(() => { request.mockImplementation(async () => ({ json: async () => c
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("quick external communication log", () => {
+  it("shows an editable local date outside optional details and preserves its timestamp", async () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: /Log communication with/ }));
+    const input = screen.getByLabelText("Occurred at (your local time)") as HTMLInputElement;
+    expect(input.closest("details")).toBeNull();
+    expect(input.max).toBeTruthy();
+    fireEvent.change(input, { target: { value: "2025-01-02T15:42" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save communication" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith("POST", expect.stringContaining("external-activities"), expect.objectContaining({ occurredAt: new Date("2025-01-02T15:42").toISOString() })));
+  });
+  it("rejects invalid or future local times before conversion can write history", () => {
+    const form = { direction: "outbound" as const, channel: "phone" as const, sender: "Ravi", notes: "", outcome: "no_reply" as const };
+    expect(() => communicationInput({ ...form, occurredAt: "" })).toThrow();
+    expect(() => communicationInput({ ...form, occurredAt: "2099-02-10T12:30" })).toThrow();
+    expect(request).not.toHaveBeenCalled();
+  });
   it("does not save or fetch on open or cancel", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Log communication with Maya Chen" }));

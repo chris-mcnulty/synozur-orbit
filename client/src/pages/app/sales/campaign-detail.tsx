@@ -1,6 +1,9 @@
 import { useState, useRef, KeyboardEvent, useCallback, useMemo, useEffect } from "react";
 import { Link, useParams, useLocation, useSearch } from "wouter";
 import SavedOutreachDrafts from "@/components/sales/saved-outreach-drafts";
+import NewProspectClassification, { newProspectClassificationPayload, type NewProspectClassificationValue } from "@/components/sales/new-prospect-classification";
+import CampaignNextSteps, { CampaignSummary, useCampaignSnapshotInvalidation, type CampaignNextStep } from "@/components/sales/campaign-next-steps";
+import CampaignContactActions from "@/components/sales/campaign-contact-actions";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -51,12 +54,14 @@ import type { MessagingGroup } from "@/components/sales/use-outreach-context";
 import { useCampaignClassification } from "@/components/sales/use-campaign-classification";
 import { classificationSearchText, meetingPriorityRank } from "@/components/sales/campaign-classification-helpers";
 import ProspectScoreDialog, { ProspectScoreButton } from "@/components/sales/prospect-score-dialog";
-import { ClassificationToolbar, ClassificationRows, ClassificationSelect, ClassificationBadges, ClassificationSource, ClassificationEditButton, ClassificationEditor } from "@/components/sales/campaign-classification";
+import { ClassificationToolbar, ClassificationRows, ClassificationSelect, ClassificationBadges, ClassificationSource, ClassificationEditor } from "@/components/sales/campaign-classification";
 import { campaignSourceLabel, type CampaignClassification } from "@shared/campaign-classification";
-import type { MeetingContact } from "@shared/conference-meetings";
 import ComposeClarificationDialog from "@/components/sales/compose-clarification";
 import { useComposeClarifications } from "@/hooks/use-compose-clarifications";
 import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
+import EmailThreadDialog from "@/components/sales/email-thread-dialog";
+import ContactEditDialog from "@/components/sales/contact-edit-dialog";
+import ContactMeetingIndicator, { type DirectoryMeeting } from "@/components/sales/contact-meeting-indicator";
 import ApolloRevealPreview from "@/components/sales/apollo-reveal-preview";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +104,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -229,7 +237,9 @@ interface Prospect {
   messagingGroup?: MessagingGroup | null;
   familiarity?: ContactFamiliarity;
   classification?: CampaignClassification | null;
-  meeting?: MeetingContact | null;
+  meeting?: DirectoryMeeting | null;
+  meetingTimezone?: string | null;
+  calendarInvitation?: { status: string } | null;
   name: string;
   title: string | null;
   companyName: string | null;
@@ -534,6 +544,8 @@ export default function OutreachCampaignDetailPage() {
   const queryClient = useQueryClient();
   const { user } = useUser();
   const [adding, setAdding] = useState(false);
+  const [campaignTab, setCampaignTab] = useState<"contacts" | "next-steps">("contacts");
+  const [newClassification, setNewClassification] = useState<NewProspectClassificationValue>({});
   const [meetingContact, setMeetingContact] = useState<{ campaignId: string; contactId: string } | null>(null);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -549,7 +561,7 @@ export default function OutreachCampaignDetailPage() {
 
   // Edit prospect dialog state.
   const [editingProspect, setEditingProspect] = useState<Prospect | null>(null);
-  const [editProspectForm, setEditProspectForm] = useState({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
+  const [editContactScope, setEditContactScope] = useState("");
 
   // Draft review dialog state.
   const [draft, setDraft] = useState<Touch | null>(null);
@@ -566,6 +578,9 @@ export default function OutreachCampaignDetailPage() {
   const [sharpenOriginal, setSharpenOriginal] = useState<{ body: string; subject: string }>({ body: "", subject: "" });
   type ComposeVars = { prospect: Prospect; channel?: "email" | "linkedin"; linkedinFormat?: LinkedInFormat; intent?: OutreachIntent; additionalContext?: string; contextFingerprint?: string };
   const composeScope = JSON.stringify([getTabTenantId(), user?.id, id]);
+  useCampaignSnapshotInvalidation(id, composeScope);
+  useEffect(() => { setEditingProspect(null); }, [composeScope, canEditOutreach]);
+  useEffect(() => { setNewClassification({}); setAdding(false); }, [composeScope]);
   const composeScopeRef = useRef(composeScope);
   composeScopeRef.current = composeScope;
   const clarifications = useComposeClarifications<ComposeVars>(composeScope);
@@ -625,6 +640,8 @@ export default function OutreachCampaignDetailPage() {
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [pasteContactsOpen, setPasteContactsOpen] = useState(false);
+  const [emailThreadEntry, setEmailThreadEntry] = useState<{ scope: string; target?: Prospect } | null>(null);
+  useEffect(() => { setEmailThreadEntry(null); }, [composeScope, canEditOutreach]);
   const csvFileRef = useRef<HTMLInputElement>(null);
 
   const parseApolloCSV = useCallback((text: string): CsvProspectRow[] => {
@@ -968,14 +985,16 @@ export default function OutreachCampaignDetailPage() {
         companyName: form.companyName.trim(),
         email: form.email.trim(),
         linkedinUrl: form.linkedinUrl.trim(),
+        ...newProspectClassificationPayload(newClassification),
       });
-      return res.json();
+      return { prospect: await res.json(), duplicate: res.status === 200 };
     },
-    onSuccess: () => {
+    onSuccess: ({ duplicate }) => {
       queryClient.invalidateQueries({ queryKey: prospectsKey });
       setForm({ name: "", title: "", companyName: "", email: "", linkedinUrl: "" });
+      setNewClassification({});
       setAdding(false);
-      toast({ title: "Prospect added" });
+      toast({ title: duplicate ? "Contact already on this campaign" : "Prospect added", description: duplicate ? "Existing classification and messaging settings were kept unchanged. Use Edit contact to review them together." : undefined });
     },
     onError: (err: any) => toast({ title: "Couldn't add prospect", description: err?.message, variant: "destructive" }),
   });
@@ -1220,7 +1239,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   const editProspectMutation = useMutation({
-    mutationFn: async (vars: { id: string; payload: object }) => {
+    mutationFn: async (vars: { id: string; payload: object; scope: string }) => {
       const res = await apiRequest("PATCH", `/api/sales-outreach/prospects/${vars.id}`, vars.payload);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -1228,39 +1247,23 @@ export default function OutreachCampaignDetailPage() {
       }
       return res.json() as Promise<Prospect>;
     },
-    onSuccess: (updated) => {
+    onSuccess: (updated, vars) => {
+      if (vars.scope !== composeScopeRef.current) return;
       queryClient.setQueryData<Prospect[]>(prospectsKey, (old) =>
-        old ? old.map((p) => (p.id === updated.id ? updated : p)) : old,
+        old ? old.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)) : old,
       );
+      void queryClient.invalidateQueries({ queryKey: prospectsKey });
+      void queryClient.invalidateQueries({ predicate: query => query.queryKey.some(key => typeof key === "string" && (key.includes("outreach-context") || key.includes("meetings") || key.includes("next-steps"))) });
       setEditingProspect(null);
-      toast({ title: "Prospect updated" });
+      toast({ title: "Contact updated" });
     },
     onError: (err: any) => toast({ title: "Couldn't save changes", description: err?.message, variant: "destructive" }),
   });
 
   function openEditProspect(p: Prospect) {
-    setEditProspectForm({
-      name: p.name,
-      title: p.title ?? "",
-      companyName: p.companyName ?? "",
-      email: p.email ?? "",
-      linkedinUrl: p.linkedinUrl ?? "",
-    });
+    if (!canEditOutreach) return;
+    setEditContactScope(composeScope);
     setEditingProspect(p);
-  }
-
-  function submitEditProspect() {
-    if (!editingProspect) return;
-    editProspectMutation.mutate({
-      id: editingProspect.id,
-      payload: {
-        name: editProspectForm.name,
-        title: editProspectForm.title,
-        companyName: editProspectForm.companyName,
-        email: editProspectForm.email,
-        linkedinUrl: editProspectForm.linkedinUrl,
-      },
-    });
   }
 
   const { data: discoveryStatus } = useQuery<{ backends: DiscoveryBackend[] }>({
@@ -1589,9 +1592,10 @@ export default function OutreachCampaignDetailPage() {
               <Sparkles className="w-4 h-4 mr-1.5" />
               Paste contacts
             </Button>
-            <Button size="sm" onClick={() => setAdding((v) => !v)} data-testid="button-add-prospect">
+            <Button size="sm" disabled={!canEditOutreach} onClick={() => { setCampaignTab("contacts"); setAdding((v) => !v); }} data-testid="button-add-prospect">
               <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
             </Button>
+            {canEditOutreach && <Button size="sm" variant="outline" onClick={() => setEmailThreadEntry({ scope: composeScope })} data-testid="button-paste-email-thread"><Mail className="mr-1.5 h-4 w-4" />Paste email thread</Button>}
           </div>
         </div>
 
@@ -1616,6 +1620,27 @@ export default function OutreachCampaignDetailPage() {
             <Button size="sm" variant="ghost" onClick={() => setOutreachBlocked(null)}>Dismiss</Button>
           </div>
         </section>}
+        <nav className="flex gap-1 border-b" aria-label="Campaign navigation">
+          <Button variant="ghost" className={`rounded-none border-b-2 ${campaignTab === "contacts" ? "border-primary text-primary" : "border-transparent"}`} aria-current={campaignTab === "contacts" ? "page" : undefined} onClick={() => setCampaignTab("contacts")}>Contacts</Button>
+          <Button variant="ghost" className={`rounded-none border-b-2 ${campaignTab === "next-steps" ? "border-primary text-primary" : "border-transparent"}`} aria-current={campaignTab === "next-steps" ? "page" : undefined} onClick={() => setCampaignTab("next-steps")}>Next Steps</Button>
+        </nav>
+        <CampaignSummary key={composeScope} campaignId={id} scope={composeScope} canGenerate={canEditOutreach || canEdit} />
+        {campaignTab === "next-steps" && <CampaignNextSteps key={composeScope} campaignId={id} scope={composeScope} canEdit={canEditOutreach}
+          busy={compose.isPending || research.isPending} onAction={(item: CampaignNextStep) => {
+            const person = prospects.find(p => p.id === item.prospectId);
+            if (!person) { toast({ title: "Contact no longer available", description: "Refresh the campaign to see the latest contacts." }); return; }
+            if (item.action === "review_history") { setHistoryContact(person); return; }
+            if (item.action === "meeting") {
+              setCampaignTab("contacts");
+              setMeetingContact({ campaignId: campaign.id, contactId: person.id });
+              return;
+            }
+            if (!canEditOutreach) return;
+            if (item.action === "review_draft") setSavedDraftContact({ person, scope: composeScope, draftId: item.touchId });
+            else if (item.action === "research") research.mutate(person.id);
+            else if (item.action === "compose") compose.mutate({ prospect: person, channel: composeChannels.includes("email") ? "email" : "linkedin", intent: "outreach" });
+          }} />}
+        <div className={campaignTab === "contacts" ? "space-y-4" : "hidden"}>
         <CampaignMessagingBriefs campaignId={campaign.id} canEdit={canEditOutreach} />
         {campaign.conferenceId ? (
           <ConferenceMeetings
@@ -1652,10 +1677,11 @@ export default function OutreachCampaignDetailPage() {
                 <div className="space-y-1 sm:col-span-2"><Label htmlFor="p-li">LinkedIn URL <span className="text-muted-foreground">(optional)</span></Label><Input id="p-li" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} /></div>
               </div>
               {!form.name.trim() && !addEmailValue && <p className="text-xs text-muted-foreground">Enter a name or email to add this prospect.</p>}
+              <NewProspectClassification value={newClassification} onChange={setNewClassification} />
               {!addEmailValid && <p className="text-xs text-destructive" role="alert">Enter a valid email address, or leave the email field blank.</p>}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => addProspect.mutate()} disabled={!canAddProspect || addProspect.isPending}>
+                <Button size="sm" onClick={() => addProspect.mutate()} disabled={!canEditOutreach || !canAddProspect || addProspect.isPending}>
                   {addProspect.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Add
                 </Button>
               </div>
@@ -1777,7 +1803,12 @@ export default function OutreachCampaignDetailPage() {
               <ClassificationToolbar people={visibleProspects} filters={classification.filters}
                 onFiltersChange={classification.setFilters} groupBy={classification.groupBy}
                 onGroupByChange={classification.setGroupBy} selectedCount={classification.selectedIds.length}
-                canEdit={classification.canEdit} onEdit={() => classification.openEditor(classification.selectedIds)}
+                canEdit={classification.canEdit} onEdit={() => {
+                  if (classification.selectedIds.length === 1) {
+                    const person = prospects.find(p => p.id === classification.selectedIds[0]);
+                    if (person) openEditProspect(person);
+                  } else classification.openEditor(classification.selectedIds);
+                }}
                 onClear={clearPeopleFilters} uniqueCount={classification.filteredPeople.length}
                 membershipCount={classification.membershipCount} />
               {classification.canEdit && <BulkMessagingEditor key={JSON.stringify([classification.selectionScope, classification.selectedIds])}
@@ -1842,25 +1873,29 @@ export default function OutreachCampaignDetailPage() {
                   ) : null}
                   <ClassificationRows groups={classification.groups} grouped={classification.groupBy !== "none"}
                     colSpan={classification.canEdit ? 7 : 6} renderPerson={(p, rowKey) => (
-                    <TableRow key={rowKey} data-testid={`prospect-${p.id}`}>
+                    <TableRow key={rowKey} className="[&>td]:py-2" data-testid={`prospect-${p.id}`}>
                       {classification.canEdit && <TableCell><ClassificationSelect
                         checked={classification.selectedIds.includes(p.id)}
                         disabled={!classification.selectedIds.includes(p.id) && classification.selectedIds.length >= 200}
                         onChange={checked => classification.togglePerson(p.id, checked)}
                         label={`Select ${p.name || p.email || "contact"}`} testId={`classification-select-${p.id}`} /></TableCell>}
                       <TableCell>
-                        <div className="font-medium">{p.name || p.email || "—"}</div>
-                        {p.title && <div className="text-xs text-muted-foreground">{p.title}</div>}
-                        <Button variant="link" size="sm" className="h-auto px-0 py-1 text-[10px] text-muted-foreground" onClick={() => setHistoryContact(p)} aria-label={`Messaging group for ${p.name || p.email || "contact"}: ${p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief, unassigned"}`} data-testid={`messaging-group-${p.id}`}>
+                        <div className="flex max-w-sm items-baseline gap-2"><button className="shrink-0 font-medium hover:underline" onClick={() => setHistoryContact(p)}>{p.name || p.email || "—"}</button>
+                        {p.title && <span className="truncate text-xs text-muted-foreground" title={p.title}>{p.title}</span>}</div>
+                        <div className="flex max-w-sm items-center gap-2 overflow-hidden whitespace-nowrap">
+                        <Button variant="link" size="sm" className="h-auto shrink-0 px-0 py-0 text-[10px] text-muted-foreground" onClick={() => canEditOutreach ? openEditProspect(p) : setHistoryContact(p)} aria-label={`Messaging group for ${p.name || p.email || "contact"}: ${p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief, unassigned"}`} data-testid={`messaging-group-${p.id}`}>
                           {p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief · unassigned"}
                         </Button>
-                        <p className="text-[10px] text-muted-foreground" title="Familiarity with this campaign’s sender. Does not imply consent or communication status." data-testid={`familiarity-${p.id}`}>{familiarityLabels[p.familiarity ?? "unknown"]}</p>
-                        <ClassificationBadges person={p} />
+                        <span className="text-[10px] text-muted-foreground" title="Familiarity with this campaign’s sender. Does not imply consent or communication status." data-testid={`familiarity-${p.id}`}>{familiarityLabels[p.familiarity ?? "unknown"]}</span>
+                        </div>
+                        <ClassificationBadges person={p} compact />
+                        <ContactMeetingIndicator meeting={p.meeting} timezone={p.meetingTimezone} calendarStatus={p.calendarInvitation?.status} onOpen={() => {
+                          if (campaign.conferenceId) {
+                            setMeetingContact({ campaignId: campaign.id, contactId: p.id });
+                            void queryClient.invalidateQueries({ queryKey: [`/api/sales-outreach/campaigns/${campaign.id}/meetings`] });
+                          } else setHistoryContact(p);
+                        }} />
                         <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
-                        {campaign.conferenceId && <Button variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={() => {
-                          setMeetingContact({ campaignId: campaign.id, contactId: p.id });
-                          void queryClient.invalidateQueries({ queryKey: [`/api/sales-outreach/campaigns/${campaign.id}/meetings`] });
-                        }} data-testid={`meeting-prep-${p.id}`} aria-label={`Open meeting prep for ${p.name || p.email || "contact"}`}><CalendarDays className="mr-1 h-3 w-3" />Meeting prep</Button>}
                       </TableCell>
                       <TableCell className="text-sm">{p.companyName ?? "—"}</TableCell>
                       <TableCell className={`text-center font-semibold ${scoreColor(p.icpScore)}`}>
@@ -1875,12 +1910,23 @@ export default function OutreachCampaignDetailPage() {
                       <TableCell>
                         <ClassificationSource person={p} />
                       </TableCell>
-                      <TableCell className="w-[300px] min-w-[250px]">
-                        <div className="flex flex-wrap items-center justify-end gap-1">
+                      <TableCell className="w-[120px]">
+                        <div className="flex flex-nowrap items-center justify-end gap-1">
+                        {canEditOutreach && <QuickCommunicationLog compact contact={p} senderName={user?.name ?? ""} />}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label={`Actions for ${p.name || p.email || "contact"}`}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" onCloseAutoFocus={event => event.preventDefault()} className="max-h-[75dvh] w-64 overflow-y-auto">
+                          <DropdownMenuLabel>{p.name || p.email || "Contact actions"}</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <ClassificationBadges person={p} />
+                          <CampaignContactActions>
+                        {canEditOutreach && <Button variant="ghost" size="sm" onClick={() => setEmailThreadEntry({ scope: composeScope, target: p })} data-testid={`paste-email-thread-${p.id}`}><Mail className="mr-1 h-3 w-3" />Paste email thread</Button>}
+                        {campaign.conferenceId && <Button variant="ghost" size="sm" onClick={() => {
+                          setMeetingContact({ campaignId: campaign.id, contactId: p.id });
+                          void queryClient.invalidateQueries({ queryKey: [`/api/sales-outreach/campaigns/${campaign.id}/meetings`] });
+                        }} data-testid={`meeting-prep-${p.id}`} aria-label={`Open meeting prep for ${p.name || p.email || "contact"}`}><CalendarDays className="mr-1 h-3 w-3" />Meeting prep</Button>}
                         <Button variant="ghost" size="sm" onClick={() => setHistoryContact(p)} data-testid={`outreach-history-${p.id}`}>History & hold</Button>
                         {canEditOutreach && <Button variant="ghost" size="sm" onClick={() => setSavedDraftContact({ person: p, scope: composeScope })} data-testid={`open-saved-drafts-${p.id}`}>Saved drafts</Button>}
-                        {canEditOutreach && <QuickCommunicationLog contact={p} senderName={user?.name ?? ""} />}
-                        {classification.canEdit && <ClassificationEditButton person={p} onEdit={() => classification.openEditor([p.id])} />}
                         {p.researchDossier && (
                           <Button variant="ghost" size="sm" onClick={() => setDossier(p)} data-testid={`view-dossier-${p.id}`}>Dossier</Button>
                         )}
@@ -1889,6 +1935,7 @@ export default function OutreachCampaignDetailPage() {
                           size="sm"
                           onClick={() => research.mutate(p.id)}
                           disabled={research.isPending && research.variables === p.id}
+                          hidden={!canEditOutreach}
                           data-testid={`research-${p.id}`}
                         >
                           {research.isPending && research.variables === p.id ? (
@@ -1898,9 +1945,9 @@ export default function OutreachCampaignDetailPage() {
                           )}
                           {p.researchDossier ? "Re-score" : "Research"}
                         </Button>
-                        {p.status !== "dormant" && p.status !== "replied" && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                        {canEditOutreach && p.status !== "dormant" && p.status !== "replied" && (
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger asChild>
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1915,8 +1962,8 @@ export default function OutreachCampaignDetailPage() {
                                 Compose
                                 <ChevronDown className="w-3 h-3 ml-1 opacity-60" />
                               </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-60">
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="w-60">
                               {composeChannels.includes("email") && (
                                 <>
                                   <DropdownMenuLabel className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email</DropdownMenuLabel>
@@ -1936,8 +1983,8 @@ export default function OutreachCampaignDetailPage() {
                                   <DropdownMenuItem onClick={() => compose.mutate({ prospect: p, channel: "linkedin", linkedinFormat: "direct_message", intent: "engagement" })}>Engagement</DropdownMenuItem>
                                 </>
                               )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
                         )}
                         {(!p.email || !p.linkedinUrl) && (
                           <Button
@@ -1948,6 +1995,7 @@ export default function OutreachCampaignDetailPage() {
                             data-testid={`enrich-${p.id}`}
                             title="Find LinkedIn profile / email"
                             aria-label={`Find LinkedIn profile or email for ${p.name || p.email || "prospect"}`}
+                            hidden={!canEditOutreach}
                           >
                             {enrich.isPending && enrich.variables === p.id
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1971,6 +2019,7 @@ export default function OutreachCampaignDetailPage() {
                             disabled={syncHubspot.isPending && syncHubspot.variables === p.id}
                             data-testid={`push-hubspot-${p.id}`}
                             title="Create or update this contact in HubSpot"
+                            hidden={!canEditOutreach}
                             className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-700 dark:hover:bg-orange-950"
                           >
                             {syncHubspot.isPending && syncHubspot.variables === p.id
@@ -1984,10 +2033,11 @@ export default function OutreachCampaignDetailPage() {
                           size="sm"
                           onClick={() => openEditProspect(p)}
                           data-testid={`edit-prospect-${p.id}`}
-                          title="Edit contact details"
-                          aria-label={`Edit contact details for ${p.name || p.email || "prospect"}`}
+                          title="Edit contact details and campaign settings"
+                          aria-label={`Edit contact for ${p.name || p.email || "contact"}`}
+                          hidden={!canEditOutreach}
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          <Pencil className="mr-1 h-3.5 w-3.5" />Edit contact
                         </Button>
                         <Button
                           variant="ghost"
@@ -2000,12 +2050,16 @@ export default function OutreachCampaignDetailPage() {
                           disabled={deleteProspect.isPending && deleteProspect.variables === p.id}
                           data-testid={`delete-prospect-${p.id}`}
                           title="Remove prospect"
+                          hidden={!canEditOutreach}
                           className="text-muted-foreground hover:text-destructive"
                         >
                           {deleteProspect.isPending && deleteProspect.variables === p.id
                             ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             : <X className="w-3.5 h-3.5" />}
                         </Button>
+                          </CampaignContactActions>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -2017,6 +2071,8 @@ export default function OutreachCampaignDetailPage() {
           </CardContent>
         </Card>
 
+        </div>
+        <div className={campaignTab === "next-steps" ? "space-y-4" : "hidden"}>
         {/* Performance — always visible so a campaign explains what is happening,
             even before enough outreach has occurred to draw conclusions. */}
         {performance && (
@@ -2094,6 +2150,7 @@ export default function OutreachCampaignDetailPage() {
         )}
       </div>
 
+      </div>
       {/* Edit campaign dialog */}
       <Dialog open={editing} onOpenChange={(o) => { if (!o) { setEditing(false); setEditForm(null); } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -2351,79 +2408,12 @@ export default function OutreachCampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit prospect dialog */}
-      <Dialog open={!!editingProspect} onOpenChange={(o) => { if (!o) setEditingProspect(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit prospect</DialogTitle>
-            <DialogDescription>Update contact details. Saved values will be used for enrichment, composing, and HubSpot sync.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="ep-name">Name <span className="text-destructive">*</span></Label>
-              <Input
-                id="ep-name"
-                value={editProspectForm.name}
-                onChange={(e) => setEditProspectForm({ ...editProspectForm, name: e.target.value })}
-                data-testid="input-edit-prospect-name"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="ep-title">Title</Label>
-                <Input
-                  id="ep-title"
-                  value={editProspectForm.title}
-                  onChange={(e) => setEditProspectForm({ ...editProspectForm, title: e.target.value })}
-                  data-testid="input-edit-prospect-title"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ep-company">Company</Label>
-                <Input
-                  id="ep-company"
-                  value={editProspectForm.companyName}
-                  onChange={(e) => setEditProspectForm({ ...editProspectForm, companyName: e.target.value })}
-                  data-testid="input-edit-prospect-company"
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ep-email">Email</Label>
-              <Input
-                id="ep-email"
-                type="email"
-                value={editProspectForm.email}
-                onChange={(e) => setEditProspectForm({ ...editProspectForm, email: e.target.value })}
-                data-testid="input-edit-prospect-email"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ep-linkedin">LinkedIn URL</Label>
-              <Input
-                id="ep-linkedin"
-                value={editProspectForm.linkedinUrl}
-                onChange={(e) => setEditProspectForm({ ...editProspectForm, linkedinUrl: e.target.value })}
-                placeholder="https://www.linkedin.com/in/…"
-                data-testid="input-edit-prospect-linkedin"
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setEditingProspect(null)} disabled={editProspectMutation.isPending}>
-              Cancel
-            </Button>
-            <Button
-              onClick={submitEditProspect}
-              disabled={!editProspectForm.name.trim() || editProspectMutation.isPending}
-              data-testid="button-save-prospect-edit"
-            >
-              {editProspectMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
-              Save changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {editingProspect && editContactScope === composeScope && canEditOutreach && <ContactEditDialog
+        key={`${composeScope}:${editingProspect.id}`}
+        contact={editingProspect}
+        onClose={() => setEditingProspect(null)}
+        onSave={payload => editProspectMutation.mutateAsync({ id: editingProspect.id, payload, scope: composeScope })}
+      />}
 
       {/* Dossier dialog */}
       <Dialog open={!!dossier} onOpenChange={(o) => !o && setDossier(null)}>
@@ -2830,6 +2820,16 @@ export default function OutreachCampaignDetailPage() {
         campaignId={id}
         onImport={importPastedProspects}
       />
+      {emailThreadEntry?.scope === composeScope && canEditOutreach && <EmailThreadDialog
+        key={`${composeScope}:${emailThreadEntry.target?.id ?? "campaign"}`}
+        open
+        onOpenChange={open => { if (!open) setEmailThreadEntry(null); }}
+        campaignId={id}
+        scope={composeScope}
+        canEdit={canEditOutreach}
+        contacts={prospects}
+        target={emailThreadEntry.target}
+      />}
 
       {/* Discovery dialog — review web-discovered candidates, then import selected */}
       <Dialog open={discovering} onOpenChange={(o) => {
@@ -3070,7 +3070,8 @@ export default function OutreachCampaignDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <OutreachContactContext contact={historyContact} canEdit={canEditOutreach} onClose={() => setHistoryContact(null)} />
+      <OutreachContactContext contact={historyContact} canEdit={canEditOutreach} onClose={() => setHistoryContact(null)}
+        onEditContact={historyContact && canEditOutreach ? () => { openEditProspect(historyContact); setHistoryContact(null); } : undefined} />
       {canEditOutreach && savedDraftContact?.scope === composeScope && <SavedOutreachDrafts
         key={JSON.stringify([composeScope, savedDraftContact.person.id, savedDraftContact.draftId])}
         prospectId={savedDraftContact.person.id} prospectName={savedDraftContact.person.name || savedDraftContact.person.email || "Contact"}

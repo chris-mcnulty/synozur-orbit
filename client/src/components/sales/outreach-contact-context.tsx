@@ -92,7 +92,7 @@ function ActivityForm({ initial, busy, onSave, onCancel }: {
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </form>;
 }
-export function OutreachContextPanel({ prospectId, canEdit }: { prospectId: string; canEdit: boolean }) {
+export function OutreachContextPanel({ prospectId, canEdit, onEditContact }: { prospectId: string; canEdit: boolean; onEditContact?: () => void }) {
   const query = useOutreachContext(prospectId);
   const { settings, activity } = useOutreachActions(prospectId);
   const [editing, setEditing] = useState<ExternalActivity | null | undefined>();
@@ -104,8 +104,13 @@ export function OutreachContextPanel({ prospectId, canEdit }: { prospectId: stri
   const busy = settings.isPending || activity.isPending;
   return <div className="space-y-5">
     <div className="rounded-lg border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">History and outreach hold are shared across campaigns. Messaging group and familiarity are explicit settings for this campaign; neither is inferred from a role.</div>
-    <MessagingGroupSelect value={context.messagingGroup} disabled={!canEdit || busy} onChange={(messagingGroup) => { setError(""); settings.mutate({ messagingGroup }, { onError: (e) => setError(outreachError(e)) }); }} />
-    <FamiliaritySelect value={context.familiarity} disabled={!canEdit || busy} onChange={(familiarity) => { setError(""); settings.mutate({ familiarity }, { onError: e => setError(outreachError(e)) }); }} />
+    {onEditContact ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+      <div className="text-sm"><p>{context.messagingGroup ? messagingGroupLabels[context.messagingGroup] : "Shared campaign brief / no group"}</p><p className="text-xs text-muted-foreground">{familiarityLabels[context.familiarity ?? "unknown"]}</p></div>
+      <Button variant="outline" size="sm" disabled={!canEdit || busy} onClick={onEditContact}><Pencil className="mr-1 h-3 w-3" />Edit contact & campaign settings</Button>
+    </div> : <>
+      <MessagingGroupSelect value={context.messagingGroup} disabled={!canEdit || busy} onChange={(messagingGroup) => { setError(""); settings.mutate({ messagingGroup }, { onError: (e) => setError(outreachError(e)) }); }} />
+      <FamiliaritySelect value={context.familiarity} disabled={!canEdit || busy} onChange={(familiarity) => { setError(""); settings.mutate({ familiarity }, { onError: e => setError(outreachError(e)) }); }} />
+    </>}
     <label className={`flex items-start gap-3 rounded-lg border p-3 ${context.hold ? "border-amber-400/60 bg-amber-500/10" : ""}`}>
       <input type="checkbox" className="mt-1" checked={context.hold} disabled={!canEdit || busy} onChange={(e) => { setError(""); settings.mutate({ hold: e.target.checked }, { onError: (err) => setError(outreachError(err)) }); }} />
       <span className="text-sm font-medium">Hold outreach across all campaigns<span className="mt-1 block text-xs font-normal text-muted-foreground">Blocks new drafts and approval. Existing history is kept.</span></span>
@@ -122,6 +127,6 @@ export function OutreachContextPanel({ prospectId, canEdit }: { prospectId: stri
     </AlertDialogContent></AlertDialog>
   </div>;
 }
-export default function OutreachContactContext({ contact, canEdit, onClose }: { contact: { id: string; name: string } | null; canEdit: boolean; onClose: () => void }) {
-  return <Dialog open={!!contact} onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{contact?.name} · Outreach context</DialogTitle><DialogDescription>Actual conversations, shared contact settings, and the next appropriate step.</DialogDescription></DialogHeader>{contact && <OutreachContextPanel key={contact.id} prospectId={contact.id} canEdit={canEdit} />}</DialogContent></Dialog>;
+export default function OutreachContactContext({ contact, canEdit, onClose, onEditContact }: { contact: { id: string; name: string } | null; canEdit: boolean; onClose: () => void; onEditContact?: () => void }) {
+  return <Dialog open={!!contact} onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{contact?.name} · Outreach context</DialogTitle><DialogDescription>Actual conversations, shared contact settings, and the next appropriate step.</DialogDescription></DialogHeader>{contact && <OutreachContextPanel key={contact.id} prospectId={contact.id} canEdit={canEdit} onEditContact={onEditContact} />}</DialogContent></Dialog>;
 }

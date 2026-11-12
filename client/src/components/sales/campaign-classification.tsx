@@ -42,7 +42,7 @@ export function ClassificationToolbar({ people, filters, onFiltersChange, groupB
   </div>;
 }
 
-export function ClassificationBadges({ person }: { person: ClassifiedPerson }) {
+export function ClassificationBadges({ person, compact = false }: { person: ClassifiedPerson; compact?: boolean }) {
   const relationships = person.meeting?.relationships?.filter(value => value !== "unknown") ?? [];
   const attendance = person.meeting?.attendance;
   const labels = [
@@ -52,8 +52,9 @@ export function ClassificationBadges({ person }: { person: ClassifiedPerson }) {
     ...(person.classification?.eventRoles ?? []).map(value => ({ key: `role-${value}`, label: classificationLabel(value), title: "Event role" })),
     ...(person.classification?.tags ?? []).map(value => ({ key: `tag-${value.toLowerCase()}`, label: value, title: "Campaign tag" })),
   ];
-  return <div className="mt-1 flex max-w-sm flex-wrap gap-1" data-testid={`classification-badges-${person.id}`}>
-     {labels.map(item => <Badge variant="outline" data-testid={item.key === "meeting-priority" ? `meeting-priority-${person.id}` : undefined} className={`px-1.5 py-0 text-[10px] font-normal ${item.key === "meeting-priority" ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300" : item.key === "attendance" && attendance === "confirmed" ? "border-primary/30 bg-primary/5 text-primary" : ""}`} key={item.key} title={item.title}>{item.label}</Badge>)}
+  return <div className={`mt-1 flex max-w-sm gap-1 ${compact ? "flex-nowrap overflow-hidden whitespace-nowrap" : "flex-wrap"}`} data-testid={`classification-badges-${person.id}`}>
+     {(compact ? labels.slice(0, 2) : labels).map(item => <Badge variant="outline" data-testid={item.key === "meeting-priority" ? `meeting-priority-${person.id}` : undefined} className={`shrink-0 px-1.5 py-0 text-[10px] font-normal ${item.key === "meeting-priority" ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300" : item.key === "attendance" && attendance === "confirmed" ? "border-primary/30 bg-primary/5 text-primary" : ""}`} key={item.key} title={item.title}>{item.label}</Badge>)}
+     {compact && labels.length > 2 && <span className="text-[10px] text-muted-foreground" title={labels.slice(2).map(item => item.label).join(", ")}>+{labels.length - 2}</span>}
     {!labels.length && <span className="text-[10px] text-muted-foreground">Unclassified</span>}
   </div>;
 }

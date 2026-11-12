@@ -82,10 +82,10 @@ function CommunicationForm({ contact, senderName, onClose }: {
       <label className="block space-y-1.5 text-sm font-medium">Notes (optional)
         <Textarea rows={3} maxLength={12000} value={notes} onChange={event => setNotes(event.target.value)} placeholder="Add context if useful. No need to paste the conversation." />
       </label>
+      <div className="space-y-1"><label className="block space-y-1 text-sm font-medium">Occurred at (your local time)<Input required type="datetime-local" max={localNow()} value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label><p className="text-xs text-muted-foreground">Choose when the conversation happened. Future dates are not allowed.</p></div>
       <details className="rounded-md border px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">Optional details</summary>
         <div className="mt-3 space-y-3">
-          <label className="block space-y-1 text-sm">Occurred at (your local time)<Input required type="datetime-local" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>
           <label className="block space-y-1 text-sm">{direction === "inbound" ? "Reply from" : "Sent by"}<Input required maxLength={300} value={sender} onChange={event => setSender(event.target.value)} /></label>
           <label className="block space-y-1 text-sm">Outcome<select className={selectClass} value={outcome} onChange={event => setOutcome(event.target.value as ExternalActivityInput["outcome"])}>
             {direction === "outbound" && <option value="no_reply">No reply</option>}
@@ -103,9 +103,9 @@ function CommunicationForm({ contact, senderName, onClose }: {
   </form>;
 }
 
-export default function QuickCommunicationLog({ contact, senderName }: { contact: { id: string; name: string }; senderName: string }) {
+export default function QuickCommunicationLog({ contact, senderName, compact = false }: { contact: { id: string; name: string }; senderName: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
-  return <><Button variant="ghost" size="sm" aria-label={`Log communication with ${contact.name}`} data-testid={`log-communication-${contact.id}`} onClick={() => setOpen(true)}><MessageSquarePlus className="mr-1 h-3.5 w-3.5" />Log communication</Button>
+  return <><Button variant="ghost" size="sm" className={compact ? "h-8 w-8 p-0" : undefined} title="Log communication" aria-label={`Log communication with ${contact.name}`} data-testid={`log-communication-${contact.id}`} onClick={() => setOpen(true)}><MessageSquarePlus className={compact ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />{!compact && "Log communication"}</Button>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-md"><DialogHeader><DialogTitle>Log communication</DialogTitle><DialogDescription>{contact.name} · Record a conversation that happened outside Orbit. No Orbit message is required.</DialogDescription></DialogHeader>{open && <CommunicationForm contact={contact} senderName={senderName} onClose={() => setOpen(false)} />}</DialogContent></Dialog>
   </>;
 }

@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 export const messagingGroups = ["customer", "prospect", "partner", "partner_prospect"] as const;
-export const contactFamiliarities = ["cold", "known", "unknown"] as const;
+export const contactFamiliarities = ["cold", "known", "personal_friend", "unknown"] as const;
 export type ContactFamiliarity = typeof contactFamiliarities[number];
 export const familiarityLabels: Record<ContactFamiliarity, string> = {
-  cold: "Cold introduction", known: "Known contact", unknown: "Unknown",
+  cold: "Cold introduction", known: "Known contact", personal_friend: "Personal friend", unknown: "Unknown",
 };
 export const bulkMessagingSchema = z.object({
   prospectIds: z.array(z.string().trim().min(1)).min(1).max(200)

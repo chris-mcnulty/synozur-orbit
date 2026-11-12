@@ -8,6 +8,8 @@ import { eq } from "drizzle-orm";
 import { getCachedResponse, setCachedResponse } from "./ai-cache";
 
 export interface AICompletionOptions {
+  /** Avoid retaining sensitive extraction results in the application response cache. */
+  skipCache?: boolean;
   maxTokens?: number;
   temperature?: number;
   systemPrompt?: string;
@@ -635,7 +637,7 @@ export async function completeForFeature(
     providerKey: resolved.providerKey,
   };
 
-  if (tenantDomain) {
+  if (tenantDomain && !options?.skipCache) {
     const cached = getCachedResponse(tenantDomain, feature, userPrompt, cacheOptions);
     if (cached) {
       console.log(`[ai-provider] Cache HIT for ${feature} (tenant: ${tenantDomain})`);
@@ -645,7 +647,7 @@ export async function completeForFeature(
 
   const MAX_RETRIES = 2;
   const cacheAndReturn = (result: AICompletionResult): AICompletionResult => {
-    if (tenantDomain) {
+    if (tenantDomain && !options?.skipCache) {
       setCachedResponse(tenantDomain, feature, userPrompt, result, cacheOptions);
     }
     return result;

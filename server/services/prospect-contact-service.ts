@@ -598,6 +598,7 @@ export interface ContactPersonPatch {
 export async function updateContactPersonFields(
   contactId: string,
   patch: ContactPersonPatch,
+  executor: Pick<typeof db, "update"> = db,
 ): Promise<MarketingContact | null> {
   const set: Partial<typeof marketingContacts.$inferInsert> = { updatedAt: new Date() };
   if (patch.name !== undefined) {
@@ -615,7 +616,7 @@ export async function updateContactPersonFields(
   if (patch.hubspotContactId !== undefined) set.hubspotContactId = patch.hubspotContactId;
   if (patch.hubspotCompanyId !== undefined) set.hubspotCompanyId = patch.hubspotCompanyId;
 
-  const [updated] = await db
+  const [updated] = await executor
     .update(marketingContacts)
     .set(set)
     .where(eq(marketingContacts.id, contactId))

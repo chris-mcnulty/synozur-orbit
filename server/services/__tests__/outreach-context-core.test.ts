@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { contextFingerprint, buildOutreachContextBlock } from "../outreach-context-core";
+
+it("personal friendship controls tone without inventing memories or overriding consent", () => {
+  for (const group of ["customer", "prospect", "partner", "partner_prospect"]) {
+    const text = buildOutreachContextBlock(group, [], [], "personal_friend");
+    expect(text).toContain("warm, relaxed, conversational email to a friend");
+    expect(text).toContain("Skip the sender bio, cold introduction");
+    expect(text).toContain("over generic campaign or professional voice guidance");
+    expect(text).toContain("Do not invent shared memories");
+    expect(text).toContain("Friendship does not override opt-outs, holds");
+  }
+  expect(contextFingerprint({ familiarity: "personal_friend" })).not.toBe(contextFingerprint({ familiarity: "known" }));
+});
 import { bulkMessagingSchema, externalActivitySchema, segmentBriefsSchema } from "@shared/outreach-context";
 describe("outreach context contracts", () => {
   it("keeps familiarity independent from all four messaging groups", () => {
