@@ -55,6 +55,8 @@ export function useCampaignClassification<T extends ClassifiedPerson>({ campaign
   }
   return {
     filters, setFilters, groupBy, setGroupBy, filteredPeople, groups, selectedIds, canEdit,
+    selectionScope: scope,
+    clearSelection: () => setSelection({ scope, ids: [] }),
     membershipCount: groups.reduce((sum, group) => sum + group.people.length, 0),
     clearFilters: () => setFilters(emptyClassificationFilters()),
     togglePerson,

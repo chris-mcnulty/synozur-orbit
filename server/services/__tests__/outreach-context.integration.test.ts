@@ -15,7 +15,7 @@ import { registerOutreachContextRoutes } from "../../routes/outreach-context";
 import { getOutreachContext, outreachCompositionContext, validateOutreachContext } from "../outreach-context-service";
 
 const tenant = `outreach-context-test-${randomUUID()}.invalid`;
-let p1: string, p2: string, c1: string;
+let p1: string, p2: string, p3: string, c1: string;
 const app = express(); app.use(express.json()); registerOutreachContextRoutes(app);
 const path = () => `/api/sales-outreach/prospects/${p1}`;
 const activity = {
@@ -37,6 +37,9 @@ describe.skipIf(!process.env.DATABASE_URL)("external outreach persistence, route
       tenantDomain: tenant, campaignId: c.id, contactId: contact.id,
     }))).returning();
     p1 = members[0].id; p2 = members[1].id;
+    const [secondContact] = await db.insert(marketingContacts).values({ tenantDomain: tenant, firstName: "Second fixture" }).returning();
+    const [third] = await db.insert(prospects).values({ tenantDomain: tenant, campaignId: c1, contactId: secondContact.id }).returning();
+    p3 = third.id;
   });
   afterAll(async () => {
     await db.delete(outreachCampaigns).where(eq(outreachCampaigns.tenantDomain, tenant));
@@ -101,5 +104,45 @@ describe.skipIf(!process.env.DATABASE_URL)("external outreach persistence, route
     auth.role = "Analyst";
     expect((await request(app).post(`${path()}/external-activities`).send({ ...activity, occurredAt: "2100-01-01T00:00:00Z" })).status).toBe(400);
     expect((await request(app).patch(`${path()}/outreach-context`).send({ messagingGroup: "made_up" })).status).toBe(400);
+  });
+  it("bulk edits atomically, preserves independent fields and leaves shared history untouched", async () => {
+    const url = `/api/sales-outreach/campaigns/${c1}/outreach-context`;
+    const before = await getOutreachContext(tenant, p1);
+    const saved = await request(app).patch(url).send({ prospectIds: [p1, p3], messagingGroup: "customer", familiarity: "known" });
+    expect(saved.status).toBe(200); expect(saved.body.updated).toBe(2);
+    for (const id of [p1, p3]) {
+      const ctx = await getOutreachContext(tenant, id);
+      expect(ctx.messagingGroup).toBe("customer"); expect(ctx.familiarity).toBe("known");
+    }
+    expect((await getOutreachContext(tenant, p2)).familiarity).toBe("unknown");
+    expect((await getOutreachContext(tenant, p1)).activities).toEqual(before.activities);
+    expect((await getOutreachContext(tenant, p1)).hold).toBe(before.hold);
+    expect((await request(app).patch(url).send({ prospectIds: [p1, p3], familiarity: "cold" })).status).toBe(200);
+    expect((await getOutreachContext(tenant, p1)).messagingGroup).toBe("customer");
+    expect((await request(app).patch(url).send({ prospectIds: [p1], messagingGroup: null })).status).toBe(200);
+    expect((await getOutreachContext(tenant, p1)).familiarity).toBe("cold");
+    // One valid ID plus another campaign's ID must roll back the valid change too.
+    expect((await request(app).patch(url).send({ prospectIds: [p1, p2], familiarity: "known" })).status).toBe(409);
+    expect((await getOutreachContext(tenant, p1)).familiarity).toBe("cold");
+    expect((await request(app).patch(url).send({ prospectIds: [p1, randomUUID()], familiarity: "known" })).status).toBe(409);
+    expect((await getOutreachContext(tenant, p1)).familiarity).toBe("cold");
+    auth.role = "Viewer";
+    expect((await request(app).patch(url).send({ prospectIds: [p1], familiarity: "known" })).status).toBe(403);
+    auth.role = "Analyst"; auth.tenant = "other.invalid";
+    expect((await request(app).patch(url).send({ prospectIds: [p1], familiarity: "known" })).status).toBe(404);
+    auth.tenant = tenant;
+  });
+  it("requires reviewed familiarity for drafting and detects changes before persistence or approval", async () => {
+    const ctx = await getOutreachContext(tenant, p1);
+    await expect(outreachCompositionContext(tenant, p1)).rejects.toThrow(/Review/);
+    const draft = await outreachCompositionContext(tenant, p1, ctx.fingerprint);
+    expect(draft.block).toContain("introduce the sender briefly");
+    expect((await request(app).patch(`${path()}/outreach-context`).send({ familiarity: "known" })).status).toBe(200);
+    await expect(validateOutreachContext(tenant, p1, draft.snapshot)).rejects.toThrow(/changed/);
+    await expect(validateOutreachContext(tenant, p1)).rejects.toThrow(/changed/);
+    const known = await getOutreachContext(tenant, p1);
+    expect((await outreachCompositionContext(tenant, p1, known.fingerprint)).block).toContain("skip the sender bio");
+    expect((await request(app).patch(`${path()}/outreach-context`).send({ familiarity: "unknown" })).status).toBe(200);
+    await expect(validateOutreachContext(tenant, p1, { fingerprint: known.fingerprint, group: null })).rejects.toThrow(/changed/);
   });
 });

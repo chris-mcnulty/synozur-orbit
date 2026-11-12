@@ -50,3 +50,9 @@ External correspondence belongs to the shared contact across campaigns; messagin
 **Why:** Manual email outside Orbit must inform the next draft, and an existing customer may also be a partner. Guessing one relationship from overlapping classifications can produce the wrong message.
 
 **How to apply:** Require an explicit messaging group or shared-brief choice. Log actual sender, time, message and outcome; do not infer a reply or established partnership. Keep holds contact-wide and explicit. Follow-up dates are reminders, not consent or automatic scheduling. Editing/deleting shared activity must be clearly identified as affecting history across campaigns.
+
+Familiarity with the campaign sender is independent of the customer/partner messaging group, with explicit cold, known, and unknown choices. Keep it campaign-specific rather than a global contact trait.
+
+**Why:** A prospective partner can be an old acquaintance, while an employee at an existing customer can be unknown to the sender. The user approved bulk assignment of these independent dimensions.
+
+**How to apply:** Preserve an unchanged dimension in bulk edits. Default familiarity to unknown; never infer it from CRM membership or company. Known contacts do not need a cold bio, but the label cannot invent shared experiences. Recorded correspondence takes precedence over a cold-introduction label.

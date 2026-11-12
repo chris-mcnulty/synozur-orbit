@@ -1,17 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { getTabMarketId, getTabTenantId } from "@/lib/tabContext";
-import type { ExternalActivityInput, SegmentBrief } from "@shared/outreach-context";
+import { contactFamiliarities, messagingGroups, type ContactFamiliarity, type ExternalActivityInput, type SegmentBrief } from "@shared/outreach-context";
 
 export type MessagingGroup = SegmentBrief["group"];
 export function matchesAssignedMessagingGroup(contact: { messagingGroup?: MessagingGroup | null }, filter: string) {
   return filter === "all" || (filter === "unassigned" ? !contact.messagingGroup : contact.messagingGroup === filter);
 }
+export function matchesContactFamiliarity(contact: { familiarity?: ContactFamiliarity | null }, filter: string) {
+  return filter === "all" || (contact.familiarity ?? "unknown") === filter;
+}
+export type OutreachSettingsPatch = { messagingGroup?: MessagingGroup | null; familiarity?: ContactFamiliarity };
+export function bulkOutreachInput(prospectIds: string[], patch: OutreachSettingsPatch) {
+  if (!prospectIds.length || prospectIds.length > 200 || new Set(prospectIds).size !== prospectIds.length || prospectIds.some(id => !id.trim())) {
+    throw new Error("Select between 1 and 200 unique contacts.");
+  }
+  if (patch.messagingGroup === undefined && patch.familiarity === undefined) throw new Error("Choose at least one setting to change.");
+  if (patch.messagingGroup !== undefined && patch.messagingGroup !== null && !messagingGroups.includes(patch.messagingGroup)) throw new Error("Choose a valid messaging group.");
+  if (patch.familiarity !== undefined && !contactFamiliarities.includes(patch.familiarity)) throw new Error("Choose a valid familiarity.");
+  return { prospectIds, ...patch };
+}
 export interface ExternalActivity extends ExternalActivityInput {
   id: string; createdAt: string; updatedAt: string;
 }
 export interface OutreachContext {
-  activities: ExternalActivity[]; hold: boolean; messagingGroup: MessagingGroup | null;
+  activities: ExternalActivity[]; hold: boolean; messagingGroup: MessagingGroup | null; familiarity: ContactFamiliarity;
   briefs: SegmentBrief[]; fingerprint: string; recentActivity: boolean;
 }
 export const outreachPath = (id: string) => `/api/sales-outreach/prospects/${encodeURIComponent(id)}/outreach-context`;
@@ -29,14 +42,14 @@ export function useOutreachActions(id: string) {
   const qc = useQueryClient();
   const key = outreachKey(id);
   const settings = useMutation({
-    mutationFn: async (input: { hold?: boolean; messagingGroup?: MessagingGroup | null }): Promise<OutreachContext> =>
+    mutationFn: async (input: OutreachSettingsPatch & { hold?: boolean }): Promise<OutreachContext> =>
       (await apiRequest("PATCH", outreachPath(id), input)).json(),
     onSuccess: (context) => {
       qc.setQueryData(key, context);
       // Patch the canonical directory in place so its group filter updates immediately.
-      qc.setQueriesData<{ id: string; messagingGroup?: MessagingGroup | null }[]>({
+      qc.setQueriesData<({ id: string } & OutreachSettingsPatch)[]>({
         predicate: (query) => query.queryKey[0] === "/api/sales-outreach/campaigns" && query.queryKey.at(-1) === "prospects",
-      }, (rows) => rows?.map((row) => row.id === id ? { ...row, messagingGroup: context.messagingGroup } : row));
+      }, (rows) => rows?.map((row) => row.id === id ? { ...row, messagingGroup: context.messagingGroup, familiarity: context.familiarity ?? "unknown" } : row));
     },
   });
   const activity = useMutation({
@@ -49,6 +62,25 @@ export function useOutreachActions(id: string) {
     onSuccess: (context) => qc.setQueryData(key, context),
   });
   return { settings, activity };
+}
+export function useBulkOutreachActions(campaignId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ prospectIds, patch }: { prospectIds: string[]; patch: OutreachSettingsPatch }) =>
+      (await apiRequest("PATCH", `/api/sales-outreach/campaigns/${encodeURIComponent(campaignId)}/outreach-context`, bulkOutreachInput(prospectIds, patch))).json() as Promise<{ updated: number }>,
+    onSuccess: async (_, { prospectIds, patch }) => {
+      const ids = new Set(prospectIds);
+      const directoryKey = ["/api/sales-outreach/campaigns", campaignId, "prospects"];
+      qc.setQueriesData<({ id: string } & OutreachSettingsPatch)[]>({ queryKey: directoryKey },
+        rows => rows?.map(row => ids.has(row.id) ? { ...row, ...patch } : row));
+      // Never fabricate a context fingerprint. Active preflights refetch before continuing;
+      // inactive contexts become stale and refetch when reopened.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: directoryKey }),
+        ...prospectIds.map(id => qc.invalidateQueries({ queryKey: outreachKey(id) })),
+      ]);
+    },
+  });
 }
 export function outreachError(error: unknown) {
   return error instanceof Error ? error.message.replace(/^\d+:\s*/, "") : "Could not save. Please try again.";

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { History, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
-import { messagingGroups, messagingGroupLabels, externalActivitySchema, type ExternalActivityInput } from "@shared/outreach-context";
+import { messagingGroups, messagingGroupLabels, contactFamiliarities, familiarityLabels, externalActivitySchema, type ContactFamiliarity, type ExternalActivityInput } from "@shared/outreach-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +24,16 @@ export function MessagingGroupSelect({ value, onChange, disabled = false }: {
       {messagingGroups.map((group) => <option key={group} value={group}>{messagingGroupLabels[group]}</option>)}
     </select>
     <span className="block text-xs font-normal text-muted-foreground">Choose explicitly. Orbit never infers a messaging group from a title or role.</span>
+  </label>;
+}
+export function FamiliaritySelect({ value, onChange, disabled = false }: {
+  value?: ContactFamiliarity; onChange: (value: ContactFamiliarity) => void; disabled?: boolean;
+}) {
+  return <label className="block space-y-1.5 text-sm font-medium">Familiarity with campaign sender
+    <select className={selectClass} value={value ?? "unknown"} disabled={disabled} onChange={e => onChange(e.target.value as ContactFamiliarity)}>
+      {contactFamiliarities.map(item => <option key={item} value={item}>{familiarityLabels[item]}</option>)}
+    </select>
+    <span className="block text-xs font-normal text-muted-foreground">Specific to this campaign’s sender, not a global person trait. Unknown is the default. Neither familiarity nor messaging group implies consent or communication status.</span>
   </label>;
 }
 export function OutreachHistory({ context, onEdit, onDelete }: {
@@ -88,8 +98,9 @@ export function OutreachContextPanel({ prospectId, canEdit }: { prospectId: stri
   const context = query.data;
   const busy = settings.isPending || activity.isPending;
   return <div className="space-y-5">
-    <div className="rounded-lg border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">This is the contact’s global history and outreach hold, shared across campaigns. Messaging groups are explicitly assigned to this contact, not inferred from a role.</div>
+    <div className="rounded-lg border bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground">History and outreach hold are shared across campaigns. Messaging group and familiarity are explicit settings for this campaign; neither is inferred from a role.</div>
     <MessagingGroupSelect value={context.messagingGroup} disabled={!canEdit || busy} onChange={(messagingGroup) => { setError(""); settings.mutate({ messagingGroup }, { onError: (e) => setError(outreachError(e)) }); }} />
+    <FamiliaritySelect value={context.familiarity} disabled={!canEdit || busy} onChange={(familiarity) => { setError(""); settings.mutate({ familiarity }, { onError: e => setError(outreachError(e)) }); }} />
     <label className={`flex items-start gap-3 rounded-lg border p-3 ${context.hold ? "border-amber-400/60 bg-amber-500/10" : ""}`}>
       <input type="checkbox" className="mt-1" checked={context.hold} disabled={!canEdit || busy} onChange={(e) => { setError(""); settings.mutate({ hold: e.target.checked }, { onError: (err) => setError(outreachError(err)) }); }} />
       <span className="text-sm font-medium">Hold outreach across all campaigns<span className="mt-1 block text-xs font-normal text-muted-foreground">Blocks new drafts and approval. Existing history is kept.</span></span>

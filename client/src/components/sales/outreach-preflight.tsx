@@ -3,7 +3,7 @@ import { ShieldAlert } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessagingGroupSelect, OutreachContextPanel, OutreachHistory } from "./outreach-contact-context";
+import { FamiliaritySelect, MessagingGroupSelect, OutreachContextPanel, OutreachHistory } from "./outreach-contact-context";
 import { fetchOutreachContext, outreachError, outreachKey, useOutreachActions, useOutreachContext } from "./use-outreach-context";
 
 export class OutreachPreflightCancelled extends Error {}
@@ -63,6 +63,7 @@ function PreflightBody({ contact, canEdit, onConfirm, onCancel }: { contact: Con
     {context.hold && <div role="alert" className="flex gap-2 rounded-lg border border-amber-400/60 bg-amber-500/10 p-3 text-sm"><ShieldAlert className="h-5 w-5 shrink-0" /><p><strong>Outreach is on hold.</strong> Drafting and approval are blocked in every campaign. An editor must release the hold before continuing.</p></div>}
     {context.recentActivity && <div role="status" className="rounded-lg border border-amber-400/60 bg-amber-500/10 p-3 text-sm"><strong>Recent outreach recorded.</strong> Check what was said and any reply before deciding whether another message is appropriate.</div>}
     <MessagingGroupSelect value={context.messagingGroup} disabled={!canEdit || settings.isPending || busy} onChange={(messagingGroup) => { setAcknowledged(null); setError(""); settings.mutate({ messagingGroup }, { onError: (e) => setError(outreachError(e)) }); }} />
+    <FamiliaritySelect value={context.familiarity} disabled={!canEdit || settings.isPending || busy} onChange={(familiarity) => { setAcknowledged(null); setError(""); settings.mutate({ familiarity }, { onError: e => setError(outreachError(e)) }); }} />
     {groupBrief && <details className="rounded-lg border bg-muted/20 p-3"><summary className="cursor-pointer text-sm font-medium">Assigned group’s campaign brief</summary><dl className="mt-3 space-y-2">{(["goal", "guidance", "ask", "exclusions"] as const).map((field) => <div key={field}><dt className="text-xs font-medium capitalize text-muted-foreground">{field}</dt><dd className="whitespace-pre-wrap break-words text-sm">{groupBrief[field] || "Not specified"}</dd></div>)}</dl></details>}
     {!context.messagingGroup && <p className="text-xs text-muted-foreground">This draft will use the shared campaign brief, without group-specific guidance.</p>}
     <h3 className="text-sm font-semibold">Global contact history</h3>

@@ -37,7 +37,7 @@ export function ClassificationToolbar({ people, filters, onFiltersChange, groupB
     </div>
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
       <span data-testid="classification-count">{uniqueCount} unique {uniqueCount === 1 ? "contact" : "contacts"}{groupBy !== "none" && <> · {membershipCount} group memberships. A contact can appear in more than one group.</>}</span>
-      {canEdit ? <div className="flex items-center gap-2"><span>{selectedCount ? `${selectedCount} selected · ` : ""}Select up to 200</span><Button variant="outline" size="sm" className="h-7 text-xs" disabled={!selectedCount} onClick={onEdit} data-testid="classification-edit-selected"><Tags className="mr-1.5 h-3 w-3" />Edit selected</Button></div> : <span>Classification is read-only for your role.</span>}
+      {canEdit ? <div className="flex flex-wrap items-center gap-2"><span>{selectedCount ? `${selectedCount} selected · ` : ""}{selectedCount === 200 && uniqueCount > 200 ? "200-contact limit reached; remaining contacts are not selected." : "Select up to 200"}</span><Button variant="outline" size="sm" className="h-7 text-xs" disabled={!selectedCount} onClick={onEdit} data-testid="classification-edit-selected"><Tags className="mr-1.5 h-3 w-3" />Edit selected</Button></div> : <span>Classification is read-only for your role.</span>}
     </div>
   </div>;
 }

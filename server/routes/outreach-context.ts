@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { externalActivitySchema, messagingGroups, segmentBriefsSchema } from "@shared/outreach-context";
+import { bulkMessagingSchema, contactFamiliarities, externalActivitySchema, messagingGroups, segmentBriefsSchema } from "@shared/outreach-context";
 import { externalOutreachActivities, marketingContacts, outreachCampaigns, prospects } from "@shared/schema";
 import { db } from "../db";
 import { ContextError, getRequestContext } from "../context";
@@ -31,7 +31,7 @@ export function registerOutreachContextRoutes(app: Express) {
   app.get(`${base}/outreach-context`, handle(false, async (req, res, ctx) =>
     res.json(await getOutreachContext(ctx.tenantDomain, req.params.id, ctx.marketId))));
   app.patch(`${base}/outreach-context`, handle(true, async (req, res, ctx) => {
-    const body = z.object({ hold: z.boolean().optional(), messagingGroup: z.enum(messagingGroups).nullable().optional() }).strict().parse(req.body);
+    const body = z.object({ hold: z.boolean().optional(), messagingGroup: z.enum(messagingGroups).nullable().optional(), familiarity: z.enum(contactFamiliarities).optional() }).strict().parse(req.body);
     const row = await outreachContextPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     await db.transaction(async tx => {
       if (body.hold !== undefined) {
@@ -39,6 +39,7 @@ export function registerOutreachContextRoutes(app: Express) {
         if (body.hold) await tx.update(prospects).set({ nextActionAt: null }).where(and(eq(prospects.contactId, row.contact.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
       }
       if (body.messagingGroup !== undefined) await tx.update(prospects).set({ messagingGroup: body.messagingGroup }).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
+      if (body.familiarity !== undefined) await tx.update(prospects).set({ familiarity: body.familiarity }).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
     });
     res.json(await getOutreachContext(ctx.tenantDomain, req.params.id, ctx.marketId));
   }));
@@ -77,6 +78,25 @@ export function registerOutreachContextRoutes(app: Express) {
     return campaign;
   };
   app.get(campaignBase, handle(false, async (req, res, ctx) => res.json((await campaignFor(req, ctx)).messagingBriefs ?? [])));
+  app.patch("/api/sales-outreach/campaigns/:id/outreach-context", handle(true, async (req, res, ctx) => {
+    const body = bulkMessagingSchema.parse(req.body);
+    const campaign = await campaignFor(req, ctx);
+    const updated = await db.transaction(async tx => {
+      const rows = await tx.update(prospects).set({
+        ...(body.messagingGroup !== undefined ? { messagingGroup: body.messagingGroup } : {}),
+        ...(body.familiarity !== undefined ? { familiarity: body.familiarity } : {}),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(prospects.tenantDomain, ctx.tenantDomain), eq(prospects.campaignId, campaign.id),
+        inArray(prospects.id, body.prospectIds),
+      )).returning({ id: prospects.id });
+      // Throw inside the transaction so mixed-scope or stale selections change nothing.
+      if (rows.length !== body.prospectIds.length) throw new OutreachContextError(
+        "Some selected contacts are no longer in this campaign. Refresh the directory and select them again.", 409);
+      return rows.length;
+    });
+    res.json({ updated });
+  }));
   app.put(campaignBase, handle(true, async (req, res, ctx) => {
     const body = z.object({ briefs: segmentBriefsSchema }).strict().parse(req.body);
     const campaign = await campaignFor(req, ctx);

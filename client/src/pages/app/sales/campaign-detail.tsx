@@ -37,11 +37,12 @@ import {
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
 import OutreachContactContext from "@/components/sales/outreach-contact-context";
+import BulkMessagingEditor from "@/components/sales/bulk-messaging-editor";
 import CampaignMessagingBriefs from "@/components/sales/campaign-messaging-briefs";
 import { OutreachPreflightCancelled, useOutreachPreflight } from "@/components/sales/outreach-preflight";
-import { fetchOutreachContext, matchesAssignedMessagingGroup, useOutreachContext } from "@/components/sales/use-outreach-context";
+import { fetchOutreachContext, matchesAssignedMessagingGroup, matchesContactFamiliarity, useOutreachContext } from "@/components/sales/use-outreach-context";
 import { generateWithOutreachReview, isOutreachContextError } from "@/components/sales/outreach-generation";
-import { messagingGroups, messagingGroupLabels } from "@shared/outreach-context";
+import { messagingGroups, messagingGroupLabels, contactFamiliarities, familiarityLabels, type ContactFamiliarity } from "@shared/outreach-context";
 import type { MessagingGroup } from "@/components/sales/use-outreach-context";
 import { useCampaignClassification } from "@/components/sales/use-campaign-classification";
 import { classificationSearchText, meetingPriorityRank } from "@/components/sales/campaign-classification-helpers";
@@ -221,6 +222,7 @@ function TagInput({
 interface Prospect {
   id: string;
   messagingGroup?: MessagingGroup | null;
+  familiarity?: ContactFamiliarity;
   classification?: CampaignClassification | null;
   meeting?: MeetingContact | null;
   name: string;
@@ -578,6 +580,7 @@ export default function OutreachCampaignDetailPage() {
   const [statusTab, setStatusTab] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [messagingGroupFilter, setMessagingGroupFilter] = useState("all");
+  const [familiarityFilter, setFamiliarityFilter] = useState("all");
   const [scoreFilter, setScoreFilter] = useState("all"); // all | high | medium | low | unscored
   const [sortKey, setSortKey] = useState<ProspectSortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -868,6 +871,7 @@ export default function OutreachCampaignDetailPage() {
     if (statuses.length) list = list.filter((p) => statuses.includes(p.status));
     if (sourceFilter !== "all") list = list.filter((p) => p.source === sourceFilter);
     list = list.filter((p) => matchesAssignedMessagingGroup(p, messagingGroupFilter));
+    list = list.filter((p) => matchesContactFamiliarity(p, familiarityFilter));
     // Score buckets mirror the scoreColor thresholds (70+ / 50–69 / <50).
     if (scoreFilter !== "all") {
       list = list.filter((p) => {
@@ -890,15 +894,16 @@ export default function OutreachCampaignDetailPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [prospects, searchQ, statusTab, sourceFilter, messagingGroupFilter, scoreFilter, sortKey, sortDir]);
+  }, [prospects, searchQ, statusTab, sourceFilter, messagingGroupFilter, familiarityFilter, scoreFilter, sortKey, sortDir]);
   const classification = useCampaignClassification({
     campaignId: id, people: visibleProspects, role: user?.role,
-    filterScope: JSON.stringify([getTabTenantId(), searchQ, statusTab, sourceFilter, messagingGroupFilter, scoreFilter]),
+    filterScope: JSON.stringify([getTabTenantId(), searchQ, statusTab, sourceFilter, messagingGroupFilter, familiarityFilter, scoreFilter]),
   });
   function clearPeopleFilters() {
     classification.clearFilters();
     setSearchQ(""); setStatusTab("all"); setSourceFilter("all"); setScoreFilter("all");
     setMessagingGroupFilter("all");
+    setFamiliarityFilter("all");
   }
 
   const { data: performance } = useQuery<{
@@ -1716,6 +1721,12 @@ export default function OutreachCampaignDetailPage() {
                       <option value="unassigned">Shared brief / unassigned</option>
                       {messagingGroups.map((group) => <option key={group} value={group}>{messagingGroupLabels[group]}</option>)}
                     </select>
+                    <select aria-label="Filter contacts by familiarity with campaign sender" value={familiarityFilter}
+                      onChange={e => setFamiliarityFilter(e.target.value)} data-testid="select-familiarity-filter"
+                      className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+                      <option value="all">All familiarities</option>
+                      {contactFamiliarities.map(value => <option key={value} value={value}>{familiarityLabels[value]}</option>)}
+                    </select>
                     {uniqueSources.length > 1 && (
                       <select
                         value={sourceFilter}
@@ -1755,12 +1766,14 @@ export default function OutreachCampaignDetailPage() {
                 canEdit={classification.canEdit} onEdit={() => classification.openEditor(classification.selectedIds)}
                 onClear={clearPeopleFilters} uniqueCount={classification.filteredPeople.length}
                 membershipCount={classification.membershipCount} />
+              {classification.canEdit && <BulkMessagingEditor key={JSON.stringify([classification.selectionScope, classification.selectedIds])}
+                campaignId={id} selectedIds={classification.selectedIds} canEdit={classification.canEdit} onSaved={classification.clearSelection} />}
               <Table>
                 <TableHeader>
                   <TableRow>
                     {classification.canEdit && <TableHead className="w-9"><ClassificationSelect
                       label="Select visible contacts (up to 200)"
-                      checked={classification.selectedIds.length > 0 ? classification.selectedIds.length === Math.min(200, classification.filteredPeople.length) ? true : "indeterminate" : false}
+                      checked={classification.selectedIds.length > 0 ? classification.selectedIds.length === new Set(classification.filteredPeople.map(person => person.id)).size ? true : "indeterminate" : false}
                       disabled={!classification.filteredPeople.length} onChange={classification.toggleAll}
                       testId="classification-select-all" /></TableHead>}
                     <TableHead
@@ -1824,6 +1837,7 @@ export default function OutreachCampaignDetailPage() {
                         <Button variant="link" size="sm" className="h-auto px-0 py-1 text-[10px] text-muted-foreground" onClick={() => setHistoryContact(p)} aria-label={`Messaging group for ${p.name || p.email || "contact"}: ${p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief, unassigned"}`} data-testid={`messaging-group-${p.id}`}>
                           {p.messagingGroup ? messagingGroupLabels[p.messagingGroup] : "Shared brief · unassigned"}
                         </Button>
+                        <p className="text-[10px] text-muted-foreground" title="Familiarity with this campaign’s sender. Does not imply consent or communication status." data-testid={`familiarity-${p.id}`}>{familiarityLabels[p.familiarity ?? "unknown"]}</p>
                         <ClassificationBadges person={p} />
                         <DiscoveryConfidenceBadge confidence={p.signals?.discoveryConfidence} />
                         {campaign.conferenceId && <Button variant="link" size="sm" className="h-auto px-0 py-1 text-xs" onClick={() => {

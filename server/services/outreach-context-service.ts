@@ -27,32 +27,35 @@ export async function getOutreachContext(tenantDomain: string, prospectId: strin
     eq(externalOutreachActivities.tenantDomain, tenantDomain), eq(externalOutreachActivities.contactId, row.contact.id),
   )).orderBy(desc(externalOutreachActivities.occurredAt), desc(externalOutreachActivities.id));
   const group = row.person.messagingGroup ?? null;
+  const familiarity = row.person.familiarity ?? "unknown";
   const briefs = row.campaign.messagingBriefs ?? [];
   const fingerprint = contextFingerprint({
     contact: row.contact.id, group, brief: briefs.find(b => b.group === group) ?? null,
     hold: row.contact.outreachHold, activities,
+    // Preserve fingerprints issued before familiarity existed for unchanged unknown contacts.
+    ...(familiarity !== "unknown" ? { familiarity } : {}),
   });
-  return { activities, hold: row.contact.outreachHold, messagingGroup: group, briefs, fingerprint,
+  return { activities, hold: row.contact.outreachHold, messagingGroup: group, familiarity, briefs, fingerprint,
     recentActivity: activities.some(a => a.occurredAt.getTime() >= Date.now() - 7 * 86400000) };
 }
 
 export async function outreachCompositionContext(tenantDomain: string, prospectId: string, confirmedFingerprint?: string) {
   const ctx = await getOutreachContext(tenantDomain, prospectId);
   if (ctx.hold) throw new OutreachContextError("Outreach is on hold for this contact across campaigns. Remove the hold deliberately before drafting.", 409, "OUTREACH_ON_HOLD");
-  if ((ctx.activities.length || ctx.messagingGroup) && confirmedFingerprint !== ctx.fingerprint) {
+  if ((ctx.activities.length || ctx.messagingGroup || ctx.familiarity !== "unknown") && confirmedFingerprint !== ctx.fingerprint) {
     throw new OutreachContextError("Review this contact's correspondence and selected messaging group before drafting.");
   }
   return {
     snapshot: { fingerprint: ctx.fingerprint, group: ctx.messagingGroup } satisfies OutreachContextSnapshot,
     brief: ctx.briefs.find(b => b.group === ctx.messagingGroup),
-    block: buildOutreachContextBlock(ctx.messagingGroup, ctx.briefs, ctx.activities),
+    block: buildOutreachContextBlock(ctx.messagingGroup, ctx.briefs, ctx.activities, ctx.familiarity),
   };
 }
 
 export async function validateOutreachContext(tenantDomain: string, prospectId: string, snapshot?: OutreachContextSnapshot | null) {
   const current = await getOutreachContext(tenantDomain, prospectId);
   if (current.hold) throw new OutreachContextError("Outreach is on hold for this contact. Nothing was sent.", 409, "OUTREACH_ON_HOLD");
-  if (snapshot ? snapshot.fingerprint !== current.fingerprint : current.activities.length > 0 || !!current.messagingGroup) {
+  if (snapshot ? snapshot.fingerprint !== current.fingerprint : current.activities.length > 0 || !!current.messagingGroup || current.familiarity !== "unknown") {
     throw new OutreachContextError("The contact's correspondence or messaging direction changed. Review the current context and generate a new draft before approval.");
   }
 }
