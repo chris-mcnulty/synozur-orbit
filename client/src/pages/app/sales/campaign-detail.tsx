@@ -37,6 +37,7 @@ import {
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
 import OutreachContactContext from "@/components/sales/outreach-contact-context";
+import QuickCommunicationLog, { ExternalCommunicationBadge, type ExternalActivitySummary } from "@/components/sales/quick-communication-log";
 import BulkMessagingEditor from "@/components/sales/bulk-messaging-editor";
 import BulkCampaignRemoval from "@/components/sales/bulk-campaign-removal";
 import RemovedCampaignContacts from "@/components/sales/removed-campaign-contacts";
@@ -223,6 +224,7 @@ function TagInput({
 
 interface Prospect {
   id: string;
+  externalActivitySummary?: ExternalActivitySummary;
   messagingGroup?: MessagingGroup | null;
   familiarity?: ContactFamiliarity;
   classification?: CampaignClassification | null;
@@ -1072,18 +1074,6 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Sharpen failed", description: err?.message, variant: "destructive" }),
   });
 
-  const markReplied = useMutation({
-    mutationFn: async (prospectId: string) => {
-      const res = await apiRequest("POST", `/api/sales-outreach/prospects/${prospectId}/mark-replied`, {});
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: prospectsKey });
-      toast({ title: "Marked replied" });
-    },
-    onError: (err: any) => toast({ title: "Couldn't update", description: err?.message, variant: "destructive" }),
-  });
-
   const tick = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/sales-outreach/cadence/tick", {});
@@ -1859,6 +1849,7 @@ export default function OutreachCampaignDetailPage() {
                         <Badge variant={STATE_VARIANT[p.status] ?? "outline"} className="text-[10px] capitalize">
                           {p.status.replace(/_/g, " ")}
                         </Badge>
+                        <ExternalCommunicationBadge summary={p.externalActivitySummary} />
                       </TableCell>
                       <TableCell>
                         <ClassificationSource person={p} />
@@ -1866,6 +1857,7 @@ export default function OutreachCampaignDetailPage() {
                       <TableCell className="w-[300px] min-w-[250px]">
                         <div className="flex flex-wrap items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setHistoryContact(p)} data-testid={`outreach-history-${p.id}`}>History & hold</Button>
+                        {canEditOutreach && <QuickCommunicationLog contact={p} senderName={user?.name ?? ""} />}
                         {classification.canEdit && <ClassificationEditButton person={p} onEdit={() => classification.openEditor([p.id])} />}
                         {p.researchDossier && (
                           <Button variant="ghost" size="sm" onClick={() => setDossier(p)} data-testid={`view-dossier-${p.id}`}>Dossier</Button>
@@ -1884,17 +1876,6 @@ export default function OutreachCampaignDetailPage() {
                           )}
                           {p.researchDossier ? "Re-score" : "Research"}
                         </Button>
-                        {(p.status === "awaiting_reply" || p.status === "cadence_step_due") && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => markReplied.mutate(p.id)}
-                            disabled={markReplied.isPending && markReplied.variables === p.id}
-                            data-testid={`mark-replied-${p.id}`}
-                          >
-                            Mark replied
-                          </Button>
-                        )}
                         {p.status !== "dormant" && p.status !== "replied" && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

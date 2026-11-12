@@ -103,7 +103,7 @@ export async function reviewConferenceRelationship(
       eq(externalOutreachActivities.tenantDomain, tenantDomain),
       gte(externalOutreachActivities.occurredAt, since),
     )).orderBy(desc(externalOutreachActivities.occurredAt))).map(a => ({
-      id: `external:${a.id}`, source: "external" as const, kind: `${a.channel} ${a.outcome} (logged manually)`,
+      id: `external:${a.id}`, source: "external" as const, kind: `${a.direction === "inbound" ? "Received" : "Sent"} ${a.channel} ${a.outcome} (logged manually)`,
       at: a.occurredAt.toISOString(), summary: clean(`${a.sender}: ${a.message}${a.reply ? ` Reply: ${a.reply}` : ""}`),
     })),
     ...crm.activities,

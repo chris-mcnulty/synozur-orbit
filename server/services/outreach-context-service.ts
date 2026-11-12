@@ -31,7 +31,8 @@ export async function getOutreachContext(tenantDomain: string, prospectId: strin
   const briefs = row.campaign.messagingBriefs ?? [];
   const fingerprint = contextFingerprint({
     contact: row.contact.id, group, brief: briefs.find(b => b.group === group) ?? null,
-    hold: row.contact.outreachHold, activities,
+    hold: row.contact.outreachHold, activities: activities.map(({ direction, ...activity }) =>
+      direction === "inbound" ? { ...activity, direction } : activity),
     // Preserve fingerprints issued before familiarity existed for unchanged unknown contacts.
     ...(familiarity !== "unknown" ? { familiarity } : {}),
   });

@@ -62,3 +62,9 @@ Familiarity with the campaign sender is independent of the customer/partner mess
 **Why:** A prospective partner can be an old acquaintance, while an employee at an existing customer can be unknown to the sender. The user approved bulk assignment of these independent dimensions.
 
 **How to apply:** Preserve an unchanged dimension in bulk edits. Default familiarity to unknown; never infer it from CRM membership or company. Known contacts do not need a cold bio, but the label cannot invent shared experiences. Recorded correspondence takes precedence over a cold-introduction label.
+
+Outside-Orbit messages and replies must be recordable without an existing Orbit message, directly from the campaign directory.
+
+**Why:** The user explicitly needs to track separate outreach and out-of-band responses without reconstructing an Orbit send first.
+
+**How to apply:** Distinguish received from sent activity and allow honest “content not recorded” notes rather than invented message text. Explicit replies stop that campaign's pending cadence; shared history informs other campaigns without marking all of them replied. Editing or deleting history must not automatically restart outreach.

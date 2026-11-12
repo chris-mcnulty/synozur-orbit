@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { bulkMessagingSchema, contactFamiliarities, externalActivitySchema, messagingGroups, segmentBriefsSchema } from "@shared/outreach-context";
 import { externalOutreachActivities, marketingContacts, outreachCampaigns, prospects } from "@shared/schema";
@@ -47,20 +47,34 @@ export function registerOutreachContextRoutes(app: Express) {
   app.post(activityBase, handle(true, async (req, res, ctx) => {
     const body = externalActivitySchema.parse(req.body);
     const row = await outreachContextPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
-    const [created] = await db.insert(externalOutreachActivities).values({
-      ...body, occurredAt: new Date(body.occurredAt), followUpAt: body.followUpAt ? new Date(body.followUpAt) : null,
-      tenantDomain: ctx.tenantDomain, contactId: row.contact.id, campaignId: row.campaign.id, createdBy: ctx.userId,
-    }).returning();
+    const created = await db.transaction(async tx => {
+      const [entry] = await tx.insert(externalOutreachActivities).values({
+        ...body, occurredAt: new Date(body.occurredAt), followUpAt: body.followUpAt ? new Date(body.followUpAt) : null,
+        tenantDomain: ctx.tenantDomain, contactId: row.contact.id, campaignId: row.campaign.id, createdBy: ctx.userId,
+      }).returning();
+      if (body.outcome === "replied" || body.outcome === "meeting_agreed") {
+        await tx.update(prospects).set({ status: "replied", nextActionAt: null, updatedAt: new Date() })
+          .where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain), isNull(prospects.removedAt)));
+      }
+      return entry;
+    });
     res.status(201).json(created);
   }));
   app.patch(`${activityBase}/:activityId`, handle(true, async (req, res, ctx) => {
     const body = externalActivitySchema.parse(req.body);
     const row = await outreachContextPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
-    const [updated] = await db.update(externalOutreachActivities).set({
+    const updated = await db.transaction(async tx => {
+    const [entry] = await tx.update(externalOutreachActivities).set({
       ...body, occurredAt: new Date(body.occurredAt), followUpAt: body.followUpAt ? new Date(body.followUpAt) : null, updatedAt: new Date(),
     }).where(and(eq(externalOutreachActivities.id, req.params.activityId), eq(externalOutreachActivities.tenantDomain, ctx.tenantDomain),
       eq(externalOutreachActivities.contactId, row.contact.id))).returning();
-    if (!updated) throw new OutreachContextError("Activity not found.", 404);
+    if (!entry) throw new OutreachContextError("Activity not found.", 404);
+    if (body.outcome === "replied" || body.outcome === "meeting_agreed") {
+      await tx.update(prospects).set({ status: "replied", nextActionAt: null, updatedAt: new Date() })
+        .where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain), isNull(prospects.removedAt)));
+    }
+    return entry;
+    });
     res.json(updated);
   }));
   app.delete(`${activityBase}/:activityId`, handle(true, async (req, res, ctx) => {

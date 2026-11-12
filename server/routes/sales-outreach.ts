@@ -10,6 +10,7 @@ import { z } from "zod";
 import { db } from "../db";
 import {
   outreachSettings,
+  externalOutreachActivities,
   outreachCampaigns,
   prospects,
   personas,
@@ -412,7 +413,14 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
       const rows = await listCampaignProspects(campaign.id, req.query.removed === "true");
       rows.sort((a, b) => (b.icpScore ?? -1) - (a.icpScore ?? -1));
-      res.json(rows);
+      const recent = rows.length ? await db.selectDistinctOn([externalOutreachActivities.contactId], {
+        contactId: externalOutreachActivities.contactId, direction: externalOutreachActivities.direction,
+        outcome: externalOutreachActivities.outcome, occurredAt: externalOutreachActivities.occurredAt,
+      }).from(externalOutreachActivities).where(and(eq(externalOutreachActivities.tenantDomain, ctx.tenantDomain),
+        inArray(externalOutreachActivities.contactId, rows.map(r => r.contactId))))
+        .orderBy(externalOutreachActivities.contactId, desc(externalOutreachActivities.occurredAt), desc(externalOutreachActivities.id)) : [];
+      const summaries = new Map(recent.map(({ contactId, ...summary }) => [contactId, summary]));
+      res.json(rows.map(row => ({ ...row, externalActivitySummary: summaries.get(row.contactId) ?? null })));
     } catch (err: any) {
       console.error("[sales-outreach-prospects:list]", err);
       res.status(500).json({ error: err.message || "Failed to list prospects" });

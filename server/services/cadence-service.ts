@@ -238,13 +238,13 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
       const completed = completedByProspect.get(p.id) ?? [];
 
       if (isExhausted(steps, completed)) {
-        await db.update(prospects).set({ status: "dormant", nextActionAt: null, updatedAt: now }).where(and(eq(prospects.id, p.id), isNull(prospects.removedAt)));
+        await db.update(prospects).set({ status: "dormant", nextActionAt: null, updatedAt: now }).where(and(eq(prospects.id, p.id), eq(prospects.status, "awaiting_reply"), isNull(prospects.removedAt)));
         result.prospectsExhausted++;
         continue;
       }
       const due = nextDueStep(steps, completed, anchor, now);
       if (due) {
-        await db.update(prospects).set({ status: "cadence_step_due", nextActionAt: now, updatedAt: now }).where(and(eq(prospects.id, p.id), isNull(prospects.removedAt)));
+        await db.update(prospects).set({ status: "cadence_step_due", nextActionAt: now, updatedAt: now }).where(and(eq(prospects.id, p.id), eq(prospects.status, "awaiting_reply"), isNull(prospects.removedAt)));
         result.prospectsAdvanced++;
       }
     }

@@ -174,4 +174,25 @@ describe.skipIf(!process.env.DATABASE_URL)("external outreach persistence, route
     expect(removed.nextActionAt).toBeNull();
     expect(removed.status).toBe("dormant");
   });
+  it("logs standalone messages and replies without an Orbit touch, preserving other campaign states", async () => {
+    const url = `/api/sales-outreach/prospects/${p2}/external-activities`;
+    await db.update(prospects).set({ status: "new", nextActionAt: new Date() }).where(eq(prospects.id, p2));
+    const outbound = await request(app).post(url).send({ ...activity, direction: "outbound", message: "Message sent outside Orbit; content not recorded." });
+    expect(outbound.status).toBe(201);
+    expect((await db.select().from(prospects).where(eq(prospects.id, p2)))[0].status).toBe("new");
+    expect((await request(app).post(url).send({ ...activity, direction: "inbound", outcome: "no_reply" })).status).toBe(400);
+    const inbound = await request(app).post(url).send({
+      ...activity, direction: "inbound", sender: "Contact", outcome: "replied",
+      message: "Reply received by phone; will follow up later.",
+    });
+    expect(inbound.status).toBe(201);
+    const [person] = await db.select().from(prospects).where(eq(prospects.id, p2));
+    expect(person.status).toBe("replied"); expect(person.nextActionAt).toBeNull();
+    expect(await db.select().from(outreachTouches).where(eq(outreachTouches.prospectId, p2))).toHaveLength(0);
+    const shared = await getOutreachContext(tenant, p1);
+    expect(shared.activities.some(a => a.id === inbound.body.id && a.direction === "inbound")).toBe(true);
+    expect((await db.select().from(prospects).where(eq(prospects.id, p1)))[0].status).toBe("dormant");
+    await request(app).delete(`${url}/${inbound.body.id}`);
+    expect((await db.select().from(prospects).where(eq(prospects.id, p2)))[0].status).toBe("replied");
+  });
 });

@@ -26,6 +26,7 @@ export type SegmentBrief = z.infer<typeof segmentBriefSchema>;
 export const segmentBriefsSchema = z.array(segmentBriefSchema).max(4)
   .refine(rows => new Set(rows.map(r => r.group)).size === rows.length, "Each group must appear only once");
 export const externalActivitySchema = z.object({
+  direction: z.enum(["outbound", "inbound"]).default("outbound"),
   channel: z.enum(["email", "linkedin", "phone", "meeting", "other"]),
   occurredAt: z.string().datetime({ offset: true }).refine(s => Date.parse(s) <= Date.now(), "Activity cannot be in the future"),
   sender: z.string().trim().min(1).max(300),
@@ -33,6 +34,7 @@ export const externalActivitySchema = z.object({
   outcome: z.enum(["no_reply", "replied", "meeting_agreed", "other"]),
   reply: z.string().trim().max(12000).default(""),
   followUpAt: z.string().datetime({ offset: true }).nullable().default(null),
-}).strict();
+}).strict().refine(value => value.direction !== "inbound" || ["replied", "meeting_agreed"].includes(value.outcome),
+  "A received reply must have a replied or meeting-agreed outcome");
 export type ExternalActivityInput = z.infer<typeof externalActivitySchema>;
 export interface OutreachContextSnapshot { fingerprint: string; group: string | null }

@@ -5381,6 +5381,7 @@ export const externalOutreachActivities = pgTable("external_outreach_activities"
   contactId: varchar("contact_id").notNull().references((): AnyPgColumn => marketingContacts.id, { onDelete: "cascade" }),
   campaignId: varchar("campaign_id").references(() => outreachCampaigns.id, { onDelete: "set null" }),
   channel: text("channel").notNull(),
+  direction: text("direction").notNull().default("outbound"),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   sender: text("sender").notNull(),
   message: text("message").notNull(),

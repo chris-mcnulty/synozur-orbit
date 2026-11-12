@@ -20,7 +20,8 @@ export function bulkOutreachInput(prospectIds: string[], patch: OutreachSettings
   if (patch.familiarity !== undefined && !contactFamiliarities.includes(patch.familiarity)) throw new Error("Choose a valid familiarity.");
   return { prospectIds, ...patch };
 }
-export interface ExternalActivity extends ExternalActivityInput {
+export interface ExternalActivity extends Omit<ExternalActivityInput, "direction"> {
+  direction?: "outbound" | "inbound";
   id: string; createdAt: string; updatedAt: string;
 }
 export interface OutreachContext {
@@ -59,7 +60,16 @@ export function useOutreachActions(id: string) {
       await apiRequest(action.type === "delete" ? "DELETE" : action.activityId ? "PATCH" : "POST", url, action.type === "save" ? action.input : undefined);
       return fetchOutreachContext(id);
     },
-    onSuccess: (context) => qc.setQueryData(key, context),
+    onSuccess: async (context) => {
+      qc.setQueryData(key, context);
+      // A shared activity can change directory summaries and stop the current cadence.
+      await qc.invalidateQueries({
+        predicate: query => query.queryKey.some(part => typeof part === "string" && (
+          part.includes("/outreach-context") ||
+          part.includes("/meetings")
+        )) || (query.queryKey[0] === "/api/sales-outreach/campaigns" && query.queryKey.at(-1) === "prospects"),
+      });
+    },
   });
   return { settings, activity };
 }

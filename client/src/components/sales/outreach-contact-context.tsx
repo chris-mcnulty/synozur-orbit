@@ -43,11 +43,11 @@ export function OutreachHistory({ context, onEdit, onDelete }: {
   return <ol aria-label="Global contact outreach history" className="space-y-3">
     {[...context.activities].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)).map((item) => <li key={item.id} className="rounded-lg border bg-muted/20 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div><p className="text-sm font-medium">{channelLabels[item.channel]} · {item.sender}</p><p className="mt-0.5 text-xs text-muted-foreground"><time dateTime={item.occurredAt}>{new Date(item.occurredAt).toLocaleString()}</time> · {outcomeLabels[item.outcome]}</p></div>
+        <div><p className="text-sm font-medium">{channelLabels[item.channel]} · {item.direction === "inbound" ? "Inbound · Reply from" : "Outbound · Sent by"} {item.sender}</p><p className="mt-0.5 text-xs text-muted-foreground"><time dateTime={item.occurredAt}>{new Date(item.occurredAt).toLocaleString()}</time> · {outcomeLabels[item.outcome]}</p></div>
         {onEdit && onDelete && <div className="flex gap-1"><Button size="icon" variant="ghost" aria-label={`Edit ${channelLabels[item.channel]} activity from ${item.sender}`} onClick={() => onEdit(item)}><Pencil className="h-3.5 w-3.5" /></Button><Button size="icon" variant="ghost" aria-label={`Delete ${channelLabels[item.channel]} activity from ${item.sender}`} onClick={() => onDelete(item)}><Trash2 className="h-3.5 w-3.5" /></Button></div>}
       </div>
       <p className="mt-3 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{item.message}</p>
-      {item.reply && <div className="mt-3 border-l-2 border-primary/30 pl-3"><p className="text-xs font-medium text-muted-foreground">Their reply</p><p className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{item.reply}</p></div>}
+      {item.reply && <div className="mt-3 border-l-2 border-primary/30 pl-3"><p className="text-xs font-medium text-muted-foreground">{item.direction === "inbound" ? "Additional reply notes" : "Their reply"}</p><p className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{item.reply}</p></div>}
       {item.followUpAt && <p className="mt-3 text-xs text-muted-foreground">Reminder: {new Date(item.followUpAt).toLocaleString()} · No automatic send</p>}
     </li>)}
   </ol>;
@@ -56,6 +56,7 @@ function ActivityForm({ initial, busy, onSave, onCancel }: {
   initial: ExternalActivity | null; busy: boolean; onSave: (input: ExternalActivityInput) => Promise<void>; onCancel: () => void;
 }) {
   const [form, setForm] = useState(() => ({
+    direction: initial?.direction ?? "outbound",
     channel: initial?.channel ?? "email", sender: initial?.sender ?? "", occurredAt: localDate(initial?.occurredAt ?? new Date().toISOString()),
     message: initial?.message ?? "", reply: initial?.reply ?? "", outcome: initial?.outcome ?? "no_reply",
     followUpAt: initial?.followUpAt ? localDate(initial.followUpAt) : "",
@@ -70,15 +71,19 @@ function ActivityForm({ initial, busy, onSave, onCancel }: {
   }}>
     <h3 className="text-sm font-semibold">{initial ? "Edit activity" : "Record external activity"}</h3>
     <fieldset disabled={busy} className="space-y-3">
+      <label className="block space-y-1 text-xs font-medium">Direction<select className={selectClass} value={form.direction} onChange={e => {
+        const direction = e.target.value as "outbound" | "inbound";
+        setForm({ ...form, direction, outcome: direction === "inbound" ? "replied" : "no_reply" });
+      }}><option value="outbound">Outbound · Contacted outside Orbit</option><option value="inbound">Inbound · Reply received</option></select></label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-xs font-medium">Channel<select className={selectClass} value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value as ExternalActivityInput["channel"] })}>{Object.entries(channelLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="space-y-1 text-xs font-medium">Occurred at (your local time)<Input required type="datetime-local" value={form.occurredAt} onChange={(e) => setForm({ ...form, occurredAt: e.target.value })} /></label>
       </div>
       <label className="block space-y-1 text-xs font-medium">Sender<Input required maxLength={300} value={form.sender} onChange={(e) => setForm({ ...form, sender: e.target.value })} /></label>
-      <label className="block space-y-1 text-xs font-medium">Message or conversation notes<Textarea required maxLength={12000} rows={4} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} /></label>
+      <label className="block space-y-1 text-xs font-medium">{form.direction === "inbound" ? "Received reply or conversation notes" : "Message or conversation notes"}<Textarea required maxLength={12000} rows={4} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} /></label>
       <label className="block space-y-1 text-xs font-medium">Reply<Textarea maxLength={12000} rows={3} value={form.reply} onChange={(e) => setForm({ ...form, reply: e.target.value })} /></label>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-xs font-medium">Outcome<select className={selectClass} value={form.outcome} onChange={(e) => setForm({ ...form, outcome: e.target.value as ExternalActivityInput["outcome"] })}>{Object.entries(outcomeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="space-y-1 text-xs font-medium">Outcome<select className={selectClass} value={form.outcome} onChange={(e) => setForm({ ...form, outcome: e.target.value as ExternalActivityInput["outcome"] })}>{Object.entries(outcomeLabels).filter(([value]) => form.direction !== "inbound" || value === "replied" || value === "meeting_agreed").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="space-y-1 text-xs font-medium">Follow-up reminder (optional)<Input type="datetime-local" value={form.followUpAt} onChange={(e) => setForm({ ...form, followUpAt: e.target.value })} /></label>
       </div>
       <p className="text-xs text-muted-foreground">A follow-up date is a reminder only. It never schedules or sends a message.</p>
