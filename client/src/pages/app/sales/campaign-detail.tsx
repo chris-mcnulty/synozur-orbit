@@ -1,5 +1,6 @@
-import { useState, useRef, KeyboardEvent, useCallback, useMemo } from "react";
-import { Link, useParams, useLocation } from "wouter";
+import { useState, useRef, KeyboardEvent, useCallback, useMemo, useEffect } from "react";
+import { Link, useParams, useLocation, useSearch } from "wouter";
+import SavedOutreachDrafts from "@/components/sales/saved-outreach-drafts";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -289,7 +290,7 @@ interface Compliance {
   flags: ComplianceFlag[];
   suggestedFixes: string[];
 }
-interface Touch {
+export interface Touch {
   id: string;
   channel: "email" | "linkedin";
   linkedinFormat?: LinkedInFormat | null;
@@ -553,6 +554,9 @@ export default function OutreachCampaignDetailPage() {
   // Draft review dialog state.
   const [draft, setDraft] = useState<Touch | null>(null);
   const [draftProspect, setDraftProspect] = useState<Prospect | null>(null);
+  const [savedDraftContact, setSavedDraftContact] = useState<{ person: Prospect; scope: string; draftId?: string } | null>(null);
+  const draftSearch = useSearch();
+  const handledDraftLink = useRef("");
   const [historyContact, setHistoryContact] = useState<Prospect | null>(null);
   const draftOutreachContext = useOutreachContext(draftProspect?.id ?? null);
   const canEditOutreach = ["Analyst", "Domain Admin", "Global Admin"].includes(user?.role ?? "");
@@ -858,6 +862,18 @@ export default function OutreachCampaignDetailPage() {
     return Array.from(s).sort();
   }, [prospects]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(draftSearch);
+    const touchId = params.get("draft");
+    const prospectId = params.get("prospect");
+    const key = JSON.stringify([composeScope, touchId, prospectId]);
+    if (!touchId || !prospectId || !canEditOutreach || handledDraftLink.current === key) return;
+    const person = prospects.find(p => p.id === prospectId);
+    if (!person) return;
+    handledDraftLink.current = key;
+    setSavedDraftContact({ person, scope: composeScope, draftId: touchId });
+  }, [draftSearch, prospects, composeScope, canEditOutreach]);
+
   const tabCounts = useMemo(() => {
     const counts: Record<string, number> = { all: prospects.length };
     for (const [tab, statuses] of Object.entries(STATUS_GROUPS)) {
@@ -928,6 +944,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   function openDraft(t: Touch, p?: Prospect | null) {
+    setSharpenResult(null);
     setDraft(t);
     setDraftProspect(p ?? null);
     setDraftSubject(t.subject ?? "");
@@ -1055,7 +1072,9 @@ export default function OutreachCampaignDetailPage() {
     },
     onSuccess: (data: { touch: Touch }) => {
       setDraft(data.touch);
-      toast({ title: "Saved", description: "Compliance re-scanned." });
+      queryClient.invalidateQueries({ queryKey: ["saved-outreach-drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/pending-approvals"] });
+      toast({ title: "Saved in Orbit", description: "Compliance re-scanned. No Outlook connection needed." });
     },
     onError: (err: any) => toast({ title: "Save failed", description: err?.message, variant: "destructive" }),
   });
@@ -1380,6 +1399,8 @@ export default function OutreachCampaignDetailPage() {
     },
     onSuccess: (data: { webLink?: string; deliveryNote?: string }) => {
       queryClient.invalidateQueries({ queryKey: prospectsKey });
+      queryClient.invalidateQueries({ queryKey: ["saved-outreach-drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales-outreach/pending-approvals"] });
       setDraft(null);
       toast({
         title: "Approved",
@@ -1857,6 +1878,7 @@ export default function OutreachCampaignDetailPage() {
                       <TableCell className="w-[300px] min-w-[250px]">
                         <div className="flex flex-wrap items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setHistoryContact(p)} data-testid={`outreach-history-${p.id}`}>History & hold</Button>
+                        {canEditOutreach && <Button variant="ghost" size="sm" onClick={() => setSavedDraftContact({ person: p, scope: composeScope })} data-testid={`open-saved-drafts-${p.id}`}>Saved drafts</Button>}
                         {canEditOutreach && <QuickCommunicationLog contact={p} senderName={user?.name ?? ""} />}
                         {classification.canEdit && <ClassificationEditButton person={p} onEdit={() => classification.openEditor([p.id])} />}
                         {p.researchDossier && (
@@ -3049,6 +3071,13 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       <OutreachContactContext contact={historyContact} canEdit={canEditOutreach} onClose={() => setHistoryContact(null)} />
+      {canEditOutreach && savedDraftContact?.scope === composeScope && <SavedOutreachDrafts
+        key={JSON.stringify([composeScope, savedDraftContact.person.id, savedDraftContact.draftId])}
+        prospectId={savedDraftContact.person.id} prospectName={savedDraftContact.person.name || savedDraftContact.person.email || "Contact"}
+        campaignId={id} scope={composeScope} requestedDraftId={savedDraftContact.draftId}
+        onClose={() => setSavedDraftContact(null)}
+        onOpen={touch => { openDraft(touch, savedDraftContact.person); setSavedDraftContact(null); }}
+      />}
       {outreachPreflight.dialog(canEditOutreach)}
       {/* Operator-only compose clarification; blocked model output is never shown as a recipient draft. */}
       {classification.editingPeople.length > 0 && <ClassificationEditor key={classification.editorKey}
@@ -3075,7 +3104,7 @@ export default function OutreachCampaignDetailPage() {
 
       {/* Draft review dialog */}
       <Dialog open={!!draft} onOpenChange={(o) => { if (!o) { setDraft(null); setSharpenResult(null); } }}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {isLinkedInDraft ? <Linkedin className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
@@ -3090,7 +3119,7 @@ export default function OutreachCampaignDetailPage() {
             <DialogDescription>
               {isLinkedInDraft
                 ? "You send LinkedIn messages by hand: review, copy, then paste into LinkedIn. LinkedIn can't pre-fill the message for you."
-                : "You approve every send. Approving creates a draft in your Outlook; you click Send there."}
+                : "Save and edit this draft in Orbit without Outlook. Approve → Outlook creates an Outlook draft; you click Send there."}
             </DialogDescription>
           </DialogHeader>
 
@@ -3241,7 +3270,7 @@ export default function OutreachCampaignDetailPage() {
             <div className="flex-1" />
             <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending || approve.isPending} data-testid="button-save-draft">
               {saveDraft.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PenLine className="w-4 h-4 mr-1" />}
-              Save & re-scan
+              Save in Orbit & re-scan
             </Button>
             <Button onClick={() => approve.mutate()} disabled={approve.isPending || saveDraft.isPending || sharpenTouch.isPending || !!sharpenResult || draftHardBlocked || !draftOutreachContext.data || draftOutreachContext.isError || draftOutreachContext.data.hold} data-testid="button-approve-draft">
               {approve.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : draft?.channel === "email" ? <Send className="w-4 h-4 mr-1" /> : <ExternalLink className="w-4 h-4 mr-1" />}

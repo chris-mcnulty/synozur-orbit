@@ -22,6 +22,7 @@ interface ActivityItem {
   summary?: string; description?: string; type?: string; createdAt?: string;
 }
 interface OutreachPending {
+  prospectId: string;
   id: string; campaignId: string | null; channel: string; subject: string | null;
   createdAt: string | null; prospectName: string | null; companyName: string | null; campaignName: string | null;
 }
@@ -94,7 +95,7 @@ export default function InboxPage() {
           id: t.id,
           title: t.subject || `${t.channel} message`,
           subtitle: [t.prospectName, t.companyName, t.campaignName].filter(Boolean).join(" · "),
-          href: t.campaignId ? `/app/sales/outreach/${t.campaignId}` : "/app/sales/outreach",
+          href: t.campaignId ? `/app/sales/outreach/${t.campaignId}?prospect=${encodeURIComponent(t.prospectId)}&draft=${encodeURIComponent(t.id)}` : "/app/sales/outreach",
           when: t.createdAt,
         })),
       },
