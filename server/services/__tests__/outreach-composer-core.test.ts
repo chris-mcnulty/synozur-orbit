@@ -118,6 +118,32 @@ describe("outreach-composer-core", () => {
     assert.ok(prompt.includes("===REFUSED==="));
   });
 
+  it("prioritizes supplied relationship facts without inventing vendor credentials or blocking exploratory asks", () => {
+    const prompt = buildComposePrompt({
+      channel: "email", stepNumber: 1, purpose: "intro",
+      prospect: { name: "Example Contact", companyName: "Example Reseller" },
+      dossier: "Partnership, Microsoft certification and Copilot practice unconfirmed.",
+      additionalContext: "This is our key contact and an active reseller. Ask about any Microsoft work they are doing.",
+    });
+    for (const rule of [
+      "Missing public evidence is not contrary evidence",
+      "Do not ask the sender to reconfirm facts they already supplied",
+      "An exploratory ask is not an assertion",
+      "does not establish a Microsoft certification",
+      "ask the RECIPIENT",
+      "Do not assume event attendance",
+      "never override opt-outs",
+      "Recipient-facing discovery questions ARE valid draft content",
+    ]) assert.ok(prompt.includes(rule), rule);
+    assert.ok(prompt.includes("This is our key contact and an active reseller"));
+    assert.ok(prompt.includes("Microsoft certification and Copilot practice unconfirmed"));
+  });
+
+  it("accepts a discovery question in a recipient draft without turning it into operator clarification", () => {
+    const draft = parseComposeResponse("===SUBJECT===\nMicrosoft work\n===BODY===\nHi Alex,\nCould we catch up on any Microsoft work your team is doing and where we might collaborate?\nThanks,\nSam", "email");
+    assert.ok(draft.body.includes("any Microsoft work"));
+  });
+
   it("enforceLength trims linkedin body to the cap on a word boundary", () => {
     const long = "word ".repeat(300); // 1500 chars
     const out = enforceLength(long, "linkedin");

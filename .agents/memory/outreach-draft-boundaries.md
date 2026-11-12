@@ -14,3 +14,9 @@ Clarification must stay readable and answerable, not live only in a temporary no
 **Why:** The user again reported an Avanade compose attempt showing raw Markdown questions in a disappearing window with no usable way to note answers.
 
 **How to apply:** Keep a way to resume the pending clarification on the campaign page; discard only on an explicit discard action or successful completion. Preserve answers through failed retries, keep different recipients/channels separate, and retain question text while the seller types. Never expose rejected draft sections as if they were the assistant's clarification explanation.
+
+Explicit sender facts about their own relationship take precedence over automated research's “unconfirmed” or missing evidence. An exploratory recipient question must not become a prerequisite question to the sender.
+
+**Why:** The user supplied a known partner/reseller relationship and asked to explore the recipient's Microsoft work; drafting instead demanded vendor certification and AI practice confirmation. These are distinct relationships, and asking about work does not assert that it exists.
+
+**How to apply:** Use the supplied relationship without inventing vendor credentials, attendance or shared experiences. Ask the recipient about unknown work or omit optional claims. Never require reconfirmation merely because public research lacks evidence, and retain all consent, exclusion and hold protections.

@@ -104,6 +104,7 @@ import { composeTouch } from "../outreach-composer-service";
 import { getProspectWithContact } from "../prospect-contact-service";
 import { completeForFeature } from "../ai-provider";
 import { scanCompliance } from "../compliance-core";
+import { buildComposePrompt } from "../outreach-composer-core";
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -219,6 +220,33 @@ describe("composeTouch — recipient guard", () => {
     expect(completeForFeature).toHaveBeenCalledOnce();
     expect(scanCompliance).toHaveBeenCalledWith(expect.objectContaining({
       subject: "Meeting, Tuesday", body: "Hi Jane, can we meet Tuesday?",
+    }));
+    expect(writes).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes the sender's known-reseller facts and exploratory ask through the real prompt and saves a recipient question", async () => {
+    const realCore = await vi.importActual<typeof import("../outreach-composer-core")>("../outreach-composer-core");
+    vi.mocked(buildComposePrompt).mockImplementationOnce(realCore.buildComposePrompt);
+    const notes = "Alex is our key contact and active reseller. We would like to get in sync with any Microsoft work they are doing.";
+    vi.mocked(getProspectWithContact).mockResolvedValue({
+      ...PROSPECT_NO_EMAIL, name: "Alex", email: "alex@example.invalid",
+      researchDossier: "Partnership status, Microsoft certification and AI practice unconfirmed.",
+    } as any);
+    pushDb(CAMPAIGN); pushDb(); pushDb();
+    pushDb({ ...TOUCH_ROW, channel: "email" }); pushDb(UPDATED_PROSPECT);
+    vi.mocked(completeForFeature).mockResolvedValue({
+      text: "===SUBJECT===\nMicrosoft work\n===BODY===\nHi Alex,\nCould we catch up on any Microsoft work your team is doing and where we might collaborate?\nThanks,\nSam",
+      usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any);
+    await composeTouch("acme.com", "prospect-1", { channel: "email", additionalContext: notes });
+    expect(completeForFeature).toHaveBeenCalledOnce();
+    const prompt = vi.mocked(completeForFeature).mock.calls[0][1];
+    expect(prompt).toContain(notes);
+    expect(prompt).toContain("Partnership status, Microsoft certification and AI practice unconfirmed.");
+    expect(prompt).toContain("Missing public evidence is not contrary evidence");
+    expect(prompt).toContain("An exploratory ask is not an assertion");
+    expect(scanCompliance).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.stringContaining("any Microsoft work"),
     }));
     expect(writes).toHaveBeenCalledTimes(2);
   });
