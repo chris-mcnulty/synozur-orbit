@@ -68,7 +68,6 @@ describe("classification controls", () => {
   it.each([true, false])("supports sparse priority edits for single (%s) and bulk without changing attendance", async single => {
     const save = vi.fn().mockResolvedValue({});
     render(<ClassificationEditor people={single ? [people[0]] : people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
-    fireEvent.click(screen.getByTestId("classification-change-meetingPriority"));
     fireEvent.change(screen.getByLabelText("Meeting priority"), { target: { value: "requested_meeting" } });
     fireEvent.click(screen.getByTestId("classification-save"));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ meetingPriority: "requested_meeting" }));
@@ -83,11 +82,13 @@ describe("classification controls", () => {
     for (const text of ["Customer", "Partner", "Confirmed attendee", "Speaker", "Sponsor", "Added manually", "Referred by colleague"]) expect(screen.getByText(text)).toBeTruthy();
     expect(screen.getByTitle("Registration confirmed")).toBeTruthy();
   });
-  it("requires explicitly marked sparse changes and never submits source", async () => {
+  it("edits directly, omits untouched fields and never submits provenance", async () => {
     const save = vi.fn().mockResolvedValue({});
     render(<ClassificationEditor people={[people[0]]} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
     expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTestId("classification-change-sourceDetail"));
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect((screen.getByLabelText("Attendance") as HTMLSelectElement).value).toBe("confirmed");
+    expect((screen.getByLabelText("Source detail") as HTMLInputElement).value).toBe("Referred by colleague");
     fireEvent.change(screen.getByLabelText("Source detail"), { target: { value: "From me" } });
     fireEvent.click(screen.getByTestId("classification-save"));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ sourceDetail: "From me" }));
@@ -96,7 +97,6 @@ describe("classification controls", () => {
   it("lets bulk changes add and remove tags without replacing relationships", async () => {
     const save = vi.fn().mockResolvedValue({});
     render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
-    fireEvent.click(screen.getByTestId("classification-change-tags"));
     fireEvent.change(screen.getByLabelText("Tag update mode"), { target: { value: "remove" } });
     fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "Priority, Briefing" } });
     fireEvent.click(screen.getByTestId("classification-tags-commit"));
@@ -106,7 +106,7 @@ describe("classification controls", () => {
   it("retains errors and form changes for retry", () => {
     render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={vi.fn()} isSaving={false} error="Please retry" />);
     expect(screen.getByRole("alert").textContent).toBe("Please retry");
-    fireEvent.click(screen.getByTestId("classification-change-eventRoles"));
+    fireEvent.change(screen.getByLabelText("Event roles update mode"), { target: { value: "replace" } });
     fireEvent.click(screen.getByTestId("classification-event-role-speaker"));
     fireEvent.click(screen.getByTestId("classification-event-role-sponsor"));
     expect(screen.getByTestId("classification-event-role-speaker").getAttribute("aria-pressed")).toBe("true");
@@ -117,6 +117,125 @@ describe("classification controls", () => {
     expect(screen.getByTestId("classification-count").textContent).toContain("2 unique contacts · 3 group memberships");
     expect(screen.queryByTestId("classification-edit-selected")).toBeNull();
     expect(screen.getByText("Classification is read-only for your role.")).toBeTruthy();
+  });
+  it("shows mixed bulk values honestly and can return scalar changes to unchanged", async () => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    const attendance = screen.getByLabelText("Attendance") as HTMLSelectElement;
+    expect(attendance.selectedOptions[0].textContent).toBe("Mixed — leave unchanged");
+    expect((screen.getByLabelText("Meeting priority") as HTMLSelectElement).selectedOptions[0].textContent).toBe("Unchanged (Normal)");
+    expect((screen.getByLabelText("Relationships update mode") as HTMLSelectElement).selectedOptions[0].textContent).toBe("Mixed — leave unchanged");
+    expect(screen.getByTestId("classification-relationship-unknown").getAttribute("aria-pressed")).toBe("false");
+    expect((screen.getByTestId("classification-relationship-partner") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(attendance, { target: { value: "unknown" } });
+    fireEvent.change(attendance, { target: { value: "__unchanged" } });
+    fireEvent.change(screen.getByLabelText("Meeting priority"), { target: { value: "high" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ meetingPriority: "high" }));
+  });
+  it("drops reverted single edits and supports undo without disabling controls", () => {
+    render(<ClassificationEditor people={[people[0]]} onClose={vi.fn()} onSave={vi.fn()} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Attendance"), { target: { value: "unknown" } });
+    fireEvent.change(screen.getByLabelText("Attendance"), { target: { value: "confirmed" } });
+    expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("classification-event-role-speaker"));
+    fireEvent.click(screen.getByTestId("classification-event-role-speaker"));
+    expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Source detail"), { target: { value: "" } });
+    fireEvent.click(screen.getByLabelText("Undo Source detail"));
+    expect((screen.getByLabelText("Source detail") as HTMLInputElement).value).toBe("Referred by colleague");
+    expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("clears single fields and lists without inferring relationships", async () => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={[people[0]]} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Attendance evidence"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Source detail"), { target: { value: "" } });
+    fireEvent.click(screen.getByTestId("classification-event-role-speaker"));
+    fireEvent.click(screen.getByTestId("classification-event-role-sponsor"));
+    fireEvent.click(screen.getByTestId("classification-relationship-unknown"));
+    fireEvent.click(screen.getByText("Clear all tags"));
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({
+      attendanceEvidence: "", sourceDetail: "", eventRoles: [], relationships: ["unknown"], tags: [], tagsMode: "replace",
+    }));
+  });
+  it("requires explicit bulk list replacement and supports empty lists and text", async () => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Event roles update mode"), { target: { value: "replace" } });
+    fireEvent.change(screen.getByLabelText("Relationships update mode"), { target: { value: "replace" } });
+    fireEvent.click(screen.getByTestId("classification-relationship-partner"));
+    fireEvent.click(screen.getByText("Clear evidence for all"));
+    fireEvent.click(screen.getByText("Clear source detail for all"));
+    fireEvent.change(screen.getByLabelText("Tag update mode"), { target: { value: "replace" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({
+      eventRoles: [], relationships: ["partner"], attendanceEvidence: "", sourceDetail: "", tags: [], tagsMode: "replace",
+    }));
+  });
+  it.each(["add", "remove", "replace"])("includes pending bulk tags when saving in %s mode", async mode => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Tag update mode"), { target: { value: mode } });
+    fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "Briefing, briefing, New" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ tags: ["briefing", "New"], tagsMode: mode }));
+  });
+  it("saves typed single tags together with current tags and other edits", async () => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={[people[0]]} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Meeting priority"), { target: { value: "high" } });
+    fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "New" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ meetingPriority: "high", tags: ["Priority", "Briefing", "New"], tagsMode: "replace" }));
+  });
+  it("does not use existing single tags as add/remove operands", async () => {
+    const save = vi.fn().mockResolvedValue({});
+    render(<ClassificationEditor people={[people[0]]} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Tag update mode"), { target: { value: "remove" } });
+    expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "Priority" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ tags: ["Priority"], tagsMode: "remove" }));
+  });
+  it("validates pending tags without losing the draft and lets users retry", async () => {
+    const save = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue({});
+    render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={save} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "x".repeat(61) } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("60 characters");
+    expect((screen.getByLabelText("Campaign tags") as HTMLInputElement).value).toHaveLength(61);
+    fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "Briefing" } });
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Please retry"));
+    fireEvent.click(screen.getByTestId("classification-save"));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save).toHaveBeenLastCalledWith({ tags: ["Briefing"], tagsMode: "add" });
+  });
+  it("can undo pending tags and bulk replacements completely", () => {
+    render(<ClassificationEditor people={people} onClose={vi.fn()} onSave={vi.fn()} isSaving={false} error="" />);
+    fireEvent.change(screen.getByLabelText("Tag update mode"), { target: { value: "replace" } });
+    fireEvent.change(screen.getByLabelText("Campaign tags"), { target: { value: "Pending" } });
+    fireEvent.click(screen.getByLabelText("Undo Campaign tags"));
+    expect((screen.getByLabelText("Campaign tags") as HTMLInputElement).value).toBe("");
+    expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Relationships update mode"), { target: { value: "replace" } });
+    fireEvent.change(screen.getByLabelText("Relationships update mode"), { target: { value: "__unchanged" } });
+    expect((screen.getByTestId("classification-save") as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("disables editing and cancel during saving; cancel otherwise closes without saving", () => {
+    const save = vi.fn();
+    const close = vi.fn();
+    const { rerender } = render(<ClassificationEditor people={[people[0]]} onClose={close} onSave={save} isSaving error="" />);
+    expect((screen.getByLabelText("Attendance") as HTMLSelectElement).matches(":disabled")).toBe(true);
+    expect((screen.getByLabelText("Campaign tags") as HTMLInputElement).matches(":disabled")).toBe(true);
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<ClassificationEditor people={[people[0]]} onClose={close} onSave={save} isSaving={false} error="" />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(close).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
   });
 });
 

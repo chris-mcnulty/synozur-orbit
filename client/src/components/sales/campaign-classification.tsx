@@ -87,57 +87,133 @@ export function ClassificationEditor({ people, onClose, onSave, isSaving, error 
   const [patch, setPatch] = useState<ClassificationPatch>({});
   const [tagDraft, setTagDraft] = useState("");
   const [localError, setLocalError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [tagsMode, setTagsMode] = useState<"add" | "remove" | "replace">(single ? "replace" : "add");
-  const relationships = patch.relationships ?? single?.meeting?.relationships ?? ["unknown"];
-  const eventRoles = patch.eventRoles ?? single?.classification?.eventRoles ?? [];
-  const tags = patch.tags ?? (single ? single.classification?.tags ?? [] : []);
-  const setField = <K extends keyof ClassificationPatch>(key: K, value: ClassificationPatch[K]) => setPatch(previous => ({ ...previous, [key]: value }));
+  const busy = isSaving || submitting;
+  const initial = (person: ClassifiedPerson): ClassificationPatch => ({
+    meetingPriority: person.classification?.meetingPriority ?? "normal",
+    relationships: person.meeting?.relationships ?? ["unknown"],
+    attendance: person.meeting?.attendance ?? "unknown",
+    attendanceEvidence: person.meeting?.attendanceEvidence ?? "",
+    eventRoles: person.classification?.eventRoles ?? [],
+    tags: person.classification?.tags ?? [],
+    sourceDetail: person.classification?.sourceDetail ?? "",
+  });
+  const same = (a: unknown, b: unknown) => JSON.stringify(Array.isArray(a) ? [...a].sort() : a) === JSON.stringify(Array.isArray(b) ? [...b].sort() : b);
+  const unchanged = "__unchanged";
+  const baseline = single ? initial(single) : null;
   const hasField = (key: keyof ClassificationPatch) => Object.prototype.hasOwnProperty.call(patch, key);
-  const toggleField = (key: keyof ClassificationPatch, initial: unknown) => setPatch(previous => {
-    const next = { ...previous };
-    if (Object.prototype.hasOwnProperty.call(next, key)) {
+  const resetField = (key: keyof ClassificationPatch) => {
+    setPatch(previous => {
+      const next = { ...previous };
       delete next[key];
       if (key === "tags") delete next.tagsMode;
-    } else Object.assign(next, { [key]: initial });
-    return next;
-  });
-  function commitTag() {
+      return next;
+    });
+    if (key === "tags") { setTagDraft(""); setLocalError(""); }
+  };
+  const setField = <K extends keyof ClassificationPatch>(key: K, value: ClassificationPatch[K]) => {
+    setPatch(previous => {
+      const next = { ...previous, [key]: value };
+      // Reverting a single contact to its original value is not a change.
+      if (baseline && same(value, baseline[key])) delete next[key];
+      return next;
+    });
+  };
+  const bulkLabel = (key: keyof ClassificationPatch, label: (value: string) => string = value => value || "Empty") => {
+    const first = people[0] ? initial(people[0])[key] : undefined;
+    return people.some(person => !same(initial(person)[key], first))
+      ? "Mixed — leave unchanged"
+      : `Unchanged (${Array.isArray(first) ? first.map(label).join(", ") || "Empty" : label(String(first ?? ""))})`;
+  };
+  const relationships = patch.relationships ?? baseline?.relationships ?? [];
+  const eventRoles = patch.eventRoles ?? baseline?.eventRoles ?? [];
+  const tags = patch.tags ?? (single && tagsMode === "replace" ? single.classification?.tags ?? [] : []);
+  function withTags(next: string[]): ClassificationPatch {
+    const result = { ...patch };
+    if ((tagsMode !== "replace" && !next.length) || (baseline && tagsMode === "replace" && same(next, baseline.tags))) {
+      delete result.tags; delete result.tagsMode;
+    } else { result.tags = next; result.tagsMode = tagsMode; }
+    return result;
+  }
+  function pendingTags(): string[] | null {
     const incoming = tagDraft.split(",").map(tag => tag.trim()).filter(Boolean);
-    if (!incoming.length) return;
-    if (incoming.some(tag => tag.length > 60)) { setLocalError("Each tag must be 60 characters or fewer."); return; }
+    if (incoming.some(tag => tag.length > 60)) { setLocalError("Each tag must be 60 characters or fewer."); return null; }
     const next = [...new Map([...tags, ...incoming].map(tag => [tag.toLowerCase(), tag])).values()];
-    if (next.length > 30) { setLocalError("Use at most 30 tags."); return; }
-    setPatch(previous => ({ ...previous, tags: next, tagsMode }));
+    if (next.length > 30) { setLocalError("Use at most 30 tags."); return null; }
+    return next;
+  }
+  function commitTag() {
+    const next = pendingTags();
+    if (!next) return;
+    setPatch(withTags(next));
     setTagDraft(""); setLocalError("");
   }
-  const field = (key: keyof ClassificationPatch, label: string, initial: unknown, children: ReactNode) => <fieldset className="space-y-2 border-b pb-4 last:border-0" disabled={isSaving}>
-    <div className="flex items-center justify-between gap-2"><span className="text-xs font-medium">{label}</span><label className="flex items-center gap-1.5 text-xs text-muted-foreground"><Checkbox checked={hasField(key)} onCheckedChange={() => toggleField(key, initial)} data-testid={`classification-change-${key}`} />{hasField(key) ? "Will update" : "Keep unchanged"}</label></div>
-    <div className={!hasField(key) ? "opacity-60" : ""}>{children}</div>
+  const field = (key: keyof ClassificationPatch, label: string, children: ReactNode) => <fieldset className="min-w-0 space-y-1.5" disabled={busy}>
+    <div className="flex min-h-5 items-center justify-between gap-2"><span className="text-xs font-medium">{label}</span>{(hasField(key) || (key === "tags" && tagDraft)) && <button type="button" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={() => resetField(key)} aria-label={`Undo ${label}`}>Undo</button>}</div>
+    {children}
   </fieldset>;
-  return <Dialog open={people.length > 0} onOpenChange={open => { if (!open && !isSaving) onClose(); }}>
+  const listMode = (key: "relationships" | "eventRoles") => !single && <select aria-label={`${key === "relationships" ? "Relationships" : "Event roles"} update mode`} className={`${selectClass} w-full`} value={hasField(key) ? "replace" : unchanged} onChange={event => event.target.value === unchanged ? resetField(key) : setField(key, key === "relationships" ? ["unknown"] : [])}>
+    <option value={unchanged}>{bulkLabel(key, classificationLabel)}</option><option value="replace">Replace for all selected contacts</option>
+  </select>;
+  const scalar = (key: "meetingPriority" | "attendance", label: string, values: readonly string[], format: (value: string) => string) => field(key, label,
+    <select className={`${selectClass} w-full`} aria-label={label} data-testid={key === "meetingPriority" ? "classification-meeting-priority" : "classification-attendance"} value={patch[key] ?? baseline?.[key] ?? unchanged} onChange={event => event.target.value === unchanged ? resetField(key) : setField(key, event.target.value as ClassificationPatch[typeof key])}>
+      {!single && <option value={unchanged}>{bulkLabel(key, format)}</option>}
+      {values.map(value => <option key={value} value={value}>{format(value)}</option>)}
+    </select>);
+  return <Dialog open={people.length > 0} onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" data-testid="classification-editor">
-      <DialogHeader><DialogTitle>{single ? `Classify ${single.name || single.email || "contact"}` : `Classify ${people.length} contacts`}</DialogTitle><DialogDescription>Only marked fields will change.{!single && " Relationship and event-role changes replace those lists for every selected person."} Source provenance cannot be changed.</DialogDescription></DialogHeader>
-      {single && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Source: {campaignSourceLabel(single.source)} <span className="ml-1">· Read-only provenance</span></p>}
-      <div className="space-y-4">
-        {field("meetingPriority", "Meeting priority · independent of ICP score", single?.classification?.meetingPriority ?? "normal", <div className="space-y-2"><select className={`${selectClass} w-full`} aria-label="Meeting priority" data-testid="classification-meeting-priority" disabled={!hasField("meetingPriority")} value={patch.meetingPriority ?? single?.classification?.meetingPriority ?? "normal"} onChange={event => setField("meetingPriority", event.target.value as ClassificationPatch["meetingPriority"])}>{meetingPriorities.map(value => <option key={value} value={value}>{meetingPriorityLabel(value)}</option>)}</select><p className="text-xs text-muted-foreground">Priority does not change the score or confirm attendance, consent, or a booked meeting. Only the selected campaign contacts change.</p></div>)}
-        {field("relationships", "Relationships · select all that apply", relationships, <div className="flex flex-wrap gap-1.5">{relationshipRoles.map(value => <Button key={value} type="button" size="sm" variant={relationships.includes(value) ? "secondary" : "outline"} className="h-7 px-2 text-xs" aria-pressed={relationships.includes(value)} disabled={!hasField("relationships")} data-testid={`classification-relationship-${value}`} onClick={() => {
+      <DialogHeader><DialogTitle>{single ? `Classify ${single.name || single.email || "contact"}` : `Classify ${people.length} contacts`}</DialogTitle><DialogDescription>Only your changes are saved.{!single && " Replacing relationships, event roles or tags overwrites that entire list for every selected contact."}</DialogDescription></DialogHeader>
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {scalar("meetingPriority", "Meeting priority", meetingPriorities, meetingPriorityLabel)}
+          {scalar("attendance", "Attendance", attendanceStates, value => value === "confirmed" ? "Confirmed attendee" : classificationLabel(value))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">Priority is independent of ICP score, attendance, consent and booked meetings.</p>
+        {field("relationships", "Relationships", <>{listMode("relationships")}<div className="flex flex-wrap gap-1.5">{relationshipRoles.map(value => <Button key={value} type="button" size="sm" variant={relationships.includes(value) ? "secondary" : "outline"} className="h-7 px-2 text-xs" aria-pressed={relationships.includes(value)} disabled={!single && !hasField("relationships")} data-testid={`classification-relationship-${value}`} onClick={() => {
           let next = relationships.includes(value) ? relationships.filter(role => role !== value) : [...relationships, value];
           next = value === "unknown" && !relationships.includes(value) ? ["unknown"] : next.filter(role => role !== "unknown");
           setField("relationships", next.length ? next : ["unknown"]);
-        }}>{classificationLabel(value)}</Button>)}</div>)}
-        {field("attendance", "Attendance", single?.meeting?.attendance ?? "unknown", <select className={`${selectClass} w-full`} aria-label="Attendance" data-testid="classification-attendance" disabled={!hasField("attendance")} value={patch.attendance ?? single?.meeting?.attendance ?? "unknown"} onChange={event => setField("attendance", event.target.value as ClassificationPatch["attendance"])}>{attendanceStates.map(value => <option value={value} key={value}>{value === "confirmed" ? "Confirmed attendee" : classificationLabel(value)}</option>)}</select>)}
-        {field("attendanceEvidence", "Attendance evidence", single?.meeting?.attendanceEvidence ?? "", <Textarea aria-label="Attendance evidence" data-testid="classification-attendance-evidence" maxLength={2000} rows={2} placeholder="e.g. Confirmed by email on 12 June; registration link…" disabled={!hasField("attendanceEvidence")} value={patch.attendanceEvidence ?? single?.meeting?.attendanceEvidence ?? ""} onChange={event => setField("attendanceEvidence", event.target.value)} />)}
-        {field("eventRoles", "Event roles · select all that apply", eventRoles, <div className="flex flex-wrap gap-1.5">{campaignEventRoles.map(value => <Button type="button" key={value} variant={eventRoles.includes(value) ? "secondary" : "outline"} size="sm" className="h-7 px-2 text-xs" aria-pressed={eventRoles.includes(value)} disabled={!hasField("eventRoles")} data-testid={`classification-event-role-${value}`} onClick={() => setField("eventRoles", eventRoles.includes(value) ? eventRoles.filter(role => role !== value) : [...eventRoles, value])}>{classificationLabel(value)}</Button>)}</div>)}
-        {field("tags", "Campaign tags", tags, <div className="space-y-2">
-          <select className={selectClass} aria-label="Tag update mode" disabled={!hasField("tags")} data-testid="classification-tags-mode" value={tagsMode} onChange={event => { const mode = event.target.value as typeof tagsMode; setTagsMode(mode); setPatch(previous => ({ ...previous, tagsMode: mode, tags: [] })); }}><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all tags</option></select>
-          {tagsMode === "replace" && hasField("tags") && <p className="text-xs text-muted-foreground">Replaces all campaign tags. An empty list clears tags.</p>}
-          <div className="flex flex-wrap gap-1">{tags.map(tag => <Badge key={tag.toLowerCase()} variant="secondary" className="gap-1 text-xs">{tag}<button type="button" disabled={!hasField("tags") || isSaving} aria-label={`Remove ${tag} from changes`} onClick={() => setPatch(previous => ({ ...previous, tagsMode, tags: tags.filter(value => value !== tag) }))}><X className="h-3 w-3" /></button></Badge>)}</div>
-          <div className="flex gap-2"><Input aria-label="Campaign tags" className="h-8 text-xs" value={tagDraft} data-testid="classification-tags-input" disabled={!hasField("tags")} onChange={event => setTagDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); commitTag(); } }} placeholder="Enter tags, separated by commas" /><Button type="button" className="h-8" variant="outline" size="sm" disabled={!hasField("tags") || !tagDraft.trim()} onClick={commitTag} data-testid="classification-tags-commit">Add</Button></div>
+        }}>{classificationLabel(value)}</Button>)}</div></>)}
+        {field("eventRoles", "Event roles", <>{listMode("eventRoles")}<div className="flex flex-wrap gap-1.5">{campaignEventRoles.map(value => <Button type="button" key={value} variant={eventRoles.includes(value) ? "secondary" : "outline"} size="sm" className="h-7 px-2 text-xs" aria-pressed={eventRoles.includes(value)} disabled={!single && !hasField("eventRoles")} data-testid={`classification-event-role-${value}`} onClick={() => setField("eventRoles", eventRoles.includes(value) ? eventRoles.filter(role => role !== value) : [...eventRoles, value])}>{classificationLabel(value)}</Button>)}</div></>)}
+        {field("tags", "Campaign tags", <div className="space-y-2">
+          <div className="flex items-center gap-2"><select className={selectClass} aria-label="Tag update mode" data-testid="classification-tags-mode" value={tagsMode} onChange={event => {
+            const mode = event.target.value as typeof tagsMode;
+            setTagsMode(mode);
+            setPatch(previous => {
+              const next = { ...previous };
+              delete next.tags; delete next.tagsMode;
+              if (mode === "replace" && !single) { next.tags = []; next.tagsMode = mode; }
+              return next;
+            });
+          }}><option value="add">Add tags</option><option value="remove">Remove tags</option><option value="replace">Replace all tags</option></select>{tagsMode === "replace" && <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" onClick={() => { setPatch(withTags([])); setTagDraft(""); }}>Clear all tags</button>}</div>
+          {!!tags.length && <div className="flex flex-wrap gap-1">{tags.map(tag => <Badge key={tag.toLowerCase()} variant="secondary" className="gap-1 text-xs">{tag}<button type="button" aria-label={`Remove ${tag} from changes`} onClick={() => setPatch(withTags(tags.filter(value => value !== tag)))}><X className="h-3 w-3" /></button></Badge>)}</div>}
+          <div className="flex gap-2"><Input aria-label="Campaign tags" className="h-8 text-xs" value={tagDraft} data-testid="classification-tags-input" onChange={event => { setTagDraft(event.target.value); setLocalError(""); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); commitTag(); } }} placeholder="Tags, separated by commas" /><Button type="button" className="h-8" variant="outline" size="sm" disabled={!tagDraft.trim()} onClick={commitTag} data-testid="classification-tags-commit">Add</Button></div>
+          {tagsMode === "replace" && hasField("tags") && !tags.length && <p className="text-xs text-muted-foreground">All campaign tags will be cleared.</p>}
         </div>)}
-        {field("sourceDetail", "Source detail · not provenance", single?.classification?.sourceDetail ?? "", <Input maxLength={500} aria-label="Source detail" data-testid="classification-source-detail" disabled={!hasField("sourceDetail")} value={patch.sourceDetail ?? single?.classification?.sourceDetail ?? ""} onChange={event => setField("sourceDetail", event.target.value)} placeholder="e.g. From me; Referred by colleague" />)}
+        <details className="rounded-md border px-3 py-2">
+          <summary className="cursor-pointer text-xs font-medium">Evidence & source details</summary>
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-muted-foreground">{single ? `Source: ${campaignSourceLabel(single.source)} · ` : ""}Source provenance is read-only.</p>
+            {field("attendanceEvidence", "Attendance evidence", <><Textarea aria-label="Attendance evidence" data-testid="classification-attendance-evidence" maxLength={2000} rows={2} placeholder={single ? "Confirmation email or registration link" : bulkLabel("attendanceEvidence")} value={patch.attendanceEvidence ?? baseline?.attendanceEvidence ?? ""} onChange={event => setField("attendanceEvidence", event.target.value)} />{!single && <button type="button" className="text-xs underline underline-offset-2" onClick={() => setField("attendanceEvidence", "")}>Clear evidence for all</button>}</>)}
+            {field("sourceDetail", "Source detail", <><Input maxLength={500} aria-label="Source detail" data-testid="classification-source-detail" value={patch.sourceDetail ?? baseline?.sourceDetail ?? ""} onChange={event => setField("sourceDetail", event.target.value)} placeholder={single ? "e.g. Referred by colleague" : bulkLabel("sourceDetail")} />{!single && <button type="button" className="text-xs underline underline-offset-2" onClick={() => setField("sourceDetail", "")}>Clear source detail for all</button>}</>)}
+          </div>
+        </details>
       </div>
       {(localError || error) && <p role="alert" className="text-sm text-destructive" data-testid="classification-error">{localError || error}</p>}
-      <DialogFooter><Button variant="outline" onClick={onClose} disabled={isSaving}>Cancel</Button><Button disabled={isSaving || !Object.keys(patch).length} onClick={async () => { if (tagDraft.trim() && hasField("tags")) { setLocalError("Add the pending tags before saving."); return; } setLocalError(""); try { await onSave(hasField("tags") ? { ...patch, tagsMode } : patch); } catch { /* Mutation error remains visible with changes intact for retry. */ } }} data-testid="classification-save">{isSaving ? "Saving changes…" : "Save changes"}</Button></DialogFooter>
+      <DialogFooter><Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button><Button disabled={busy || (!Object.keys(patch).length && !tagDraft.trim())} onClick={async () => {
+        let next = patch;
+        if (tagDraft.trim()) {
+          const pending = pendingTags();
+          if (!pending) return;
+          next = withTags(pending);
+          setPatch(next); setTagDraft("");
+        }
+        setLocalError("");
+        if (!Object.keys(next).length) return;
+        setSubmitting(true);
+        try { await onSave(next); } catch { setLocalError("Could not save changes. Please retry."); } finally { setSubmitting(false); }
+      }} data-testid="classification-save">{busy ? "Saving changes…" : "Save changes"}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
