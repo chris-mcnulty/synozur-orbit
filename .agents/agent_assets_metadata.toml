@@ -161,3 +161,31 @@ mtime_ms = 1794415136426
 storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/25815c44-f871-451d-a4cb-5c0eb7d1f0f8/70769a40-b66b-4fb1-9442-9f171fdcff92"
 storage_version_token = "1794415184441846"
 content_type = "image/png"
+
+[[outputs]]
+id = "aNWSfHho90GIHbNPW24t9"
+uri = "file://docs/orbit-grounding-patent-addendum.docx"
+type = "word_document"
+title = "Orbit grounding patent addendum — Word"
+description = "Counsel review draft with code evidence, implemented-versus-optional classifications, examples, proposed figures, and claim themes. Separate from the original application."
+logical_id = "b90916b4-a34f-485a-a858-d9e3ee9d6830"
+content_hash = "sha256:d1a90deba8ac4ae19ffda53b10fb1dcd43618fad03362c16269dc8da4407b72b"
+size = 24140
+mtime_ms = 1794517478401
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/b90916b4-a34f-485a-a858-d9e3ee9d6830/5678e9d6-670c-462f-81fe-468dfc182204"
+storage_version_token = "1794517502057847"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "17JnE3SGS62ClTI0L1sG-"
+uri = "file://docs/orbit-grounding-patent-addendum.md"
+type = "text"
+title = "Orbit grounding patent addendum — editable source"
+description = "Matching Markdown source with implementation references and inventor/counsel review questions."
+logical_id = "41eeb1aa-b0d6-4cdd-a91d-1ec6186a5d1f"
+content_hash = "sha256:114fb9046dac762d46335b9b0cbd033b61cb71420e435d353f65e6fe531d06c1"
+size = 30324
+mtime_ms = 1794517442961
+storage_uri = "gcs://replit-rams-assets-janeway/rams/assets/repl:4bc92ae4-16a8-4580-8f70-f19fac0c101f/41eeb1aa-b0d6-4cdd-a91d-1ec6186a5d1f/fc8d455d-289a-42c4-a354-8fb355c83d42"
+storage_version_token = "1794517502652493"
+content_type = "text/markdown"
