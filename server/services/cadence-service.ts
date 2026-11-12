@@ -18,7 +18,7 @@ import {
   marketingContacts,
   type OutreachChannel,
 } from "@shared/schema";
-import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, ne, sql, isNull } from "drizzle-orm";
 import { getValidGraphToken } from "./planner-graph-client";
 import { emitOutreachTouchJourneyEvent } from "./marketing-contact-service";
 import {
@@ -117,7 +117,7 @@ async function countProspects(tenantDomain: string, statuses: string[]): Promise
   const [r] = await db
     .select({ c: sql<number>`count(*)::int` })
     .from(prospects)
-    .where(and(eq(prospects.tenantDomain, tenantDomain), inArray(prospects.status, statuses)));
+    .where(and(eq(prospects.tenantDomain, tenantDomain), isNull(prospects.removedAt), inArray(prospects.status, statuses)));
   return r?.c ?? 0;
 }
 
@@ -125,7 +125,7 @@ async function countProspectsInCampaign(campaignId: string, statuses: string[]):
   const [r] = await db
     .select({ c: sql<number>`count(*)::int` })
     .from(prospects)
-    .where(and(eq(prospects.campaignId, campaignId), inArray(prospects.status, statuses)));
+    .where(and(eq(prospects.campaignId, campaignId), isNull(prospects.removedAt), inArray(prospects.status, statuses)));
   return r?.c ?? 0;
 }
 
@@ -214,7 +214,7 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
     const awaiting = await db
       .select()
       .from(prospects)
-      .where(and(eq(prospects.campaignId, campaign.id), eq(prospects.status, "awaiting_reply"),
+      .where(and(eq(prospects.campaignId, campaign.id), isNull(prospects.removedAt), eq(prospects.status, "awaiting_reply"),
         sql`not exists (select 1 from ${marketingContacts} where ${marketingContacts.id} = ${prospects.contactId} and ${marketingContacts.tenantDomain} = ${prospects.tenantDomain} and ${marketingContacts.outreachHold} = true)`));
 
     const anchor = anchorFor(campaign);
@@ -238,13 +238,13 @@ export async function tickCadence(tenantDomain: string): Promise<TickResult> {
       const completed = completedByProspect.get(p.id) ?? [];
 
       if (isExhausted(steps, completed)) {
-        await db.update(prospects).set({ status: "dormant", nextActionAt: null, updatedAt: now }).where(eq(prospects.id, p.id));
+        await db.update(prospects).set({ status: "dormant", nextActionAt: null, updatedAt: now }).where(and(eq(prospects.id, p.id), isNull(prospects.removedAt)));
         result.prospectsExhausted++;
         continue;
       }
       const due = nextDueStep(steps, completed, anchor, now);
       if (due) {
-        await db.update(prospects).set({ status: "cadence_step_due", nextActionAt: now, updatedAt: now }).where(eq(prospects.id, p.id));
+        await db.update(prospects).set({ status: "cadence_step_due", nextActionAt: now, updatedAt: now }).where(and(eq(prospects.id, p.id), isNull(prospects.removedAt)));
         result.prospectsAdvanced++;
       }
     }
@@ -356,7 +356,7 @@ export async function detectMailboxActivity(userId: string, tenantDomain: string
       if (new Date(latest).getTime() > lastTouchAt) {
         const next = advanceProspectState(p.status as any, "reply_detected");
         if (next) {
-          await db.update(prospects).set({ status: next, nextActionAt: null, updatedAt: new Date() }).where(eq(prospects.id, p.id));
+          await db.update(prospects).set({ status: next, nextActionAt: null, updatedAt: new Date() }).where(and(eq(prospects.id, p.id), isNull(prospects.removedAt)));
           result.repliesDetected++;
         }
       }
@@ -376,7 +376,7 @@ export async function runCadenceForTenant(tenantDomain: string): Promise<TickRes
   const owners = await db
     .selectDistinct({ ownerUserId: prospects.ownerUserId })
     .from(prospects)
-    .where(and(eq(prospects.tenantDomain, tenantDomain), inArray(prospects.status, ["awaiting_reply", "cadence_step_due"])));
+    .where(and(eq(prospects.tenantDomain, tenantDomain), isNull(prospects.removedAt), inArray(prospects.status, ["awaiting_reply", "cadence_step_due"])));
 
   let touchesConfirmedSent = 0;
   let repliesDetected = 0;

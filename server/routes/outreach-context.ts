@@ -78,6 +78,25 @@ export function registerOutreachContextRoutes(app: Express) {
     return campaign;
   };
   app.get(campaignBase, handle(false, async (req, res, ctx) => res.json((await campaignFor(req, ctx)).messagingBriefs ?? [])));
+  app.post("/api/sales-outreach/campaigns/:id/prospects/remove", handle(true, async (req, res, ctx) => {
+    const body = z.object({
+      prospectIds: z.array(z.string().min(1)).min(1).max(200)
+        .refine(ids => new Set(ids).size === ids.length, "Select each contact only once"),
+      confirmed: z.literal(true),
+    }).strict().parse(req.body);
+    const campaign = await campaignFor(req, ctx);
+    const removed = await db.transaction(async tx => {
+      const rows = await tx.update(prospects).set({
+        removedAt: new Date(), status: "dormant", nextActionAt: null, updatedAt: new Date(),
+      }).where(and(eq(prospects.tenantDomain, ctx.tenantDomain),
+        eq(prospects.campaignId, campaign.id), inArray(prospects.id, body.prospectIds)))
+        .returning({ id: prospects.id });
+      if (rows.length !== body.prospectIds.length) throw new OutreachContextError(
+        "The selection changed or includes contacts outside this campaign. Nothing was removed. Refresh and select again.", 409);
+      return rows.length;
+    });
+    res.json({ removed });
+  }));
   app.patch("/api/sales-outreach/campaigns/:id/outreach-context", handle(true, async (req, res, ctx) => {
     const body = bulkMessagingSchema.parse(req.body);
     const campaign = await campaignFor(req, ctx);

@@ -38,6 +38,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
 import OutreachContactContext from "@/components/sales/outreach-contact-context";
 import BulkMessagingEditor from "@/components/sales/bulk-messaging-editor";
+import BulkCampaignRemoval from "@/components/sales/bulk-campaign-removal";
+import RemovedCampaignContacts from "@/components/sales/removed-campaign-contacts";
 import CampaignMessagingBriefs from "@/components/sales/campaign-messaging-briefs";
 import { OutreachPreflightCancelled, useOutreachPreflight } from "@/components/sales/outreach-preflight";
 import { fetchOutreachContext, matchesAssignedMessagingGroup, matchesContactFamiliarity, useOutreachContext } from "@/components/sales/use-outreach-context";
@@ -1660,6 +1662,7 @@ export default function OutreachCampaignDetailPage() {
           <CardContent>
             {prospects.length === 0 ? (
               <div className="py-8 text-center space-y-3">
+                <RemovedCampaignContacts campaignId={id} scope={classification.selectionScope} />
                 <p className="text-sm text-muted-foreground">No prospects yet.</p>
                 <div className="flex justify-center gap-2 flex-wrap">
                   <Button size="sm" variant="outline" onClick={openHubspotDialog} data-testid="button-import-hubspot-empty">
@@ -1768,6 +1771,9 @@ export default function OutreachCampaignDetailPage() {
                 membershipCount={classification.membershipCount} />
               {classification.canEdit && <BulkMessagingEditor key={JSON.stringify([classification.selectionScope, classification.selectedIds])}
                 campaignId={id} selectedIds={classification.selectedIds} canEdit={classification.canEdit} onSaved={classification.clearSelection} />}
+              <BulkCampaignRemoval campaignId={id} selectedIds={classification.selectedIds}
+                selectionScope={classification.selectionScope} canEdit={classification.canEdit} onRemoved={classification.clearSelection} />
+              <RemovedCampaignContacts campaignId={id} scope={classification.selectionScope} />
               <Table>
                 <TableHeader>
                   <TableRow>

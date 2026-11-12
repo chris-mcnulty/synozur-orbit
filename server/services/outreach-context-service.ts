@@ -35,12 +35,13 @@ export async function getOutreachContext(tenantDomain: string, prospectId: strin
     // Preserve fingerprints issued before familiarity existed for unchanged unknown contacts.
     ...(familiarity !== "unknown" ? { familiarity } : {}),
   });
-  return { activities, hold: row.contact.outreachHold, messagingGroup: group, familiarity, briefs, fingerprint,
+  return { activities, removed: !!row.person.removedAt, hold: row.contact.outreachHold, messagingGroup: group, familiarity, briefs, fingerprint,
     recentActivity: activities.some(a => a.occurredAt.getTime() >= Date.now() - 7 * 86400000) };
 }
 
 export async function outreachCompositionContext(tenantDomain: string, prospectId: string, confirmedFingerprint?: string) {
   const ctx = await getOutreachContext(tenantDomain, prospectId);
+  if (ctx.removed) throw new OutreachContextError("This contact was removed from this campaign. History is retained; new outreach is blocked.", 409, "OUTREACH_REMOVED");
   if (ctx.hold) throw new OutreachContextError("Outreach is on hold for this contact across campaigns. Remove the hold deliberately before drafting.", 409, "OUTREACH_ON_HOLD");
   if ((ctx.activities.length || ctx.messagingGroup || ctx.familiarity !== "unknown") && confirmedFingerprint !== ctx.fingerprint) {
     throw new OutreachContextError("Review this contact's correspondence and selected messaging group before drafting.");
@@ -54,6 +55,7 @@ export async function outreachCompositionContext(tenantDomain: string, prospectI
 
 export async function validateOutreachContext(tenantDomain: string, prospectId: string, snapshot?: OutreachContextSnapshot | null) {
   const current = await getOutreachContext(tenantDomain, prospectId);
+  if (current.removed) throw new OutreachContextError("This contact was removed from this campaign. Approval is blocked.", 409, "OUTREACH_REMOVED");
   if (current.hold) throw new OutreachContextError("Outreach is on hold for this contact. Nothing was sent.", 409, "OUTREACH_ON_HOLD");
   if (snapshot ? snapshot.fingerprint !== current.fingerprint : current.activities.length > 0 || !!current.messagingGroup || current.familiarity !== "unknown") {
     throw new OutreachContextError("The contact's correspondence or messaging direction changed. Review the current context and generate a new draft before approval.");

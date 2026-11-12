@@ -410,7 +410,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       const ctx = await getRequestContext(req);
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
       if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-      const rows = await listCampaignProspects(campaign.id);
+      const rows = await listCampaignProspects(campaign.id, req.query.removed === "true");
       rows.sort((a, b) => (b.icpScore ?? -1) - (a.icpScore ?? -1));
       res.json(rows);
     } catch (err: any) {

@@ -9,7 +9,8 @@ vi.mock("../../context", () => ({
 }));
 vi.mock("../../routes/helpers", () => ({ guardFeature: vi.fn(async () => true) }));
 import { db } from "../../db";
-import { users, outreachCampaigns, marketingContacts, prospects } from "@shared/schema";
+import { users, outreachCampaigns, marketingContacts, prospects, outreachTouches } from "@shared/schema";
+import { listCampaignProspects } from "../prospect-contact-service";
 import { eq } from "drizzle-orm";
 import { registerOutreachContextRoutes } from "../../routes/outreach-context";
 import { getOutreachContext, outreachCompositionContext, validateOutreachContext } from "../outreach-context-service";
@@ -144,5 +145,33 @@ describe.skipIf(!process.env.DATABASE_URL)("external outreach persistence, route
     expect((await outreachCompositionContext(tenant, p1, known.fingerprint)).block).toContain("skip the sender bio");
     expect((await request(app).patch(`${path()}/outreach-context`).send({ familiarity: "unknown" })).status).toBe(200);
     await expect(validateOutreachContext(tenant, p1, { fingerprint: known.fingerprint, group: null })).rejects.toThrow(/changed/);
+  });
+  it("removes only campaign memberships from active outreach while retaining history and blocking new drafts", async () => {
+    const url = `/api/sales-outreach/campaigns/${c1}/prospects/remove`;
+    const ctx = await getOutreachContext(tenant, p1);
+    const [touch] = await db.insert(outreachTouches).values({
+      tenantDomain: tenant, campaignId: c1, prospectId: p1, channel: "email",
+      body: "Historical email", subject: "History", status: "sent", stepNumber: 1,
+    }).returning();
+    expect((await request(app).post(url).send({ prospectIds: [p1], confirmed: false })).status).toBe(400);
+    expect((await request(app).post(url).send({ prospectIds: [p1, p2], confirmed: true })).status).toBe(409);
+    expect((await getOutreachContext(tenant, p1)).removed).toBe(false);
+    auth.role = "Viewer";
+    expect((await request(app).post(url).send({ prospectIds: [p1], confirmed: true })).status).toBe(403);
+    auth.role = "Analyst";
+    auth.tenant = "other.invalid";
+    expect((await request(app).post(url).send({ prospectIds: [p1], confirmed: true })).status).toBe(404);
+    auth.tenant = tenant;
+    const result = await request(app).post(url).send({ prospectIds: [p1, p3], confirmed: true });
+    expect(result.status).toBe(200); expect(result.body.removed).toBe(2);
+    expect(await listCampaignProspects(c1)).toHaveLength(0);
+    expect(await listCampaignProspects(c1, true)).toHaveLength(2);
+    expect((await db.select().from(outreachTouches).where(eq(outreachTouches.id, touch.id)))[0].body).toBe("Historical email");
+    expect((await getOutreachContext(tenant, p2)).removed).toBe(false);
+    await expect(outreachCompositionContext(tenant, p1, ctx.fingerprint)).rejects.toThrow(/removed/);
+    await expect(validateOutreachContext(tenant, p1, {fingerprint:ctx.fingerprint,group:null})).rejects.toThrow(/removed/);
+    const removed = (await listCampaignProspects(c1, true))[0];
+    expect(removed.nextActionAt).toBeNull();
+    expect(removed.status).toBe("dormant");
   });
 });

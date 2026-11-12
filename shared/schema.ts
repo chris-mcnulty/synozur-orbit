@@ -5333,6 +5333,7 @@ export const prospects = pgTable("prospects", {
   source: text("source").notNull().default("manual"), // hubspot | manual | linkedin | import
   classification: jsonb("classification").$type<import("./campaign-classification").CampaignClassification>(),
   messagingGroup: text("messaging_group"),
+  removedAt: timestamp("removed_at"),
   familiarity: text("familiarity").$type<import("./outreach-context").ContactFamiliarity>().notNull().default("unknown"),
   // ICP qualification.
   icpScore: integer("icp_score"),

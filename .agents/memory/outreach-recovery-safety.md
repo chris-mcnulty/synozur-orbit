@@ -1,3 +1,10 @@
+## Campaign removal preserves history
+
+Bulk removal from outreach must preserve campaign messages and shared contact records; it is removal from active outreach, not permanent deletion.
+
+**Why:** The user explicitly chose preserving history when asked about bulk removal.
+
+**How to apply:** Retain historical records in a read-only removed-contacts view, stop future drafting/approval and cadence advancement, and do not delete HubSpot records or recall existing Outlook drafts. Removal is campaign-specific, not a global opt-out.
 ---
 name: Outreach recovery safety
 description: Historical outreach recovery must not restart sending or infer current consent.

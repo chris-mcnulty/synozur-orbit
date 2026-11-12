@@ -104,13 +104,13 @@ export async function getProspectsWithContacts(prospectIds: string[]): Promise<P
 }
 
 /** All memberships on a campaign, flattened. */
-export async function listCampaignProspects(campaignId: string): Promise<ProspectWithContact[]> {
+export async function listCampaignProspects(campaignId: string, removed = false): Promise<ProspectWithContact[]> {
   const rows = await db
     .select({ membership: prospects, contact: marketingContacts })
     .from(prospects)
     .innerJoin(marketingContacts, eq(prospects.contactId, marketingContacts.id))
     .where(eq(prospects.campaignId, campaignId));
-  return rows.map((r) => flattenProspect(r.membership, r.contact));
+  return rows.filter(r => !!r.membership.removedAt === removed).map((r) => flattenProspect(r.membership, r.contact));
 }
 
 // ---------------------------------------------------------------------------
