@@ -9,6 +9,8 @@ import { listCampaignProspects, getProspectWithContact } from "./prospect-contac
 import { meetingFactsFingerprint, meetingContactFingerprint, meetingDraftFingerprint, assertMeetingCanDraft, activityAfterDraft } from "./conference-meetings-core";
 import { reviewConferenceRelationship } from "./conference-relationship-review";
 import { loadConferenceOutreachContext } from "./conference-outreach-context";
+import { withMeetingRows } from "./linked-meetings-service";
+import { sharedBookingFields } from "@shared/linked-meetings";
 
 export class MeetingError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -48,10 +50,14 @@ export async function getMeetingPerson(tenantDomain: string, id: string, marketI
 }
 
 export async function saveMeeting(tenantDomain: string, id: string, meeting: MeetingContact, expectedMeeting?: MeetingContact) {
+  try { return await withMeetingRows(tenantDomain, id, async (tx, rows, current) => {
+  meeting = { ...meeting };
+  if (current.meeting?.sharedMeetingId) meeting.sharedMeetingId = current.meeting.sharedMeetingId;
+  else delete meeting.sharedMeetingId;
   // Compare the entire snapshot, not the drafting fingerprint (which deliberately
   // omits some fields). JSONB equality ignores object key order. Apply the same
   // defaults as getConferenceWorkspace for legacy null/partial meeting records.
-  const [saved] = await db.update(prospects).set({ meeting, updatedAt: new Date() })
+  const [saved] = await tx.update(prospects).set({ meeting, updatedAt: new Date() })
     .where(and(
       eq(prospects.id, id),
       eq(prospects.tenantDomain, tenantDomain),
@@ -61,6 +67,22 @@ export async function saveMeeting(tenantDomain: string, id: string, meeting: Mee
     )).returning({ id: prospects.id });
   if (expectedMeeting !== undefined && !saved) {
     throw new MeetingError("This contact's meeting details changed while this operation was running. Nothing was saved. Refresh the meeting workspace, review the latest attendance, stage and notes, then retry.");
+  }
+  const group = current.meeting?.sharedMeetingId;
+  if (group) {
+    for (const peer of rows.filter(row => row.id !== id && row.meeting?.sharedMeetingId === group)) {
+      await tx.update(prospects).set({
+        meeting: { ...defaultMeetingContact(), ...peer.meeting, ...sharedBookingFields(meeting) },
+        updatedAt: new Date(),
+      }).where(and(eq(prospects.id, peer.id), eq(prospects.tenantDomain, tenantDomain)));
+    }
+  }
+  }); } catch (error) {
+    if (error instanceof MeetingError && error.status === 404) {
+      if (expectedMeeting === undefined) return;
+      throw new MeetingError("This contact's meeting details changed or are no longer available. Nothing was saved.");
+    }
+    throw error;
   }
 }
 

@@ -127,7 +127,12 @@ export async function saveEmailThread(tenantDomain: string, marketId: string, us
         await tx.update(prospects).set({
           meeting: sql`jsonb_set(${prospects.meeting}, '{meetingLocation}', ${JSON.stringify(location)}::jsonb)`,
           updatedAt: new Date(),
-        }).where(and(eq(prospects.id, membership.id), eq(prospects.tenantDomain, tenantDomain), eq(prospects.campaignId, campaignId)));
+        }).where(and(
+          membership.meeting.sharedMeetingId
+            ? sql`${prospects.meeting}->>'sharedMeetingId' = ${membership.meeting.sharedMeetingId}`
+            : eq(prospects.id, membership.id),
+          eq(prospects.tenantDomain, tenantDomain), eq(prospects.campaignId, campaignId),
+        ));
         meetingLocationSaved = true;
       }
     }

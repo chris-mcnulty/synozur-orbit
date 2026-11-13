@@ -23,6 +23,7 @@ import { buildPlannerConsentUrl, CALENDAR_SCOPES } from "../services/planner-gra
 import { calendarConnection, previewCalendarInvitation, getCalendarInvitation, sendCalendarInvitation, cancelCalendarInvitation } from "../services/conference-calendar-service";
 import { calendarInvitationSchema } from "@shared/conference-meetings";
 import { recommendConferenceContacts, importConferenceRecommendations } from "../services/conference-warm-contacts";
+import { linkMeetingContacts } from "../services/linked-meetings-service";
 
 const externalPerson = z.object({
   name: z.string().trim().max(300).optional(),
@@ -89,11 +90,22 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     res.status(201).json({ imported, skipped: data.contacts.length - imported });
   }, true));
   const personBase = "/api/sales-outreach/prospects/:id/meeting";
-  app.get(`${personBase}/calendar`, route(async (req, res, ctx) => {
+  app.patch(`${personBase}/contacts`, route(async (req, res, ctx) => {
+    const ids = z.array(z.string().min(1).max(100)).min(1).max(50);
+    const data = z.object({
+      contactIds: ids, expectedContactIds: ids,
+      expectedBooking: meetingContactEditSchema.pick({ meetingAt: true, meetingLocation: true, meetingOwner: true, participants: true }),
+    }).strict().parse(req.body);
     await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json(await linkMeetingContacts(ctx.tenantDomain, req.params.id, data.contactIds, {
+      contactIds: data.expectedContactIds, booking: data.expectedBooking,
+    }));
+  }, true));
+  app.get(`${personBase}/calendar`, route(async (req, res, ctx) => {
+    const { person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     res.json({
       ...await calendarConnection(ctx.userId),
-      invitation: await getCalendarInvitation(ctx.tenantDomain, req.params.id),
+      invitation: await getCalendarInvitation(ctx.tenantDomain, person.meeting.sharedMeetingId || req.params.id),
       userId: ctx.userId,
     });
   }));
@@ -110,17 +122,18 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     res.json({ url });
   }, true));
   app.post(`${personBase}/calendar/preview`, route(async (req, res, ctx) => {
-    res.json(await previewCalendarInvitation(ctx.tenantDomain, req.params.id, ctx.marketId, ctx.userId, req.body));
+    const { person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json(await previewCalendarInvitation(ctx.tenantDomain, person.meeting.sharedMeetingId || req.params.id, ctx.marketId, ctx.userId, req.body));
   }, true));
   app.post(`${personBase}/calendar/send`, route(async (req, res, ctx) => {
     const data = z.object({ invitation: calendarInvitationSchema, fingerprint: z.string().length(64), confirmed: z.literal(true) }).strict().parse(req.body);
-    await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
-    res.json(await sendCalendarInvitation(ctx.tenantDomain, req.params.id, ctx.marketId, ctx.userId, data.invitation, data.fingerprint));
+    const { person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json(await sendCalendarInvitation(ctx.tenantDomain, person.meeting.sharedMeetingId || req.params.id, ctx.marketId, ctx.userId, data.invitation, data.fingerprint));
   }, true));
   app.post(`${personBase}/calendar/cancel`, route(async (req, res, ctx) => {
     const data = z.object({ confirmed: z.literal(true), fingerprint: z.string().length(64) }).strict().parse(req.body);
-    await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
-    res.json(await cancelCalendarInvitation(ctx.tenantDomain, req.params.id, ctx.userId, data.fingerprint));
+    const { person } = await getMeetingPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
+    res.json(await cancelCalendarInvitation(ctx.tenantDomain, person.meeting.sharedMeetingId || req.params.id, ctx.userId, data.fingerprint));
   }, true));
   app.patch(personBase, route(async (req, res, ctx) => {
     const edit = meetingContactEditSchema.parse(req.body);

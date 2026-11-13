@@ -14,3 +14,9 @@ Pasted correspondence may supply a separately reviewed venue for an existing mee
 **Why:** The user's Ignite example explicitly distinguished duplicate-invitation cleanup from meeting cancellation; signature timezones and travel dates were not scheduling instructions.
 
 **How to apply:** Preserve this distinction when extending thread extraction. Never treat importing email evidence as permission to synchronize a calendar.
+
+Linking several campaign contacts to a shared meeting does not authorize new calendar delivery, attendee changes, or cancellation. Keep per-person relationship notes and outreach separate from shared booking details.
+
+**Why:** The user requires a meeting to cover multiple worked contacts at the same company. Treating each link as a new booking would double-count meetings and risk duplicate invitations.
+
+**How to apply:** Count the shared booking once, review calendar delivery separately, and never silently merge independently issued invitations.

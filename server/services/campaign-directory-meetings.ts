@@ -11,7 +11,7 @@ export async function campaignDirectoryMeetings(tenantDomain: string, campaignId
     db.execute(sql`SELECT p.id, i.state->>'status' AS status,
       i.state->'preview'->>'timezone' AS timezone
       FROM prospects p
-      JOIN conference_calendar_invitations i ON i.prospect_id = p.id AND i.tenant_domain = p.tenant_domain
+      JOIN conference_calendar_invitations i ON i.prospect_id = coalesce(p.meeting->>'sharedMeetingId', p.id) AND i.tenant_domain = p.tenant_domain
       WHERE p.campaign_id = ${campaignId} AND p.tenant_domain = ${tenantDomain}`),
   ]);
   const timezone = events[0]?.presence?.timezone ?? null;

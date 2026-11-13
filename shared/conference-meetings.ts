@@ -90,6 +90,8 @@ export interface RelationshipReview {
   suppressed: boolean;
 }
 export type MeetingContact = z.infer<typeof meetingContactEditSchema> & {
+  /** Server-owned campaign membership ID identifying one shared booking. */
+  sharedMeetingId?: string;
   review?: RelationshipReview;
   angles?: MeetingAngle[];
   anglesFingerprint?: string;

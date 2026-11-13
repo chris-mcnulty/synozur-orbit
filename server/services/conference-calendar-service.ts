@@ -60,16 +60,21 @@ export async function getCalendarInvitation(tenant: string, id: string): Promise
 
 export async function sendCalendarInvitation(tenant: string, id: string, marketId: string | undefined, userId: string, input: unknown, fingerprint: string) {
   // Replays use the immutable stored payload, not newly edited prep.
-  const existing = await getCalendarInvitation(tenant, id);
-  let inserted = false;
-  if (!existing) {
+  const inserted = await db.transaction(async tx => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${tenant}:${id}`}, 0))`);
+    const member = await tx.execute(sql`SELECT meeting->>'sharedMeetingId' AS shared_id FROM prospects WHERE id = ${id} AND tenant_domain = ${tenant}`);
+    if (member.rows[0]?.shared_id && member.rows[0].shared_id !== id) {
+      throw new MeetingError("This contact was linked to a shared meeting. Refresh and review that meeting's invitation before sending.");
+    }
+    const existing = await tx.execute(sql`SELECT state FROM conference_calendar_invitations WHERE prospect_id = ${id} AND tenant_domain = ${tenant}`);
+    if (existing.rows.length) return false;
     const preview = await previewCalendarInvitation(tenant, id, marketId, userId, input);
     if (preview.fingerprint !== fingerprint) throw new MeetingError("Meeting details changed. Review the invitation again.");
     const state: CalendarInvitationState = { status: "creating", organizerUserId: userId, preview };
-    const result = await db.execute(sql`INSERT INTO conference_calendar_invitations (prospect_id, tenant_domain, transaction_id, state)
+    const result = await tx.execute(sql`INSERT INTO conference_calendar_invitations (prospect_id, tenant_domain, transaction_id, state)
       VALUES (${id}, ${tenant}, ${randomUUID()}, ${JSON.stringify(state)}::jsonb) ON CONFLICT DO NOTHING RETURNING state`);
-    inserted = result.rows.length > 0;
-  }
+    return result.rows.length > 0;
+  });
   return operateInvitation(tenant, id, userId, false, inserted, fingerprint);
 }
 

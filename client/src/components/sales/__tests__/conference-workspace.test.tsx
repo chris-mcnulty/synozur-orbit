@@ -61,7 +61,7 @@ describe("compact shared event workspace", () => {
   it("opens only the contact selected by the campaign table", async () => {
     setup(fixture, "person");
     expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByText("Test Partner", { exact: true })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Meeting prep · Test Partner" })).toBeTruthy();
     expect(screen.queryByText("People", { exact: true })).toBeNull();
     expect(screen.getByRole("button", { name: "Save prep" })).toBeTruthy();
   });

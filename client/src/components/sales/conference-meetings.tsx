@@ -16,6 +16,8 @@ import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 import PasteContactsDialog, { type ParsedContact } from "@/components/sales/paste-contacts-dialog";
 import ConferenceWarmContacts from "@/components/sales/conference-warm-contacts";
 import ConferenceCalendarInvitation from "@/components/sales/conference-calendar-invitation";
+import LinkedMeetingContacts from "@/components/sales/linked-meeting-contacts";
+import { bookedMeetingCount, sharedBookingFields } from "@shared/linked-meetings";
 import { formatClarificationText } from "@/components/sales/compose-clarification";
 import { OutreachPreflightCancelled, useOutreachPreflight } from "./outreach-preflight";
 import { generateWithOutreachReview, isOutreachContextError } from "./outreach-generation";
@@ -209,7 +211,10 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
     setDraftContact(draft => draft && location !== undefined && draft.meetingLocation === previous
       ? { ...draft, meetingLocation: location } : draft);
   }, [selectedContact?.id, selectedContact?.meeting.meetingLocation]);
-  const bookedCount = workspace?.contacts.filter((contact) => contact.meeting.stage === "meeting_booked" && !!contact.meeting.meetingAt && !!contact.meeting.meetingOwner.trim()).length ?? 0;
+  const bookedCount = bookedMeetingCount(workspace?.contacts ?? []);
+  const linkedContacts = workspace?.contacts.filter(contact => selectedContact?.meeting.sharedMeetingId
+    ? contact.meeting.sharedMeetingId === selectedContact.meeting.sharedMeetingId
+    : contact.id === selectedContact?.id) ?? [];
   const contactPath = (suffix: string) => `/api/sales-outreach/prospects/${activeId}/meeting${suffix}`;
   function contactPayload(contact: MeetingContact) {
     const { relationships, attendance, attendanceEvidence, relationshipNotes, ownerNotes, stage, selectedAngleId, selectedHook, selectedAsk, meetingAt, meetingLocation, participants, meetingOwner, followUp } = contact;
@@ -468,7 +473,10 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
           </DialogHeader>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           {selectedContact && draftContact ? <div className="min-w-0 space-y-4 [&_fieldset]:min-w-0 [&_p]:break-words">
-            <ConferenceCalendarInvitation key={selectedContact.id} personId={selectedContact.id} name={selectedContact.name} email={selectedContact.email} eventName={event.name} meeting={selectedContact.meeting} disabled={personBusy} />
+            <ConferenceCalendarInvitation key={`${selectedContact.id}:${linkedContacts.map(contact => contact.id).sort().join(",")}`}
+              personId={selectedContact.id} name={linkedContacts.map(contact => contact.name).join(" and ")}
+              email={linkedContacts.map(contact => contact.email).filter(Boolean).join(", ")}
+              eventName={event.name} meeting={selectedContact.meeting} disabled={personBusy} />
             <Card className="min-w-0 border-border bg-card shadow-none">
               <CardHeader className="flex flex-col items-start justify-between gap-3 pb-3 sm:flex-row">
                 <div><CardTitle className="text-xl">{selectedContact.name}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{[selectedContact.title, selectedContact.companyName].filter(Boolean).join(" · ")}{selectedContact.email ? ` · ${selectedContact.email}` : ""}</p>{selectedContact.linkedinUrl && <a href={selectedContact.linkedinUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary underline">LinkedIn profile <ExternalLink className="h-3 w-3" /></a>}</div>
@@ -492,6 +500,22 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
                   </div>
                   <Field label="Location"><Input value={draftContact.meetingLocation} onChange={(e) => updateContact("meetingLocation", e.target.value)} /></Field>
                   <Field label="Participants"><Input value={draftContact.participants} onChange={(e) => updateContact("participants", e.target.value)} placeholder="Names or roles attending" /></Field>
+                  <LinkedMeetingContacts currentId={selectedContact.id} contacts={workspace.contacts}
+                    linkedIds={linkedContacts.map(contact => contact.id)}
+                    requiredIds={selectedContact.meeting.sharedMeetingId ? [selectedContact.meeting.sharedMeetingId] : []}
+                    disabled={personBusy || selectedContact.meeting.stage !== "meeting_booked"
+                      || JSON.stringify(sharedBookingFields(draftContact)) !== JSON.stringify(sharedBookingFields(selectedContact.meeting))}
+                    onSave={async contactIds => {
+                      await apiRequest("PATCH", contactPath("/contacts"), {
+                        contactIds, expectedContactIds: linkedContacts.map(contact => contact.id),
+                        expectedBooking: sharedBookingFields(selectedContact.meeting),
+                      });
+                      await Promise.all([
+                        qc.invalidateQueries({ queryKey: key }),
+                        qc.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns", campaignId, "prospects"] }),
+                        qc.invalidateQueries({ predicate: query => String(query.queryKey[0]).includes("/meeting/calendar") }),
+                      ]);
+                    }} />
                   <Field label="Follow-up"><Textarea rows={3} value={draftContact.followUp} onChange={(e) => updateContact("followUp", e.target.value)} placeholder="Agreed next steps and timing" /></Field>
                   <div className="rounded-lg border border-border bg-muted/30 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><ShieldAlert className="h-4 w-4" />Relationship history</h3><p className="mt-1 text-xs text-muted-foreground">{selectedContact.meeting.review ? `Checked ${new Date(selectedContact.meeting.review.checkedAt).toLocaleString()} · ${selectedContact.meeting.review.coverage} coverage` : "Checked automatically when you generate angles"}</p></div><Button variant="outline" size="sm" onClick={() => review.mutate()} disabled={personBusy}>{review.isPending ? "Checking…" : "Review history"}</Button></div>
