@@ -23,9 +23,10 @@ const DropdownMenuSubTrigger = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
     inset?: boolean
   }
->(({ className, inset, children, ...props }, ref) => (
+>(({ className, inset, children, asChild, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
+    asChild={asChild}
     className={cn(
       "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
       inset && "pl-8",
@@ -33,8 +34,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
     )}
     {...props}
   >
-    {children}
-    <ChevronRight className="ml-auto" />
+    {asChild ? children : <>{children}<ChevronRight className="ml-auto" /></>}
   </DropdownMenuPrimitive.SubTrigger>
 ))
 DropdownMenuSubTrigger.displayName =
