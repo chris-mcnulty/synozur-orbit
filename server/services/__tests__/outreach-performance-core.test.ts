@@ -20,6 +20,16 @@ function p(status: string, roleMatched: boolean): PerfProspect {
 }
 
 describe("outreach-performance-core", () => {
+  it("includes logged external conversations in worked and reply-rate denominators", () => {
+    const report = analyzeOutreachPerformance([
+      { ...p("new", true), externalCommunicated: true, externalReplied: true },
+      { ...p("new", false), externalCommunicated: true },
+      p("new", true),
+    ]);
+    assert.equal(report.contacted, 2);
+    assert.equal(report.replied, 1);
+    assert.equal(report.replyRate, 0.5);
+  });
   it("excludes removed contacts from totals, both sides of rates, signal lift and recommendations", () => {
     const active = [p("replied", true), p("sent", false), p("new", false)];
     const excluded = [

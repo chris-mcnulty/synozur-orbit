@@ -23,6 +23,20 @@ beforeEach(() => {
 });
 const campaign = { id: "campaign", tenantDomain: "tenant-a", marketId: "market-a", status: "active", name: "Test campaign", salesGoal: null, conferenceId: null };
 describe("campaign workspace routes", () => {
+  it("does not let a read-only viewer mark recommendations done", async () => {
+    mocks.context.mockResolvedValue({ tenantDomain: "tenant-a", marketId: "market-a", userId: "viewer", userRole: "Standard User" });
+    const result = await request(app).patch("/api/sales-outreach/campaigns/campaign/next-steps/completion")
+      .send({ prospectId: "person", itemId: "step", version: "a".repeat(64), completed: true });
+    expect(result.status).toBe(403);
+    expect(mocks.select).not.toHaveBeenCalled();
+  });
+  it("validates the completion version and explicit completed flag before changing records", async () => {
+    mocks.context.mockResolvedValue({ tenantDomain: "tenant-a", marketId: "market-a", userId: "editor", userRole: "Analyst" });
+    const result = await request(app).patch("/api/sales-outreach/campaigns/campaign/next-steps/completion")
+      .send({ prospectId: "person", itemId: "step", version: "not-reviewed" });
+    expect(result.status).toBe(400);
+    expect(mocks.select).not.toHaveBeenCalled();
+  });
   it.each(["next-steps", "summary"])("scopes empty-campaign %s queries and skips shared history", async path => {
     mocks.rows.push([campaign], [], [], []);
     const result = path === "summary"

@@ -12,6 +12,8 @@ import type { ProspectScoreBreakdown } from "@shared/schema";
 export interface PerfProspect {
   status: string;
   removedAt?: Date | string | null;
+  externalCommunicated?: boolean;
+  externalReplied?: boolean;
   icpScore: number | null;
   scoreBreakdown: ProspectScoreBreakdown | null;
 }
@@ -57,9 +59,9 @@ export function analyzeOutreachPerformance(prospects: PerfProspect[]): OutreachP
   const funnel: Record<string, number> = {};
   for (const p of prospects) funnel[p.status] = (funnel[p.status] ?? 0) + 1;
 
-  const contactedProspects = prospects.filter((p) => CONTACTED_STATES.has(p.status));
+  const contactedProspects = prospects.filter((p) => CONTACTED_STATES.has(p.status) || p.externalCommunicated || p.externalReplied);
   const contacted = contactedProspects.length;
-  const isReplied = (p: PerfProspect) => p.status === "replied";
+  const isReplied = (p: PerfProspect) => p.status === "replied" || !!p.externalReplied;
   const replied = prospects.filter(isReplied).length;
 
   // Signal performance over CONTACTED prospects (those we actually worked).

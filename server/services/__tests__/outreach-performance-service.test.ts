@@ -8,6 +8,14 @@ vi.mock("../../db", () => ({ db: { select: () => ({ from: () => ({ where: (filte
 import { getCampaignPerformance } from "../outreach-performance-service";
 beforeEach(() => { mocks.rows.length = 0; mocks.filters.length = 0; });
 describe("campaign performance active membership scope", () => {
+  it("adds only this campaign's external conversation outcomes to its active contacts", async () => {
+    mocks.rows.push([{ id: "campaign", tenantDomain: "tenant" }],
+      [{ contactId: "contact", status: "new", icpScore: null, scoreBreakdown: null }],
+      [{ contactId: "contact", direction: "inbound", outcome: "meeting_agreed" }]);
+    expect(await getCampaignPerformance("tenant", "campaign")).toMatchObject({ total: 1, contacted: 1, replied: 1, replyRate: 1 });
+    const query = new PgDialect().sqlToQuery(mocks.filters[2]);
+    expect(query.params).toEqual(expect.arrayContaining(["tenant", "campaign", "contact"]));
+  });
   it("filters removed memberships in SQL before calculating the report", async () => {
     mocks.rows.push([{ id: "campaign", tenantDomain: "tenant" }], [{ status: "replied", icpScore: null, scoreBreakdown: null }]);
     const result = await getCampaignPerformance("tenant", "campaign");

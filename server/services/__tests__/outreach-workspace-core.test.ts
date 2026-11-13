@@ -15,6 +15,54 @@ const touch = (id: string, status = "draft_pending_approval"): WorkspaceTouch =>
   id: `draft-${id}`, prospectId: id, status, generatedAt: before, sentAt: null,
 });
 describe("campaign next steps and factual summary", () => {
+  it("includes companies, actual external communication and unscheduled meeting agreements", () => {
+    const result = buildOutreachWorkspace(campaign, [person("a", { companyName: "Example Co" })], [],
+      [{ contactId: "contact-a", direction: "outbound", outcome: "meeting_agreed", occurredAt: before, followUpAt: null }], now);
+    expect(result.counts).toMatchObject({
+      contacts: 1, worked: 1, communicated: 1, externallyContacted: 1, externalCommunications: 1,
+      sent: 0, replied: 1, meetings: 1, bookedMeetings: 0, agreedMeetings: 1,
+    });
+    expect(result.meetings[0]).toMatchObject({ status: "agreed", meetingAt: null, contacts: [{ name: "a", companyName: "Example Co" }] });
+    expect(result.summary).toContain("a (Example Co)");
+    expect(result.summary).toContain("1 total meetings");
+  });
+  it("counts a linked booking once and lists every active participant with their company", () => {
+    const meeting = { ...defaultMeetingContact(), stage: "meeting_booked" as const,
+      sharedMeetingId: "a", meetingAt: "2026-11-18T16:00:00Z", meetingLocation: "Lobby", meetingOwner: "Owner" };
+    const result = buildOutreachWorkspace(campaign, [
+      person("a", { meeting, companyName: "Example" }), person("b", { meeting, companyName: "Example" }),
+      person("removed", { meeting, removedAt: before }),
+    ], [], [
+      { contactId: "contact-a", direction: "outbound", outcome: "meeting_agreed", occurredAt: before, followUpAt: null },
+      { contactId: "contact-removed", direction: "inbound", outcome: "meeting_agreed", occurredAt: before, followUpAt: null },
+    ], now);
+    expect(result.counts).toMatchObject({ contacts: 2, meetings: 1, bookedMeetings: 1, agreedMeetings: 0, externalCommunications: 1 });
+    expect(result.meetings[0].contacts.map(contact => contact.prospectId)).toEqual(["a", "b"]);
+    expect(result.summary).toContain("b (Example)");
+    expect(result.summary).not.toContain("• removed");
+  });
+  it("keeps done reminders hidden across refreshes and leaves restrictions untouched", () => {
+    const input = person("a", { outreachHold: true });
+    const original = buildOutreachWorkspace(campaign, [input], [], [], now).items[0];
+    input.signals = { preserved: "existing evidence", nextStepCompletions: {
+      [original.id]: { version: original.version, completedAt: before.toISOString(), completedBy: "operator" },
+    } };
+    const refreshed = buildOutreachWorkspace(campaign, [input], [], [], new Date("2026-11-13T20:00:00Z"));
+    expect(refreshed.items).toEqual([]);
+    expect(refreshed.completedItems).toHaveLength(1);
+    expect(refreshed.counts.held).toBe(1);
+  });
+  it("reopens a completed review when newer external conversation evidence arrives", () => {
+    const activities = [{ contactId: "contact-a", direction: "inbound", outcome: "replied", occurredAt: before, followUpAt: null }];
+    const input = person("a");
+    const original = buildOutreachWorkspace(campaign, [input], [], activities, now).items[0];
+    input.signals = { nextStepCompletions: { [original.id]: { version: original.version, completedAt: before.toISOString(), completedBy: "operator" } } };
+    const changed = buildOutreachWorkspace(campaign, [input], [], [
+      ...activities, { ...activities[0], occurredAt: now },
+    ], now);
+    expect(changed.items[0].version).not.toBe(original.version);
+    expect(changed.completedItems).toEqual([]);
+  });
   it("sorts urgent overdue actions before high drafts and normal research", () => {
     const result = buildOutreachWorkspace(campaign, [person("Normal"), person("Draft"), person("Late", { nextActionAt: before })], [touch("Draft")], [], now);
     expect(result.items.map(i => i.priority)).toEqual(["urgent", "high", "normal"]);
@@ -76,7 +124,7 @@ describe("campaign next steps and factual summary", () => {
     const result = buildOutreachWorkspace(campaign, [person("a", { status: "researched" })], [], [], now, shared);
     expect(result.items.every(i => i.action === "review_history")).toBe(true);
     expect(result.items.some(i => i.title === "Review overdue follow-up")).toBe(true);
-    expect(result.counts).toEqual({ contacts: 1, pendingDrafts: 0, sent: 0, replied: 0, held: 0, overdue: 0 });
+    expect(result.counts).toMatchObject({ contacts: 1, pendingDrafts: 0, sent: 0, replied: 0, held: 0, overdue: 0 });
   });
   it("does not let unrelated contact history suppress a fresh recommendation", () => {
     const result = buildOutreachWorkspace(campaign, [person("a", { status: "researched" })], [], [], now,

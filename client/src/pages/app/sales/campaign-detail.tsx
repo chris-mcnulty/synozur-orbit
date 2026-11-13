@@ -3,6 +3,7 @@ import { Link, useParams, useLocation, useSearch } from "wouter";
 import SavedOutreachDrafts from "@/components/sales/saved-outreach-drafts";
 import NewProspectClassification, { newProspectClassificationPayload, type NewProspectClassificationValue } from "@/components/sales/new-prospect-classification";
 import CampaignNextSteps, { CampaignSummary, useCampaignSnapshotInvalidation, type CampaignNextStep } from "@/components/sales/campaign-next-steps";
+import CampaignOverview from "@/components/sales/campaign-overview";
 import CampaignContactActions from "@/components/sales/campaign-contact-actions";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1617,6 +1618,13 @@ export default function OutreachCampaignDetailPage() {
           <Button variant="ghost" className={`rounded-none border-b-2 ${campaignTab === "contacts" ? "border-primary text-primary" : "border-transparent"}`} aria-current={campaignTab === "contacts" ? "page" : undefined} onClick={() => setCampaignTab("contacts")}>Contacts</Button>
           <Button variant="ghost" className={`rounded-none border-b-2 ${campaignTab === "next-steps" ? "border-primary text-primary" : "border-transparent"}`} aria-current={campaignTab === "next-steps" ? "page" : undefined} onClick={() => setCampaignTab("next-steps")}>Next Steps</Button>
         </nav>
+        <CampaignOverview key={`overview:${composeScope}`} campaignId={id} scope={composeScope}
+          onOpenMeeting={prospectId => {
+            const person = prospects.find(contact => contact.id === prospectId);
+            if (!person) { toast({ title: "Contact no longer available", description: "Refresh the campaign to see the latest contacts." }); return; }
+            if (campaign.conferenceId) setMeetingContact({ campaignId: campaign.id, contactId: person.id });
+            else setHistoryContact(person);
+          }} />
         <CampaignSummary key={composeScope} campaignId={id} scope={composeScope} canGenerate={canEditOutreach || canEdit} />
         {campaignTab === "next-steps" && <CampaignNextSteps key={composeScope} campaignId={id} scope={composeScope} canEdit={canEditOutreach}
           busy={compose.isPending || research.isPending} onAction={(item: CampaignNextStep) => {
