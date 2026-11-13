@@ -14,6 +14,7 @@ import { listCampaignProspects } from "../prospect-contact-service";
 import { eq } from "drizzle-orm";
 import { registerOutreachContextRoutes } from "../../routes/outreach-context";
 import { getOutreachContext, outreachCompositionContext, validateOutreachContext } from "../outreach-context-service";
+import { defaultMeetingContact } from "@shared/conference-meetings";
 
 const tenant = `outreach-context-test-${randomUUID()}.invalid`;
 let p1: string, p2: string, p3: string, c1: string;
@@ -45,6 +46,42 @@ describe.skipIf(!process.env.DATABASE_URL)("external outreach persistence, route
   afterAll(async () => {
     await db.delete(outreachCampaigns).where(eq(outreachCampaigns.tenantDomain, tenant));
     await db.delete(marketingContacts).where(eq(marketingContacts.tenantDomain, tenant));
+  });
+  it("uses the relationship goal brief by default, follows changed labels, and retains deliberate overrides and clearing", async () => {
+    const [campaign] = await db.insert(outreachCampaigns).values({
+      tenantDomain: tenant, name: "Relationship brief fixture", createdBy: auth.userId,
+      messagingBriefs: [
+        { group: "partner", goal: "Develop our partner relationship", ask: "Meet", guidance: "", exclusions: "" },
+        { group: "customer", goal: "Support our existing customer", ask: "Catch up", guidance: "", exclusions: "" },
+      ],
+    }).returning();
+    const [contact] = await db.insert(marketingContacts).values({ tenantDomain: tenant, firstName: "Brief fixture" }).returning();
+    const [member] = await db.insert(prospects).values({
+      tenantDomain: tenant, campaignId: campaign.id, contactId: contact.id, signals: { retained: "research evidence" },
+      meeting: { ...defaultMeetingContact(), relationships: ["partner", "prospect"] },
+    }).returning();
+    let context = await getOutreachContext(tenant, member.id);
+    expect(context).toMatchObject({ messagingGroup: "partner", messagingGroupAutomatic: true });
+    expect((await outreachCompositionContext(tenant, member.id, context.fingerprint)).brief?.goal).toBe("Develop our partner relationship");
+    expect((await listCampaignProspects(campaign.id))[0]).toMatchObject({ messagingGroup: "partner", messagingGroupAutomatic: true });
+    await db.update(prospects).set({ meeting: { ...defaultMeetingContact(), relationships: ["customer"] } }).where(eq(prospects.id, member.id));
+    context = await getOutreachContext(tenant, member.id);
+    expect((await outreachCompositionContext(tenant, member.id, context.fingerprint)).brief?.goal).toBe("Support our existing customer");
+    const url = `/api/sales-outreach/prospects/${member.id}/outreach-context`;
+    expect((await request(app).patch(url).send({ messagingGroup: "prospect" })).status).toBe(200);
+    expect(await getOutreachContext(tenant, member.id)).toMatchObject({ messagingGroup: "prospect", messagingGroupAutomatic: false });
+    const oldSnapshot = (await outreachCompositionContext(tenant, member.id, (await getOutreachContext(tenant, member.id)).fingerprint)).snapshot;
+    expect((await request(app).patch(url).send({ messagingGroup: null })).status).toBe(200);
+    expect(await getOutreachContext(tenant, member.id)).toMatchObject({ messagingGroup: null, messagingGroupAutomatic: false });
+    await expect(validateOutreachContext(tenant, member.id, oldSnapshot)).rejects.toThrow("changed");
+    const [stored] = await db.select().from(prospects).where(eq(prospects.id, member.id));
+    expect(stored.signals).toMatchObject({ retained: "research evidence", messagingGroupCleared: true });
+    expect((await request(app).patch(`/api/sales-outreach/campaigns/${campaign.id}/outreach-context`)
+      .send({ prospectIds: [member.id], messagingGroup: "partner" })).status).toBe(200);
+    expect((await request(app).patch(`/api/sales-outreach/campaigns/${campaign.id}/outreach-context`)
+      .send({ prospectIds: [member.id], messagingGroup: null })).status).toBe(200);
+    expect((await getOutreachContext(tenant, member.id)).messagingGroup).toBeNull();
+    expect((await db.select().from(prospects).where(eq(prospects.id, member.id)))[0].signals?.retained).toBe("research evidence");
   });
   it("logs, edits and deletes shared history without creating sends, then protects drafts and holds", async () => {
     const blank = await getOutreachContext(tenant, p1);

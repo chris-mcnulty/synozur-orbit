@@ -19,6 +19,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("one reviewed contact editing flow", () => {
+  it("preselects the partner brief without turning an unchanged default into a manual override", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ContactEditDialog contact={{ ...person, messagingGroup: null,
+      meeting: { ...person.meeting!, relationships: ["partner", "prospect"] } }} onClose={vi.fn()} onSave={onSave} />);
+    expect((screen.getByLabelText("Messaging group") as HTMLSelectElement).value).toBe("partner");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty("messagingGroup");
+  });
+  it("keeps an explicitly cleared default cleared after reopening and saves deliberate removal", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ContactEditDialog contact={{ ...person, messagingGroup: null,
+      signals: { messagingGroupCleared: true } }} onClose={vi.fn()} onSave={onSave} />);
+    expect((screen.getByLabelText("Messaging group") as HTMLSelectElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Messaging group"), { target: { value: "partner" } });
+    fireEvent.change(screen.getByLabelText("Messaging group"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ messagingGroup: null })));
+  });
   it("prefills all existing values and saves shared details plus full campaign settings once", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<ContactEditDialog contact={person} onClose={vi.fn()} onSave={onSave} />);

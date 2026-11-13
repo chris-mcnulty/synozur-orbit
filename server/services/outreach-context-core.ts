@@ -12,7 +12,7 @@ export function buildOutreachContextBlock(group: string | null, briefs: SegmentB
   const brief = briefs.find(b => b.group === group);
   return [
     "## Selected messaging direction and external correspondence",
-    group ? `Explicit messaging group: ${messagingGroupLabels[group as keyof typeof messagingGroupLabels] ?? group}` : "Use the shared campaign brief; no messaging group was selected.",
+    group ? `Selected messaging group: ${messagingGroupLabels[group as keyof typeof messagingGroupLabels] ?? group}` : "Use the shared campaign brief; no messaging group was selected.",
     brief ? `Group brief: ${JSON.stringify(brief)}` : "",
     "Group selection controls message direction, not factual relationship status. Never assume a contract, partnership, attendance, reply, or consent from the group label.",
     `Familiarity with this campaign's sender: ${familiarity}. This is independent of customer/partner messaging group.`,

@@ -334,7 +334,7 @@ export async function importDiscoveredProspects(
   ctx: { ownerUserId: string; marketId?: string | null; metadata?: unknown },
 ): Promise<{ imported: ProspectWithContact[]; skipped: number }> {
   // Validate the entire batch's reviewed settings before creating any contacts.
-  const metadata = newProspectMetadata(ctx.metadata ?? {});
+  const { signals: messagingSignals, ...metadata } = newProspectMetadata(ctx.metadata ?? {});
   const [campaign] = await db
     .select()
     .from(outreachCampaigns)
@@ -373,6 +373,7 @@ export async function importDiscoveredProspects(
         segment: c.segment ?? undefined,
         sources: c.sourceUrl ? [c.sourceUrl] : undefined,
         discoveryConfidence: c.confidence ?? undefined,
+        ...messagingSignals,
       },
       ownerUserId: ctx.ownerUserId,
       status: "new" as const,

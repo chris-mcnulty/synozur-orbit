@@ -55,7 +55,13 @@ External correspondence belongs to the shared contact across campaigns; messagin
 
 **Why:** Manual email outside Orbit must inform the next draft, and an existing customer may also be a partner. Guessing one relationship from overlapping classifications can produce the wrong message.
 
-**How to apply:** Require an explicit messaging group or shared-brief choice. Log actual sender, time, message and outcome; do not infer a reply or established partnership. Keep holds contact-wide and explicit. Follow-up dates are reminders, not consent or automatic scheduling. Editing/deleting shared activity must be clearly identified as affecting history across campaigns.
+**How to apply:** Use the matching brief as a preselection from explicitly declared relationships when unambiguous, while respecting manual group and shared-brief choices. Log actual sender, time, message and outcome; do not infer a reply or established partnership. Keep holds contact-wide and explicit. Follow-up dates are reminders, not consent or automatic scheduling. Editing/deleting shared activity must be clearly identified as affecting history across campaigns.
+
+Relationship labels should preselect goal briefs: an existing partner who is also a prospect defaults to the existing-partner brief; an existing customer defaults to the customer brief. Both active customer and partner labels remain ambiguous. Explicitly changing or clearing a preselection must survive refreshes and relationship edits.
+
+**Why:** The user explicitly requested automatic preselection from existing labels instead of making operators classify the same relationship twice, while retaining the ability to change or remove it.
+
+**How to apply:** Apply the same resolution in the contact directory, editor and drafting context. Do not turn an untouched default into a permanent manual override merely because unrelated fields were saved. Never infer relationship truth from a job title or the chosen goal brief.
 
 Familiarity with the campaign sender is independent of the customer/partner messaging group, with explicit cold, known, and unknown choices. Keep it campaign-specific rather than a global contact trait.
 

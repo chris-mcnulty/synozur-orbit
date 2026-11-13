@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { bulkMessagingSchema, contactFamiliarities, externalActivitySchema, messagingGroups, segmentBriefsSchema } from "@shared/outreach-context";
+import { messagingGroupPatch } from "../services/messaging-group-patch";
 import { externalOutreachActivities, marketingContacts, outreachCampaigns, prospects } from "@shared/schema";
 import { db } from "../db";
 import { ContextError, getRequestContext } from "../context";
@@ -42,7 +43,7 @@ export function registerOutreachContextRoutes(app: Express) {
       if (body.hold !== undefined) {
         await setContactHold(tx, ctx.tenantDomain, row.contact.id, body.hold);
       }
-      if (body.messagingGroup !== undefined) await tx.update(prospects).set({ messagingGroup: body.messagingGroup }).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
+      if (body.messagingGroup !== undefined) await tx.update(prospects).set(messagingGroupPatch(body.messagingGroup)).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
       if (body.familiarity !== undefined) await tx.update(prospects).set({ familiarity: body.familiarity }).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
     });
     res.json(await getOutreachContext(ctx.tenantDomain, req.params.id, ctx.marketId));
@@ -122,7 +123,7 @@ export function registerOutreachContextRoutes(app: Express) {
     const campaign = await campaignFor(req, ctx);
     const updated = await db.transaction(async tx => {
       const rows = await tx.update(prospects).set({
-        ...(body.messagingGroup !== undefined ? { messagingGroup: body.messagingGroup } : {}),
+        ...(body.messagingGroup !== undefined ? messagingGroupPatch(body.messagingGroup) : {}),
         ...(body.familiarity !== undefined ? { familiarity: body.familiarity } : {}),
         updatedAt: new Date(),
       }).where(and(

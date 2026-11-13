@@ -528,10 +528,10 @@ export function registerSalesOutreachRoutes(app: Express) {
         marketId: ctx.marketId || null,
         contactId,
         source: body.source ?? "manual",
-        signals: body.signals ?? null,
         ownerUserId: body.ownerUserId ?? ctx.userId,
         status: "new",
         ...metadata,
+        signals: metadata.signals ? { ...body.signals, ...metadata.signals } : body.signals ?? null,
       });
       // Repeated add of the same person returns the existing membership (200).
       res.status(created ? 201 : 200).json(await getProspectWithContact(membershipId));

@@ -239,6 +239,7 @@ interface Prospect {
   id: string;
   externalActivitySummary?: ExternalActivitySummary;
   messagingGroup?: MessagingGroup | null;
+  messagingGroupAutomatic?: boolean;
   familiarity?: ContactFamiliarity;
   classification?: CampaignClassification | null;
   meeting?: DirectoryMeeting | null;

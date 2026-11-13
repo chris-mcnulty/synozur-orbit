@@ -24,7 +24,7 @@ export function MessagingGroupSelect({ value, onChange, disabled = false }: {
       <option value="">Shared campaign brief / no group</option>
       {messagingGroups.map((group) => <option key={group} value={group}>{messagingGroupLabels[group]}</option>)}
     </select>
-    <span className="block text-xs font-normal text-muted-foreground">Choose explicitly. Orbit never infers a messaging group from a title or role.</span>
+    <span className="block text-xs font-normal text-muted-foreground">Defaults to the matching relationship brief. Change it or choose the shared campaign brief to clear it; your choice is kept.</span>
   </label>;
 }
 export function FamiliaritySelect({ value, onChange, disabled = false }: {

@@ -5533,6 +5533,7 @@ export type InsertProspect = z.infer<typeof insertProspectSchema>;
  * shape, plus contactId). Person fields are owned by marketing_contacts.
  */
 export type ProspectWithContact = Prospect & {
+  messagingGroupAutomatic?: boolean;
   name: string;
   title: string | null;
   companyName: string | null;

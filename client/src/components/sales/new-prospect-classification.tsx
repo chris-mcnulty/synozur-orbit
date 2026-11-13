@@ -5,10 +5,12 @@ import type { MessagingGroup } from "./use-outreach-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { relationshipMessagingGroup } from "@shared/relationship-messaging-group";
 
 export interface NewProspectClassificationValue {
   classification?: ClassificationPatch;
   messagingGroup?: MessagingGroup | null;
+  messagingGroupAutomatic?: boolean;
   familiarity?: ContactFamiliarity;
 }
 
@@ -22,7 +24,7 @@ export function newProspectClassificationPayload(value: NewProspectClassificatio
   if (!patch.sourceDetail?.trim()) delete patch.sourceDetail;
   return {
     ...(Object.keys(patch).length ? { classification: classificationPatchSchema.parse(patch) } : {}),
-    ...(value.messagingGroup !== undefined ? { messagingGroup: value.messagingGroup } : {}),
+    ...(value.messagingGroup !== undefined && value.messagingGroupAutomatic !== true ? { messagingGroup: value.messagingGroup } : {}),
     ...(value.familiarity !== undefined ? { familiarity: value.familiarity } : {}),
   };
 }
@@ -36,7 +38,12 @@ export default function NewProspectClassification({ value, onChange, mode = "cre
   function field<K extends keyof ClassificationPatch>(key: K, next: ClassificationPatch[K]) {
     const updated = { ...patch, [key]: next };
     if (next === undefined) delete updated[key];
-    onChange({ ...value, classification: updated });
+    const automatic = value.messagingGroupAutomatic ?? value.messagingGroup === undefined;
+    onChange({ ...value, classification: updated,
+      ...(key === "relationships" && automatic ? {
+        messagingGroup: relationshipMessagingGroup(updated.relationships), messagingGroupAutomatic: true,
+      } : {}),
+    });
   }
   return <section className="space-y-3 border-t pt-3" aria-label={mode === "edit" ? "Campaign contact settings" : "New contact classification"}>
     <fieldset className="space-y-2"><legend className="text-sm font-medium">Relationships (optional)</legend>
@@ -54,7 +61,9 @@ export default function NewProspectClassification({ value, onChange, mode = "cre
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">Attendance<select className={selectClass} value={patch.attendance ?? ""} onChange={event => field("attendance", (event.target.value || undefined) as ClassificationPatch["attendance"])}>{mode === "create" && <option value="">Leave unchanged</option>}{attendanceStates.map(item => <option key={item} value={item}>{classificationLabel(item)}</option>)}</select></label>
         <label className="space-y-1 text-sm">Meeting priority<select className={selectClass} value={patch.meetingPriority ?? ""} onChange={event => field("meetingPriority", (event.target.value || undefined) as ClassificationPatch["meetingPriority"])}>{mode === "create" && <option value="">Leave unchanged</option>}{meetingPriorities.map(item => <option key={item} value={item}>{classificationLabel(item)}</option>)}</select></label>
-        <label className="space-y-1 text-sm">Messaging group<select className={selectClass} value={value.messagingGroup ?? ""} onChange={event => onChange({ ...value, messagingGroup: (event.target.value || (mode === "edit" ? null : undefined)) as MessagingGroup | null | undefined })}><option value="">{mode === "edit" ? "Shared campaign brief / no group" : "Leave unchanged"}</option>{messagingGroups.map(item => <option key={item} value={item}>{messagingGroupLabels[item]}</option>)}</select></label>
+        <label className="space-y-1 text-sm">Messaging group<select aria-label="Messaging group" className={selectClass} value={value.messagingGroup ?? ""} onChange={event => onChange({ ...value, messagingGroup: (event.target.value || null) as MessagingGroup | null, messagingGroupAutomatic: false })}><option value="">Shared campaign brief / no group</option>{messagingGroups.map(item => <option key={item} value={item}>{messagingGroupLabels[item]}</option>)}</select>
+          {value.messagingGroupAutomatic && value.messagingGroup && <span className="block text-xs text-muted-foreground">Preselected from relationships. Change it or choose the shared brief to clear it.</span>}
+        </label>
         <label className="space-y-1 text-sm">Familiarity<select className={selectClass} value={value.familiarity ?? ""} onChange={event => onChange({ ...value, familiarity: (event.target.value || undefined) as ContactFamiliarity | undefined })}>{mode === "create" && <option value="">Leave unchanged</option>}{contactFamiliarities.map(item => <option key={item} value={item}>{familiarityLabels[item]}</option>)}</select></label>
         <fieldset className="space-y-2 sm:col-span-2"><legend className="text-sm">Event roles</legend><div className="flex flex-wrap gap-1.5">{campaignEventRoles.map(role => <Button key={role} type="button" size="sm" className="h-7 px-2 text-xs" variant={patch.eventRoles?.includes(role) ? "secondary" : "outline"} aria-pressed={patch.eventRoles?.includes(role) ?? false} onClick={() => field("eventRoles", patch.eventRoles?.includes(role) ? patch.eventRoles.filter(item => item !== role) : [...patch.eventRoles ?? [], role])}>{classificationLabel(role)}</Button>)}</div></fieldset>
         <label className="space-y-1 text-sm sm:col-span-2">Source detail<Input maxLength={500} value={patch.sourceDetail ?? ""} onChange={event => field("sourceDetail", event.target.value)} placeholder="For example, introduced by a colleague" /></label>

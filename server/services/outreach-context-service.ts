@@ -3,6 +3,7 @@ import { db } from "../db";
 import { externalOutreachActivities, marketingContacts, outreachCampaigns, prospects } from "@shared/schema";
 import type { OutreachContextSnapshot } from "@shared/outreach-context";
 import { buildOutreachContextBlock, contextFingerprint } from "./outreach-context-core";
+import { resolvedMessagingGroup } from "@shared/relationship-messaging-group";
 
 export class OutreachContextError extends Error {
   constructor(message: string, public status = 409, public code = "OUTREACH_CONTEXT_CHANGED") { super(message); }
@@ -26,7 +27,7 @@ export async function getOutreachContext(tenantDomain: string, prospectId: strin
   const activities = await db.select().from(externalOutreachActivities).where(and(
     eq(externalOutreachActivities.tenantDomain, tenantDomain), eq(externalOutreachActivities.contactId, row.contact.id),
   )).orderBy(desc(externalOutreachActivities.occurredAt), desc(externalOutreachActivities.id));
-  const group = row.person.messagingGroup ?? null;
+  const { messagingGroup: group, messagingGroupAutomatic } = resolvedMessagingGroup(row.person);
   const familiarity = row.person.familiarity ?? "unknown";
   const briefs = row.campaign.messagingBriefs ?? [];
   const fingerprint = contextFingerprint({
@@ -36,7 +37,7 @@ export async function getOutreachContext(tenantDomain: string, prospectId: strin
     // Preserve fingerprints issued before familiarity existed for unchanged unknown contacts.
     ...(familiarity !== "unknown" ? { familiarity } : {}),
   });
-  return { activities, removed: !!row.person.removedAt, hold: row.contact.outreachHold, messagingGroup: group, familiarity, briefs, fingerprint,
+  return { activities, removed: !!row.person.removedAt, hold: row.contact.outreachHold, messagingGroup: group, messagingGroupAutomatic, familiarity, briefs, fingerprint,
     recentActivity: activities.some(a => a.occurredAt.getTime() >= Date.now() - 7 * 86400000) };
 }
 

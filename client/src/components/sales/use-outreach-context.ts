@@ -25,7 +25,7 @@ export interface ExternalActivity extends Omit<ExternalActivityInput, "direction
   id: string; createdAt: string; updatedAt: string;
 }
 export interface OutreachContext {
-  activities: ExternalActivity[]; hold: boolean; messagingGroup: MessagingGroup | null; familiarity: ContactFamiliarity;
+  activities: ExternalActivity[]; hold: boolean; messagingGroup: MessagingGroup | null; messagingGroupAutomatic?: boolean; familiarity: ContactFamiliarity;
   briefs: SegmentBrief[]; fingerprint: string; recentActivity: boolean;
 }
 export const outreachPath = (id: string) => `/api/sales-outreach/prospects/${encodeURIComponent(id)}/outreach-context`;
@@ -50,7 +50,7 @@ export function useOutreachActions(id: string) {
       // Patch the canonical directory in place so its group filter updates immediately.
       qc.setQueriesData<({ id: string } & OutreachSettingsPatch)[]>({
         predicate: (query) => query.queryKey[0] === "/api/sales-outreach/campaigns" && query.queryKey.at(-1) === "prospects",
-      }, (rows) => rows?.map((row) => row.id === id ? { ...row, messagingGroup: context.messagingGroup, familiarity: context.familiarity ?? "unknown" } : row));
+      }, (rows) => rows?.map((row) => row.id === id ? { ...row, messagingGroup: context.messagingGroup, messagingGroupAutomatic: context.messagingGroupAutomatic, familiarity: context.familiarity ?? "unknown" } : row));
     },
   });
   const activity = useMutation({

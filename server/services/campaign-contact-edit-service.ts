@@ -5,6 +5,7 @@ import { applyCampaignClassification } from "@shared/campaign-classification";
 import { newProspectMetadataSchema } from "@shared/outreach-campaign-workspace";
 import { ClassificationError } from "./campaign-classification-service";
 import { updateContactPersonFields, type ContactPersonPatch } from "./prospect-contact-service";
+import { messagingGroupPatch } from "./messaging-group-patch";
 
 /** One reviewed edit, one transaction: shared identity and campaign-specific settings. */
 export async function editCampaignContact(
@@ -20,7 +21,7 @@ export async function editCampaignContact(
     if (!contact) throw new ClassificationError("Contact not found.", 404);
     const settings = {
       ...(metadata.classification ? applyCampaignClassification(row.classification, row.meeting, metadata.classification) : {}),
-      ...(metadata.messagingGroup !== undefined ? { messagingGroup: metadata.messagingGroup } : {}),
+      ...(metadata.messagingGroup !== undefined ? messagingGroupPatch(metadata.messagingGroup) : {}),
       ...(metadata.familiarity !== undefined ? { familiarity: metadata.familiarity } : {}),
     };
     await updateContactPersonFields(contact.id, personPatch, tx);

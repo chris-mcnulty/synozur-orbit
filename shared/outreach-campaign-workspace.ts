@@ -13,6 +13,7 @@ export function newProspectMetadata(input: unknown) {
   return {
     ...(value.classification ? applyCampaignClassification(null, null, value.classification) : {}),
     ...(value.messagingGroup !== undefined ? { messagingGroup: value.messagingGroup } : {}),
+    ...(value.messagingGroup === null ? { signals: { messagingGroupCleared: true } } : {}),
     ...(value.familiarity !== undefined ? { familiarity: value.familiarity } : {}),
   };
 }

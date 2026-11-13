@@ -3,6 +3,7 @@ import type { CampaignClassification } from "@shared/campaign-classification";
 import { classificationPatchSchema } from "@shared/campaign-classification";
 import type { MeetingContact } from "@shared/conference-meetings";
 import type { ContactFamiliarity } from "@shared/outreach-context";
+import { resolvedMessagingGroup } from "@shared/relationship-messaging-group";
 import NewProspectClassification, { type NewProspectClassificationValue } from "./new-prospect-classification";
 import type { MessagingGroup } from "./use-outreach-context";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
@@ -14,6 +15,7 @@ export interface EditableCampaignContact {
   id: string; name: string; title: string | null; companyName: string | null; email: string | null; linkedinUrl: string | null;
   classification?: CampaignClassification | null; meeting?: MeetingContact | null;
   messagingGroup?: MessagingGroup | null; familiarity?: ContactFamiliarity;
+  messagingGroupAutomatic?: boolean; signals?: Record<string, unknown> | null;
 }
 export function initialContactSettings(contact: EditableCampaignContact): NewProspectClassificationValue {
   return {
@@ -25,7 +27,7 @@ export function initialContactSettings(contact: EditableCampaignContact): NewPro
       relationships: [...contact.meeting?.relationships ?? ["unknown"]],
       attendance: contact.meeting?.attendance ?? "unknown", attendanceEvidence: contact.meeting?.attendanceEvidence ?? "",
     },
-    messagingGroup: contact.messagingGroup ?? null, familiarity: contact.familiarity ?? "unknown",
+    ...resolvedMessagingGroup(contact), familiarity: contact.familiarity ?? "unknown",
   };
 }
 /** Unlike create/import, empty reviewed settings are intentional resets, not omitted values. */
@@ -37,7 +39,8 @@ export function reviewedContactSettings(value: NewProspectClassificationValue) {
       eventRoles: patch.eventRoles ?? [], sourceDetail: patch.sourceDetail?.trim() ?? "",
       relationships: patch.relationships?.length ? patch.relationships : ["unknown"],
     }),
-    messagingGroup: value.messagingGroup ?? null, familiarity: value.familiarity ?? "unknown",
+    ...(value.messagingGroupAutomatic ? {} : { messagingGroup: value.messagingGroup ?? null }),
+    familiarity: value.familiarity ?? "unknown",
   };
 }
 export default function ContactEditDialog({ contact, onClose, onSave }: {

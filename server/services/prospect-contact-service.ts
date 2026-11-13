@@ -35,6 +35,7 @@ import {
 } from "@shared/schema";
 import { normaliseEmail } from "./marketing-contact-service";
 import { preWarmMarketingCache } from "./hubspot-contact-resolver";
+import { resolvedMessagingGroup } from "@shared/relationship-messaging-group";
 
 // ---------------------------------------------------------------------------
 // Person shape + helpers
@@ -67,6 +68,7 @@ export function contactDisplayName(c: Pick<MarketingContact, "firstName" | "last
 export function flattenProspect(membership: Prospect, contact: MarketingContact): ProspectWithContact {
   return {
     ...membership,
+    ...resolvedMessagingGroup(membership),
     name: contactDisplayName(contact),
     title: contact.jobTitle,
     companyName: contact.company,
