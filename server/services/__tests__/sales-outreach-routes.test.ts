@@ -382,7 +382,10 @@ describe("sales-outreach routes", () => {
       expect(res.body.touch).toMatchObject({ status: "approved" });
       expect(res.body.webLink).toBe("https://outlook.office.com/drafts/draft-1");
       expect(createOutlookDraft).toHaveBeenCalledWith(
-        expect.objectContaining({ subject: "Quick question", body: "Hi Jane — worth a call?" }),
+        expect.objectContaining({
+          subject: "Quick question", contentType: "HTML",
+          body: '<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt;"><p style="margin:0 0 12px 0;">Hi Jane — worth a call?</p></div>',
+        }),
       );
     });
 

@@ -55,6 +55,7 @@ import { MeetingError, validateMeetingApproval } from "../services/conference-me
 import { sharpenContent } from "../services/copywriter-service";
 import { scanCompliance } from "../services/compliance-core";
 import { createOutlookDraft, OutlookDraftError } from "../services/outlook-draft-service";
+import { outreachEmailHtml } from "../services/outreach-email-html";
 import { buildPlannerConsentUrl, MAIL_SCOPES } from "../services/planner-graph-client";
 import { getRedirectUri } from "./planner";
 import { listContacts, listHubspotContactLists, listContactsFromHubspotList, upsertContact, logContactNote, hasHubspotListScopes } from "../services/hubspot-integration";
@@ -1106,9 +1107,9 @@ export function registerSalesOutreachRoutes(app: Express) {
           const draft = await createOutlookDraft({
             userId: ctx.userId,
             subject: touch.subject ?? "(no subject)",
-            body: touch.body ?? "",
+            body: outreachEmailHtml(touch.body ?? ""),
             toEmail: prospect?.email,
-            contentType: "Text",
+            contentType: "HTML",
           });
           outlookDraftId = draft.draftId;
           webLink = draft.webLink;

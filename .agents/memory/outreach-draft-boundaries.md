@@ -26,3 +26,9 @@ An explicitly declared personal friendship must change drafting tone, not merely
 **Why:** The user reported that classifying a personal friendship was not available and the system was producing overly formal emails to friends.
 
 **How to apply:** Use a warm, conversational opening without a cold introduction or invented shared memories. Do not infer friendship from a generic personal tag or business relationship. Preserve factual accuracy, holds, opt-outs and reviewed delivery.
+
+Users insert their own rich signatures in Outlook after opening Orbit-created drafts. Signature graphics, styling and links must remain usable; Orbit should not generate or duplicate the seller's signature.
+
+**Why:** The user reported that plain-text Outlook drafts stripped their signature's graphical content and links.
+
+**How to apply:** Keep the Outlook handoff HTML-compatible while preserving the reviewed message text. Do not regenerate copy during approval, invent a signature, rewrite existing mailbox drafts, or change the human-reviewed draft-and-send workflow.
