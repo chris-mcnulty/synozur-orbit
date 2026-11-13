@@ -893,6 +893,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       const intent = isOutreachIntent(req.body?.intent) ? req.body.intent : undefined;
 
       const result = await composeTouch(ctx.tenantDomain, req.params.id, {
+        userId: ctx.userId,
         contextFingerprint,
         channel,
         stepNumber,

@@ -7,7 +7,7 @@
  * the AI call + DB writes live in `outreach-composer-service.ts`.
  */
 
-import type { OutreachChannel, CadenceStepPurpose } from "@shared/schema";
+import type { OutreachChannel, CadenceStepPurpose, ConferenceSpeaker } from "@shared/schema";
 import {
   linkedinCharLimit,
   type LinkedInFormat,
@@ -33,6 +33,7 @@ export const COMPOSER_SYSTEM_PROMPT =
   `human. Lead with the person and the ask; land on one concrete next step. No ` +
   `hype, no urgency theater. Reference only facts you're given. The draft must ` +
   `be ready for a human to review and send — not a template.\n\n` +
+  `When a draft sender is identified, refer to that person's own confirmed event sessions and speaking roles in first person ("I'm speaking", "my breakout"), never as a third-party colleague. Other speakers remain third person. Sender identity takes precedence over generic narrative-person style settings; it does not establish attendance or a speaking role by itself. Preserve official session titles, quotations and URLs.\n\n` +
   `Banned words and phrases — never use: ${BANNED_WORDS}; also "I hope this finds you well".\n\n` +
   STRUCTURAL_ANTI_PATTERNS + "\n\n" +
   OUTREACH_WRITING_RULES + "\n\n" +
@@ -72,6 +73,17 @@ export interface ComposePromptInput {
   eventBlock?: string | null;
   /** Operator-supplied answers/facts for this attempt, never a recipient message. */
   additionalContext?: string;
+  /** Server-resolved author, not a name supplied in the composition request. */
+  sender?: { name: string; source: "signed_in_user" | "voice_profile_owner" };
+}
+
+/** Exact full-name matching only; a colleague or an unconfirmed speaker is not the sender. */
+export function eventSessionsForSender<T extends { speakers: ConferenceSpeaker[] | null }>(sessions: T[], senderName?: string) {
+  const normalize = (name: string) => name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+  const sender = senderName ? normalize(senderName) : "";
+  return sessions.map(session => ({ ...session, speakers: (session.speakers ?? []).map(speaker => ({
+    ...speaker, isSender: !!sender && speaker.isStaff === true && typeof speaker.name === "string" && normalize(speaker.name) === sender,
+  })) }));
 }
 
 // Per-channel guardrails. LinkedIn messages must be far shorter than email; the
@@ -120,6 +132,13 @@ export function buildComposePrompt(input: ComposePromptInput): string {
   const hasSubject = CHANNEL_LIMITS[input.channel].hasSubject;
   const maxChars = channelLimit(input.channel, input.linkedinFormat);
 
+  const senderBlock = input.sender ? [
+    "## Draft sender identity",
+    `Sender: ${JSON.stringify(input.sender.name)} (${input.sender.source === "voice_profile_owner" ? "campaign personal voice-profile owner" : "signed-in user"}).`,
+    "Write this 1:1 draft as this sender, not about this sender. If an event session has a speaker marked isSender=true, use I/my for that speaker's confirmed participation (for example, \"I'm leading a breakout\"), not their name, he/she, or \"our colleague\".",
+    "Do not turn other staff, co-speakers or recipients into the sender. Only a full-name match explicitly marked as a staff speaker can be treated as the sender's own session. Do not infer a speaking role merely from the sender's name, voice, event association or promotional goals.",
+    "A delegated personal voice profile identifies its owner as the sender, not the operator generating the draft. This identity rule overrides generic third-person voice style. Keep official titles, quotations and URLs unchanged.",
+  ].join("\n") : "";
   const prospectBlock = [
     "## Prospect",
     `Name: ${input.prospect.name}`,
@@ -157,6 +176,7 @@ export function buildComposePrompt(input: ComposePromptInput): string {
     `Write this outreach ${input.channel === "email" ? "email" : "LinkedIn message"}.`,
     input.strategicBlock,
     input.voiceBlock,
+    senderBlock,
     input.eventBlock,
     prospectBlock,
     stepBlock,

@@ -161,6 +161,50 @@ describe("composeTouch — recipient guard", () => {
     vi.clearAllMocks();
     dbQ.length = 0;
   });
+  it.each(["email", "linkedin"] as const)("passes the signed-in sender and confirmed session identities to the real %s prompt", async channel => {
+    const realCore = await vi.importActual<typeof import("../outreach-composer-core")>("../outreach-composer-core");
+    vi.mocked(buildComposePrompt).mockImplementationOnce(realCore.buildComposePrompt);
+    vi.mocked(getProspectWithContact).mockResolvedValue({ ...PROSPECT_NO_EMAIL, email: "jane@example.invalid" } as any);
+    pushDb({ ...CAMPAIGN, conferenceId: "event-1" });
+    pushDb({ name: "Chris McNulty" });
+    pushDb(); // campaign resource
+    pushDb({ id: "event-1", name: "Conference", tenantDomain: "acme.com", marketId: "market-1", startDate: null, status: "active" });
+    pushDb({ id: "session-1", title: "AI breakout", speakers: [
+      { name: "Chris McNulty", isStaff: true }, { name: "Other Staff", isStaff: true },
+    ] });
+    pushDb(); // suppression list
+    pushDb({ ...TOUCH_ROW, channel });
+    pushDb(UPDATED_PROSPECT);
+    vi.mocked(completeForFeature).mockResolvedValue({
+      text: `${channel === "email" ? "===SUBJECT===\nMeet at Conference\n" : ""}===BODY===\nHi Jane, I'm leading the AI breakout at Conference. Can we meet afterward?`,
+      usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any);
+    const result = await composeTouch("acme.com", "prospect-1", { channel, userId: "authenticated-user" });
+    const prompt = vi.mocked(completeForFeature).mock.calls[0][1];
+    expect(prompt).toContain('Sender: "Chris McNulty" (signed-in user)');
+    expect(prompt).toContain('"name":"Chris McNulty","isStaff":true,"isSender":true');
+    expect(prompt).toContain('"name":"Other Staff","isStaff":true,"isSender":false');
+    expect(result.touch.body).toBeTruthy();
+    expect(buildComposePrompt).toHaveBeenCalledWith(expect.objectContaining({ sender: { name: "Chris McNulty", source: "signed_in_user" } }));
+  });
+  it("keeps a delegated personal voice-profile owner as the sender instead of impersonating the operator", async () => {
+    vi.mocked(getProspectWithContact).mockResolvedValue(PROSPECT_NO_EMAIL as any);
+    pushDb({ ...CAMPAIGN, voiceProfileId: "voice-1" });
+    pushDb({ id: "voice-1", tenantDomain: "acme.com", ownerUserId: "profile-owner", person: "first" });
+    pushDb({ name: "Another Sender" });
+    pushDb(); // campaign resource
+    pushDb(); // suppression list
+    pushDb(TOUCH_ROW);
+    pushDb(UPDATED_PROSPECT);
+    vi.mocked(completeForFeature).mockResolvedValue({
+      text: "===BODY===\nHi Jane, could we meet?",
+      usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any);
+    await composeTouch("acme.com", "prospect-1", { channel: "linkedin", userId: "different-operator" });
+    expect(buildComposePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      sender: { name: "Another Sender", source: "voice_profile_owner" },
+    }));
+  });
 
   it.each([
     "I can't draft this email. What is the event date?",

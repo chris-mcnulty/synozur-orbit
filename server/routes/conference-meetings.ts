@@ -181,6 +181,7 @@ export function registerConferenceMeetingsRoutes(app: Express) {
     if (!workspace.brief?.enabled) throw new MeetingError("Enable and save the meeting brief first.", 422);
     if (!(await guardFeature(req, res, "outreachComposer")) || !(await guardManualAction(req, res, "generateOutreachDraft"))) return;
     const result = await composeTouch(ctx.tenantDomain, req.params.id, {
+      userId: ctx.userId,
       channel: data.channel, additionalContext: data.additionalContext, contextFingerprint: data.contextFingerprint, intent: "outreach", isDefaultMarket: ctx.isDefaultMarket,
     });
     await logAiUsage({ tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId },

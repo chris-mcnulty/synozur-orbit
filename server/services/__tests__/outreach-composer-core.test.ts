@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { describe, it } from "vitest";
 import {
   buildComposePrompt,
+  eventSessionsForSender,
   parseComposeResponse,
   enforceLength,
   purposeGuidance,
@@ -10,6 +11,29 @@ import {
 
 
 describe("outreach-composer-core", () => {
+  it("identifies only the sender's confirmed staff sessions without rewriting titles or co-speakers", () => {
+    const sessions = [{ title: "Chris McNulty: AI breakout", url: "https://example.invalid/chris",
+      speakers: [{ name: "  CHRIS   McNulty ", isStaff: true }, { name: "Alex Lee", isStaff: true },
+        { name: "Chris McNulty", isStaff: false }, { name: "Chris", isStaff: true }] }];
+    const result = eventSessionsForSender(sessions, "Chris McNulty");
+    assert.deepEqual(result[0].speakers.map(speaker => speaker.isSender), [true, false, false, false]);
+    assert.equal(result[0].title, sessions[0].title);
+    assert.equal(result[0].url, sessions[0].url);
+    assert.equal("isSender" in sessions[0].speakers[0], false);
+    assert.ok(eventSessionsForSender(sessions)[0].speakers.every(speaker => !speaker.isSender));
+    assert.ok(eventSessionsForSender(sessions, "Other Sender")[0].speakers.every(speaker => !speaker.isSender));
+  });
+  it.each(["email", "linkedin"] as const)("gives %s an explicit first-person sender identity rather than a third-person style instruction", channel => {
+    const prompt = buildComposePrompt({
+      channel, stepNumber: 1, purpose: "intro", prospect: { name: "Recipient" },
+      sender: { name: "Chris McNulty", source: "signed_in_user" },
+      voiceBlock: "Person: third", eventBlock: "Confirmed staff session with speaker isSender=true.",
+    });
+    assert.ok(prompt.includes('Sender: "Chris McNulty" (signed-in user)'));
+    assert.ok(prompt.includes("use I/my"));
+    assert.ok(prompt.includes("overrides generic third-person voice style"));
+    assert.ok(prompt.includes("Do not turn other staff, co-speakers or recipients into the sender"));
+  });
   it("email prompt asks for subject + body and includes dossier", () => {
     const p = buildComposePrompt({
       channel: "email",

@@ -68,3 +68,9 @@ Outside-Orbit messages and replies must be recordable without an existing Orbit 
 **Why:** The user explicitly needs to track separate outreach and out-of-band responses without reconstructing an Orbit send first.
 
 **How to apply:** Distinguish received from sent activity and allow honest “content not recorded” notes rather than invented message text. Explicit replies stop that campaign's pending cadence; shared history informs other campaigns without marking all of them replied. Editing or deleting history must not automatically restart outreach.
+
+Personal outreach must refer to the sender's own confirmed sessions and breakouts in first person, not describe the sender as a third-party colleague. Preserve other speakers' identities and official session titles.
+
+**Why:** The user found it odd that outreach generated while signed in as an event speaker referred to that speaker in third person. Generic voice style is not proof of a different sender.
+
+**How to apply:** Resolve the author server-side: the campaign's personal voice-profile owner when explicitly selected, otherwise the authenticated operator. Do not impersonate an operator when drafting for another owner. Match full speaker names conservatively and require confirmed staff-session evidence before saying “I'm speaking.”
