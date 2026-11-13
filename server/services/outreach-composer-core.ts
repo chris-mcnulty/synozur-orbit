@@ -166,6 +166,7 @@ export function buildComposePrompt(input: ComposePromptInput): string {
     input.salesGoal ? `Campaign goal: ${input.salesGoal}` : "",
     input.callToAction ? `Call to action: ${input.callToAction}` : "",
     resourceLine,
+    `Length: aim for ${Math.floor(maxChars * 0.65)}–${Math.floor(maxChars * 0.8)} characters; never exceed ${maxChars}, including spaces, greeting, links and sign-off. Use only the most relevant event details; background context is not a checklist to reproduce. Include the essential requested facts and ask without cataloguing every session or repeating the brief.`,
   ].filter(Boolean).join("\n");
 
   const format = hasSubject
@@ -194,7 +195,7 @@ export interface ParsedDraft {
   body: string;
 }
 
-function nonDraftResponse(text: string, fallback: string): OutreachComposeError {
+function nonDraftResponse(text: string, fallback: string, allowClarification = false): OutreachComposeError {
   // A rejected formatted draft is not an explanation to the sender. In
   // particular, recipient-facing questions inside it are not clarification
   // questions for the operator, and section markers must not leak into UI.
@@ -205,18 +206,22 @@ function nonDraftResponse(text: string, fallback: string): OutreachComposeError 
   const questions = explanation.split(/\n+/)
     .map(line => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim())
     .filter(line => line.includes("?")).slice(0, 10);
-  return new OutreachComposeError(questions.length ? "OUTREACH_NEEDS_INPUT" : "OUTREACH_INVALID_DRAFT", explanation, questions);
+  return new OutreachComposeError(allowClarification && questions.length ? "OUTREACH_NEEDS_INPUT" : "OUTREACH_INVALID_DRAFT",
+    allowClarification ? explanation : fallback, allowClarification ? questions : []);
 }
 
 /** Accept only a complete draft. Never treat arbitrary assistant text as a body. */
 export function parseComposeResponse(text: string, channel: OutreachChannel): ParsedDraft {
-  const clean = text.trim();
+  // A single enclosing text fence is presentation, not part of the message.
+  // Never extract a draft from surrounding commentary or an incomplete envelope.
+  const trimmed = text.trim();
+  const clean = trimmed.match(/^```(?:text|plaintext|markdown)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i)?.[1].trim() ?? trimmed;
   assertComposeOutcome(clean);
   // Detect common legacy/plain-text refusals before the format guard.
   try {
     assertOutreachDraftContent(clean);
   } catch {
-    throw nonDraftResponse(clean, "The assistant did not produce a recipient-ready draft.");
+    throw nonDraftResponse(clean, "The assistant did not produce a recipient-ready draft.", true);
   }
   const match = channel === "email"
     ? clean.match(/^===SUBJECT===\s*([\s\S]*?)\s*===BODY===\s*([\s\S]+)$/i)
@@ -225,7 +230,7 @@ export function parseComposeResponse(text: string, channel: OutreachChannel): Pa
   const body = match ? match[channel === "email" ? 2 : 1].trim() : "";
   if (!match || !body || (channel === "email" && !subject) || /===[A-Z_]+===/i.test(`${subject ?? ""}\n${body}`)) {
     throw nonDraftResponse(clean,
-      "The assistant did not return a complete recipient-ready draft. Nothing was saved. Add any missing facts and try drafting again.");
+      "Orbit received an incomplete or incorrectly formatted draft response. This is a generation failure, not missing context. Nothing was saved or sent.");
   }
   assertOutreachDraftContent(body, subject);
   return { subject, body };

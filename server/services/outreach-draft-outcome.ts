@@ -26,7 +26,7 @@ export function assertOutreachDraftContent(body: string, subject?: string | null
   if (!body.trim() || /===(?:NEEDS_INPUT|REFUSED)===/i.test(text) || assistantMeta.some(pattern => pattern.test(text))) {
     throw new OutreachComposeError(
       "OUTREACH_INVALID_DRAFT",
-      "This is an assistant response, not a recipient-ready message. No email was sent. Add the missing facts and draft again, or replace it with an actual message.",
+      "Orbit received an assistant response instead of a recipient-ready message. Nothing was saved or sent. This generation failure does not require additional context.",
     );
   }
 }

@@ -30,17 +30,14 @@ import {
   type SocialAccountVoiceProfile,
 } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
-import { completeForFeature } from "./ai-provider";
 import { loadStrategicContext, formatStrategicContextForPrompt } from "./strategic-context";
 import {
   buildComposePrompt,
   eventSessionsForSender,
-  parseComposeResponse,
-  COMPOSER_SYSTEM_PROMPT,
   type ComposeResource,
 } from "./outreach-composer-core";
 import { scanCompliance, type ComplianceResult } from "./compliance-core";
-import { ensureOutreachCopyQuality } from "./outreach-copy-quality";
+import { generateVerifiedOutreachDraft } from "./outreach-generation-service";
 import { outreachCompositionContext, validateOutreachContext } from "./outreach-context-service";
 import type { LinkedInFormat, OutreachIntent } from "@shared/linkedin-outreach";
 
@@ -251,17 +248,8 @@ export async function composeTouch(
     sender,
   });
 
-  const result = await completeForFeature("outreach_composer", prompt, {
-    tenantDomain,
-    systemPrompt: COMPOSER_SYSTEM_PROMPT,
-    maxTokens: 1200,
-  });
-
-  const checked = await ensureOutreachCopyQuality({
-    draft: parseComposeResponse(result.text, channel),
-    channel, linkedinFormat, tenantDomain, voiceBlock,
-  });
-  const parsed = checked.draft;
+  const result = await generateVerifiedOutreachDraft({ prompt, channel, linkedinFormat, tenantDomain, voiceBlock });
+  const parsed = result.draft;
   const body = parsed.body;
 
   // Compliance scan: suppression list + own domain + voice forbidden phrases.
@@ -318,8 +306,8 @@ export async function composeTouch(
     prospect: updatedProspect,
     compliance,
     usage: {
-      inputTokens: result.usage.inputTokens + checked.usage.inputTokens,
-      outputTokens: result.usage.outputTokens + checked.usage.outputTokens,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
     },
     model: result.model,
     provider: result.provider,

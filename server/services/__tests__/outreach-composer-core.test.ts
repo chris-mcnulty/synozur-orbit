@@ -86,6 +86,19 @@ describe("outreach-composer-core", () => {
     assert.equal(r.subject, null);
     assert.equal(r.body, "Hey Sam, saw your post.");
   });
+  it("accepts a complete draft in a single text fence but never extracts it from commentary", () => {
+    const draft = "===SUBJECT===\nCatch up\n===BODY===\nHi Alex, can we meet?";
+    assert.equal(parseComposeResponse(`\`\`\`text\n${draft}\n\`\`\``, "email").body, "Hi Alex, can we meet?");
+    assert.throws(() => parseComposeResponse(`Here is my explanation.\n${draft}`, "email"));
+  });
+  it("treats a recipient question without the required envelope as a format error, not missing facts", () => {
+    assert.throws(() => parseComposeResponse("Hi Alex, can we meet?", "email"), (error: any) => {
+      assert.equal(error.code, "OUTREACH_INVALID_DRAFT");
+      assert.deepEqual(error.questions, []);
+      assert.ok(!error.message.includes("Add any missing facts"));
+      return true;
+    });
+  });
 
   it("rejects unformatted text rather than saving it as a recipient email", () => {
     assert.throws(() => parseComposeResponse("Just a plain draft.", "email"));

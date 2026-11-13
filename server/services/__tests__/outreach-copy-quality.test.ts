@@ -47,6 +47,15 @@ describe("outreach generation writing gate", () => {
     vi.mocked(completeForFeature).mockRejectedValue(new Error("offline"));
     await expect(ensureOutreachCopyQuality({ ...options, draft: dirty })).rejects.toMatchObject({ code: "OUTREACH_INVALID_DRAFT" });
   });
+  it("can compress an overlong email and remove repeated facts without changing their values", async () => {
+    vi.mocked(completeForFeature).mockResolvedValue(response(clean.subject, clean.body));
+    const result = await ensureOutreachCopyQuality({ ...options, draft: {
+      ...clean, body: `${clean.body}\nCan we meet at 10 on Tuesday?\n${"Additional filler wording. ".repeat(90)}`,
+    } });
+    expect(result.draft).toEqual(clean);
+    expect(completeForFeature).toHaveBeenCalledWith("outreach_composer", expect.stringContaining("compress sentences"),
+      expect.objectContaining({ skipCache: true, maxTokens: 4096 }));
+  });
   it("detects slop after the greeting without banning technical vocabulary", () => {
     expect(findOutreachWritingViolations("Hi Ben,\nWhat if I told you this changes everything?")).toContain("what-if opener");
     expect(findOutreachWritingViolations("Hi Ben,\nWe discussed robust regression. Are you free Tuesday?")).toEqual([]);

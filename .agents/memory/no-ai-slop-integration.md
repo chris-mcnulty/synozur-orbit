@@ -11,11 +11,17 @@ Orbit-generated writing failures are system errors, never evidence that the user
 
 **Why:** The user explicitly objected when Orbit wrote em dashes, failed its own repair, then asked the user to fix the draft through a private-context form.
 
-Ordinary outreach Compose must include outreach-appropriate voice and no-slop guidance and check newly generated subjects and bodies before persistence. Use at most one targeted repair, preserving voice, intent and facts; fail explicitly if it cannot be verified. Do not impose a sales CTA on engagement messages.
+Ordinary outreach Compose must include outreach-appropriate voice and no-slop guidance and check newly generated subjects and bodies before persistence. Use at most one targeted repair, preserving voice, intent and facts. A bounded fresh regeneration may use the original authoritative brief, never rejected copy as a new factual source. Fail explicitly if verification still fails. Do not impose a sales CTA on engagement messages.
 
 **Why:** The user reported repeated em dashes in a conference email because outreach imported only some writing rules, not the punctuation policy. An optional Sharpen action was not an acceptable substitute for correct initial generation.
 
 **How to apply:** Keep checks limited to new AI generation. Existing drafts, manual edits, approval and sending must not trigger automatic style rewrites. The draft is the repair's only factual source; voice guidance is style, not permission to add facts.
+
+Draft retries must request fresh output rather than repeatedly reusing an unverified cached response. Formatting or length failures must not be described as missing sender facts; actual refusal and clarification outcomes remain separate and must not be converted into messages.
+
+**Why:** The user reported repeated production length-check and incomplete-response failures with warnings they could not act on, including contradictory instructions to add facts when no context was missing.
+
+**How to apply:** Bound recovery, preserve saved context, retain the writing/compliance gates, and give a diagnostic reference if automatic recovery fails. Never solve generation failures by silently truncating text or sending unverified copy.
 
 ## Social-generation scope
 

@@ -236,6 +236,25 @@ describe("composeTouch — recipient guard", () => {
     expect(completeForFeature).not.toHaveBeenCalled();
   });
 
+  it("recovers malformed output before compliance and writes only the verified draft once", async () => {
+    vi.mocked(getProspectWithContact).mockResolvedValue({ ...PROSPECT_NO_EMAIL, email: "jane@example.invalid" } as any);
+    pushDb(CAMPAIGN); pushDb(); pushDb();
+    pushDb({ ...TOUCH_ROW, channel: "email" }); pushDb(UPDATED_PROSPECT);
+    vi.mocked(completeForFeature).mockResolvedValueOnce({
+      text: "===SUBJECT===\nIncomplete response",
+      usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
+    } as any).mockResolvedValueOnce({
+      text: "===SUBJECT===\nMeet Tuesday?\n===BODY===\nHi Jane, could we meet Tuesday?\nChris",
+      usage: { inputTokens: 20, outputTokens: 20 }, model: "test", provider: "test",
+    } as any);
+    const result = await composeTouch("acme.com", "prospect-1", { channel: "email" });
+    expect(scanCompliance).toHaveBeenCalledOnce();
+    expect(scanCompliance).toHaveBeenCalledWith(expect.objectContaining({
+      subject: "Meet Tuesday?", body: "Hi Jane, could we meet Tuesday?\nChris",
+    }));
+    expect(writes).toHaveBeenCalledTimes(2); // one touch + one membership status update
+    expect(result.usage).toEqual({ inputTokens: 30, outputTokens: 30 });
+  });
   it("never persists or advances a prospect when generated style cannot be repaired", async () => {
     vi.mocked(getProspectWithContact).mockResolvedValue({ ...PROSPECT_NO_EMAIL, email: "jane@fund.com" } as any);
     pushDb(CAMPAIGN);
@@ -245,7 +264,7 @@ describe("composeTouch — recipient guard", () => {
       usage: { inputTokens: 10, outputTokens: 10 }, model: "test", provider: "test",
     } as any);
     await expect(composeTouch("acme.com", "prospect-1", { channel: "email" })).rejects.toThrow("Nothing was saved or sent");
-    expect(completeForFeature).toHaveBeenCalledTimes(2);
+    expect(completeForFeature).toHaveBeenCalledTimes(3);
     expect(writes).not.toHaveBeenCalled();
   });
 
