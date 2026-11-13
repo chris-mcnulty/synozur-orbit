@@ -26,6 +26,10 @@ export function useCampaignSnapshotInvalidation(campaignId: string, scope: strin
   useEffect(() => {
     const invalidate = () => {
       void client.invalidateQueries({ queryKey: ["campaign-next-steps", scope, campaignId] });
+      void client.invalidateQueries({
+        predicate: query => query.queryKey[0] === "/api/sales-outreach/campaigns"
+          && query.queryKey.includes(campaignId) && query.queryKey.at(-1) === "performance",
+      });
       client.setQueriesData<Summary | null>({ queryKey: ["campaign-summary", scope, campaignId] }, null);
     };
     const unsubscribeMutation = client.getMutationCache().subscribe(event => {
@@ -34,6 +38,7 @@ export function useCampaignSnapshotInvalidation(campaignId: string, scope: strin
     const unsubscribeQuery = client.getQueryCache().subscribe(event => {
       if (event.type !== "updated" || event.action.type !== "invalidate") return;
       const key = event.query.queryKey;
+      if (key.at(-1) === "performance") return;
       if (key[0] === "/api/sales-outreach/campaigns" || String(key[0]).includes("/meetings") || String(key[0]).includes("/outreach-context")) invalidate();
     });
     return () => { unsubscribeMutation(); unsubscribeQuery(); };

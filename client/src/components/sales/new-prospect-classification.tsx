@@ -28,8 +28,9 @@ export function newProspectClassificationPayload(value: NewProspectClassificatio
 }
 
 const selectClass = "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
-export default function NewProspectClassification({ value, onChange, mode = "create" }: {
+export default function NewProspectClassification({ value, onChange, mode = "create", relationshipLabels }: {
   value: NewProspectClassificationValue; onChange: (value: NewProspectClassificationValue) => void; mode?: "create" | "edit";
+  relationshipLabels?: Partial<Record<(typeof relationshipRoles)[number], string>>;
 }) {
   const patch = value.classification ?? {};
   function field<K extends keyof ClassificationPatch>(key: K, next: ClassificationPatch[K]) {
@@ -43,7 +44,7 @@ export default function NewProspectClassification({ value, onChange, mode = "cre
         const current = patch.relationships ?? [];
         const next = current.includes(role) ? current.filter(item => item !== role) : role === "unknown" ? [role] : [...current.filter(item => item !== "unknown"), role];
         field("relationships", next);
-      }}>{classificationLabel(role)}</Button>)}</div>
+      }}>{relationshipLabels?.[role] ?? classificationLabel(role)}</Button>)}</div>
     </fieldset>
     <label className="flex items-start gap-2 text-sm"><Checkbox className="mt-0.5" checked={value.familiarity === "personal_friend"} onCheckedChange={checked => onChange({ ...value, familiarity: checked ? "personal_friend" : "unknown" })} /><span>Personal friendship<span className="mt-0.5 block text-xs text-muted-foreground">Explicitly a friend of the campaign sender. Drafts can be warm and less formal; this never implies consent. A “personal” tag alone does not mean friendship. Unchecking resets familiarity to Unknown; choose Known contact separately if appropriate.</span></span></label>
     <label className="block space-y-1 text-sm">Campaign tags (optional)

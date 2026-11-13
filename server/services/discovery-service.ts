@@ -12,6 +12,7 @@
  */
 
 import { db } from "../db";
+import { newProspectMetadata } from "@shared/outreach-campaign-workspace";
 import { prospects, outreachCampaigns, personas, marketingContacts, type ProspectWithContact } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { addCampaignMembership, ensureContactForPerson, getProspectsWithContacts } from "./prospect-contact-service";
@@ -330,8 +331,10 @@ export async function importDiscoveredProspects(
   tenantDomain: string,
   campaignId: string,
   candidates: DiscoveryCandidate[],
-  ctx: { ownerUserId: string; marketId?: string | null },
+  ctx: { ownerUserId: string; marketId?: string | null; metadata?: unknown },
 ): Promise<{ imported: ProspectWithContact[]; skipped: number }> {
+  // Validate the entire batch's reviewed settings before creating any contacts.
+  const metadata = newProspectMetadata(ctx.metadata ?? {});
   const [campaign] = await db
     .select()
     .from(outreachCampaigns)
@@ -373,6 +376,7 @@ export async function importDiscoveredProspects(
       },
       ownerUserId: ctx.ownerUserId,
       status: "new" as const,
+      ...metadata,
     });
     if (!created) continue; // already on this campaign (retried import)
     membershipIds.push(membershipId);

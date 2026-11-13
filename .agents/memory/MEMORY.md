@@ -1,4 +1,6 @@
 - [Outreach draft boundaries](outreach-draft-boundaries.md) — refusals and sender clarification questions are operator-only, never prospect email drafts.
+- [Contact row editing](contact-row-edit-placement.md) — Edit must remain directly on the contact row, never hidden inside the ellipsis menu.
+- [Campaign statistics scope](campaign-stats-membership-scope.md) — exclude archived/removed/deleted contacts from all campaign performance calculations, including rate denominators.
 - [Meeting snapshot fingerprints](meeting-snapshot-fingerprints.md) — JSONB key reordering must not invalidate unchanged reviews; retain compatibility with issued fingerprints.
 - [Outreach discovery company scope](outreach-discovery-company-scope.md) — explicit company filters restrict one search; campaign named-account seeds retain separate similarity behavior.
 - [Apollo search preview contract](apollo-search-previews.md) — search returns masked identities and employer names without IDs; revealing contacts is a separate credit-consuming step.

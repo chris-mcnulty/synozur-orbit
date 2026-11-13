@@ -36,6 +36,7 @@ import { storage } from "../storage";
 import { encryptSecret, decryptSecret } from "../utils/encryption";
 import { HUBSPOT_OAUTH_SCOPES, type HubspotConnection } from "@shared/schema";
 import { normalizePlanName } from "./plan-policy";
+import { searchHubspotCompanyContacts } from "./hubspot-company-contacts";
 
 // HubSpot association type IDs (HUBSPOT_DEFINED).
 // 190 = Note → Company; 192 = Task → Company; 202 = Note → Contact.
@@ -854,22 +855,25 @@ function mapLegacyListContact(c: any): HubspotContactLite {
  */
 export async function listContacts(
   tenantDomain: string,
-  opts: { query?: string; limit?: number } = {},
+  opts: { query?: string; company?: string; limit?: number } = {},
 ): Promise<HubspotContactLite[]> {
   const { client } = await getTenantClient(tenantDomain);
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
   const q = (opts.query ?? "").trim();
 
-  const result = await client.crm.contacts.searchApi.doSearch({
+  const company = (opts.company ?? "").trim();
+  const results = company
+    ? await searchHubspotCompanyContacts(client, company, q, limit, CONTACT_PROPS)
+    : (await client.crm.contacts.searchApi.doSearch({
     query: q || undefined,
     filterGroups: [],
     properties: CONTACT_PROPS,
     sorts: ["lastmodifieddate"],
     limit,
     after: "0",
-  } as any);
+  } as any)).results;
 
-  return result.results.map((c) => {
+  return results.map((c) => {
     const props = (c.properties as Record<string, string>) || {};
     return {
       hubspotContactId: c.id,

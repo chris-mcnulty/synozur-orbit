@@ -14,3 +14,9 @@ When a company-restricted search returns no matches, relax industry keywords and
 **Why:** Persona industry prose can exclude a known suitable employer, and exact job titles miss equivalent practice or alliance leadership roles. Zero search results do not establish that the company has no relevant people or that event attendance was checked.
 
 **How to apply:** Use bounded retries with the resolved employer IDs on every request. Keep original campaign criteria for scoring and review rather than rewriting campaign targeting. Web fallback may interpret role wording more broadly but must retain the same company boundary.
+
+Offer existing HubSpot company contacts before relying on Apollo for new identities.
+
+**Why:** The user wants to check whether their CRM already holds contact details before acquiring more contacts from Apollo. Company membership can be represented by a CRM association, not just the contact's company text.
+
+**How to apply:** Keep CRM lookup available from company discovery without requiring Apollo search or a paid reveal first. Never infer relationship labels from employer matches; let the user review partner/customer/prospect classifications at import.

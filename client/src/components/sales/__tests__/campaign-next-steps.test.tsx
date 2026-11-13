@@ -71,6 +71,19 @@ describe("campaign next steps", () => {
 });
 
 describe("campaign summary", () => {
+  it("refreshes only this campaign's performance after contacts change without invalidation loops", async () => {
+    function Workspace() { useCampaignSnapshotInvalidation("campaign-1", "scope-1"); return null; }
+    const { client } = setup(<Workspace />);
+    const performanceKey = ["/api/sales-outreach/campaigns", "market-1", "campaign-1", "performance"];
+    const otherKey = ["/api/sales-outreach/campaigns", "market-1", "campaign-2", "performance"];
+    const peopleKey = ["/api/sales-outreach/campaigns", "campaign-1", "prospects"];
+    client.setQueryData(performanceKey, { total: 10 });
+    client.setQueryData(otherKey, { total: 5 });
+    client.setQueryData(peopleKey, []);
+    await client.invalidateQueries({ queryKey: peopleKey });
+    expect(client.getQueryState(performanceKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(otherKey)?.isInvalidated).toBe(false);
+  });
   it("generates a factual snapshot on demand, copies, and clears it after contact changes", async () => {
     request.mockResolvedValue({ json: async () => summary } as Response);
     const writeText = vi.fn().mockResolvedValue(undefined);

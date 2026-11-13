@@ -63,6 +63,9 @@ import EmailThreadDialog from "@/components/sales/email-thread-dialog";
 import ContactEditDialog from "@/components/sales/contact-edit-dialog";
 import ContactMeetingIndicator, { type DirectoryMeeting } from "@/components/sales/contact-meeting-indicator";
 import ApolloRevealPreview from "@/components/sales/apollo-reveal-preview";
+import HubspotCompanySearch, { DiscoveryHubspotCheck } from "@/components/sales/hubspot-company-search";
+import DiscoveryImportSettings from "@/components/sales/discovery-import-settings";
+import { useHubspotPreview } from "@/components/sales/use-hubspot-preview";
 import { SharpenDiffPanel } from "@/components/SharpenDiffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -597,6 +600,15 @@ export default function OutreachCampaignDetailPage() {
   const [discoverResultCompany, setDiscoverResultCompany] = useState("");
   const [apolloRevealBusy, setApolloRevealBusy] = useState(false);
   const discoveryGeneration = useRef(0);
+  const [discoveryClassification, setDiscoveryClassification] = useState<NewProspectClassificationValue>({});
+  const importScope = JSON.stringify([getTabTenantId(), getTabMarketId(), user?.id, id]);
+  const importScopeRef = useRef(importScope);
+  importScopeRef.current = importScope;
+  useEffect(() => {
+    discoveryGeneration.current += 1;
+    setDiscovering(false); setDiscoverResult(null); setSelected(new Set());
+    setDiscoveryClassification({});
+  }, [importScope]);
 
   // Prospect list filter / sort state.
   const [searchQ, setSearchQ] = useState("");
@@ -616,15 +628,17 @@ export default function OutreachCampaignDetailPage() {
   // HubSpot import dialog state.
   const [hubspotOpen, setHubspotOpen] = useState(false);
   const [hubspotMode, setHubspotMode] = useState<"search" | "list">("search");
-  const [hubspotQuery, setHubspotQuery] = useState("");
-  const [hubspotContacts, setHubspotContacts] = useState<HubspotContact[] | null>(null);
-  const [hubspotSearching, setHubspotSearching] = useState(false);
-  const [hubspotSelected, setHubspotSelected] = useState<Set<string>>(new Set());
+  const hubspotPreview = useHubspotPreview(id, importScope);
+  const { contacts: hubspotContacts, searching: hubspotSearching, selected: hubspotSelected, setSelected: setHubspotSelected } = hubspotPreview;
   const [hubspotNotConnected, setHubspotNotConnected] = useState(false);
   const [hubspotNeedsReconnect, setHubspotNeedsReconnect] = useState(false);
   const [hubspotLists, setHubspotLists] = useState<{ listId: string; name: string; memberCount: number }[] | null>(null);
   const [hubspotListsLoading, setHubspotListsLoading] = useState(false);
   const [hubspotSelectedList, setHubspotSelectedList] = useState<string | null>(null);
+  useEffect(() => {
+    setHubspotOpen(false); setHubspotLists(null); setHubspotSelectedList(null);
+    setHubspotNotConnected(false); setHubspotNeedsReconnect(false);
+  }, [importScope]);
 
   // Apollo / CSV import dialog state.
   interface CsvProspectRow {
@@ -639,6 +653,8 @@ export default function OutreachCampaignDetailPage() {
   const [csvSelected, setCsvSelected] = useState<Set<number>>(new Set());
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvResult, setCsvResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [csvClassification, setCsvClassification] = useState<NewProspectClassificationValue>({});
+  useEffect(() => { setCsvClassification({}); setCsvOpen(false); setCsvRows([]); }, [importScope]);
   const [pasteContactsOpen, setPasteContactsOpen] = useState(false);
   const [emailThreadEntry, setEmailThreadEntry] = useState<{ scope: string; target?: Prospect } | null>(null);
   useEffect(() => { setEmailThreadEntry(null); }, [composeScope, canEditOutreach]);
@@ -684,6 +700,7 @@ export default function OutreachCampaignDetailPage() {
         return;
       }
       setCsvRows(rows);
+      setCsvClassification({});
       setCsvSelected(new Set(rows.map((_, i) => i)));
       setCsvResult(null);
       setCsvOpen(true);
@@ -701,7 +718,7 @@ export default function OutreachCampaignDetailPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, ...newProspectClassificationPayload(csvClassification) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
@@ -712,7 +729,7 @@ export default function OutreachCampaignDetailPage() {
     } finally {
       setCsvImporting(false);
     }
-  }, [csvRows, csvSelected, id, queryClient, toast]);
+  }, [csvRows, csvSelected, csvClassification, id, queryClient, toast]);
 
   const importPastedProspects = useCallback(async (rows: ParsedContact[]) => {
     const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/import-csv`, { rows });
@@ -1124,34 +1141,14 @@ export default function OutreachCampaignDetailPage() {
     onError: (err: any) => toast({ title: "Cadence refresh failed", description: err?.message, variant: "destructive" }),
   });
 
-  async function searchHubspot(q: string) {
-    setHubspotSearching(true);
-    setHubspotNotConnected(false);
-    try {
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/preview-hubspot`, { query: q || undefined, limit: 50 });
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.code === "no_hubspot") {
-          setHubspotNotConnected(true);
-          return;
-        }
-        throw new Error(data.error || "Search failed");
-      }
-      setHubspotContacts(data.contacts ?? []);
-      setHubspotSelected(new Set((data.contacts ?? []).filter((c: HubspotContact) => !c.alreadyOnCampaign).map((c: HubspotContact) => c.hubspotContactId)));
-    } catch (err: any) {
-      toast({ title: "HubSpot search failed", description: err?.message, variant: "destructive" });
-    } finally {
-      setHubspotSearching(false);
-    }
-  }
-
   async function loadHubspotLists() {
     if (hubspotLists !== null) return; // already loaded
+    const scope = importScope;
     setHubspotListsLoading(true);
     try {
       const res = await fetch(`/api/sales-outreach/campaigns/${id}/hubspot-lists`, { credentials: "include" });
       const data = await res.json();
+      if (scope !== importScopeRef.current) return;
       if (!res.ok) {
         if (data.code === "no_hubspot") { setHubspotNotConnected(true); return; }
         if (data.code === "no_list_scopes") { setHubspotNeedsReconnect(true); return; }
@@ -1160,38 +1157,28 @@ export default function OutreachCampaignDetailPage() {
       setHubspotNeedsReconnect(false);
       setHubspotLists(data.lists ?? []);
     } catch (err: any) {
+      if (scope !== importScopeRef.current) return;
       toast({ title: "Couldn't load HubSpot lists", description: err?.message, variant: "destructive" });
     } finally {
-      setHubspotListsLoading(false);
+      if (scope === importScopeRef.current) setHubspotListsLoading(false);
     }
   }
 
   async function loadContactsFromList(listId: string) {
-    setHubspotSearching(true);
-    setHubspotContacts(null);
-    setHubspotSelected(new Set());
-    try {
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/preview-hubspot`, { listId, limit: 100 });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load list members");
-      setHubspotContacts(data.contacts ?? []);
-      setHubspotSelected(new Set((data.contacts ?? []).filter((c: HubspotContact) => !c.alreadyOnCampaign).map((c: HubspotContact) => c.hubspotContactId)));
-    } catch (err: any) {
-      toast({ title: "HubSpot list load failed", description: err?.message, variant: "destructive" });
-    } finally {
-      setHubspotSearching(false);
-    }
+    await hubspotPreview.searchList(listId);
   }
 
   function openHubspotDialog() {
-    setHubspotContacts(null);
-    setHubspotQuery("");
-    setHubspotSelected(new Set());
+    openHubspotCompany("");
+  }
+
+  function openHubspotCompany(company: string) {
+    hubspotPreview.reset(company);
     setHubspotNotConnected(false);
     setHubspotMode("search");
     setHubspotSelectedList(null);
     setHubspotOpen(true);
-    searchHubspot("");
+    void hubspotPreview.search(company, "");
   }
 
   const importHubspotSelected = useMutation({
@@ -1317,14 +1304,19 @@ export default function OutreachCampaignDetailPage() {
 
   const importDiscovered = useMutation({
     mutationFn: async () => {
+      const scope = importScope;
+      const generation = discoveryGeneration.current;
       const candidates = (discoverResult?.candidates ?? [])
         .filter((_, i) => selected.has(i))
         .map((c) => c.candidate);
-      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover/import`, { candidates });
-      return res.json();
+      const res = await apiRequest("POST", `/api/sales-outreach/campaigns/${id}/discover/import`, {
+        candidates, ...newProspectClassificationPayload(discoveryClassification),
+      });
+      return { ...(await res.json()), scope, generation };
     },
-    onSuccess: (data: { imported: number; skipped: number }) => {
+    onSuccess: (data: { imported: number; skipped: number; scope: string; generation: number }) => {
       queryClient.invalidateQueries({ queryKey: prospectsKey });
+      if (data.scope !== importScopeRef.current || data.generation !== discoveryGeneration.current) return;
       setDiscovering(false);
       setDiscoverResult(null);
       setSelected(new Set());
@@ -1337,6 +1329,7 @@ export default function OutreachCampaignDetailPage() {
   });
 
   function openDiscovery() {
+    setDiscoveryClassification({});
     discoveryGeneration.current += 1;
     setDiscoverResult(null);
     setDiscoverResultGeneration(discoveryGeneration.current);
@@ -1912,6 +1905,17 @@ export default function OutreachCampaignDetailPage() {
                       </TableCell>
                       <TableCell className="w-[120px]">
                         <div className="flex flex-nowrap items-center justify-end gap-1">
+                        {canEditOutreach && <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 shrink-0"
+                          onClick={() => openEditProspect(p)}
+                          data-testid={`edit-prospect-${p.id}`}
+                          title="Edit contact details and campaign settings"
+                          aria-label={`Edit contact for ${p.name || p.email || "contact"}`}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" />Edit
+                        </Button>}
                         {canEditOutreach && <QuickCommunicationLog compact contact={p} senderName={user?.name ?? ""} />}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label={`Actions for ${p.name || p.email || "contact"}`}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
@@ -2028,17 +2032,6 @@ export default function OutreachCampaignDetailPage() {
                             Add to HubSpot
                           </Button>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditProspect(p)}
-                          data-testid={`edit-prospect-${p.id}`}
-                          title="Edit contact details and campaign settings"
-                          aria-label={`Edit contact for ${p.name || p.email || "contact"}`}
-                          hidden={!canEditOutreach}
-                        >
-                          <Pencil className="mr-1 h-3.5 w-3.5" />Edit contact
-                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -2528,8 +2521,8 @@ export default function OutreachCampaignDetailPage() {
       </Dialog>
 
       {/* HubSpot import dialog — search or browse by list, preview, select, import */}
-      <Dialog open={hubspotOpen} onOpenChange={(o) => { if (!o) setHubspotOpen(false); }}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={hubspotOpen} onOpenChange={(o) => { if (!o) { setHubspotOpen(false); hubspotPreview.clear(); } }}>
+        <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Download className="w-4 h-4" /> Import from HubSpot
@@ -2540,7 +2533,7 @@ export default function OutreachCampaignDetailPage() {
           </DialogHeader>
 
           {/* Not connected — inline prompt */}
-          {hubspotNotConnected ? (
+          {hubspotNotConnected || hubspotPreview.notConnected ? (
             <div className="rounded-md border border-amber-400/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2" data-testid="hubspot-not-connected">
               <p className="text-sm font-medium text-amber-800 dark:text-amber-300">HubSpot isn't connected</p>
               <p className="text-xs text-amber-700 dark:text-amber-400">Connect your HubSpot account in Settings to import contacts from your CRM.</p>
@@ -2556,7 +2549,7 @@ export default function OutreachCampaignDetailPage() {
                   variant={hubspotMode === "search" ? "default" : "ghost"}
                   size="sm"
                   className="h-7 px-3 text-xs"
-                  onClick={() => setHubspotMode("search")}
+                  onClick={() => { hubspotPreview.clear(); setHubspotMode("search"); }}
                   data-testid="hubspot-tab-search"
                 >
                   <Search className="w-3.5 h-3.5 mr-1.5" /> Search contacts
@@ -2566,6 +2559,7 @@ export default function OutreachCampaignDetailPage() {
                   size="sm"
                   className="h-7 px-3 text-xs"
                   onClick={() => {
+                    hubspotPreview.clear();
                     setHubspotMode("list");
                     loadHubspotLists();
                   }}
@@ -2577,20 +2571,12 @@ export default function OutreachCampaignDetailPage() {
 
               {/* Search mode */}
               {hubspotMode === "search" && (
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Search by name, email, or company…"
-                    value={hubspotQuery}
-                    onChange={(e) => setHubspotQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && searchHubspot(hubspotQuery)}
-                    data-testid="input-hubspot-search"
-                    className="flex-1"
-                  />
-                  <Button variant="outline" onClick={() => searchHubspot(hubspotQuery)} disabled={hubspotSearching} data-testid="button-hubspot-search">
-                    {hubspotSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                  </Button>
-                </div>
+                <HubspotCompanySearch company={hubspotPreview.company} query={hubspotPreview.query}
+                  onCompanyChange={hubspotPreview.setCompany} onQueryChange={hubspotPreview.setQuery}
+                  onSearch={() => void hubspotPreview.search()} searching={hubspotSearching} />
               )}
+              {hubspotPreview.error && <p role="alert" className="text-sm text-destructive">{hubspotPreview.error}</p>}
+              {hubspotMode === "search" && <p className="text-xs text-muted-foreground">Preview shows up to 50 contacts. Refine the company or person search to narrow the results.</p>}
 
               {/* List mode — picker */}
               {hubspotMode === "list" && (
@@ -2730,7 +2716,7 @@ export default function OutreachCampaignDetailPage() {
 
       {/* Apollo / CSV import dialog — preview parsed rows, select, import */}
       <Dialog open={csvOpen} onOpenChange={(o) => { if (!o) { setCsvOpen(false); setCsvResult(null); } }}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-4 h-4" /> Import from CSV
@@ -2798,6 +2784,9 @@ export default function OutreachCampaignDetailPage() {
                   </TableBody>
                 </Table>
               </div>
+              <DiscoveryImportSettings selectedCount={csvSelected.size}
+                companyNames={csvRows.filter((_, index) => csvSelected.has(index)).map(row => row.companyName)}
+                value={csvClassification} onChange={setCsvClassification} disabled={csvImporting} />
               <DialogFooter className="gap-2 items-center sm:justify-between">
                 <span className="text-xs text-muted-foreground">{csvSelected.size} of {csvRows.length} selected</span>
                 <Button
@@ -2871,6 +2860,8 @@ export default function OutreachCampaignDetailPage() {
           </DialogHeader>
 
           <div className="space-y-2 rounded-md border p-3">
+            <DiscoveryHubspotCheck company={discoverCompany} onCheck={openHubspotCompany}
+              disabled={discover.isPending || apolloRevealBusy || importDiscovered.isPending} />
             <div className="space-y-1">
               <Label htmlFor="discovery-company">Company name or domain <span className="text-muted-foreground">(optional)</span></Label>
               <p className="text-xs text-muted-foreground">Limit this search to one company. This does not change the campaign's targeting.</p>
@@ -3006,6 +2997,10 @@ export default function OutreachCampaignDetailPage() {
                   </TableBody>
                 </Table>
               </div>
+              <DiscoveryImportSettings selectedCount={selected.size}
+                companyNames={discoverResult.candidates.filter((_, index) => selected.has(index)).map(row => row.candidate.companyName)}
+                value={discoveryClassification} onChange={setDiscoveryClassification}
+                disabled={importDiscovered.isPending || discover.isPending || apolloRevealBusy} />
               <DialogFooter className="gap-2 items-center sm:justify-between">
                 <span className="text-xs text-muted-foreground">{selected.size} of {discoverResult.candidates.length} selected</span>
                 <Button onClick={() => importDiscovered.mutate()} disabled={selected.size === 0 || importDiscovered.isPending || discover.isPending || apolloRevealBusy} data-testid="button-import-discovered">

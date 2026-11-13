@@ -11,6 +11,7 @@ import type { ProspectScoreBreakdown } from "@shared/schema";
 
 export interface PerfProspect {
   status: string;
+  removedAt?: Date | string | null;
   icpScore: number | null;
   scoreBreakdown: ProspectScoreBreakdown | null;
 }
@@ -51,6 +52,7 @@ function rate(n: number, d: number): number | null {
  * over contacted. Signal lift compares reply rate when a signal matched vs not.
  */
 export function analyzeOutreachPerformance(prospects: PerfProspect[]): OutreachPerformanceReport {
+  prospects = prospects.filter(p => !p.removedAt && !["archived", "deleted", "removed"].includes(p.status));
   const total = prospects.length;
   const funnel: Record<string, number> = {};
   for (const p of prospects) funnel[p.status] = (funnel[p.status] ?? 0) + 1;

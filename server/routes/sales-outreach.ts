@@ -675,8 +675,9 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
+      if (!["Analyst", "Domain Admin", "Global Admin"].includes(ctx.userRole)) return res.status(403).json({ error: "Your role cannot import campaign contacts." });
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
-      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      if (!campaign || (campaign.marketId && campaign.marketId !== ctx.marketId)) return res.status(404).json({ error: "Campaign not found" });
 
       const raw = req.body?.candidates;
       if (!Array.isArray(raw) || raw.length === 0) {
@@ -713,10 +714,12 @@ export function registerSalesOutreachRoutes(app: Express) {
       const result = await importDiscoveredProspects(ctx.tenantDomain, campaign.id, candidates, {
         ownerUserId: ctx.userId,
         marketId: ctx.marketId || null,
+        metadata: req.body,
       });
       res.status(201).json({ imported: result.imported.length, skipped: result.skipped, prospects: result.imported });
     } catch (err: any) {
       console.error("[sales-outreach-discovery:import]", err);
+      if (err instanceof z.ZodError) return res.status(400).json({ error: err.issues.map(issue => issue.message).join("; ") });
       res.status(500).json({ error: err.message || "Failed to import prospects" });
     }
   });
@@ -1371,17 +1374,21 @@ export function registerSalesOutreachRoutes(app: Express) {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
-      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      if (!campaign || (campaign.marketId && campaign.marketId !== ctx.marketId)) return res.status(404).json({ error: "Campaign not found" });
 
       const conn = await storage.getHubspotConnection(ctx.tenantDomain);
       if (!conn) return res.status(409).json({ error: "HubSpot isn't connected. Connect it in Settings → Connections.", code: "no_hubspot" });
 
-      const query = typeof req.body?.query === "string" ? req.body.query : undefined;
-      const listId = typeof req.body?.listId === "string" ? req.body.listId : undefined;
-      const limit = Number.isInteger(req.body?.limit) ? req.body.limit : 100;
+      const { query, company, listId, limit } = z.object({
+        query: z.string().trim().max(300).optional(),
+        company: z.string().trim().max(200).optional(),
+        listId: z.string().max(100).optional(),
+        limit: z.number().int().min(1).max(100).default(100),
+      }).parse(req.body ?? {});
+      if (company && listId) return res.status(400).json({ error: "Choose company search or a HubSpot list, not both." });
       const contacts = listId
         ? await listContactsFromHubspotList(ctx.tenantDomain, listId, limit)
-        : await listContacts(ctx.tenantDomain, { query, limit });
+        : await listContacts(ctx.tenantDomain, { query, company, limit });
 
       // Flag contacts already on this campaign so the UI can show them greyed out.
       const existing = await db
@@ -1402,6 +1409,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       res.json({ contacts: results });
     } catch (err: any) {
       console.error("[sales-outreach:preview-hubspot]", err);
+      if (err instanceof z.ZodError) return res.status(400).json({ error: err.issues.map(issue => issue.message).join("; ") });
       res.status(500).json({ error: err.message || "Failed to search HubSpot" });
     }
   });
@@ -1494,8 +1502,10 @@ export function registerSalesOutreachRoutes(app: Express) {
     try {
       if (!(await guardFeature(req, res, "salesOutreachCampaigns"))) return;
       const ctx = await getRequestContext(req);
+      if (!["Analyst", "Domain Admin", "Global Admin"].includes(ctx.userRole)) return res.status(403).json({ error: "Your role cannot import campaign contacts." });
       const campaign = await getCampaign(ctx.tenantDomain, req.params.id);
-      if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+      if (!campaign || (campaign.marketId && campaign.marketId !== ctx.marketId)) return res.status(404).json({ error: "Campaign not found" });
+      const metadata = newProspectMetadata(req.body ?? {});
 
       const rawRows: Array<{
         name?: string;
@@ -1569,6 +1579,7 @@ export function registerSalesOutreachRoutes(app: Express) {
             source: "import" as const,
             ownerUserId: ctx.userId,
             status: "new" as const,
+            ...metadata,
           });
           if (!created) continue; // already on this campaign (retried import)
           const view = await getProspectWithContact(membershipId);
@@ -1590,6 +1601,7 @@ export function registerSalesOutreachRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[sales-outreach:import-csv]", err);
+      if (err instanceof z.ZodError) return res.status(400).json({ error: err.issues.map(issue => issue.message).join("; ") });
       res.status(500).json({ error: err.message || "Failed to import CSV" });
     }
   });

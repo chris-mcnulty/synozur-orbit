@@ -20,6 +20,24 @@ function p(status: string, roleMatched: boolean): PerfProspect {
 }
 
 describe("outreach-performance-core", () => {
+  it("excludes removed contacts from totals, both sides of rates, signal lift and recommendations", () => {
+    const active = [p("replied", true), p("sent", false), p("new", false)];
+    const excluded = [
+      { ...p("replied", true), removedAt: new Date() },
+      { ...p("sent", false), removedAt: new Date().toISOString() },
+      p("archived", true), p("deleted", false), p("removed", true),
+    ];
+    assert.deepEqual(analyzeOutreachPerformance([...active, ...excluded]), analyzeOutreachPerformance(active));
+  });
+  it("returns zero totals and rates when every contact is removed", () => {
+    const report = analyzeOutreachPerformance([{ ...p("replied", true), removedAt: new Date() }, p("archived", false)]);
+    assert.equal(report.total, 0);
+    assert.equal(report.contacted, 0);
+    assert.equal(report.replied, 0);
+    assert.equal(report.replyRate, 0);
+    assert.deepEqual(report.funnel, {});
+    assert.deepEqual(report.signals, []);
+  });
   it("funnel + reply rate over contacted", () => {
     const r = analyzeOutreachPerformance([
       p("new", true),

@@ -7,7 +7,7 @@
  * All DB I/O is mocked so the tests run without a real database.
  */
 
-import { describe, it, vi, expect } from "vitest";
+import { beforeEach, describe, it, vi, expect } from "vitest";
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 //
@@ -75,6 +75,7 @@ vi.mock("../prospect-contact-service", () => ({
 // ── Import under test AFTER mocks are wired ───────────────────────────────────
 
 import { importDiscoveredProspects } from "../discovery-service";
+import { addCampaignMembership, ensureContactForPerson } from "../prospect-contact-service";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,43 @@ const CAMPAIGN = {
 };
 
 const CTX = { ownerUserId: "user-1", marketId: "market-1" };
+beforeEach(() => { vi.clearAllMocks(); dbQ.length = 0; });
+
+describe("reviewed batch relationship settings", () => {
+  const candidates = [
+    { name: "Alex Example", email: "alex@example.com", companyName: "Example", source: "apollo" as const },
+    { name: "Sam Example", email: "sam@example.com", companyName: "Example", source: "apollo" as const },
+  ];
+  it.each(["customer", "prospect", "partner"])("applies %s to every newly imported selected contact", async role => {
+    pushDb(CAMPAIGN); pushDb(); pushDb({ id: "a" }); pushDb({ id: "b" }); pushDb({ id: "a" }, { id: "b" });
+    const result = await importDiscoveredProspects("acme.com", "camp-1", candidates, {
+      ...CTX, metadata: { classification: { relationships: [role], tags: ["Reviewed"] } },
+    });
+    expect(result.imported).toHaveLength(2);
+    expect(addCampaignMembership).toHaveBeenCalledTimes(2);
+    for (const [input] of vi.mocked(addCampaignMembership).mock.calls) {
+      expect(input.meeting?.relationships).toEqual([role]);
+      expect(input.classification?.tags).toEqual(["Reviewed"]);
+      expect(input.source).toBe("apollo");
+      expect(input.status).toBe("new");
+    }
+  });
+  it("rejects invalid metadata before creating any contacts", async () => {
+    await expect(importDiscoveredProspects("acme.com", "camp-1", candidates, {
+      ...CTX, metadata: { classification: { relationships: ["made_up"] } },
+    })).rejects.toThrow();
+    expect(ensureContactForPerson).not.toHaveBeenCalled();
+    expect(addCampaignMembership).not.toHaveBeenCalled();
+  });
+  it("does not reclassify contacts already on the campaign", async () => {
+    pushDb(CAMPAIGN); pushDb({ email: candidates[0].email, firstName: "Alex", lastName: "Example", companyName: "Example" });
+    const result = await importDiscoveredProspects("acme.com", "camp-1", [candidates[0]], {
+      ...CTX, metadata: { classification: { relationships: ["partner"] } },
+    });
+    expect(result).toEqual({ imported: [], skipped: 1 });
+    expect(addCampaignMembership).not.toHaveBeenCalled();
+  });
+});
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
