@@ -39,13 +39,48 @@ beforeEach(() => {
   request.mockReset();
   request.mockImplementation(async (method, path) => {
     if (method === "GET") return Response.json({ contact: { ...empty, name: "Maya Chen", email: "maya@example.com" }, meetingTimes: [] });
-    if (path.endsWith("/parse")) return Response.json({ contacts: [maya, rae], meetingTimes: [meeting, { ...meeting, proposal: "Monday declined", status: "declined" }], warnings: ["Timezone absent in source."] });
+    if (path.endsWith("/parse")) return Response.json({ contacts: [maya, rae], meetingTimes: [meeting, { ...meeting, proposal: "Monday declined", status: "declined" }], meetingLocations: [{ location: "Room A", evidence: "Meet in Room A", status: "current", token: "evidence" }], warnings: ["Timezone absent in source."] });
     return Response.json({ prospectId: "maya", filledFields: ["title"], skippedFields: [], meetingTimesSaved: 1 });
   });
 });
 afterEach(cleanup);
 
 describe("email thread evidence review", () => {
+  it("requires separate venue selection and approval, then sends only the location outcome", async () => {
+    const location = { location: "Multipurpose Room, Convene, Galleria Park Hotel", evidence: "Use the official invitation: Multipurpose Room, Convene, Galleria Park Hotel", status: "current", token: "evidence-token" };
+    request.mockImplementation(async (method, path) => {
+      if (method === "GET") return Response.json({ contact: empty, meetingTimes: [], locationReview: { currentLocation: "TBD", token: "review-token", expiresAt: 1234 } });
+      if (path.endsWith("/parse")) return Response.json({ contacts: [], meetingTimes: [], meetingLocations: [location], warnings: [] });
+      return Response.json({ prospectId: "maya", filledFields: [], skippedFields: [], meetingTimesSaved: 0, meetingLocationSaved: true });
+    });
+    mount(true); await analyze(); choose("times-only");
+    await screen.findByText("Current location: TBD");
+    expect((screen.getByLabelText("Proposed meeting location") as HTMLSelectElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Proposed meeting location"), { target: { value: "0" } });
+    expect(screen.getByText(`“${location.evidence}”`)).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: reviewLabel }));
+    expect(saveButton().disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Apply reviewed meeting location" }));
+    expect(saveButton().disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: reviewLabel }));
+    fireEvent.click(saveButton());
+    await screen.findByText(/Meeting location updated/);
+    const { token, ...suggestion } = location;
+    expect(saveCalls()[0][2]).toEqual({ prospectId: "maya", contact: empty, meetingTimes: [], confirmed: true,
+      locationUpdate: { suggestion, evidenceToken: token, reviewToken: "review-token", expiresAt: 1234, confirmed: true } });
+  });
+
+  it("explains missing bookings without offering to create one", async () => {
+    request.mockImplementation(async (method) => method === "GET"
+      ? Response.json({ contact: empty, meetingTimes: [], locationUnavailable: "No existing scheduled meeting. No booking will be created." })
+      : Response.json({ contacts: [], meetingTimes: [], meetingLocations: [{ location: "Room A", evidence: "Meet in Room A", status: "current", token: "token" }], warnings: [] }));
+    mount(true); await analyze(); choose("times-only");
+    await screen.findByText("No existing scheduled meeting. No booking will be created.");
+    expect(screen.queryByLabelText("Proposed meeting location")).toBeNull();
+    expect(saveButton().disabled).toBe(true);
+    expect(saveCalls()).toHaveLength(0);
+  });
+
   it("requires an explicit participant and destination, even with a suggested exact match", async () => {
     mount();
     await analyze();

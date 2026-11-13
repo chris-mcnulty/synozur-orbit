@@ -9,6 +9,7 @@ vi.mock("../../services/email-thread-parser", () => ({ parseEmailThread: mocks.p
 vi.mock("../../services/email-thread-service", () => ({ saveEmailThread: mocks.save, emailThreadContact: mocks.contact }));
 import { registerEmailThreadRoutes } from "../email-thread";
 import { ContextError } from "../../context";
+import { EmailThreadError } from "../../services/email-thread-parser";
 let app: ReturnType<typeof express>;
 beforeEach(() => {
   vi.clearAllMocks(); mocks.rows.length = 0;
@@ -25,6 +26,16 @@ beforeEach(() => {
 });
 const base = "/api/sales-outreach/campaigns/campaign/email-thread";
 describe("reviewed email thread route boundaries", () => {
+  it("loads meeting review with authenticated market and user scope", async () => {
+    mocks.contact.mockResolvedValue({ contact: {}, meetingTimes: [], locationReview: { currentLocation: "TBD" } });
+    expect((await request(app).get(`${base}/contact?prospectId=p`)).status).toBe(200);
+    expect(mocks.contact).toHaveBeenCalledWith("tenant", "campaign", "p", "market", "user");
+  });
+  it("reports a stale review as a conflict without invoking extraction", async () => {
+    mocks.save.mockRejectedValueOnce(new EmailThreadError("Meeting review is stale", 409));
+    expect((await request(app).post(`${base}/save`).send({})).status).toBe(409);
+    expect(mocks.parse).not.toHaveBeenCalled();
+  });
   it("parses without saving and verifies contact scope before extraction", async () => {
     const response = await request(app).post(`${base}/parse`).send({ text: "A thread", prospectId: "p" });
     expect(response.status).toBe(200);

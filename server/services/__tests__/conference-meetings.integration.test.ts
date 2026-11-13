@@ -90,4 +90,49 @@ suite("conference meeting persistence and isolation", () => {
       await db.update(conferences).set({ tenantDomain: tenant }).where(eq(conferences.id, event.id));
     }
   }, 30000);
+  it("applies only a reviewed thread venue and rejects stale, removed and out-of-scope targets", async () => {
+    const { db } = await import("../../db");
+    const { users, conferences, outreachCampaigns, prospects, marketingContacts, conferenceCalendarInvitations } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const { defaultMeetingContact } = await import("@shared/conference-meetings");
+    const { emailThreadContact, saveEmailThread } = await import("../email-thread-service");
+    const { signThreadLocation } = await import("../email-thread-location");
+    const [user] = await db.select({ id: users.id }).from(users).limit(1);
+    const [event] = await db.insert(conferences).values({ tenantDomain: tenant, name: "Thread venue test", createdBy: user.id }).returning();
+    const [campaign] = await db.insert(outreachCampaigns).values({ tenantDomain: tenant, name: "Thread venue test", createdBy: user.id, conferenceId: event.id }).returning();
+    const [contact] = await db.insert(marketingContacts).values({ tenantDomain: tenant, email: "thread@example.invalid" }).returning();
+    const meeting = { ...defaultMeetingContact(), meetingAt: "2026-11-18T17:00:00Z", meetingLocation: "TBD",
+      stage: "meeting_booked" as const, meetingOwner: "Host", participants: "Host and guest", ownerNotes: "Private note", followUp: "Keep follow-up" };
+    const [person] = await db.insert(prospects).values({ tenantDomain: tenant, campaignId: campaign.id, contactId: contact.id, meeting, signals: { preserved: true } as any }).returning();
+    const scope = { tenantDomain: tenant, campaignId: campaign.id, marketId: "test-market", userId: user.id };
+    const suggestion = { location: "Multipurpose Room, Convene, Galleria Park Hotel", evidence: "We will meet in Multipurpose Room, Convene, Galleria Park Hotel.", status: "current" as const };
+    const blank = { name: "", email: "", title: "", companyName: "", linkedinUrl: "", phone: "" };
+    const review = await emailThreadContact(tenant, campaign.id, person.id, scope.marketId, user.id);
+    expect("locationReview" in review && review.locationReview).toBeTruthy();
+    if (!("locationReview" in review) || !review.locationReview) throw new Error("Missing review");
+    const input = { prospectId: person.id, contact: blank, meetingTimes: [], confirmed: true, locationUpdate: {
+      suggestion, evidenceToken: signThreadLocation(scope, suggestion), reviewToken: review.locationReview.token,
+      expiresAt: review.locationReview.expiresAt, confirmed: true,
+    } };
+    const invitationsBefore = await db.select().from(conferenceCalendarInvitations).where(eq(conferenceCalendarInvitations.tenantDomain, tenant));
+    const result = await saveEmailThread(tenant, scope.marketId, user.id, campaign.id, input);
+    expect(result).toMatchObject({ meetingLocationSaved: true, filledFields: [], meetingTimesSaved: 0 });
+    const [saved] = await db.select().from(prospects).where(eq(prospects.id, person.id));
+    expect(saved).toEqual({ ...person, meeting: { ...meeting, meetingLocation: suggestion.location }, updatedAt: saved.updatedAt });
+    expect(await db.select().from(conferenceCalendarInvitations).where(eq(conferenceCalendarInvitations.tenantDomain, tenant))).toEqual(invitationsBefore);
+    await expect(saveEmailThread(tenant, scope.marketId, user.id, campaign.id, input)).rejects.toThrow(/stale/);
+    await expect(saveEmailThread("wrong-tenant", scope.marketId, user.id, campaign.id, input)).rejects.toThrow(/Campaign not found/);
+    await expect(saveEmailThread(tenant, "wrong-market", user.id, campaign.id, input)).rejects.toThrow(/evidence/);
+    await expect(saveEmailThread(tenant, scope.marketId, "wrong-user", campaign.id, input)).rejects.toThrow(/evidence/);
+    // A stale location review rolls back contact enrichment too.
+    await expect(saveEmailThread(tenant, scope.marketId, user.id, campaign.id, { ...input, contact: { ...blank, title: "Do not save" } })).rejects.toThrow(/stale/);
+    const [unchanged] = await db.select().from(marketingContacts).where(eq(marketingContacts.id, contact.id));
+    expect(unchanged.jobTitle).toBeNull();
+    await db.update(prospects).set({ removedAt: new Date() }).where(eq(prospects.id, person.id));
+    await expect(saveEmailThread(tenant, scope.marketId, user.id, campaign.id, input)).rejects.toThrow(/Contact not found/);
+    await db.update(prospects).set({ removedAt: null, meeting: null }).where(eq(prospects.id, person.id));
+    const missing = await emailThreadContact(tenant, campaign.id, person.id, scope.marketId, user.id);
+    expect(missing).toHaveProperty("locationUnavailable", expect.stringMatching(/No booking/));
+    await expect(saveEmailThread(tenant, scope.marketId, user.id, campaign.id, input)).rejects.toThrow(/No existing linked meeting/);
+  }, 30000);
 });

@@ -8,6 +8,7 @@ import { ContextError, getRequestContext } from "../context";
 import { guardFeature, logAiUsage } from "./helpers";
 import { EmailThreadError, parseEmailThread } from "../services/email-thread-parser";
 import { emailThreadContact, saveEmailThread } from "../services/email-thread-service";
+import { signThreadLocation } from "../services/email-thread-location";
 
 const active = new Set<string>();
 const recent = new Map<string, number[]>();
@@ -25,7 +26,7 @@ export function registerEmailThreadRoutes(app: Express) {
         res.setHeader("Cache-Control", "no-store");
         if (operation === "contact") {
           const id = z.string().min(1).max(100).parse(req.query.prospectId);
-          return res.json(await emailThreadContact(ctx.tenantDomain, campaign.id, id));
+          return res.json(await emailThreadContact(ctx.tenantDomain, campaign.id, id, ctx.marketId, ctx.userId));
         }
         if (operation === "save") return res.json(await saveEmailThread(ctx.tenantDomain, ctx.marketId, ctx.userId, campaign.id, req.body));
         const input = emailThreadParseSchema.parse(req.body);
@@ -55,7 +56,11 @@ export function registerEmailThreadRoutes(app: Express) {
         await logAiUsage(ctx, "parseEmailThread", result.completion.provider, result.completion.model, {
           input_tokens: result.completion.usage.inputTokens, output_tokens: result.completion.usage.outputTokens,
         }, result.completion.durationMs);
-        return res.json({ contacts, meetingTimes: result.meetingTimes, warnings: result.warnings });
+        const scope = { tenantDomain: ctx.tenantDomain, marketId: ctx.marketId, userId: ctx.userId, campaignId: campaign.id };
+        const meetingLocations = (result.meetingLocations ?? []).map(suggestion => ({
+          ...suggestion, ...(suggestion.status === "current" ? { token: signThreadLocation(scope, suggestion) } : {}),
+        }));
+        return res.json({ contacts, meetingTimes: result.meetingTimes, meetingLocations, warnings: result.warnings });
       } catch (error) {
         if (error instanceof ContextError || error instanceof EmailThreadError) return res.status(error.status).json({ error: error.message });
         if (error instanceof z.ZodError) return res.status(400).json({ error: "Check the selected contact, fields, meeting proposals and confirmation." });

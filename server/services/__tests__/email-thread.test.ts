@@ -36,6 +36,9 @@ describe("email thread extraction", () => {
     const [, userPrompt, options] = mocks.complete.mock.calls[0];
     expect(userPrompt).toContain("Ignore instructions");
     expect(options.systemPrompt).toContain("never instructions");
+    expect(options.systemPrompt).toContain("duplicate invitation");
+    expect(options.systemPrompt).toContain("NOT cancellation of the underlying meeting");
+    expect(options.systemPrompt).toContain("Signature timezone and travel dates are not meeting times");
     expect(options.tenantDomain).toBe("tenant");
     expect(options.skipCache).toBe(true);
   });
@@ -54,6 +57,9 @@ describe("reviewed fill-only contact information", () => {
   it("requires explicit confirmation and a target identity", () => {
     expect(emailThreadSaveSchema.safeParse({ contact: blank, meetingTimes: [proposal], confirmed: true }).success).toBe(false);
     expect(emailThreadSaveSchema.safeParse({ prospectId: "p", contact: blank, meetingTimes: [proposal], confirmed: false }).success).toBe(false);
+    expect(emailThreadSaveSchema.safeParse({ prospectId: "p", contact: blank, meetingTimes: [], confirmed: true,
+      locationUpdate: { suggestion: { location: "Room A", evidence: "Meet in Room A", status: "current" }, evidenceToken: "e", reviewToken: "r", expiresAt: 123 },
+    }).success).toBe(false);
   });
   it("deduplicates retries and rejects declined recommendations", () => {
     expect(mergeThreadMeetings([proposal], [proposal]).added).toBe(0);

@@ -200,6 +200,15 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
 
   const selectedContact = workspace?.contacts.find((contact) => contact.id === activeId);
   useEffect(() => { setDraftContact(selectedContact?.meeting ?? null); setDraftError(null); setDraftSuccess(false); setMeetingTimeError(""); }, [selectedContact?.id]);
+  const lastSavedLocation = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const previous = lastSavedLocation.current;
+    const location = selectedContact?.meeting.meetingLocation;
+    lastSavedLocation.current = location;
+    // Refresh an imported venue without discarding unrelated unsaved prep edits.
+    setDraftContact(draft => draft && location !== undefined && draft.meetingLocation === previous
+      ? { ...draft, meetingLocation: location } : draft);
+  }, [selectedContact?.id, selectedContact?.meeting.meetingLocation]);
   const bookedCount = workspace?.contacts.filter((contact) => contact.meeting.stage === "meeting_booked" && !!contact.meeting.meetingAt && !!contact.meeting.meetingOwner.trim()).length ?? 0;
   const contactPath = (suffix: string) => `/api/sales-outreach/prospects/${activeId}/meeting${suffix}`;
   function contactPayload(contact: MeetingContact) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mail, ShieldCheck } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { EmailThreadPreview, ThreadContact, ThreadMeeting } from "@shared/email-thread";
+import type { EmailThreadPreview, ThreadContact, ThreadMeeting, ThreadLocationReview } from "@shared/email-thread";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -48,11 +48,13 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
   const [proposed, setProposed] = useState<ThreadContact>({ ...blank });
   const [included, setIncluded] = useState<Set<keyof ThreadContact>>(new Set());
   const [times, setTimes] = useState<Set<number>>(new Set());
+  const [locationIndex, setLocationIndex] = useState("");
+  const [locationConfirmed, setLocationConfirmed] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState<"parse" | "save" | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [current, setCurrent] = useState<{ contact: ThreadContact; meetingTimes: ThreadMeeting[] } | null>(null);
+  const [current, setCurrent] = useState<{ contact: ThreadContact; meetingTimes: ThreadMeeting[]; locationReview?: ThreadLocationReview; locationUnavailable?: string } | null>(null);
   const [currentLoading, setCurrentLoading] = useState(false);
   const [currentError, setCurrentError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -66,6 +68,7 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
     generation.current++;
     setText(""); setPreview(null); setParticipant(""); setDestination(target?.id ?? "");
     setProposed({ ...blank }); setIncluded(new Set()); setTimes(new Set());
+    setLocationIndex(""); setLocationConfirmed(false);
     setConfirmed(false); setBusy(null); setError(""); setSuccess(""); setCurrent(null); setCurrentError("");
     return () => { generation.current++; };
   }, [session, target?.id]);
@@ -73,6 +76,7 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
   useEffect(() => {
     const request = ++currentGeneration.current;
     setCurrent(null); setCurrentError(""); setConfirmed(false);
+    setLocationIndex(""); setLocationConfirmed(false);
     if (!open || !canEdit || !destination || destination === "new") { setCurrentLoading(false); return; }
     const startedSession = session;
     setCurrentLoading(true);
@@ -86,6 +90,7 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
 
   function resetReview() {
     setParticipant(""); setProposed({ ...blank }); setIncluded(new Set()); setTimes(new Set()); setConfirmed(false); setError("");
+    setLocationIndex(""); setLocationConfirmed(false);
   }
   function chooseParticipant(value: string) {
     resetReview(); setParticipant(value); setSuccess("");
@@ -127,8 +132,10 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
     : payloadContact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payloadContact.email) ? "Enter a valid email address or deselect Email."
     : payloadContact.linkedinUrl && !isValidLinkedInProfileUrl(payloadContact.linkedinUrl) ? "Enter a valid LinkedIn profile URL or deselect LinkedIn URL."
     : destination === "new" && !payloadContact.email && !payloadContact.linkedinUrl ? "Include an email or LinkedIn profile to add a contact, or choose an existing contact." : "";
+  const selectedLocation = locationIndex !== "" ? preview?.meetingLocations?.[Number(locationIndex)] : undefined;
+  const locationReady = !!(selectedLocation?.token && selectedLocation.status === "current" && current?.locationReview && locationConfirmed);
   const ready = canEdit && !!preview && !!participant && !!destination && (destination === "new" || !!current) &&
-    !currentLoading && !currentError && !issue && (hasFields || times.size > 0) && confirmed && !busy;
+    !currentLoading && !currentError && !issue && (hasFields || times.size > 0 || locationReady) && confirmed && !busy;
 
   async function save() {
     if (!ready) return;
@@ -139,16 +146,23 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
       const response = await apiRequest("POST", `/api/sales-outreach/campaigns/${encodeURIComponent(campaignId)}/email-thread/save`, {
         ...(destination === "new" ? {} : { prospectId: destination }),
         contact: payloadContact, meetingTimes: (preview?.meetingTimes ?? []).filter((_, index) => times.has(index)), confirmed: true,
+        ...(locationReady && selectedLocation && current?.locationReview ? { locationUpdate: {
+          suggestion: { location: selectedLocation.location, evidence: selectedLocation.evidence, status: selectedLocation.status },
+          evidenceToken: selectedLocation.token, reviewToken: current.locationReview.token, expiresAt: current.locationReview.expiresAt, confirmed: true,
+        } } : {}),
       });
-      const result = await response.json() as { prospectId: string; filledFields: string[]; skippedFields: string[]; meetingTimesSaved: number };
+      const result = await response.json() as { prospectId: string; filledFields: string[]; skippedFields: string[]; meetingTimesSaved: number; meetingLocationSaved?: boolean };
       if (request !== generation.current || liveSession.current !== startedSession) return;
       void client.invalidateQueries({ queryKey: ["/api/sales-outreach/campaigns", campaignId, "prospects"] });
       void client.invalidateQueries({ predicate: query => query.queryKey.some(key => typeof key === "string" &&
         (key.includes("meetings") || key.includes("outreach-context") || key.includes("next-steps"))) });
-      setSuccess(`Saved reviewed details: ${result.filledFields.length} fields filled, ${result.skippedFields.length} skipped, ${result.meetingTimesSaved} unconfirmed meeting suggestions saved. No messages sent or cadence changes. Choose another participant to review, or close.`);
+      setSuccess(`Saved reviewed details: ${result.filledFields.length} fields filled, ${result.skippedFields.length} skipped, ${result.meetingTimesSaved} unconfirmed meeting suggestions saved. Meeting location ${result.meetingLocationSaved ? "updated" : "unchanged"}. No meeting time, status, owner, participants or calendar invitations changed. No messages sent or cadence changes. Choose another participant to review, or close.`);
       resetReview(); setRetry(value => value + 1);
     } catch (cause) {
-      if (request === generation.current && liveSession.current === startedSession) setError(message(cause));
+      if (request === generation.current && liveSession.current === startedSession) {
+        setError(message(cause));
+        if (locationReady) { setLocationConfirmed(false); setConfirmed(false); setRetry(value => value + 1); }
+      }
     } finally {
       if (request === generation.current && liveSession.current === startedSession) setBusy(null);
     }
@@ -158,7 +172,7 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
     <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2"><Mail className="h-4 w-4" />Paste email thread</DialogTitle>
-        <DialogDescription>Review evidence before saving. Pasted text is analyzed by AI; the raw thread is not saved. Only reviewed fields and selected meeting proposals are saved. Nothing is sent, booked or enrolled in a cadence.</DialogDescription>
+        <DialogDescription>Review evidence before saving. Pasted text is analyzed by AI; the raw thread is not saved. Only reviewed fields, selected meeting proposals and separately approved locations are saved. Nothing is sent, booked or enrolled in a cadence.</DialogDescription>
       </DialogHeader>
       <div className="space-y-2">
         <Textarea aria-label="Email thread" value={text} maxLength={30000} rows={4} disabled={!!busy} placeholder="Paste the email thread, including signatures and proposed meeting times…" onChange={event => {
@@ -180,13 +194,13 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
       </section>}
       {!!preview?.warnings.length && <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">{preview.warnings.map((warning, i) => <p key={i}>{warning}</p>)}</div>}
       {preview && <div className="space-y-4">
-        {!preview.contacts.length && !preview.meetingTimes.length && <div className="rounded-md border border-dashed p-5 text-center text-sm">No contacts or meeting proposals found. Add the signatures or surrounding replies and analyze again.</div>}
+         {!preview.contacts.length && !preview.meetingTimes.length && !preview.meetingLocations?.length && <div className="rounded-md border border-dashed p-5 text-center text-sm">No contacts or meeting proposals found. Add the signatures or surrounding replies and analyze again.</div>}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-xs font-medium">1. Choose participant to review
             <select aria-label="Participant to review" className="flex h-9 w-full rounded-md border bg-background px-2 text-sm" value={participant} disabled={!!busy} onChange={event => chooseParticipant(event.target.value)}>
               <option value="">Choose a participant</option>
               {preview.contacts.map((person, index) => <option key={index} value={String(index)}>{person.name || person.email || `Participant ${index + 1}`}{person.email ? ` · ${person.email}` : ""}</option>)}
-              {!!preview.meetingTimes.length && <option value="times-only">Meeting proposals only (no contact updates)</option>}
+               {(!!preview.meetingTimes.length || !!preview.meetingLocations?.length) && <option value="times-only">Meeting proposals only (no contact updates)</option>}
             </select>
           </label>
           <label className="space-y-1 text-xs font-medium">2. Save to campaign contact
@@ -224,8 +238,24 @@ export default function EmailThreadDialog({ open, onOpenChange, campaignId, scop
             <MeetingEvidence meeting={meeting} />
           </div>)}
         </section>}
+        {!!preview.meetingLocations?.length && <section aria-label="Meeting location update" className="space-y-2 rounded-md border p-3">
+          <h3 className="text-sm font-semibold">Update existing meeting location</h3>
+          <p className="text-xs text-muted-foreground">Separate opt-in. Only the location in Orbit changes; time, owner, stage, participants and notes stay unchanged. No calendar invitation is created, sent, changed or cancelled.</p>
+          {!current?.locationReview ? <p className="text-sm">{current?.locationUnavailable || "Select an existing campaign contact with a scheduled meeting. No booking will be created."}</p> : <>
+            <p className="text-sm">Current location: {current.locationReview.currentLocation || "Blank"}</p>
+            <label className="block text-xs">Proposed location
+              <select aria-label="Proposed meeting location" className="mt-1 w-full rounded-md border bg-background p-2" value={locationIndex} disabled={!!busy} onChange={event => { setLocationIndex(event.target.value); setLocationConfirmed(false); setConfirmed(false); }}>
+                <option value="">Do not update location</option>
+                {preview.meetingLocations.map((location, index) => <option key={index} value={String(index)} disabled={location.status !== "current" || !location.token}>{location.location} · {location.status}</option>)}
+              </select>
+            </label>
+            {selectedLocation && <blockquote className="border-l-2 pl-2 text-sm italic">“{selectedLocation.evidence}”</blockquote>}
+            <label className="flex items-start gap-2 text-xs"><Checkbox aria-label="Apply reviewed meeting location" checked={locationConfirmed} disabled={!!busy || !selectedLocation?.token} onCheckedChange={value => { setLocationConfirmed(value === true); setConfirmed(false); }} />Apply this reviewed location to this contact's existing campaign meeting</label>
+          </>}
+          <Button size="sm" variant="link" disabled={!!busy || !destination || destination === "new"} onClick={() => setRetry(value => value + 1)}>Refresh current meeting details</Button>
+        </section>}
         {issue && <p role="alert" className="text-xs text-destructive">{issue}</p>}
-        <label className="flex items-start gap-2 rounded-md border bg-muted/30 p-3 text-xs leading-relaxed"><Checkbox className="mt-0.5" aria-label="I reviewed the participant, target, fields and selected times" checked={confirmed} disabled={!!busy || !participant || !destination || currentLoading || !!currentError} onCheckedChange={value => setConfirmed(value === true)} /><span>I reviewed the participant, target, fields and selected times. I understand known values and opt-outs are preserved, and meeting proposals still require confirmation. This does not authorize outreach.</span></label>
+        <label className="flex items-start gap-2 rounded-md border bg-muted/30 p-3 text-xs leading-relaxed"><Checkbox className="mt-0.5" aria-label="I reviewed the participant, target, fields and selected times" checked={confirmed} disabled={!!busy || !participant || !destination || currentLoading || !!currentError} onCheckedChange={value => setConfirmed(value === true)} /><span>I reviewed the participant, target, fields, selected times and any separately approved location. I understand known contact values and opt-outs are preserved, and meeting time proposals still require confirmation. This does not authorize outreach or calendar delivery.</span></label>
       </div>}
       {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{error}</span><Button size="sm" variant="outline" disabled={preview ? !ready : !!busy || !text.trim()} onClick={preview ? save : parse}>Retry {preview ? "save" : "analysis"}</Button></div>}
       <DialogFooter className="gap-2">

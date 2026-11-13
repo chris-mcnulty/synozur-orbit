@@ -1,6 +1,8 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import { db } from "../db";
-import { marketingContacts, outreachCampaigns, prospects } from "@shared/schema";
+import { conferences, marketingContacts, outreachCampaigns, prospects } from "@shared/schema";
+import { meetingContactEditSchema } from "@shared/conference-meetings";
+import { signThreadMeetingReview, verifyThreadLocation } from "./email-thread-location";
 import { emailThreadSaveSchema, threadMeetingSchema, type ThreadContact, type ThreadMeeting } from "@shared/email-thread";
 import { EmailThreadError } from "./email-thread-parser";
 import { isValidLinkedInProfileUrl } from "@shared/linkedin-outreach";
@@ -50,16 +52,33 @@ export function mergeThreadMeetings(previous: ThreadMeeting[], incoming: ThreadM
   return { merged, added };
 }
 
-export async function emailThreadContact(tenantDomain: string, campaignId: string, prospectId: string) {
+export async function emailThreadContact(tenantDomain: string, campaignId: string, prospectId: string, marketId?: string, userId?: string) {
   const [row] = await db.select({ person: prospects, contact: marketingContacts }).from(prospects)
     .innerJoin(marketingContacts, and(eq(marketingContacts.id, prospects.contactId), eq(marketingContacts.tenantDomain, tenantDomain)))
     .where(and(eq(prospects.id, prospectId), eq(prospects.campaignId, campaignId), eq(prospects.tenantDomain, tenantDomain)));
   if (!row || row.person.removedAt) throw new EmailThreadError("Contact not found in this campaign.", 404);
-  return { contact: contactThreadDetails(row.contact), meetingTimes: savedThreadMeetings(row.person.signals) };
+  const result = { contact: contactThreadDetails(row.contact), meetingTimes: savedThreadMeetings(row.person.signals) };
+  if (!marketId || !userId) return result;
+  if (row.person.marketId && row.person.marketId !== marketId) throw new EmailThreadError("Contact not found in this market.", 404);
+  const [campaign] = await db.select().from(outreachCampaigns).where(and(eq(outreachCampaigns.id, campaignId), eq(outreachCampaigns.tenantDomain, tenantDomain)));
+  if (!campaign || (campaign.marketId && campaign.marketId !== marketId)) throw new EmailThreadError("Campaign not found.", 404);
+  if (!campaign.conferenceId || !row.person.meeting?.meetingAt || ["archived", "deleted"].includes(campaign.status)) {
+    return { ...result, locationUnavailable: "This contact has no existing scheduled meeting in this campaign. No booking will be created." };
+  }
+  const [conference] = await db.select().from(conferences).where(and(eq(conferences.id, campaign.conferenceId), eq(conferences.tenantDomain, tenantDomain)));
+  if (!conference || conference.status === "deleted" || (conference.marketId && conference.marketId !== marketId)) {
+    return { ...result, locationUnavailable: "The linked event is unavailable in this market. No meeting will be changed." };
+  }
+  const expiresAt = Date.now() + 15 * 60_000;
+  return { ...result, locationReview: {
+    currentLocation: row.person.meeting.meetingLocation || "", expiresAt,
+    token: signThreadMeetingReview({ tenantDomain, campaignId, marketId, userId }, prospectId, conference.id, row.person.meeting, expiresAt),
+  } };
 }
 
 export async function saveEmailThread(tenantDomain: string, marketId: string, userId: string, campaignId: string, input: unknown) {
   const value = emailThreadSaveSchema.parse(input);
+  if (value.locationUpdate && !value.prospectId) throw new EmailThreadError("Choose an existing campaign contact for a location update.");
   if (value.contact.email && !z.string().email().safeParse(value.contact.email).success) throw new EmailThreadError("Enter a valid email address.");
   if (value.contact.linkedinUrl && !isValidLinkedInProfileUrl(value.contact.linkedinUrl)) throw new EmailThreadError("Enter a valid LinkedIn person profile URL.");
   const incoming = { ...value.contact, email: value.contact.email.toLowerCase() };
@@ -90,6 +109,28 @@ export async function saveEmailThread(tenantDomain: string, marketId: string, us
       }
     }
     if (!contact) throw new EmailThreadError("The contact could not be saved. Please retry.", 409);
+    let meetingLocationSaved = false;
+    if (value.locationUpdate) {
+      if (membership?.marketId && membership.marketId !== marketId) throw new EmailThreadError("Contact not found in this market.", 404);
+      if (!membership?.meeting?.meetingAt || !campaign.conferenceId || ["archived", "deleted"].includes(campaign.status)) {
+        throw new EmailThreadError("No existing linked meeting is available. No booking was created.", 409);
+      }
+      const [conference] = await tx.select().from(conferences).where(and(eq(conferences.id, campaign.conferenceId), eq(conferences.tenantDomain, tenantDomain))).for("share");
+      if (!conference || conference.status === "deleted" || (conference.marketId && conference.marketId !== marketId)) throw new EmailThreadError("Event not found in this market.", 404);
+      const update = value.locationUpdate;
+      verifyThreadLocation({ tenantDomain, marketId, userId, campaignId }, update.suggestion, update.evidenceToken, update.reviewToken,
+        membership.id, conference.id, membership.meeting, update.expiresAt);
+      const location = meetingContactEditSchema.shape.meetingLocation.parse(update.suggestion.location);
+      if (location !== membership.meeting.meetingLocation) {
+        // The membership is locked and the signed full snapshot was verified.
+        // Only this JSONB key changes; calendar state and every other field remain untouched.
+        await tx.update(prospects).set({
+          meeting: sql`jsonb_set(${prospects.meeting}, '{meetingLocation}', ${JSON.stringify(location)}::jsonb)`,
+          updatedAt: new Date(),
+        }).where(and(eq(prospects.id, membership.id), eq(prospects.tenantDomain, tenantDomain), eq(prospects.campaignId, campaignId)));
+        meetingLocationSaved = true;
+      }
+    }
     const { changes, filledFields, skippedFields } = threadContactPatch(contactThreadDetails(contact), incoming, contact.emailOptOut);
     const patch: Partial<typeof marketingContacts.$inferInsert> = {};
     if (changes.name) { const [first, ...last] = changes.name.split(/\s+/); patch.firstName = first; patch.lastName = last.join(" ") || null; }
@@ -116,6 +157,6 @@ export async function saveEmailThread(tenantDomain: string, marketId: string, us
     if (times.added) await tx.update(prospects).set({
       signals: { ...membership.signals, emailThreadMeetingTimes: times.merged }, updatedAt: new Date(),
     }).where(and(eq(prospects.id, membership.id), eq(prospects.tenantDomain, tenantDomain)));
-    return { prospectId: membership.id, filledFields, skippedFields, meetingTimesSaved: times.added };
+    return { prospectId: membership.id, filledFields, skippedFields, meetingTimesSaved: times.added, meetingLocationSaved };
   });
 }
