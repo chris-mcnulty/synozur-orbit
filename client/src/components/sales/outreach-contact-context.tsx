@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PauseOutreachChoice } from "./pause-outreach-choice";
 import { History, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { messagingGroups, messagingGroupLabels, contactFamiliarities, familiarityLabels, externalActivitySchema, type ContactFamiliarity, type ExternalActivityInput } from "@shared/outreach-context";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,7 @@ function ActivityForm({ initial, busy, onSave, onCancel }: {
   initial: ExternalActivity | null; busy: boolean; onSave: (input: ExternalActivityInput) => Promise<void>; onCancel: () => void;
 }) {
   const [form, setForm] = useState(() => ({
+    pauseOutreach: false,
     direction: initial?.direction ?? "outbound",
     channel: initial?.channel ?? "email", sender: initial?.sender ?? "", occurredAt: localDate(initial?.occurredAt ?? new Date().toISOString()),
     message: initial?.message ?? "", reply: initial?.reply ?? "", outcome: initial?.outcome ?? "no_reply",
@@ -73,7 +75,7 @@ function ActivityForm({ initial, busy, onSave, onCancel }: {
     <fieldset disabled={busy} className="space-y-3">
       <label className="block space-y-1 text-xs font-medium">Direction<select className={selectClass} value={form.direction} onChange={e => {
         const direction = e.target.value as "outbound" | "inbound";
-        setForm({ ...form, direction, outcome: direction === "inbound" ? "replied" : "no_reply" });
+        setForm({ ...form, direction, pauseOutreach: false, outcome: direction === "inbound" ? "replied" : "no_reply" });
       }}><option value="outbound">Outbound · Contacted outside Orbit</option><option value="inbound">Inbound · Reply received</option></select></label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-xs font-medium">Channel<select className={selectClass} value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value as ExternalActivityInput["channel"] })}>{Object.entries(channelLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -87,6 +89,7 @@ function ActivityForm({ initial, busy, onSave, onCancel }: {
         <label className="space-y-1 text-xs font-medium">Follow-up reminder (optional)<Input type="datetime-local" value={form.followUpAt} onChange={(e) => setForm({ ...form, followUpAt: e.target.value })} /></label>
       </div>
       <p className="text-xs text-muted-foreground">A follow-up date is a reminder only. It never schedules or sends a message.</p>
+      {form.direction === "outbound" && <PauseOutreachChoice checked={form.pauseOutreach} onChange={pauseOutreach => setForm({ ...form, pauseOutreach })} />}
       <div className="flex gap-2"><Button type="submit" size="sm">{busy ? "Saving…" : "Save activity"}</Button><Button type="button" variant="outline" size="sm" onClick={onCancel}>Cancel</Button></div>
     </fieldset>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

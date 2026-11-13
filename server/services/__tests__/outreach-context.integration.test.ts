@@ -94,6 +94,33 @@ describe.skipIf(!process.env.DATABASE_URL)("external outreach persistence, route
     await expect(validateOutreachContext(tenant, p1, draft.snapshot)).rejects.toThrow(/changed/);
     expect((await request(app).patch(`${path()}/outreach-context`).send({ messagingGroup: null })).status).toBe(200);
   });
+  it("only pauses on explicit choice, across shared memberships, and never resumes on edit or delete", async () => {
+    const next = new Date(Date.now() + 3600000);
+    await db.update(prospects).set({ nextActionAt: next, status: "active" }).where(eq(prospects.tenantDomain, tenant));
+    const logged = await request(app).post(`${path()}/external-activities`).send(activity);
+    expect(logged.status).toBe(201);
+    expect((await getOutreachContext(tenant, p2)).hold).toBe(false);
+    const member = async (id: string) => (await db.select().from(prospects).where(eq(prospects.id, id)))[0];
+    expect((await member(p2)).nextActionAt).toEqual(next);
+    const paused = await request(app).post(`${path()}/external-activities`).send({ ...activity, pauseOutreach: true });
+    expect(paused.status).toBe(201);
+    expect((await getOutreachContext(tenant, p2)).hold).toBe(true);
+    expect((await member(p1)).nextActionAt).toBeNull();
+    expect((await member(p2)).nextActionAt).toBeNull();
+    expect((await member(p3)).nextActionAt).toEqual(next);
+    expect((await member(p2)).status).toBe("active");
+    expect((await request(app).post(`${path()}/external-activities`).send({ ...activity, pauseOutreach: false })).status).toBe(201);
+    expect((await request(app).patch(`${path()}/external-activities/${paused.body.id}`).send({ ...activity, pauseOutreach: false })).status).toBe(200);
+    expect((await request(app).delete(`${path()}/external-activities/${paused.body.id}`)).status).toBe(200);
+    expect((await getOutreachContext(tenant, p2)).hold).toBe(true);
+    expect((await member(p2)).nextActionAt).toBeNull();
+    await request(app).patch(`${path()}/outreach-context`).send({ hold: false });
+    expect((await request(app).patch(`${path()}/external-activities/missing`).send({ ...activity, pauseOutreach: true })).status).toBe(404);
+    expect((await getOutreachContext(tenant, p2)).hold).toBe(false);
+    expect((await request(app).patch(`${path()}/external-activities/${logged.body.id}`).send({ ...activity, pauseOutreach: true })).status).toBe(200);
+    expect((await getOutreachContext(tenant, p2)).hold).toBe(true);
+    await request(app).patch(`${path()}/outreach-context`).send({ hold: false });
+  });
   it("rejects cross-tenant reads/writes, reader writes and invalid future activity", async () => {
     auth.tenant = "other.invalid";
     expect((await request(app).get(`${path()}/outreach-context`)).status).toBe(404);

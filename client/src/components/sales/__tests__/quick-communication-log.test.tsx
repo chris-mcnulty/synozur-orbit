@@ -30,6 +30,25 @@ beforeEach(() => { request.mockImplementation(async () => ({ json: async () => c
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("quick external communication log", () => {
+  it.each([false, true])("saves the explicit pause choice: %s", async pause => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: /Log communication with/ }));
+    const checkbox = screen.getByRole("checkbox", { name: "Pause outreach for this shared contact" }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(screen.getByText(/across all campaigns in this workspace/)).toBeTruthy();
+    if (pause) fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Save communication" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith("POST", expect.stringContaining("external-activities"), expect.objectContaining({ pauseOutreach: pause })));
+  });
+  it("clears the pause choice when switching to a received reply", async () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: /Log communication with/ }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.change(screen.getByLabelText("Communication"), { target: { value: "inbound" } });
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save communication" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith("POST", expect.stringContaining("external-activities"), expect.objectContaining({ pauseOutreach: false, direction: "inbound" })));
+  });
   it("shows an editable local date outside optional details and preserves its timestamp", async () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: /Log communication with/ }));

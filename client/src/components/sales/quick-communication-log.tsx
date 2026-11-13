@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { outreachError, useOutreachActions } from "./use-outreach-context";
+import { PauseOutreachChoice } from "./pause-outreach-choice";
 
 type Direction = "outbound" | "inbound";
 export type ExternalActivitySummary = { direction: string; outcome: string; occurredAt: string };
@@ -19,6 +20,7 @@ const localNow = () => {
 export function communicationInput(form: {
   direction: Direction; channel: ExternalActivityInput["channel"]; occurredAt: string;
   sender: string; notes: string; outcome: ExternalActivityInput["outcome"];
+  pauseOutreach?: boolean;
 }) {
   return externalActivitySchema.parse({
     direction: form.direction, channel: form.channel,
@@ -27,6 +29,7 @@ export function communicationInput(form: {
       ? "Reply received outside Orbit; content not recorded."
       : "Message sent outside Orbit; content not recorded."),
     outcome: form.outcome, reply: "", followUpAt: null,
+    pauseOutreach: form.direction === "outbound" && form.pauseOutreach === true,
   });
 }
 
@@ -47,13 +50,14 @@ function CommunicationForm({ contact, senderName, onClose }: {
   const [occurredAt, setOccurredAt] = useState(localNow);
   const [sender, setSender] = useState(senderName);
   const [notes, setNotes] = useState("");
+  const [pauseOutreach, setPauseOutreach] = useState(false);
   const [outcome, setOutcome] = useState<ExternalActivityInput["outcome"]>("no_reply");
   const [error, setError] = useState("");
   return <form className="space-y-4" onSubmit={async event => {
     event.preventDefault();
     setError("");
     try {
-      const input = communicationInput({ direction, channel, occurredAt, sender, notes, outcome });
+      const input = communicationInput({ direction, channel, occurredAt, sender, notes, outcome, pauseOutreach });
       await activity.mutateAsync({ type: "save", input });
       onClose();
     } catch (err) {
@@ -67,6 +71,7 @@ function CommunicationForm({ contact, senderName, onClose }: {
         <select className={selectClass} value={direction} onChange={event => {
           const next = event.target.value as Direction;
           setDirection(next);
+          setPauseOutreach(false);
           setSender(next === "inbound" ? contact.name : senderName);
           setOutcome(next === "inbound" ? "replied" : "no_reply");
         }}>
@@ -94,8 +99,10 @@ function CommunicationForm({ contact, senderName, onClose }: {
           </select></label>
         </div>
       </details>
+      {direction === "outbound" && <PauseOutreachChoice checked={pauseOutreach} onChange={setPauseOutreach} />}
       <p className="text-xs leading-relaxed text-muted-foreground">{direction === "inbound" || ["replied", "meeting_agreed"].includes(outcome)
         ? "Records a reply and stops this contact’s cadence in this campaign."
+        : pauseOutreach ? "Records contact history and places the shared contact on hold across campaigns."
         : "Records contact history only. Does not start a cadence or mark an Orbit touch as sent."} Nothing is sent.</p>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit">{activity.isPending ? "Saving…" : "Save communication"}</Button></div>

@@ -26,6 +26,7 @@ export type SegmentBrief = z.infer<typeof segmentBriefSchema>;
 export const segmentBriefsSchema = z.array(segmentBriefSchema).max(4)
   .refine(rows => new Set(rows.map(r => r.group)).size === rows.length, "Each group must appear only once");
 export const externalActivitySchema = z.object({
+  pauseOutreach: z.boolean().optional(),
   direction: z.enum(["outbound", "inbound"]).default("outbound"),
   channel: z.enum(["email", "linkedin", "phone", "meeting", "other"]),
   occurredAt: z.string().datetime({ offset: true }).refine(s => Date.parse(s) <= Date.now(), "Activity cannot be in the future"),

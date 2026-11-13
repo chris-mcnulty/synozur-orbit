@@ -8,6 +8,11 @@ import { ContextError, getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
 import { getOutreachContext, outreachContextPerson, OutreachContextError } from "../services/outreach-context-service";
 
+async function setContactHold(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], tenantDomain: string, contactId: string, hold: boolean) {
+  await tx.update(marketingContacts).set({ outreachHold: hold }).where(and(eq(marketingContacts.id, contactId), eq(marketingContacts.tenantDomain, tenantDomain)));
+  if (hold) await tx.update(prospects).set({ nextActionAt: null }).where(and(eq(prospects.contactId, contactId), eq(prospects.tenantDomain, tenantDomain)));
+}
+
 export function registerOutreachContextRoutes(app: Express) {
   const handle = (write: boolean, fn: (req: Request, res: Response, ctx: Awaited<ReturnType<typeof getRequestContext>>) => Promise<unknown>) =>
     async (req: Request, res: Response) => {
@@ -35,8 +40,7 @@ export function registerOutreachContextRoutes(app: Express) {
     const row = await outreachContextPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     await db.transaction(async tx => {
       if (body.hold !== undefined) {
-        await tx.update(marketingContacts).set({ outreachHold: body.hold }).where(and(eq(marketingContacts.id, row.contact.id), eq(marketingContacts.tenantDomain, ctx.tenantDomain)));
-        if (body.hold) await tx.update(prospects).set({ nextActionAt: null }).where(and(eq(prospects.contactId, row.contact.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
+        await setContactHold(tx, ctx.tenantDomain, row.contact.id, body.hold);
       }
       if (body.messagingGroup !== undefined) await tx.update(prospects).set({ messagingGroup: body.messagingGroup }).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
       if (body.familiarity !== undefined) await tx.update(prospects).set({ familiarity: body.familiarity }).where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain)));
@@ -45,13 +49,14 @@ export function registerOutreachContextRoutes(app: Express) {
   }));
   const activityBase = `${base}/external-activities`;
   app.post(activityBase, handle(true, async (req, res, ctx) => {
-    const body = externalActivitySchema.parse(req.body);
+    const { pauseOutreach, ...body } = externalActivitySchema.parse(req.body);
     const row = await outreachContextPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     const created = await db.transaction(async tx => {
       const [entry] = await tx.insert(externalOutreachActivities).values({
         ...body, occurredAt: new Date(body.occurredAt), followUpAt: body.followUpAt ? new Date(body.followUpAt) : null,
         tenantDomain: ctx.tenantDomain, contactId: row.contact.id, campaignId: row.campaign.id, createdBy: ctx.userId,
       }).returning();
+      if (pauseOutreach) await setContactHold(tx, ctx.tenantDomain, row.contact.id, true);
       if (body.outcome === "replied" || body.outcome === "meeting_agreed") {
         await tx.update(prospects).set({ status: "replied", nextActionAt: null, updatedAt: new Date() })
           .where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain), isNull(prospects.removedAt)));
@@ -61,7 +66,7 @@ export function registerOutreachContextRoutes(app: Express) {
     res.status(201).json(created);
   }));
   app.patch(`${activityBase}/:activityId`, handle(true, async (req, res, ctx) => {
-    const body = externalActivitySchema.parse(req.body);
+    const { pauseOutreach, ...body } = externalActivitySchema.parse(req.body);
     const row = await outreachContextPerson(ctx.tenantDomain, req.params.id, ctx.marketId);
     const updated = await db.transaction(async tx => {
     const [entry] = await tx.update(externalOutreachActivities).set({
@@ -69,6 +74,7 @@ export function registerOutreachContextRoutes(app: Express) {
     }).where(and(eq(externalOutreachActivities.id, req.params.activityId), eq(externalOutreachActivities.tenantDomain, ctx.tenantDomain),
       eq(externalOutreachActivities.contactId, row.contact.id))).returning();
     if (!entry) throw new OutreachContextError("Activity not found.", 404);
+    if (pauseOutreach) await setContactHold(tx, ctx.tenantDomain, row.contact.id, true);
     if (body.outcome === "replied" || body.outcome === "meeting_agreed") {
       await tx.update(prospects).set({ status: "replied", nextActionAt: null, updatedAt: new Date() })
         .where(and(eq(prospects.id, row.person.id), eq(prospects.tenantDomain, ctx.tenantDomain), isNull(prospects.removedAt)));
