@@ -26,6 +26,7 @@ const terminalStatuses = new Set(["disqualified", "unsubscribed", "bounced", "re
 export function buildOutreachWorkspace(
   campaign: { name: string; status: string; salesGoal: string | null; conferenceId: string | null },
   inputPeople: WorkspacePerson[], touches: WorkspaceTouch[], activities: WorkspaceActivity[], now = new Date(),
+  sharedActivities: WorkspaceActivity[] = activities,
 ) {
   const people = inputPeople.filter(p => !p.removedAt);
   const ids = new Set(people.map(p => p.id));
@@ -34,7 +35,7 @@ export function buildOutreachWorkspace(
   for (const t of activeTouches) byPerson.set(t.prospectId, [...(byPerson.get(t.prospectId) ?? []), t]);
   const latestActivity = new Map<string, WorkspaceActivity>();
   const externalReplies = new Set<string>();
-  for (const a of activities) {
+  for (const a of sharedActivities) {
     if (a.direction === "inbound" || ["replied", "meeting_agreed"].includes(a.outcome)) externalReplies.add(a.contactId);
     const previous = latestActivity.get(a.contactId);
     if (!previous || a.occurredAt > previous.occurredAt) latestActivity.set(a.contactId, a);
@@ -46,16 +47,22 @@ export function buildOutreachWorkspace(
   for (const p of people) {
     const history = byPerson.get(p.id) ?? [];
     const external = latestActivity.get(p.contactId);
-    const replied = p.status === "replied" || history.some(t => t.status === "replied") ||
-      externalReplies.has(p.contactId);
-    if (replied) counts.replied++;
+    const campaignHistory = activities.filter(a => a.contactId === p.contactId);
+    const campaignExternal = campaignHistory.reduce<WorkspaceActivity | undefined>(
+      (latest, a) => !latest || a.occurredAt > latest.occurredAt ? a : latest, undefined);
+    const internalReply = p.status === "replied" || history.some(t => t.status === "replied");
+    const campaignReplied = internalReply || campaignHistory.some(a =>
+      a.direction === "inbound" || ["replied", "meeting_agreed"].includes(a.outcome));
+    const replied = internalReply || externalReplies.has(p.contactId);
+    if (campaignReplied) counts.replied++;
     const held = p.outreachHold || p.emailOptOut || p.meeting?.stage === "do_not_contact";
     if (held) counts.held++;
     const stopped = held || terminalStatuses.has(p.status) || blockedStages.has(p.meeting?.stage ?? "");
     // Replies stop automated cadence; only a separately recorded follow-up remains actionable.
     const due = external?.followUpAt ?? (!replied && !stopped ? p.nextActionAt : null);
     const overdue = !!due && due.getTime() < now.getTime() && !stopped;
-    if (overdue) counts.overdue++;
+    const campaignDue = campaignExternal?.followUpAt ?? (!campaignReplied && !stopped ? p.nextActionAt : null);
+    if (campaignDue && campaignDue.getTime() < now.getTime() && !stopped) counts.overdue++;
     const add = (action: CampaignNextStep["action"], priority: CampaignNextStep["priority"], title: string, reason: string, touch?: WorkspaceTouch) => {
       items.push({ id: `${p.id}:${touch?.id ?? title}`, prospectId: p.id, prospectName: p.name,
         companyName: p.companyName, action, priority, title, reason, ...(touch ? { touchId: touch.id } : {}), dueAt: due?.toISOString() ?? null });
@@ -93,7 +100,7 @@ export function buildOutreachWorkspace(
     `${counts.contacts} active campaign contacts; ${counts.pendingDrafts} pending drafts; ${counts.sent} Orbit messages recorded as sent; ${counts.replied} contacts with recorded replies.`,
     `${counts.held} contacts have outreach restrictions. ${counts.overdue} contacts have overdue follow-ups.`,
     items.length ? `Next priorities:\n${items.slice(0, 5).map(s => `• ${s.prospectName}: ${s.title} (${s.priority}).`).join("\n")}` : "No actionable next steps were identified from the current records.",
-    "Based on current Orbit records, not a live mailbox check. Approved drafts are not counted as sent. Counts exclude removed contacts; replies include campaign-scoped external communications.",
+    "Based on current Orbit records, not a live mailbox check. Approved drafts are not counted as sent. Counts exclude removed contacts; replies include campaign-scoped external communications. Recommendations also consider shared-contact communications across campaigns within this tenant.",
   ].join("\n\n");
   return { generatedAt, items, summary, counts, nextSteps: items };
 }

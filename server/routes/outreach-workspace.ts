@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { ContextError, getRequestContext } from "../context";
 import { guardFeature } from "./helpers";
@@ -18,7 +18,7 @@ export function registerOutreachWorkspaceRoutes(app: Express) {
         if (!campaign || (campaign.marketId && campaign.marketId !== ctx.marketId)) {
           return res.status(404).json({ error: "Campaign not found" });
         }
-        const [rows, touches, activities] = await Promise.all([
+        const [rows, touches] = await Promise.all([
           db.select({ person: prospects, firstName: marketingContacts.firstName, lastName: marketingContacts.lastName,
             email: marketingContacts.email, companyName: marketingContacts.company,
             outreachHold: marketingContacts.outreachHold, emailOptOut: marketingContacts.emailOptOut })
@@ -27,14 +27,21 @@ export function registerOutreachWorkspaceRoutes(app: Express) {
           db.select({ id: outreachTouches.id, prospectId: outreachTouches.prospectId, status: outreachTouches.status,
             generatedAt: outreachTouches.generatedAt, sentAt: outreachTouches.sentAt }).from(outreachTouches)
             .where(and(eq(outreachTouches.campaignId, campaign.id), eq(outreachTouches.tenantDomain, ctx.tenantDomain))),
-          db.select({ contactId: externalOutreachActivities.contactId, direction: externalOutreachActivities.direction,
+        ]);
+        const contactIds = [...new Set(rows.map(row => row.person.contactId))];
+        // Shared contacts retain their conversation history across campaigns, but
+        // only the active campaign's contacts and tenant may inform this workspace.
+        const activities = contactIds.length ? await db.select({
+            campaignId: externalOutreachActivities.campaignId,
+            contactId: externalOutreachActivities.contactId, direction: externalOutreachActivities.direction,
             outcome: externalOutreachActivities.outcome, occurredAt: externalOutreachActivities.occurredAt,
             followUpAt: externalOutreachActivities.followUpAt }).from(externalOutreachActivities)
-            .where(and(eq(externalOutreachActivities.campaignId, campaign.id), eq(externalOutreachActivities.tenantDomain, ctx.tenantDomain))),
-        ]);
+            .where(and(inArray(externalOutreachActivities.contactId, contactIds),
+              eq(externalOutreachActivities.tenantDomain, ctx.tenantDomain))) : [];
         const people = rows.map(({ person, ...contact }) => ({ ...person, ...contact,
           name: [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email || "Unnamed contact" }));
-        const result = buildOutreachWorkspace(campaign, people, touches, activities);
+        const result = buildOutreachWorkspace(campaign, people, touches,
+          activities.filter(activity => activity.campaignId === campaign.id), new Date(), activities);
         res.setHeader("Cache-Control", "no-store");
         res.json(path === "summary" ? result : { generatedAt: result.generatedAt, items: result.items });
       } catch (error) {

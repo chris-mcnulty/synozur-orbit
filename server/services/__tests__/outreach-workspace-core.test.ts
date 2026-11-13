@@ -70,6 +70,25 @@ describe("campaign next steps and factual summary", () => {
     expect(result.generatedAt).toBe(now.toISOString());
     expect(result.summary).toContain("Book meetings");
   });
+  it.each(["inbound", "outbound"])("uses shared %s history for recommendations but keeps campaign counts", direction => {
+    const shared = [{ contactId: "contact-a", direction, outcome: direction === "inbound" ? "replied" : "no_reply",
+      occurredAt: before, followUpAt: before }];
+    const result = buildOutreachWorkspace(campaign, [person("a", { status: "researched" })], [], [], now, shared);
+    expect(result.items.every(i => i.action === "review_history")).toBe(true);
+    expect(result.items.some(i => i.title === "Review overdue follow-up")).toBe(true);
+    expect(result.counts).toEqual({ contacts: 1, pendingDrafts: 0, sent: 0, replied: 0, held: 0, overdue: 0 });
+  });
+  it("does not let unrelated contact history suppress a fresh recommendation", () => {
+    const result = buildOutreachWorkspace(campaign, [person("a", { status: "researched" })], [], [], now,
+      [{ contactId: "contact-other", direction: "inbound", outcome: "replied", occurredAt: before, followUpAt: before }]);
+    expect(result.items.map(i => i.action)).toEqual(["compose"]);
+  });
+  it("preserves campaign follow-up counts when shared replies change the recommended action", () => {
+    const result = buildOutreachWorkspace(campaign, [person("a", { nextActionAt: before })], [touch("a")], [], now,
+      [{ contactId: "contact-a", direction: "inbound", outcome: "replied", occurredAt: before, followUpAt: null }]);
+    expect(result.counts).toMatchObject({ pendingDrafts: 1, replied: 0, overdue: 1 });
+    expect(result.items.map(i => i.action)).toEqual(["review_draft", "review_history"]);
+  });
 });
 describe("classification at contact creation", () => {
   it("inserts personal tags, relationship, priority and familiarity together", () => {

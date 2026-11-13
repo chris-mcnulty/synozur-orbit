@@ -23,14 +23,14 @@ beforeEach(() => {
 });
 const campaign = { id: "campaign", tenantDomain: "tenant-a", marketId: "market-a", status: "active", name: "Test campaign", salesGoal: null, conferenceId: null };
 describe("campaign workspace routes", () => {
-  it.each(["next-steps", "summary"])("scopes every %s query to campaign and tenant", async path => {
+  it.each(["next-steps", "summary"])("scopes empty-campaign %s queries and skips shared history", async path => {
     mocks.rows.push([campaign], [], [], []);
     const result = path === "summary"
       ? await request(app).post(`/api/sales-outreach/campaigns/campaign/${path}`).send({})
       : await request(app).get(`/api/sales-outreach/campaigns/campaign/${path}`);
     expect(result.status).toBe(200);
     expect(result.headers["cache-control"]).toBe("no-store");
-    expect(mocks.filters).toHaveLength(4);
+    expect(mocks.filters).toHaveLength(3);
     for (const filter of mocks.filters) {
       const compiled = new PgDialect().sqlToQuery(filter as any);
       expect(compiled.params).toContain("tenant-a");
@@ -38,6 +38,34 @@ describe("campaign workspace routes", () => {
     }
     if (path === "summary") expect(result.body.summary).toContain("0 active campaign contacts");
     else expect(result.body.items).toEqual([]);
+  });
+  it.each(["next-steps", "summary"])("%s considers campaign A history for a shared contact in campaign B without changing counts", async path => {
+    const person = { id: "prospect-b", contactId: "shared-contact", status: "researched",
+      researchDossier: "Research", nextActionAt: null, classification: null, meeting: null, removedAt: null };
+    mocks.rows.push([campaign], [{ person, firstName: "Shared", lastName: "Contact",
+      companyName: null, outreachHold: false, emailOptOut: false }], [], [{
+      campaignId: "campaign-a", contactId: "shared-contact", direction: "inbound",
+      outcome: "replied", occurredAt: new Date("2026-01-01"), followUpAt: new Date("2026-01-02"),
+    }]);
+    const result = path === "summary"
+      ? await request(app).post("/api/sales-outreach/campaigns/campaign/summary").send({})
+      : await request(app).get("/api/sales-outreach/campaigns/campaign/next-steps");
+    expect(result.status).toBe(200);
+    expect(result.body.items.length).toBeGreaterThan(0);
+    expect(result.body.items.every((item: any) => item.action === "review_history")).toBe(true);
+    expect(result.body.items.some((item: any) => item.title === "Review contact response")).toBe(true);
+    if (path === "summary") {
+      expect(result.body.counts).toMatchObject({ contacts: 1, pendingDrafts: 0, sent: 0, replied: 0, overdue: 0 });
+    }
+    const compiled = mocks.filters.map(filter => new PgDialect().sqlToQuery(filter as any));
+    for (const query of compiled) expect(query.params).toContain("tenant-a");
+    for (const query of compiled.slice(0, 3)) expect(query.params).toContain("campaign");
+    // The actual SQL must exclude foreign tenants and unrelated contacts, without
+    // restricting shared conversation history to the campaign being viewed.
+    expect(compiled[3].sql).toContain('"external_outreach_activities"."tenant_domain" =');
+    expect(compiled[3].sql).toContain('"external_outreach_activities"."contact_id" in');
+    expect(compiled[3].params).toEqual(["shared-contact", "tenant-a"]);
+    expect(compiled[3].sql).not.toContain('"campaign_id"');
   });
   it("rejects a campaign in another market before loading its contacts", async () => {
     mocks.rows.push([{ ...campaign, marketId: "other" }]);
