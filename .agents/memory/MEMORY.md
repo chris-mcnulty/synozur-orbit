@@ -1,5 +1,6 @@
 - [Outreach draft boundaries](outreach-draft-boundaries.md) — refusals and sender clarification questions are operator-only, never prospect email drafts.
 - [Contact row editing](contact-row-edit-placement.md) — Edit must remain directly on the contact row, never hidden inside the ellipsis menu.
+- [Outreach workspace navigation](outreach-workspace-navigation.md) — keep overview, prospects, meetings, setup and pending work separate; never grow another long stacked campaign page.
 - [Campaign statistics scope](campaign-stats-membership-scope.md) — exclude archived/removed/deleted contacts from all campaign performance calculations, including rate denominators.
 - [Meeting snapshot fingerprints](meeting-snapshot-fingerprints.md) — JSONB key reordering must not invalidate unchanged reviews; retain compatibility with issued fingerprints.
 - [Outreach discovery company scope](outreach-discovery-company-scope.md) — explicit company filters restrict one search; campaign named-account seeds retain separate similarity behavior.
@@ -47,6 +48,7 @@
 - [Editorial calendar schedule/push + Planner naming](editorial-calendar-distribution.md) — "Schedule briefs" = one dialog, preview vs commit via planDistribution; "Planner" = internal Marketing Planner that syncs to Microsoft Planner; brief derivatives land undated in backlog.
 - [Push-to-Planner idempotency](push-to-planner-idempotency.md) — push uses marketing_tasks.source_brief_id; any brief-keyed task read MUST join marketing_plans + filter tenant_domain (not source_brief_id alone).
 - [Typecheck baseline](typecheck-baseline.md) — `npm run check` is now CLEAN (Aug 2026); the old marketing-saturn "baseline" errors were a real prod bug since fixed. Treat any tsc error as a regression.
+- [Verification resource contention](verification-resource-contention.md) — full Vitest plus parallel typechecking can time out unrelated tests; verify affected files alone before changing code.
 - [Website import enrichment](website-import-enrichment.md) — MCP returns heroImageUrl not leadImageUrl; imports must set image+Blog Post category+async summary; res.json counters outside try; never trust client existingId.
 - [Post lifecycle stage badge](post-lifecycle-stage-badge.md) — getPostStage()+PostStageBadge collapse raw post status into one stage label; precedence posted>rejected>failed>exported>ready>draft; reuse for any post-list surface.
 - [App pages need AppLayout wrapper](app-page-layout-wrapper.md) — pages under /app must wrap JSX in <AppLayout> or they render with no nav menu; routes in App.tsx don't add the shell.

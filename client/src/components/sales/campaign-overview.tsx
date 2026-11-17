@@ -41,11 +41,12 @@ function MeetingRow({ meeting, onOpenMeeting }: { meeting: CampaignMeeting; onOp
   </li>;
 }
 
-export default function CampaignOverview({ campaignId, scope, onOpenMeeting }: {
+export default function CampaignOverview({ campaignId, scope, onOpenMeeting, view = "combined" }: {
   campaignId: string;
   scope: string;
   onOpenMeeting: (prospectId: string) => void;
   onOpenHistory?: (prospectId: string) => void;
+  view?: "combined" | "metrics" | "meetings";
 }) {
   const query = useQuery<CampaignWorkspace>({
     queryKey: campaignWorkspaceKey(campaignId, scope),
@@ -67,23 +68,26 @@ export default function CampaignOverview({ campaignId, scope, onOpenMeeting }: {
     ["Agreed · scheduling needed", counts.agreedMeetings],
   ] as const : [];
 
-  return <section aria-label="Campaign overview" className="space-y-3 rounded-lg border bg-card p-4">
+  const showMetrics = view !== "meetings";
+  const showMeetings = view !== "metrics";
+
+  return <section aria-label={view === "meetings" ? "Campaign meetings" : "Campaign overview"} className="space-y-3 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-start justify-between gap-2">
-      <div><h2 className="text-sm font-semibold">Campaign overview</h2><p className="mt-1 text-xs text-muted-foreground">Communicated contacts are distinct people with an actual sent or logged conversation. External activity is campaign-attributed, not a live mailbox scan.</p></div>
+      <div><h2 className="text-sm font-semibold">{view === "meetings" ? "Meetings" : "Campaign overview"}</h2><p className="mt-1 text-xs text-muted-foreground">{view === "meetings" ? "Booked and agreed meetings across this campaign." : "Communicated contacts are distinct people with an actual sent or logged conversation. External activity is campaign-attributed, not a live mailbox scan."}</p></div>
       <Button size="sm" variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw className="mr-1 h-3 w-3" />Refresh</Button>
     </div>
     {query.isLoading ? <div className="grid animate-pulse grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" aria-label="Loading campaign overview">{Array.from({ length: 8 }, (_, index) => <div key={index} className="h-14 rounded-md bg-muted" />)}</div>
       : query.isError ? <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 p-3 text-sm"><p role="alert">Campaign activity could not be loaded.</p><Button variant="outline" size="sm" onClick={() => void query.refetch()}>Retry</Button></div>
-      : counts && <><dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+      : counts && <>{showMetrics && <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {metrics.map(([label, value]) => <div key={label} className="min-w-0 rounded-md border bg-muted/20 px-3 py-2">
           <dd className="text-lg font-semibold tabular-nums leading-tight">{value}</dd><dt className="mt-1 text-[11px] leading-snug text-muted-foreground">{label}</dt>
         </div>)}
-      </dl>
-      {meetings.length ? <div className="border-t pt-3">
+      </dl>}
+      {showMeetings && (meetings.length ? <div className="border-t pt-3">
         <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><CalendarClock className="h-4 w-4 text-muted-foreground" />Meetings <span className="text-xs font-normal text-muted-foreground">{meetings.length} shared meeting{meetings.length === 1 ? "" : "s"}</span></h3>
         <ul className="space-y-2">{meetings.map(meeting => <MeetingRow key={meeting.id} meeting={meeting} onOpenMeeting={onOpenMeeting} />)}</ul>
-      </div> : <div className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">No booked or agreed meetings are recorded for this campaign.</div>}
-      <p className="text-[11px] text-muted-foreground">Distinct contacts are counted once. Shared meetings appear once, even when several contacts are attending.</p>
+      </div> : <div className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">No booked or agreed meetings are recorded for this campaign.</div>)}
+      {showMetrics && <p className="text-[11px] text-muted-foreground">Distinct contacts are counted once. Shared meetings appear once, even when several contacts are attending.</p>}
       </>}
   </section>;
 }

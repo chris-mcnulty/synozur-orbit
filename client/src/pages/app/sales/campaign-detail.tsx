@@ -4,6 +4,7 @@ import SavedOutreachDrafts from "@/components/sales/saved-outreach-drafts";
 import NewProspectClassification, { newProspectClassificationPayload, type NewProspectClassificationValue } from "@/components/sales/new-prospect-classification";
 import CampaignNextSteps, { CampaignSummary, useCampaignSnapshotInvalidation, type CampaignNextStep } from "@/components/sales/campaign-next-steps";
 import CampaignOverview from "@/components/sales/campaign-overview";
+import CampaignWorkspaceTabs, { type CampaignWorkspaceTab } from "@/components/sales/campaign-workspace-tabs";
 import CampaignContactActions from "@/components/sales/campaign-contact-actions";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -42,6 +43,7 @@ import {
 import AppLayout from "@/components/layout/AppLayout";
 import ConferenceMeetings from "@/components/sales/conference-meetings";
 import OutreachContactContext from "@/components/sales/outreach-contact-context";
+import NewProspectDialog from "@/components/sales/new-prospect-dialog";
 import QuickCommunicationLog, { ExternalCommunicationBadge, type ExternalActivitySummary } from "@/components/sales/quick-communication-log";
 import BulkMessagingEditor from "@/components/sales/bulk-messaging-editor";
 import BulkCampaignRemoval from "@/components/sales/bulk-campaign-removal";
@@ -549,7 +551,7 @@ export default function OutreachCampaignDetailPage() {
   const queryClient = useQueryClient();
   const { user } = useUser();
   const [adding, setAdding] = useState(false);
-  const [campaignTab, setCampaignTab] = useState<"contacts" | "next-steps">("contacts");
+  const [campaignTab, setCampaignTab] = useState<CampaignWorkspaceTab>("prospects");
   const [newClassification, setNewClassification] = useState<NewProspectClassificationValue>({});
   const [meetingContact, setMeetingContact] = useState<{ campaignId: string; contactId: string } | null>(null);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -1017,6 +1019,11 @@ export default function OutreachCampaignDetailPage() {
     },
     onError: (err: any) => toast({ title: "Couldn't add prospect", description: err?.message, variant: "destructive" }),
   });
+
+  function openAddProspect() {
+    addProspect.reset();
+    setAdding(true);
+  }
 
   const research = useMutation({
     mutationFn: async (prospectId: string) => {
@@ -1522,11 +1529,6 @@ export default function OutreachCampaignDetailPage() {
               </Button>
             )}
             {canEdit && (
-              <Button variant="outline" size="sm" onClick={openEdit} data-testid="button-edit-campaign">
-                <Pencil className="w-4 h-4 mr-1.5" /> Edit campaign
-              </Button>
-            )}
-            {canEdit && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="icon" data-testid="button-campaign-detail-menu">
@@ -1557,17 +1559,17 @@ export default function OutreachCampaignDetailPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button variant="ghost" size="sm" onClick={() => tick.mutate()} disabled={tick.isPending} data-testid="button-refresh-cadence">
+            <Button variant="ghost" size="sm" hidden={campaignTab !== "prospects"} onClick={() => tick.mutate()} disabled={tick.isPending} data-testid="button-refresh-cadence">
               {tick.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1.5" />}
               Refresh cadence
             </Button>
             {discoveryStatus?.backends?.some((b: DiscoveryBackend) => b.available) && (
-              <Button size="sm" variant="outline" onClick={openDiscovery} disabled={discover.isPending} data-testid="button-discover-prospects">
+              <Button size="sm" variant="outline" hidden={campaignTab !== "prospects"} onClick={openDiscovery} disabled={discover.isPending} data-testid="button-discover-prospects">
                 {discover.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Radar className="w-4 h-4 mr-1.5" />}
                 Discover prospects
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={openHubspotDialog} data-testid="button-import-hubspot">
+            <Button size="sm" variant="outline" hidden={campaignTab !== "prospects"} onClick={openHubspotDialog} data-testid="button-import-hubspot">
               <Download className="w-4 h-4 mr-1.5" />
               Import from HubSpot
             </Button>
@@ -1579,22 +1581,22 @@ export default function OutreachCampaignDetailPage() {
               onChange={onCsvFileChange}
               data-testid="input-import-csv-prospects"
             />
-            <Button size="sm" variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects">
+            <Button size="sm" variant="outline" hidden={campaignTab !== "prospects"} onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects">
               <Upload className="w-4 h-4 mr-1.5" />
               Import from CSV
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setPasteContactsOpen(true)} data-testid="button-paste-contacts">
+            <Button size="sm" variant="outline" hidden={campaignTab !== "prospects"} onClick={() => setPasteContactsOpen(true)} data-testid="button-paste-contacts">
               <Sparkles className="w-4 h-4 mr-1.5" />
               Paste contacts
             </Button>
-            <Button size="sm" disabled={!canEditOutreach} onClick={() => { setCampaignTab("contacts"); setAdding((v) => !v); }} data-testid="button-add-prospect">
+            <Button size="sm" disabled={!canEditOutreach} onClick={openAddProspect} data-testid="button-add-prospect">
               <UserPlus className="w-4 h-4 mr-1.5" /> Add prospect
             </Button>
-            {canEditOutreach && <Button size="sm" variant="outline" onClick={() => setEmailThreadEntry({ scope: composeScope })} data-testid="button-paste-email-thread"><Mail className="mr-1.5 h-4 w-4" />Paste email thread</Button>}
+            {canEditOutreach && <Button size="sm" variant="outline" hidden={campaignTab !== "prospects"} onClick={() => setEmailThreadEntry({ scope: composeScope })} data-testid="button-paste-email-thread"><Mail className="mr-1.5 h-4 w-4" />Paste email thread</Button>}
           </div>
         </div>
 
-        {clarifications.records.length > 0 && (
+        {campaignTab === "prospects" && clarifications.records.length > 0 && (
           <section className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3" aria-label="Drafts waiting for your input" data-testid="compose-clarification-reminders">
             <p className="text-sm font-medium">Drafting needs your input</p>
             {clarifications.records.map(([key, recovery]) => (
@@ -1607,7 +1609,7 @@ export default function OutreachCampaignDetailPage() {
           </section>
         )}
 
-        {outreachBlocked && <section role="alert" className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+        {campaignTab === "prospects" && outreachBlocked && <section role="alert" className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
           <p className="text-sm font-medium">{outreachBlocked.vars.prospect.name}: {outreachBlocked.message}</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => setHistoryContact(outreachBlocked.vars.prospect)}>History & hold</Button>
@@ -1615,25 +1617,28 @@ export default function OutreachCampaignDetailPage() {
             <Button size="sm" variant="ghost" onClick={() => setOutreachBlocked(null)}>Dismiss</Button>
           </div>
         </section>}
-        <nav className="flex gap-1 border-b" aria-label="Campaign navigation">
-          <Button variant="ghost" className={`rounded-none border-b-2 ${campaignTab === "contacts" ? "border-primary text-primary" : "border-transparent"}`} aria-current={campaignTab === "contacts" ? "page" : undefined} onClick={() => setCampaignTab("contacts")}>Contacts</Button>
-          <Button variant="ghost" className={`rounded-none border-b-2 ${campaignTab === "next-steps" ? "border-primary text-primary" : "border-transparent"}`} aria-current={campaignTab === "next-steps" ? "page" : undefined} onClick={() => setCampaignTab("next-steps")}>Next Steps</Button>
-        </nav>
-        <CampaignOverview key={`overview:${composeScope}`} campaignId={id} scope={composeScope}
+        <CampaignWorkspaceTabs value={campaignTab} onChange={setCampaignTab} />
+        <section id="campaign-panel-overview" role="tabpanel" aria-labelledby="campaign-tab-overview" hidden={campaignTab !== "overview"} className="space-y-4">
+        <CampaignOverview key={`overview:${composeScope}`} campaignId={id} scope={composeScope} view="metrics"
           onOpenMeeting={prospectId => {
             const person = prospects.find(contact => contact.id === prospectId);
             if (!person) { toast({ title: "Contact no longer available", description: "Refresh the campaign to see the latest contacts." }); return; }
-            if (campaign.conferenceId) setMeetingContact({ campaignId: campaign.id, contactId: person.id });
+            if (campaign.conferenceId) {
+              setCampaignTab("meetings");
+              setMeetingContact({ campaignId: campaign.id, contactId: person.id });
+            }
             else setHistoryContact(person);
           }} />
         <CampaignSummary key={composeScope} campaignId={id} scope={composeScope} canGenerate={canEditOutreach || canEdit} />
-        {campaignTab === "next-steps" && <CampaignNextSteps key={composeScope} campaignId={id} scope={composeScope} canEdit={canEditOutreach}
+        </section>
+        <section id="campaign-panel-next-steps" role="tabpanel" aria-labelledby="campaign-tab-next-steps" hidden={campaignTab !== "next-steps"} className="space-y-4">
+        <CampaignNextSteps key={composeScope} campaignId={id} scope={composeScope} canEdit={canEditOutreach}
           busy={compose.isPending || research.isPending} onAction={(item: CampaignNextStep) => {
             const person = prospects.find(p => p.id === item.prospectId);
             if (!person) { toast({ title: "Contact no longer available", description: "Refresh the campaign to see the latest contacts." }); return; }
             if (item.action === "review_history") { setHistoryContact(person); return; }
             if (item.action === "meeting") {
-              setCampaignTab("contacts");
+              setCampaignTab("meetings");
               setMeetingContact({ campaignId: campaign.id, contactId: person.id });
               return;
             }
@@ -1641,16 +1646,51 @@ export default function OutreachCampaignDetailPage() {
             if (item.action === "review_draft") setSavedDraftContact({ person, scope: composeScope, draftId: item.touchId });
             else if (item.action === "research") research.mutate(person.id);
             else if (item.action === "compose") compose.mutate({ prospect: person, channel: composeChannels.includes("email") ? "email" : "linkedin", intent: "outreach" });
-          }} />}
-        <div className={campaignTab === "contacts" ? "space-y-4" : "hidden"}>
+          }} />
+        </section>
+        <section id="campaign-panel-setup" role="tabpanel" aria-labelledby="campaign-tab-setup" hidden={campaignTab !== "setup"} className="space-y-4">
+        {canEdit && <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={openEdit} data-testid="button-edit-campaign"><Pencil className="mr-1.5 h-4 w-4" />Edit campaign configuration</Button>
+        </div>}
         <CampaignMessagingBriefs campaignId={campaign.id} canEdit={canEditOutreach} />
-        {campaign.conferenceId ? (
+        {!campaign.conferenceId && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/30 px-4 py-3 text-sm">
+            <p className="text-muted-foreground">Link an event to this campaign to prepare shared presence, relationship notes, and meeting briefs here.</p>
+            {canEdit && <Button variant="outline" size="sm" onClick={openEdit}><CalendarDays className="mr-2 h-4 w-4" />Link an event</Button>}
+          </div>
+        )}
+        </section>
+        <section id="campaign-panel-meetings" role="tabpanel" aria-labelledby="campaign-tab-meetings" hidden={campaignTab !== "meetings"} className="space-y-4">
+          <CampaignOverview key={`meetings:${composeScope}`} campaignId={id} scope={composeScope} view="meetings"
+            onOpenMeeting={prospectId => {
+              const person = prospects.find(contact => contact.id === prospectId);
+              if (!person) { toast({ title: "Contact no longer available", description: "Refresh the campaign to see the latest contacts." }); return; }
+              if (campaign.conferenceId) setMeetingContact({ campaignId: campaign.id, contactId: person.id });
+              else setHistoryContact(person);
+            }} />
+          {!campaign.conferenceId && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/30 px-4 py-3 text-sm">
+              <p className="text-muted-foreground">Meeting prep and event contacts appear here after an event is linked.</p>
+              <Button variant="outline" size="sm" onClick={() => setCampaignTab("setup")}><CalendarDays className="mr-2 h-4 w-4" />Go to Setup</Button>
+            </div>
+          )}
+        </section>
+        {campaign.conferenceId && <section
+          id="conference-meeting-workspace"
+          aria-labelledby={campaignTab === "setup" ? "campaign-tab-setup" : "campaign-tab-meetings"}
+          hidden={campaignTab !== "setup" && campaignTab !== "meetings"}
+          className="space-y-4"
+        >
           <ConferenceMeetings
             key={campaign.id}
             campaignId={campaign.id}
+            presentation={campaignTab === "setup" ? "setup" : "meetings"}
             canEditOutreach={canEditOutreach}
             selectedContactId={meetingContact?.campaignId === campaign.id ? meetingContact.contactId : null}
-            onSelectedContactChange={(contactId) => setMeetingContact(contactId ? { campaignId: campaign.id, contactId } : null)}
+            onSelectedContactChange={(contactId) => {
+              if (contactId) setCampaignTab("meetings");
+              setMeetingContact(contactId ? { campaignId: campaign.id, contactId } : null);
+            }}
             onDraftCreated={(result) => {
               const composed = result as { touch: Touch; prospect: Prospect };
               setMeetingContact(null);
@@ -1659,38 +1699,8 @@ export default function OutreachCampaignDetailPage() {
               toast({ title: "Pending draft created", description: "Review it before any approval or send." });
             }}
           />
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/30 px-4 py-3 text-sm">
-            <p className="text-muted-foreground">Link an event to this campaign to prepare shared presence, relationship notes, and meeting briefs here.</p>
-            {canEdit && <Button variant="outline" size="sm" onClick={openEdit}><CalendarDays className="mr-2 h-4 w-4" />Link an event</Button>}
-          </div>
-        )}
-
-        {adding && (
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">New prospect</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">Name and email are optional individually; enter at least one. Add any other details you have.</p>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="space-y-1"><Label htmlFor="p-name">Name <span className="text-muted-foreground">(optional)</span></Label><Input id="p-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-prospect-name" /></div>
-                <div className="space-y-1"><Label htmlFor="p-title">Title <span className="text-muted-foreground">(optional)</span></Label><Input id="p-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
-                <div className="space-y-1"><Label htmlFor="p-company">Company <span className="text-muted-foreground">(optional)</span></Label><Input id="p-company" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} /></div>
-                <div className="space-y-1"><Label htmlFor="p-email">Email <span className="text-muted-foreground">(optional)</span></Label><Input id="p-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-prospect-email" /></div>
-                <div className="space-y-1 sm:col-span-2"><Label htmlFor="p-li">LinkedIn URL <span className="text-muted-foreground">(optional)</span></Label><Input id="p-li" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} /></div>
-              </div>
-              {!form.name.trim() && !addEmailValue && <p className="text-xs text-muted-foreground">Enter a name or email to add this prospect.</p>}
-              <NewProspectClassification value={newClassification} onChange={setNewClassification} />
-              {!addEmailValid && <p className="text-xs text-destructive" role="alert">Enter a valid email address, or leave the email field blank.</p>}
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => addProspect.mutate()} disabled={!canEditOutreach || !canAddProspect || addProspect.isPending}>
-                  {addProspect.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Add
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
+        </section>}
+        <section id="campaign-panel-prospects" role="tabpanel" aria-labelledby="campaign-tab-prospects" hidden={campaignTab !== "prospects"} className="space-y-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
@@ -1710,7 +1720,7 @@ export default function OutreachCampaignDetailPage() {
                   <Button size="sm" variant="outline" onClick={() => csvFileRef.current?.click()} data-testid="button-import-csv-prospects-empty">
                     <Upload className="w-3.5 h-3.5 mr-1.5" /> Import from CSV
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setAdding(true)} data-testid="button-add-prospect-empty">
+                  <Button size="sm" variant="ghost" onClick={openAddProspect} data-testid="button-add-prospect-empty">
                     <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Add manually
                   </Button>
                 </div>
@@ -1893,6 +1903,7 @@ export default function OutreachCampaignDetailPage() {
                         <ClassificationBadges person={p} compact />
                         <ContactMeetingIndicator meeting={p.meeting} timezone={p.meetingTimezone} calendarStatus={p.calendarInvitation?.status} onOpen={() => {
                           if (campaign.conferenceId) {
+                            setCampaignTab("meetings");
                             setMeetingContact({ campaignId: campaign.id, contactId: p.id });
                             void queryClient.invalidateQueries({ queryKey: [`/api/sales-outreach/campaigns/${campaign.id}/meetings`] });
                           } else setHistoryContact(p);
@@ -1935,6 +1946,7 @@ export default function OutreachCampaignDetailPage() {
                           <CampaignContactActions>
                         {canEditOutreach && <Button variant="ghost" size="sm" onClick={() => setEmailThreadEntry({ scope: composeScope, target: p })} data-testid={`paste-email-thread-${p.id}`}><Mail className="mr-1 h-3 w-3" />Paste email thread</Button>}
                         {campaign.conferenceId && <Button variant="ghost" size="sm" onClick={() => {
+                          setCampaignTab("meetings");
                           setMeetingContact({ campaignId: campaign.id, contactId: p.id });
                           void queryClient.invalidateQueries({ queryKey: [`/api/sales-outreach/campaigns/${campaign.id}/meetings`] });
                         }} data-testid={`meeting-prep-${p.id}`} aria-label={`Open meeting prep for ${p.name || p.email || "contact"}`}><CalendarDays className="mr-1 h-3 w-3" />Meeting prep</Button>}
@@ -2073,10 +2085,8 @@ export default function OutreachCampaignDetailPage() {
           </CardContent>
         </Card>
 
-        </div>
-        <div className={campaignTab === "next-steps" ? "space-y-4" : "hidden"}>
-        {/* Performance — always visible so a campaign explains what is happening,
-            even before enough outreach has occurred to draw conclusions. */}
+        </section>
+        <section id="campaign-overview-performance" hidden={campaignTab !== "overview"} className="space-y-4">
         {performance && (
           <Card data-testid="campaign-performance">
             <CardHeader className="pb-2">
@@ -2150,9 +2160,28 @@ export default function OutreachCampaignDetailPage() {
             </CardContent>
           </Card>
         )}
-      </div>
+        </section>
+        {adding && (
+          <NewProspectDialog
+            canSubmit={canEditOutreach && canAddProspect}
+            saving={addProspect.isPending}
+            error={addProspect.isError ? addProspect.error.message : undefined}
+            onSubmit={() => addProspect.mutate()}
+            onClose={() => setAdding(false)}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1"><Label htmlFor="p-name">Name <span className="text-muted-foreground">(optional)</span></Label><Input id="p-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-prospect-name" /></div>
+              <div className="space-y-1"><Label htmlFor="p-title">Title <span className="text-muted-foreground">(optional)</span></Label><Input id="p-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
+              <div className="space-y-1"><Label htmlFor="p-company">Company <span className="text-muted-foreground">(optional)</span></Label><Input id="p-company" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} /></div>
+              <div className="space-y-1"><Label htmlFor="p-email">Email <span className="text-muted-foreground">(optional)</span></Label><Input id="p-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} data-testid="input-prospect-email" /></div>
+              <div className="space-y-1 sm:col-span-2"><Label htmlFor="p-li">LinkedIn URL <span className="text-muted-foreground">(optional)</span></Label><Input id="p-li" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} /></div>
+            </div>
+            {!form.name.trim() && !addEmailValue && <p className="text-xs text-muted-foreground">Enter a name or email to add this prospect.</p>}
+            <NewProspectClassification value={newClassification} onChange={setNewClassification} />
+            {!addEmailValid && <p className="text-xs text-destructive" role="alert">Enter a valid email address, or leave the email field blank.</p>}
+          </NewProspectDialog>
+        )}
 
-      </div>
       {/* Edit campaign dialog */}
       <Dialog open={editing} onOpenChange={(o) => { if (!o) { setEditing(false); setEditForm(null); } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -3306,6 +3335,7 @@ export default function OutreachCampaignDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </AppLayout>
   );
 }

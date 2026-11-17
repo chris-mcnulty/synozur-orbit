@@ -152,12 +152,13 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{label}</span>{children}</label>;
 }
 
-export default function ConferenceMeetings({ campaignId, selectedContactId, onSelectedContactChange, onDraftCreated, canEditOutreach = false }: {
+export default function ConferenceMeetings({ campaignId, selectedContactId, onSelectedContactChange, onDraftCreated, canEditOutreach = false, presentation = "combined" }: {
   campaignId: string;
   selectedContactId: string | null;
   onSelectedContactChange: (id: string | null) => void;
   onDraftCreated?: (result: unknown) => void;
   canEditOutreach?: boolean;
+  presentation?: "combined" | "meetings" | "setup";
 }) {
   const qc = useQueryClient();
   const key = [endpoint(campaignId)];
@@ -364,7 +365,7 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
       <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground"><CalendarClock className="h-4 w-4 shrink-0 text-primary" /><span className="break-words">{event.name}</span></h2>
-          <p className="mt-1 text-xs text-muted-foreground">Shared event context reused · Open meeting prep from a contact below.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{presentation === "setup" ? "Shared event context and private scheduling details." : "Shared event context reused · Open meeting prep from a contact below."}</p>
           {brief.goals.trim() && <p className="mt-1 line-clamp-2 break-words text-xs text-muted-foreground"><span className="font-medium text-foreground">{workspace.brief?.goals?.trim() ? "Saved conversation goals: " : "Inherited goals: "}</span>{brief.goals}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -372,12 +373,12 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
           <Button asChild variant="outline" size="sm">
               <a href={`/app/marketing/conferences/${encodeURIComponent(event.id)}`}><ExternalLink className="mr-2 h-3.5 w-3.5" />Shared event</a>
           </Button>
-          <Button variant="outline" size="sm" aria-expanded={expanded} aria-controls="event-context-setup" onClick={() => setExpanded((v) => !v)}>Context & setup<ChevronDown className={`ml-1.5 h-4 w-4 ${expanded ? "rotate-180" : ""}`} /></Button>
+          {presentation === "combined" && <Button variant="outline" size="sm" aria-expanded={expanded} aria-controls="event-context-setup" onClick={() => setExpanded((v) => !v)}>Context & setup<ChevronDown className={`ml-1.5 h-4 w-4 ${expanded ? "rotate-180" : ""}`} /></Button>}
         </div>
       </div>
       {error && <p role="alert" className="px-4 pb-3 text-sm text-destructive">{error}</p>}
-      <div id="event-context-setup" hidden={!expanded} className="space-y-4 border-t border-border p-4">
-        {workspace.sourceContext && <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="meeting-inherited-context">
+      <div id="event-context-setup" hidden={presentation === "combined" && !expanded} className="space-y-4 border-t border-border p-4">
+        {presentation !== "meetings" && workspace.sourceContext && <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="meeting-inherited-context">
           <h3 className="text-sm font-semibold">Inherited source context <Badge variant="outline" className="ml-1 text-[10px]">Read only</Badge></h3>
           <p className="mt-1 text-xs text-muted-foreground">Reused from the shared event{workspace.sourceContext.sourceCampaignName ? ` and ${workspace.sourceContext.sourceCampaignName}` : ""}. Edit the originals in their source; use the private brief below for outreach-specific overrides.</p>
           <dl className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
@@ -390,8 +391,8 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
             ] as const).filter(([, value]) => value?.trim()).map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted-foreground">{label} · inherited</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{value}</dd></div>)}
           </dl>
         </div>}
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
-          <Card className="border-border bg-card shadow-none">
+        <div className={presentation === "meetings" ? "min-w-0 space-y-4" : "grid min-w-0 gap-4 xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]"}>
+          <Card hidden={presentation === "meetings"} className="border-border bg-card shadow-none">
             <CardHeader className="pb-3"><CardTitle className="text-lg">Shared event plan</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -420,9 +421,11 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
           </Card>
 
           <div className="space-y-4">
-            <ConferenceWarmContacts key={`${campaignId}:${workspace.fingerprint}`} campaignId={campaignId}
+            <div hidden={presentation === "setup"}>
+              <ConferenceWarmContacts key={`${campaignId}:${workspace.fingerprint}`} campaignId={campaignId}
               planSaved={!!workspace.brief?.enabled && JSON.stringify(brief) === JSON.stringify(workspace.brief) && (!!brief.goals.trim() || !!brief.targetAccounts.trim())} />
-            <Card className="border-border bg-card shadow-none">
+            </div>
+            <Card hidden={presentation === "meetings"} className="border-border bg-card shadow-none">
               <CardHeader className="pb-2"><CardTitle className="text-lg">Event facts</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid gap-x-5 gap-y-3 text-sm sm:grid-cols-2">
@@ -437,7 +440,7 @@ export default function ConferenceMeetings({ campaignId, selectedContactId, onSe
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-card shadow-none">
+            <Card hidden={presentation === "setup"} className="border-border bg-card shadow-none">
               <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-lg"><FileUp className="h-4 w-4" />Reviewed external import</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs leading-relaxed text-muted-foreground">If Apollo finds no usable event contacts, research in Wiza or Sales Navigator outside Orbit, then paste or upload your chosen rows. Nothing is fetched from those services. Preview and select up to 100 people before importing.</p>

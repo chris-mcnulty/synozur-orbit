@@ -174,6 +174,22 @@ describe("campaign summary", () => {
 });
 
 describe("campaign overview", () => {
+  it("keeps metrics in Overview without repeating meeting rows", async () => {
+    setup(<CampaignOverview campaignId="campaign-1" scope="scope-1" view="metrics" onOpenMeeting={vi.fn()} />);
+    expect(await screen.findByText("External logged communications")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Maya Chen/ })).toBeNull();
+    expect(screen.queryByText("Room 4")).toBeNull();
+  });
+  it("shows the meeting list separately and opens the selected attendee", async () => {
+    const open = vi.fn();
+    setup(<CampaignOverview campaignId="campaign-1" scope="scope-1" view="meetings" onOpenMeeting={open} />);
+    const attendee = await screen.findByRole("button", { name: /Maya Chen/ });
+    expect(screen.getByRole("region", { name: "Campaign meetings" })).toBeTruthy();
+    expect(screen.queryByText("External logged communications")).toBeNull();
+    expect(screen.getByText("Room 4")).toBeTruthy();
+    fireEvent.click(attendee);
+    expect(open).toHaveBeenCalledWith("person-1");
+  });
   it("shows campaign-attributed external counts and one shared meeting with every company", async () => {
     const openMeeting = vi.fn();
     const { client } = setup(<CampaignOverview campaignId="campaign-1" scope="scope-1" onOpenMeeting={openMeeting} />);

@@ -27,6 +27,27 @@ function setup(data: any = fixture, selectedContactId: string | null = null) {
 beforeEach(() => { api.mockResolvedValue({ json: async () => fixture }); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("compact shared event workspace", () => {
+  it("separates Setup from meeting tools and keeps unsaved setup when switching presentations", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(["/api/sales-outreach/campaigns/campaign/meetings"], fixture);
+    const change = vi.fn();
+    const show = (presentation: "setup" | "meetings") => <QueryClientProvider client={client}>
+      <ConferenceMeetings campaignId="campaign" selectedContactId={null} onSelectedContactChange={change} presentation={presentation} />
+    </QueryClientProvider>;
+    const { rerender } = render(show("setup"));
+    expect(screen.getByRole("button", { name: "Save event plan" })).toBeTruthy();
+    expect(screen.getByLabelText("Scheduling URL")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Preview contacts" })).toBeNull();
+    await waitFor(() => expect((screen.getByLabelText(/^Conversation goals/) as HTMLTextAreaElement).value).toBe(inherited));
+    fireEvent.change(screen.getByLabelText("Availability"), { target: { value: "Thursday afternoon or after the event" } });
+    rerender(show("meetings"));
+    expect(screen.queryByRole("button", { name: "Save event plan" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Scheduling URL" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Preview contacts" })).toBeTruthy();
+    rerender(show("setup"));
+    expect((screen.getByLabelText("Availability") as HTMLTextAreaElement).value).toBe("Thursday afternoon or after the event");
+    expect(api).not.toHaveBeenCalled();
+  });
   it("starts collapsed without a second people directory or an automatically opened editor", () => {
     setup();
     expect(screen.queryByRole("dialog")).toBeNull();
