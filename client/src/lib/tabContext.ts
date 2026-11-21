@@ -57,11 +57,15 @@ export function getTabMarketId(): string | null {
 }
 
 export function setTabTenantId(id: string | null) {
+  const changed = getTabTenantId() !== id;
   safeSet(TENANT_KEY, id);
+  if (changed && typeof window !== "undefined") window.dispatchEvent(new Event("tab-context-changed"));
 }
 
 export function setTabMarketId(id: string | null) {
+  const changed = getTabMarketId() !== id;
   safeSet(MARKET_KEY, id);
+  if (changed && typeof window !== "undefined") window.dispatchEvent(new Event("tab-context-changed"));
 }
 
 export function getTabContextHeaders(): Record<string, string> {
@@ -76,6 +80,7 @@ export function getTabContextHeaders(): Record<string, string> {
 export function clearTabContext() {
   safeSet(TENANT_KEY, null);
   safeSet(MARKET_KEY, null);
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("tab-context-changed"));
 }
 
 let fetchPatched = false;

@@ -20,6 +20,7 @@ import ForgotPassword from "@/pages/auth/forgot-password";
 import ResetPassword from "@/pages/auth/reset-password";
 import Dashboard from "@/pages/app/dashboard";
 import HomePage from "@/pages/app/home";
+import AskOrbitPage from "@/pages/app/ask-orbit";
 import ContentPipelinePage from "@/pages/app/marketing/pipeline";
 import SalesHubPage from "@/pages/app/sales";
 import OutreachCampaignsPage from "@/pages/app/sales/outreach-campaigns";
@@ -153,6 +154,7 @@ function Router() {
       {/* Global Home (company at a glance); the research dashboard keeps its
           /app/dashboard and /app/overview URLs under the Research area. */}
       <Route path="/app" component={HomePage} />
+      <Route path="/app/ask-orbit" component={AskOrbitPage} />
       <Route path="/app/overview" component={Dashboard} />
       <Route path="/app/dashboard" component={Dashboard} />
       <Route path="/app/competitors" component={Competitors} />

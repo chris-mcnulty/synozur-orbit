@@ -64,6 +64,7 @@ import { registerOpportunityMatrixRoutes } from "./routes/opportunity-matrix";
 import { registerMarketStudyRoutes } from "./routes/market-study";
 import { registerExecutiveSummaryRoutes } from "./routes/executive-summary";
 import { registerMarketingWorkflowRoutes } from "./routes/marketing-workflows";
+import { registerAskOrbitRoutes } from "./routes/ask-orbit";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -112,6 +113,7 @@ export async function registerRoutes(
   });
 
   registerAuthRoutes(app);
+  registerAskOrbitRoutes(app);
   registerCompetitorRoutes(app);
   registerBattlecardRoutes(app);
   registerCompetitorDocumentRoutes(app);

@@ -301,6 +301,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
 
   const lockedNavItems = useMemo((): Set<string> => {
     const locked = new Set<string>();
+    if (!isEnterprise || tenantInfo?.features?.askOrbit === false) locked.add("/app/ask-orbit");
     if (!tenantInfo?.features) return locked;
     const f = tenantInfo.features;
     if (f.battlecards === false) locked.add("/app/battlecards");
@@ -324,7 +325,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (f.saturnCapture === false) locked.add("/app/marketing/browser-extension");
     if (f.marketingWorkflows === false) locked.add("/app/marketing/workflows");
     return locked;
-  }, [tenantInfo]);
+  }, [tenantInfo, isEnterprise]);
 
   const getLastVisited = (path: string): number => {
     try {

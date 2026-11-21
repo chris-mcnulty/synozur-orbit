@@ -1,3 +1,4 @@
+- [Ask Orbit evidence contract](ask-orbit-evidence-contract.md) — exact excerpts are deliberate: source IDs alone cannot validate model-authored factual paraphrases.
 - [Outreach draft boundaries](outreach-draft-boundaries.md) — refusals and sender clarification questions are operator-only, never prospect email drafts.
 - [Personal workspace views](personal-workspace-view-boundaries.md) — browser-local preferences are distinct from audience segments; never restore editor or action state.
 - [Contact row editing](contact-row-edit-placement.md) — Edit must remain directly on the contact row, never hidden inside the ellipsis menu.

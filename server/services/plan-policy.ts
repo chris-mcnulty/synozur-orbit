@@ -8,6 +8,7 @@ export interface FeatureDefinition {
 }
 
 export const FEATURE_REGISTRY: FeatureDefinition[] = [
+  { key: "askOrbit", label: "Ask Orbit", description: "Private read-only conversations with cited intelligence from the active market; monthly allowance applies", category: "intelligence" },
   { key: "battlecards", label: "Sales Battlecards", description: "Generate competitive battlecards for sales teams", category: "intelligence" },
   { key: "recommendations", label: "AI Recommendations", description: "AI-powered strategic recommendations", category: "intelligence" },
   { key: "pdfReports", label: "PDF Reports", description: "Generate branded PDF competitive reports", category: "intelligence" },
@@ -93,6 +94,7 @@ export interface PlanFeatures {
 
 const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
   free: {
+    askOrbit: false,
     battlecards: false,
     recommendations: false,
     pdfReports: false,
@@ -151,6 +153,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     executiveSummaryAuto: false,
   },
   trial: {
+    askOrbit: false,
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -209,6 +212,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     executiveSummaryAuto: false,
   },
   pro: {
+    askOrbit: false,
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -267,6 +271,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     executiveSummaryAuto: true,
   },
   enterprise: {
+    askOrbit: true,
     battlecards: true,
     recommendations: true,
     pdfReports: true,
@@ -330,6 +335,7 @@ const DEFAULT_PLAN_FEATURES: Record<string, Record<string, boolean>> = {
     executiveSummaryAuto: true,
   },
   unlimited: {
+    askOrbit: true,
     battlecards: true,
     recommendations: true,
     pdfReports: true,

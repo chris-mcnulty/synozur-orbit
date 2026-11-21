@@ -555,13 +555,15 @@ These candidates are logged for consideration and are not committed to a quarter
 **Effort**: High
 
 #### AI Conversational Intelligence Assistant ("Ask Orbit")
-**Status**: Proposed
+**First release implemented**: Enterprise read-only, owner-private conversations across existing active-market intelligence, with server-validated excerpts, dated citations, cancellation and an explicit monthly allowance. See `docs/ask-orbit.md` for scope and accounting. No assistant write actions, live research, or shared conversations.
+**Status**: First release implemented; sharing and dashboard pinning remain future scope
 **Why**: Natural-language Q&A over the tenant's competitive corpus is faster than navigating pages. Pairs well with the existing AI-usage logging and plan gating.
-- [ ] Retrieval-augmented chat grounded in competitor profiles, activity log, briefings, marketing plan, and product roadmap
-- [ ] Inline citations linking back to the underlying source (competitor card, change diff, briefing section)
-- [ ] Saved conversations, sharable answer cards, "Pin to dashboard" widget
-- [ ] Streaming responses with cost & token reporting via existing `logAiUsage`
-- [ ] Enterprise-only gating with per-tenant monthly quota
+- [x] Read-only conversational evidence selection grounded in competitor profiles, recorded changes, briefings, GTM/messaging plans, marketing plans, and product roadmaps
+- [x] Validated, dated citations linking back to underlying source records
+- [x] Owner-private named conversations with reopen/delete controls
+- [ ] Sharable answer cards and "Pin to dashboard" widget (outside first release)
+- [x] Validated answer streaming with server-side cost & token reporting via existing `logAiUsage`
+- [x] Enterprise-only gating with explicit atomic per-tenant monthly quota and visible remaining allowance
 **Effort**: High
 
 ### Reach & Mobility

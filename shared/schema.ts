@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, uuid, timestamp, integer, bigint, jsonb, serial, boolean, check, index, uniqueIndex, unique, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, uuid, timestamp, date, integer, bigint, jsonb, serial, boolean, check, index, uniqueIndex, unique, real, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -6169,3 +6169,35 @@ export const unifiedExecSummarySettings = pgTable("unified_exec_summary_settings
 });
 
 export type UnifiedExecSummarySettings = typeof unifiedExecSummarySettings.$inferSelect;
+
+// Ask Orbit keeps private conversations separate from the generic chat scaffold.
+export const askOrbitConversations = pgTable("ask_orbit_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  marketId: varchar("market_id").notNull().references(() => markets.id, { onDelete: "cascade" }),
+  ownerId: varchar("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [index("ask_orbit_conversations_scope").on(t.tenantId, t.marketId, t.ownerId, t.updatedAt)]);
+
+export const askOrbitTurns = pgTable("ask_orbit_turns", {
+  id: varchar("id").primaryKey(),
+  conversationId: varchar("conversation_id").notNull().references(() => askOrbitConversations.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  status: text("status").notNull().default("processing"),
+  answer: jsonb("answer").$type<import("./ask-orbit").OrbitAnswer>(),
+  error: text("error"),
+  providerStarted: boolean("provider_started").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, t => [
+  index("ask_orbit_turns_conversation").on(t.conversationId, t.createdAt),
+  uniqueIndex("ask_orbit_one_processing").on(t.conversationId).where(sql`${t.status} = 'processing'`),
+]);
+
+export const askOrbitMonthlyUsage = pgTable("ask_orbit_monthly_usage", {
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  month: date("month").notNull(),
+  used: integer("used").notNull().default(0),
+}, t => [primaryKey({ columns: [t.tenantId, t.month] })]);
