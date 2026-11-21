@@ -1,4 +1,7 @@
 import { useState, useRef, KeyboardEvent, useCallback, useMemo, useEffect } from "react";
+import { PersonalViewControls } from "@/components/personal-view-controls";
+import { usePersonalViews } from "@/hooks/use-personal-views";
+import { prospectViewSchema, prospectViewDefaults } from "@/lib/personal-view-schemas";
 import { Link, useParams, useLocation, useSearch } from "wouter";
 import SavedOutreachDrafts from "@/components/sales/saved-outreach-drafts";
 import NewProspectClassification, { newProspectClassificationPayload, type NewProspectClassificationValue } from "@/components/sales/new-prospect-classification";
@@ -614,21 +617,6 @@ export default function OutreachCampaignDetailPage() {
     setDiscoveryClassification({});
   }, [importScope]);
 
-  // Prospect list filter / sort state.
-  const [searchQ, setSearchQ] = useState("");
-  const [statusTab, setStatusTab] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [messagingGroupFilter, setMessagingGroupFilter] = useState("all");
-  const [familiarityFilter, setFamiliarityFilter] = useState("all");
-  const [scoreFilter, setScoreFilter] = useState("all"); // all | high | medium | low | unscored
-  const [sortKey, setSortKey] = useState<ProspectSortKey>("score");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-
-  function toggleSort(key: ProspectSortKey) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir(key === "score" || key === "priority" ? "desc" : "asc"); }
-  }
-
   // HubSpot import dialog state.
   const [hubspotOpen, setHubspotOpen] = useState(false);
   const [hubspotMode, setHubspotMode] = useState<"search" | "list">("search");
@@ -742,7 +730,7 @@ export default function OutreachCampaignDetailPage() {
     toast({ title: "Contacts added", description: `${data.imported} imported, ${data.skipped} already on this campaign.` });
   }, [id, queryClient, toast]);
 
-  const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects"];
+  const prospectsKey = ["/api/sales-outreach/campaigns", id, "prospects", getTabTenantId(), getTabMarketId()];
   const campaignKey = ["/api/sales-outreach/campaigns", id];
 
   const { data: campaign, isLoading } = useQuery<OutreachCampaign>({
@@ -886,7 +874,7 @@ export default function OutreachCampaignDetailPage() {
     });
   }
 
-  const { data: prospects = [] } = useQuery<Prospect[]>({
+  const { data: prospects = [], isSuccess: prospectsLoaded } = useQuery<Prospect[]>({
     queryKey: prospectsKey,
     queryFn: async () => {
       const r = await fetch(`/api/sales-outreach/campaigns/${id}/prospects`, { credentials: "include" });
@@ -899,6 +887,25 @@ export default function OutreachCampaignDetailPage() {
     const s = new Set(prospects.map((p) => p.source).filter(Boolean) as string[]);
     return Array.from(s).sort();
   }, [prospects]);
+
+  const personalViews = usePersonalViews({
+    surface: "outreach-prospects", campaignId: id,
+    schema: prospectViewSchema(prospectsLoaded ? prospects : undefined), defaults: prospectViewDefaults,
+  });
+  const [searchQ, setSearchQ] = personalViews.field("searchQ");
+  const [statusTab, setStatusTab] = personalViews.field("statusTab");
+  const [sourceFilter, setSourceFilter] = personalViews.field("sourceFilter");
+  const [messagingGroupFilter, setMessagingGroupFilter] = personalViews.field("messagingGroupFilter");
+  const [familiarityFilter, setFamiliarityFilter] = personalViews.field("familiarityFilter");
+  const [scoreFilter, setScoreFilter] = personalViews.field("scoreFilter");
+  const [sortKey, setSortKey] = personalViews.field("sortKey");
+  const [sortDir, setSortDir] = personalViews.field("sortDir");
+  const [classificationFilters, setClassificationFilters] = personalViews.field("classification");
+  const [classificationGroupBy, setClassificationGroupBy] = personalViews.field("classificationGroupBy");
+  function toggleSort(key: ProspectSortKey) {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir(key === "score" || key === "priority" ? "desc" : "asc"); }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(draftSearch);
@@ -955,6 +962,7 @@ export default function OutreachCampaignDetailPage() {
   }, [prospects, searchQ, statusTab, sourceFilter, messagingGroupFilter, familiarityFilter, scoreFilter, sortKey, sortDir]);
   const classification = useCampaignClassification({
     campaignId: id, people: visibleProspects, role: user?.role,
+    viewState: { filters: classificationFilters, setFilters: setClassificationFilters, groupBy: classificationGroupBy, setGroupBy: setClassificationGroupBy },
     filterScope: JSON.stringify([getTabTenantId(), searchQ, statusTab, sourceFilter, messagingGroupFilter, familiarityFilter, scoreFilter]),
   });
   function clearPeopleFilters() {
@@ -1709,6 +1717,7 @@ export default function OutreachCampaignDetailPage() {
             {campaign.conferenceId && <p className="text-xs text-muted-foreground">Your campaign contacts · Choose Meeting prep for relationship history, conversation angles, and calendar invitations.</p>}
           </CardHeader>
           <CardContent>
+            <div className="mb-3"><PersonalViewControls model={personalViews} /></div>
             {prospects.length === 0 ? (
               <div className="py-8 text-center space-y-3">
                 <RemovedCampaignContacts campaignId={id} scope={classification.selectionScope} />
@@ -1736,7 +1745,7 @@ export default function OutreachCampaignDetailPage() {
                       return (
                         <button
                           key={tab}
-                          onClick={() => setStatusTab(tab)}
+                          onClick={() => setStatusTab(tab as typeof statusTab)}
                           data-testid={`tab-status-${tab}`}
                           className={`rounded-full px-3 py-0.5 text-xs font-medium transition-colors ${
                             statusTab === tab
@@ -1759,13 +1768,14 @@ export default function OutreachCampaignDetailPage() {
                         onChange={(e) => setSearchQ(e.target.value)}
                         placeholder="Search name, company, title…"
                         data-testid="input-prospect-search"
+                        maxLength={300}
                         className="w-full rounded-md border border-input bg-background pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                     </div>
                     <select
                       aria-label="Filter contacts by assigned messaging group"
                       value={messagingGroupFilter}
-                      onChange={(e) => setMessagingGroupFilter(e.target.value)}
+                      onChange={(e) => setMessagingGroupFilter(e.target.value as typeof messagingGroupFilter)}
                       data-testid="select-messaging-group-filter"
                       className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     >
@@ -1774,7 +1784,7 @@ export default function OutreachCampaignDetailPage() {
                       {messagingGroups.map((group) => <option key={group} value={group}>{messagingGroupLabels[group]}</option>)}
                     </select>
                     <select aria-label="Filter contacts by familiarity with campaign sender" value={familiarityFilter}
-                      onChange={e => setFamiliarityFilter(e.target.value)} data-testid="select-familiarity-filter"
+                      onChange={e => setFamiliarityFilter(e.target.value as typeof familiarityFilter)} data-testid="select-familiarity-filter"
                       className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
                       <option value="all">All familiarities</option>
                       {contactFamiliarities.map(value => <option key={value} value={value}>{familiarityLabels[value]}</option>)}
@@ -1794,7 +1804,7 @@ export default function OutreachCampaignDetailPage() {
                     )}
                     <select
                       value={scoreFilter}
-                      onChange={(e) => setScoreFilter(e.target.value)}
+                      onChange={(e) => setScoreFilter(e.target.value as typeof scoreFilter)}
                       data-testid="select-score-filter"
                       className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     >

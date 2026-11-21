@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { PersonalViewControls } from "@/components/personal-view-controls";
+import { usePersonalViews } from "@/hooks/use-personal-views";
+import { outreachCampaignViewSchema } from "@/lib/personal-view-schemas";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getTabMarketId } from "@/lib/tabContext";
@@ -72,6 +75,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
 /** Sales outreach campaign list + readiness banner + entry to the wizard. */
 export default function OutreachCampaignsPage() {
   const { user } = useUser();
+  const personalViews = usePersonalViews({ surface: "outreach-campaigns", schema: outreachCampaignViewSchema, defaults: {} });
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === "Domain Admin" || user?.role === "Global Admin";
@@ -203,6 +207,7 @@ export default function OutreachCampaignsPage() {
           </Card>
         )}
 
+        <PersonalViewControls model={personalViews} />
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading campaigns…</p>
         ) : campaigns.length === 0 ? (

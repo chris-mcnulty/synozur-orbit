@@ -667,10 +667,11 @@ These candidates are logged for consideration and are not committed to a quarter
 **Effort**: Medium
 
 #### Persistent & Saved Views
-**Status**: Proposed
+**Status**: Personal browser-local views implemented; sidebar pinning and sharing remain proposed
 **Why**: Returning to a working filter and sort context is repeated friction.
-- [ ] Persist last-used filters/sort per surface
-- [ ] Let users name and save a segment
+- [x] Persist last-used filters/sort for outreach campaign prospects, outreach/marketing campaign lists, and the Master Marketing Calendar
+- [x] Name, apply, update, rename, delete, and reset personal views in this browser, isolated by user, tenant, market, surface, and campaign where applicable
+- [x] Keep personal view preferences separate from marketing contact audience segments; preserve explicit URL filters and item deep links
 - [ ] Optional: pin saved views to the sidebar; shareable view links
 **Effort**: Low to Medium
 

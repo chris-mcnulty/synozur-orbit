@@ -1,4 +1,5 @@
 - [Outreach draft boundaries](outreach-draft-boundaries.md) — refusals and sender clarification questions are operator-only, never prospect email drafts.
+- [Personal workspace views](personal-workspace-view-boundaries.md) — browser-local preferences are distinct from audience segments; never restore editor or action state.
 - [Contact row editing](contact-row-edit-placement.md) — Edit must remain directly on the contact row, never hidden inside the ellipsis menu.
 - [Outreach workspace navigation](outreach-workspace-navigation.md) — keep overview, prospects, meetings, setup and pending work separate; never grow another long stacked campaign page.
 - [Campaign statistics scope](campaign-stats-membership-scope.md) — exclude archived/removed/deleted contacts from all campaign performance calculations, including rate denominators.

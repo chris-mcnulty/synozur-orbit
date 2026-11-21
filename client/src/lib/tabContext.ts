@@ -15,6 +15,17 @@ function safeSet(key: string, value: string | null) {
     else sessionStorage.removeItem(key);
   } catch {
   }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("orbit:tab-context"));
+}
+
+/** React consumers can observe same-tab switches without waiting for API refetches. */
+export function subscribeTabContext(listener: () => void) {
+  window.addEventListener("orbit:tab-context", listener);
+  return () => window.removeEventListener("orbit:tab-context", listener);
+}
+
+export function getTabContextSnapshot(): string {
+  return JSON.stringify([getTabTenantId(), getTabMarketId()]);
 }
 
 export function getTabTenantId(): string | null {

@@ -1,5 +1,8 @@
 import type { Dispatch, DragEvent as ReactDragEvent, SetStateAction } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { PersonalViewControls } from "@/components/personal-view-controls";
+import { usePersonalViews } from "@/hooks/use-personal-views";
+import { calendarViewSchema, calendarViewDefaults } from "@/lib/personal-view-schemas";
 import { Link, useSearch } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
 import { CalendarViewSwitcher } from "@/components/marketing/CalendarViewSwitcher";
@@ -73,7 +76,7 @@ import {
   type LocateResult,
 } from "./calendar-deep-link-core";
 import { useToast } from "@/hooks/use-toast";
-import { getTabContextHeaders, getTabMarketId } from "@/lib/tabContext";
+import { getTabContextHeaders, getTabMarketId, getTabTenantId } from "@/lib/tabContext";
 
 // Download an image (graphic or carousel slide) straight to the user's machine.
 // Images are served same-origin via Orbit, so we fetch the blob and save it with
@@ -699,7 +702,18 @@ export default function MarketingCalendarPage() {
     return { target, date };
   }, [searchString]);
 
-  const [view, setView] = useState<"calendar" | "backlog">("calendar");
+  const { data: filterOpts } = useQuery<FilterOptions>({
+    queryKey: ["/api/marketing-calendar/filters", getTabMarketId(), getTabTenantId()],
+    queryFn: async () => {
+      const r = await fetch("/api/marketing-calendar/filters", { credentials: "include" });
+      if (!r.ok) throw new Error("Calendar filter options could not be loaded");
+      return r.json();
+    },
+  });
+  const personalViews = usePersonalViews({
+    surface: "marketing-calendar", schema: calendarViewSchema(filterOpts), defaults: calendarViewDefaults,
+  });
+  const [view, setView] = personalViews.field("view");
   const [anchor, setAnchor] = useState(() => {
     // Seed the month from the deep-link date so the targeted item's month is
     // fetched right away when it lives outside the current month.
@@ -725,11 +739,11 @@ export default function MarketingCalendarPage() {
   // in the loaded items — we ask the server where it lives, then drill into its
   // batch. Track which target we've already resolved so we only ask once.
   const [batchResolveAttempted, setBatchResolveAttempted] = useState<string | null>(null);
-  const [grouping, setGrouping] = useState<"month" | "quarter">("month");
-  const [groupBy, setGroupBy] = useState<"none" | "campaign" | "theme" | "event">("none");
-  const [filters, setFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all" });
+  const [grouping, setGrouping] = personalViews.field("grouping");
+  const [groupBy, setGroupBy] = personalViews.field("groupBy");
+  const [filters, setFilters] = personalViews.field("filters");
   // Shared type/channel/format filter used by both the calendar and the backlog.
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = personalViews.field("typeFilter");
 
   const [addOpen, setAddOpen] = useState(false);
   const [advisorOpen, setAdvisorOpen] = useState(false);
@@ -744,7 +758,7 @@ export default function MarketingCalendarPage() {
   const [pendingDrop, setPendingDrop] = useState<{ descriptors: { type: string; id: string }[]; dateKey: string } | null>(null);
 
   // ── Backlog state ──
-  const [backlogFilters, setBacklogFilters] = useState({ campaignId: "all", solutionAreaId: "all", conferenceId: "all", status: "all" });
+  const [backlogFilters, setBacklogFilters] = personalViews.field("backlogFilters");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDate, setBulkDate] = useState("");
   const [assignKind, setAssignKind] = useState<AssignmentKind>("campaign");
@@ -795,10 +809,6 @@ export default function MarketingCalendarPage() {
   const { data: backlogItems = [], isLoading: backlogLoading } = useQuery<CalendarItem[]>({
     queryKey: [backlogUrl, getTabMarketId()],
     queryFn: async () => { const r = await fetch(backlogUrl, { credentials: "include" }); return r.ok ? r.json() : []; },
-  });
-  const { data: filterOpts } = useQuery<FilterOptions>({
-    queryKey: ["/api/marketing-calendar/filters", getTabMarketId()],
-    queryFn: async () => { const r = await fetch("/api/marketing-calendar/filters", { credentials: "include" }); return r.ok ? r.json() : {}; },
   });
 
   // Open per-item detail for normal items; drill into the batch's posts for a
@@ -1350,6 +1360,7 @@ export default function MarketingCalendarPage() {
           </div>
         </div>
 
+        <PersonalViewControls model={personalViews} />
         {/* Calendar / Backlog toggle */}
         <div className="flex items-center gap-1 rounded-md border p-0.5 w-fit">
           <Button variant={view === "calendar" ? "secondary" : "ghost"} size="sm" className="h-8" onClick={() => setView("calendar")} data-testid="button-view-calendar">

@@ -1,19 +1,26 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { classificationPatchSchema, type ClassificationPatch } from "@shared/campaign-classification";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { canClassifyCampaign, emptyClassificationFilters, groupClassifiedPeople, matchesClassification, visibleSelectedIds, type ClassifiedPerson, type ClassificationGroupBy } from "./campaign-classification-helpers";
+import { canClassifyCampaign, emptyClassificationFilters, groupClassifiedPeople, matchesClassification, visibleSelectedIds, type ClassifiedPerson, type ClassificationGroupBy, type ClassificationFilters } from "./campaign-classification-helpers";
 
 /**
  * Pass the existing search/status/score/source-filtered, sorted contacts as people.
  * Pass those filter values as filterScope so selection never survives a filter change.
  */
-export function useCampaignClassification<T extends ClassifiedPerson>({ campaignId, people, role, filterScope = "" }: {
+export function useCampaignClassification<T extends ClassifiedPerson>({ campaignId, people, role, filterScope = "", viewState }: {
   campaignId: string; people: T[]; role?: string | null; filterScope?: string;
+  viewState?: {
+    filters: ClassificationFilters; setFilters: Dispatch<SetStateAction<ClassificationFilters>>;
+    groupBy: ClassificationGroupBy; setGroupBy: Dispatch<SetStateAction<ClassificationGroupBy>>;
+  };
 }) {
-  const [filters, setFilters] = useState(emptyClassificationFilters);
-  const [groupBy, setGroupBy] = useState<ClassificationGroupBy>("none");
+  const [localFilters, setLocalFilters] = useState(emptyClassificationFilters);
+  const [localGroupBy, setLocalGroupBy] = useState<ClassificationGroupBy>("none");
+  const { filters, setFilters, groupBy, setGroupBy } = viewState ?? {
+    filters: localFilters, setFilters: setLocalFilters, groupBy: localGroupBy, setGroupBy: setLocalGroupBy,
+  };
   const [selection, setSelection] = useState<{ scope: string; ids: string[] }>({ scope: "", ids: [] });
   const [editor, setEditor] = useState<{ scope: string; ids: string[] } | null>(null);
   const queryClient = useQueryClient();

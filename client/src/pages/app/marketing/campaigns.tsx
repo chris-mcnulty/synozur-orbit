@@ -1,4 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { PersonalViewControls } from "@/components/personal-view-controls";
+import { usePersonalViews } from "@/hooks/use-personal-views";
+import { marketingCampaignViewSchema, marketingCampaignViewDefaults } from "@/lib/personal-view-schemas";
 import { thumbnailUrl } from "@/components/ui/optimized-thumbnail";
 import { z } from "zod";
 import AppLayout from "@/components/layout/AppLayout";
@@ -254,8 +257,9 @@ export default function CampaignsPage() {
 
   const [campaignPage, setCampaignPage] = useState(1);
   const [CAMPAIGNS_PAGE_SIZE, setCampaignsPageSize] = usePersistedPageSize("campaigns");
-  const [campaignSearch, setCampaignSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const personalViews = usePersonalViews({ surface: "marketing-campaigns", schema: marketingCampaignViewSchema, defaults: marketingCampaignViewDefaults });
+  const [campaignSearch, setCampaignSearch] = personalViews.field("campaignSearch");
+  const [statusFilter, setStatusFilter] = personalViews.field("statusFilter");
   const debouncedCampaignSearch = useDebouncedValue(campaignSearch, 300);
 
   useEffect(() => {
@@ -1050,6 +1054,7 @@ export default function CampaignsPage() {
           </div>
         </div>
 
+        <PersonalViewControls model={personalViews} />
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1059,6 +1064,7 @@ export default function CampaignsPage() {
               placeholder="Search campaigns..."
               className="pl-9"
               data-testid="input-search-campaigns"
+              maxLength={300}
             />
           </div>
           <div className="flex items-center gap-1.5 flex-wrap" data-testid="status-filter-chips">
