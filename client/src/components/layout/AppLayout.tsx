@@ -305,6 +305,7 @@ export default function AppLayout({ children, breadcrumbs }: AppLayoutProps) {
     if (!tenantInfo?.features) return locked;
     const f = tenantInfo.features;
     if (f.battlecards === false) locked.add("/app/battlecards");
+    if (f.battlecards === false) locked.add("/app/sales/win-loss");
     if (f.recommendations === false) locked.add("/app/action-items");
     if (f.pdfReports === false) locked.add("/app/reports");
     if (f.relationshipReports === false) locked.add("/app/relationship-reports");

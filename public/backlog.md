@@ -618,12 +618,13 @@ These candidates are logged for consideration and are not committed to a quarter
 **Effort**: Medium-High
 
 #### Win/Loss Analysis Module
-**Status**: Proposed
-**Why**: Closes the loop from competitive intel to revenue outcomes. Pairs with the planned HubSpot CRM integration.
-- [ ] Deal-outcome log with competitor tagging, deal size, segment, and reason codes
-- [ ] CRM sync (HubSpot first) to auto-import closed deals and competitor stamps
-- [ ] AI-generated win/loss themes and trend reports per competitor
-- [ ] Surface themes into the battlecard "Sales challenges" section
+**Status**: Implemented
+**Why**: Connects competitive intelligence to reviewed deal outcomes without inferring competition or missing loss reasons.
+- [x] Dedicated Sales workspace with manual logging, role-based editing, competitor confirmation, deal values, segments, reasons, and provenance
+- [x] Read-only tenant HubSpot discovery, custom property and closed-stage mapping, complete paginated previews, selected imports, and reviewed replacement of existing records
+- [x] Filtered win/loss/no-decision analytics with explicit denominators, missing-data coverage, and separate exact currency totals
+- [x] AI themes cite retained outcome evidence; battlecard note additions require separate authorized approval and reject stale evidence
+**Boundaries**: No unattended sync, CRM write-back, automatic battlecard edits, inferred competitor participation, or currency conversion.
 **Effort**: High
 
 #### Industry Benchmarking (Anonymous Aggregates)

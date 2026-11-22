@@ -23,6 +23,7 @@ import HomePage from "@/pages/app/home";
 import AskOrbitPage from "@/pages/app/ask-orbit";
 import ContentPipelinePage from "@/pages/app/marketing/pipeline";
 import SalesHubPage from "@/pages/app/sales";
+import WinLossPage from "@/pages/app/sales/win-loss";
 import OutreachCampaignsPage from "@/pages/app/sales/outreach-campaigns";
 import OutreachInterviewPage from "@/pages/app/sales/outreach-interview";
 import OutreachCampaignDetailPage from "@/pages/app/sales/campaign-detail";
@@ -195,6 +196,7 @@ function Router() {
       <Route path="/app/about" component={AppAbout} />
       <Route path="/app/data-sources" component={DataSourcesPage} />
       <Route path="/app/sales" component={SalesHubPage} />
+      <Route path="/app/sales/win-loss">{() => <PageFeatureGate featureKey="battlecards" label="Win / Loss Analysis" description="Connect reviewed deal outcomes to your competitive intelligence."><WinLossPage /></PageFeatureGate>}</Route>
       <Route path="/app/sales/outreach">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachCampaignsPage /></PageFeatureGate>}</Route>
       <Route path="/app/sales/outreach/new">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachInterviewPage /></PageFeatureGate>}</Route>
       <Route path="/app/sales/outreach/settings">{() => <PageFeatureGate featureKey="salesOutreachCampaigns" label="Sales Outreach" description="Goal-driven outbound: prospect, score, draft in your voice, and sequence follow-ups — you approve every send. Upgrade to unlock this feature."><OutreachSettingsPage /></PageFeatureGate>}</Route>

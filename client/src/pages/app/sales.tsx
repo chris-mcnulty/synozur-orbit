@@ -165,6 +165,9 @@ export default function SalesHubPage() {
           <p className="text-muted-foreground mt-1">
             Deliverables and enablement, ready for the next conversation.
           </p>
+          <Link href="/app/sales/win-loss" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+            Open Win / Loss evidence <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
 
         {/* Active Outreach — live rollup of running campaigns */}

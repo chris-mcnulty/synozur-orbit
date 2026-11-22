@@ -4,6 +4,37 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
 import type { EventPresence, MeetingBrief, MeetingContact, MeetingDraftContext, CalendarInvitationState } from "./conference-meetings";
+import type { OutcomeInput } from "./win-loss";
+
+export const salesOutcomes = pgTable("sales_outcomes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").notNull().references(() => markets.id, { onDelete: "cascade" }),
+  data: jsonb("data").$type<OutcomeInput>().notNull(),
+  source: text("source").notNull(),
+  externalId: text("external_id"),
+  sourceSnapshot: jsonb("source_snapshot"),
+  version: integer("version").notNull().default(1),
+  createdBy: varchar("created_by").notNull(),
+  updatedBy: varchar("updated_by").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, t => ({
+  external: uniqueIndex("sales_outcomes_external_idx").on(t.tenantDomain, t.marketId, t.externalId),
+  scope: index("sales_outcomes_scope_idx").on(t.tenantDomain, t.marketId),
+}));
+
+export const salesOutcomeReviews = pgTable("sales_outcome_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantDomain: text("tenant_domain").notNull(),
+  marketId: varchar("market_id").notNull().references(() => markets.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").notNull(),
+  createdBy: varchar("created_by").notNull(),
+  approvedBy: varchar("approved_by"),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, t => ({ scope: index("sales_outcome_reviews_scope_idx").on(t.tenantDomain, t.marketId, t.kind) }));
 
 // Preserve the delivery ledger even if manual meeting prep is edited or removed.
 export const conferenceCalendarInvitations = pgTable("conference_calendar_invitations", {

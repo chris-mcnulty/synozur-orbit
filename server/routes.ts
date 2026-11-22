@@ -65,6 +65,7 @@ import { registerMarketStudyRoutes } from "./routes/market-study";
 import { registerExecutiveSummaryRoutes } from "./routes/executive-summary";
 import { registerMarketingWorkflowRoutes } from "./routes/marketing-workflows";
 import { registerAskOrbitRoutes } from "./routes/ask-orbit";
+import { registerWinLossRoutes } from "./routes/win-loss";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -164,6 +165,7 @@ export async function registerRoutes(
   registerExecutiveSummaryRoutes(app);
   registerMarketingWorkflowRoutes(app);
   registerSalesOutreachRoutes(app);
+  registerWinLossRoutes(app);
   registerTestHelperRoutes(app);
 
   return httpServer;
